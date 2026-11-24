@@ -207,6 +207,13 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 	store := &updates.Store{DB: d.DB}
 	svc := &updates.Service{Store: store, Notifier: hub, Log: d.Logger, Current: d.Current,
 		BaseChannel: d.BaseChannel, Getenv: getenv, PluginsPaused: pluginsPausedBy(d.DB)}
+	interval := updates.CheckInterval
+	if v := strings.TrimSpace(getenv("MAKTABA_UPDATE_INTERVAL_SEC")); v != "" {
+		if n, err := time.ParseDuration(v + "s"); err == nil {
+			interval = n // 0: no background checks (Epic 28 meaning), "check now" still works
+		}
+	}
+	svc.CheckEvery = &interval
 	disabled := func() bool {
 		v := getenv("MAKTABA_UPDATE_DISABLE")
 		return v == "1" || strings.EqualFold(v, "true")
@@ -279,13 +286,6 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 		if ctx == nil {
 			ctx = context.Background()
 		}
-		interval := updates.CheckInterval
-		if v := strings.TrimSpace(getenv("MAKTABA_UPDATE_INTERVAL_SEC")); v != "" {
-			if n, err := time.ParseDuration(v + "s"); err == nil {
-				interval = n // 0: no background checks (Epic 28 meaning), "check now" still works
-			}
-		}
-		svc.CheckEvery = &interval
 		if svc.Discoverer != nil && interval > 0 {
 			d.Loops.Declare("updates_discoverer", runner.Bound(ctx, runner.Func(func(ctx context.Context) {
 				svc.Discoverer.Run(ctx, interval)

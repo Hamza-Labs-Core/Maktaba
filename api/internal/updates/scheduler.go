@@ -72,7 +72,7 @@ func staleAfter(every time.Duration) time.Duration {
 // catalogStale says why the list of releases is too old to install from by itself without
 // reading it again ("": fresh enough): its last good read is older than staleAfter, or in the
 // future (the clock was ahead then: how old it is cannot be told), or every check so far
-// failed. Not for a home that never checked (what its catalog holds came from no check), nor
+// failed. It holds an install only once the list could not be read again (catalogOld). Not for a home that never checked (what its catalog holds came from no check), nor
 // one whose background checks are off (every is 0: what an admin's check found installs).
 func catalogStale(st State, now time.Time, every time.Duration) string {
 	if every <= 0 {
@@ -92,6 +92,11 @@ func catalogStale(st State, now time.Time, every time.Duration) string {
 	}
 	return why
 }
+
+// catalogOld says whether the list of releases is read again before an automatic install,
+// whatever the home's cadence: one read costs next to nothing, and tells what is newest. It
+// holds nothing by itself (catalogStale does).
+func catalogOld(st State, now time.Time) bool { return catalogStale(st, now, CheckInterval) != "" }
 
 // retryBackoff is the pause before a release's third automatic run in one window;
 // triesPerWindow how many automatic runs of one release a window takes.
@@ -384,6 +389,9 @@ func (s *Service) Tick(ctx context.Context) (Decision, error) {
 }
 
 func (s *Service) tick(ctx context.Context) (Decision, error) {
+	if !s.staleSince.IsZero() && catalogStale(s.Store.LoadState(ctx), s.now(), s.checkEvery()) == "" {
+		s.staleSince = time.Time{} // read since: a hold later is another one
+	}
 	pl, pol, _, err := s.Plan(ctx)
 	if err != nil {
 		return Decision{Action: "none"}, err
@@ -411,18 +419,17 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 	if why != "" {
 		return Decision{Action: "blocked", Reason: why, Version: pl.Target.Version}, nil
 	}
+	// no automatic install from a list that may not know the newest releases (or that a
+	// release was withdrawn: the pre-run recheck reads only the target's own entry). Its age
+	// alone holds nothing: the list is read again first (a home that slept, or whose check is
+	// a day apart), and what it says now is planned anew
+	if catalogOld(s.Store.LoadState(ctx), s.now()) && s.rereadList(ctx) {
+		return s.tick(ctx)
+	}
 	if catalogStale(s.Store.LoadState(ctx), s.now(), s.checkEvery()) != "" {
-		// no automatic install from a list that may not know the newest releases (or that a
-		// release was withdrawn: the pre-run recheck reads only the target's own entry). Its
-		// age alone holds nothing: the list is read again first (a home that slept, or whose
-		// check is a day apart), and what it says now is planned anew
-		if s.rereadList(ctx) {
-			return s.tick(ctx)
-		}
 		s.staleHeld(ctx, pl.Target.Version)
 		return Decision{Action: "none", Reason: WaitCatalogStale, Version: pl.Target.Version}, nil
 	}
-	s.staleSince = time.Time{}
 	run, err := s.start(ctx, *pl.Target, pol, TriggerAuto, "")
 	if err != nil {
 		var w *withdrawnError
@@ -456,8 +463,8 @@ func (s *Service) rereadList(ctx context.Context) bool {
 		return false
 	}
 	s.staleChecked = s.now()
-	err := s.Discoverer.Reread(ctx, func(st State) bool { return catalogStale(st, s.now(), s.checkEvery()) != "" })
-	return err == nil && catalogStale(s.Store.LoadState(ctx), s.now(), s.checkEvery()) == ""
+	err := s.Discoverer.Reread(ctx, func(st State) bool { return catalogOld(st, s.now()) })
+	return err == nil && !catalogOld(s.Store.LoadState(ctx), s.now())
 }
 
 // staleHeld notes that version's automatic install waits for a fresh read of the list of

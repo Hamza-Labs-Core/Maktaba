@@ -134,7 +134,7 @@ A release installs by itself only when every one of these holds:
 - no other run is active, and no TV change is being swapped;
 - the list of releases was read in the last 12 hours and 30 minutes (two checks at the default
   cadence; two checks and 30 minutes at a slower `MAKTABA_UPDATE_INTERVAL_SEC`). One older than
-  that is read again first, so a home that slept, or started a minute ago, installs at once; only
+  12 hours and 30 minutes is read again first, at any cadence, so a home that slept, or started a minute ago, installs at once; only
   when that fails does the install wait (`catalog_stale` on Admin → Updates; tried again every 15
   minutes, and the admins notified once it lasts half an hour, or at once when the checks keep
   failing, once a day at most), because a stale list may not know the newest releases, nor that one

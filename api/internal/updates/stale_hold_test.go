@@ -157,35 +157,113 @@ func TestHeldWhileTheChecksKeepFailingIsSaidAtOnce(t *testing.T) {
 }
 
 // The cadence scales it: MAKTABA_UPDATE_INTERVAL_SEC=86400 (docs/updates.md), a home started
-// at noon: its list is 15 h old every night at 3, and it is not read again nor held. Two days
-// old it is read again. With the background checks off (0), what an admin's check found
-// installs.
+// at noon: its list is 15 h old every night at 3. It is read again, as at any cadence past half
+// a day (it may not know a release or a withdrawal since), but not held when it cannot be; two
+// days old it is held. With the background checks off (0) nothing is held: what an admin's
+// check found installs.
 func TestStaleHoldFollowsTheCadence(t *testing.T) {
 	t.Parallel()
 	day, off := 24*time.Hour, time.Duration(0)
 	for name, c := range map[string]struct {
 		every *time.Duration
 		ago   time.Duration
-		// the list is read again before the install
-		reread bool
+		// the list is read again before the install; held when it cannot be
+		reread, held bool
 	}{
-		"a day's cadence, 15 h":   {&day, 15 * time.Hour, false},
-		"a day's cadence, 2 days": {&day, 49 * time.Hour, true},
-		"no background checks":    {&off, 60 * day, false},
-		"the default, 11 h":       {nil, 11 * time.Hour, false},
-		"the default, 13 h":       {nil, 13 * time.Hour, true},
+		"a day's cadence, 11 h":   {&day, 11 * time.Hour, false, false},
+		"a day's cadence, 15 h":   {&day, 15 * time.Hour, true, false},
+		"a day's cadence, 39 h":   {&day, 39 * time.Hour, true, false},
+		"a day's cadence, 2 days": {&day, 49 * time.Hour, true, true},
+		"no background checks":    {&off, 60 * day, true, false},
+		"the default, 11 h":       {nil, 11 * time.Hour, false, false},
+		"the default, 13 h":       {nil, 13 * time.Hour, true, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := newStaleRig(t, c.ago)
 			r.svc.CheckEvery = c.every
-			d, err := r.svc.Tick(context.Background())
-			if err != nil || d.Action != "started" {
-				t.Fatalf("%+v %v", d, err)
+			r.state(func(st *State) { st.Failures, st.LastCheckErr = 1, "HTTP 500" }) // the last check failed
+			r.g.add("v1.6.0", false, true, "newer\n")
+			want := "1.5.0"
+			if c.reread {
+				want = "1.6.0"
+			}
+			if d := r.tick(t); d.Action != "started" || d.Version != want {
+				t.Fatalf("%+v, want %s", d, want)
 			}
 			if asked := !r.svc.staleChecked.IsZero(); asked != c.reread {
 				t.Fatalf("read again %v, want %v", asked, c.reread)
 			}
+			// and when it cannot be read
+			r = newStaleRig(t, c.ago)
+			r.svc.CheckEvery = c.every
+			st := r.store.LoadState(context.Background())
+			r.svc.Discoverer.retryAfter = r.now.Add(time.Hour) // GitHub said to wait
+			d := r.tick(t)
+			if held := d.Reason == WaitCatalogStale; held != c.held || (!c.held && d.Action != "started") {
+				t.Fatalf("a list that cannot be read: %+v, want held %v", d, c.held)
+			}
+			if now := r.store.LoadState(context.Background()); now.Failures != st.Failures {
+				t.Fatalf("its read counted: %+v", now)
+			}
 		})
+	}
+}
+
+// A hold ends when the list is read, whatever the scheduler does then: one night's one tick of
+// it is no part of the next night's (the admins were told at once, with no line in the log).
+func TestAHoldEndsWhenTheListIsRead(t *testing.T) {
+	t.Parallel()
+	r := newStaleRig(t, 13*time.Hour)
+	r.down(true)
+	if d := r.tick(t); d.Reason != WaitCatalogStale || r.svc.staleSince.IsZero() {
+		t.Fatalf("held: %+v", d)
+	}
+	// the day's checks are fine, outside the window
+	r.down(false)
+	r.now = r.now.Add(8 * time.Hour)
+	r.state(func(st *State) { at := r.now; st.LastCheckOK, st.LastCheckErr = &at, "" })
+	_ = r.tick(t)
+	if !r.svc.staleSince.IsZero() {
+		t.Fatal("still held though the list was read")
+	}
+	// the next night: one read fails
+	r.now = r.now.Add(16 * time.Hour)
+	r.down(true)
+	if d := r.tick(t); d.Reason != WaitCatalogStale {
+		t.Fatalf("the next night: %+v", d)
+	}
+	r.held(t, false, "one failed read")
+}
+
+// A read again noted at a time still to come (the clock was ahead) does not put the next one off.
+func TestARereadNotedInTheFutureIsAskedAgain(t *testing.T) {
+	t.Parallel()
+	r := newStaleRig(t, 13*time.Hour)
+	r.svc.staleChecked = r.now.Add(24 * time.Hour)
+	if d := r.tick(t); d.Action != "started" {
+		t.Fatalf("%+v", d)
+	}
+}
+
+// Checks run one at a time: the read again waits for the one that runs.
+func TestChecksRunOneAtATime(t *testing.T) {
+	t.Parallel()
+	r := newStaleRig(t, 13*time.Hour)
+	d := r.svc.Discoverer
+	d.checking.Lock()
+	done := make(chan error, 2)
+	go func() { _, err := d.Check(context.Background()); done <- err }()
+	go func() { done <- d.Reread(context.Background(), func(State) bool { return true }) }()
+	select {
+	case <-done:
+		t.Fatal("a check ran beside another")
+	case <-time.After(100 * time.Millisecond):
+	}
+	d.checking.Unlock()
+	for range 2 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
