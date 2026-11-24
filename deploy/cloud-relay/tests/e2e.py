@@ -128,8 +128,14 @@ def wait(what: str, probe: Callable[[], Any], seconds: float, every: float = 5) 
 
 # --- HTTP ---------------------------------------------------------------------------------
 
-CTX = ssl.create_default_context(cafile=CA_FILE or None)
-CTX.minimum_version = ssl.TLSVersion.TLSv1_2
+def tls_context() -> ssl.SSLContext:
+    """The public CAs (or the node's own, CA_FILE), TLS 1.2 or newer."""
+    ctx = ssl.create_default_context(cafile=CA_FILE or None)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    return ctx
+
+
+CTX = tls_context()
 
 
 def http(method: str, url: str, body: Any = None, token: str = "", raw: bool = False,
@@ -194,7 +200,7 @@ def pin_hosts() -> None:
 
 def tls_one(host: str) -> str:
     with socket.create_connection((host, 443), timeout=15) as s:
-        with CTX.wrap_socket(s, server_hostname=host) as t:
+        with tls_context().wrap_socket(s, server_hostname=host) as t:
             c = t.getpeercert()
     issuer = dict(x[0] for x in c["issuer"]).get("organizationName") or dict(x[0] for x in c["issuer"]).get("commonName")
     days = int((ssl.cert_time_to_seconds(c["notAfter"]) - time.time()) / 86400)
