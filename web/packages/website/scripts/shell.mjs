@@ -256,7 +256,6 @@ export const T = {
         [
           ["Privacy", "/legal/privacy/"],
           ["Terms", "/legal/terms/"],
-          ["Copyright", "/legal/copyright/"],
         ],
       ],
       [
@@ -304,7 +303,6 @@ export const T = {
         [
           ["الخصوصية", "/legal/privacy/"],
           ["شروط الاستخدام", "/legal/terms/"],
-          ["حقوق النشر", "/legal/copyright/"],
         ],
       ],
       [
@@ -353,7 +351,6 @@ export const T_B = {
         [
           ["Privacy", "/legal/privacy/"],
           ["Terms", "/legal/terms/"],
-          ["Copyright", "/legal/copyright/"],
         ],
       ],
       [
@@ -391,7 +388,6 @@ export const T_B = {
         [
           ["الخصوصية", "/legal/privacy/"],
           ["شروط الاستخدام", "/legal/terms/"],
-          ["حقوق النشر", "/legal/copyright/"],
         ],
       ],
       [

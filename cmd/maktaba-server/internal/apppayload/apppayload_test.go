@@ -162,8 +162,7 @@ func TestDatabaseWithholdsAnUnconfirmedDump(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(dir, "state"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			in := Database{Version: "v0.3.0", State: state, Dump: "/b/d.dump", Confirmed: confirmed,
-				Before: &Database{Version: "v0.3.0", State: DatabaseMigrated, Dump: "/b/e.dump"}}
+			in := Database{Version: "v0.3.0", State: state, Dump: "/b/d.dump", Confirmed: confirmed}
 			if err := WriteDatabase(dir, in); err != nil {
 				t.Fatal(err)
 			}
@@ -179,7 +178,7 @@ func TestDatabaseWithholdsAnUnconfirmedDump(t *testing.T) {
 				t.Errorf("%s confirmed %v: dump named %v\n%s", state, confirmed, named, raw)
 			}
 			got, ok, err := ReadDatabase(dir)
-			if err != nil || !ok || got.Dump != "/b/d.dump" || got.Unconfirmed != "" || got.Before == nil || got.Before.Dump != "/b/e.dump" {
+			if err != nil || !ok || got.Dump != "/b/d.dump" || got.Unconfirmed != "" {
 				t.Errorf("%s confirmed %v: read %+v %v", state, confirmed, got, err)
 			}
 		}

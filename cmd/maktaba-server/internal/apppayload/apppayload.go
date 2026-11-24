@@ -138,12 +138,6 @@ type Database struct {
 	// then the release whose database is replaced and From the one the dump is put back
 	// for.
 	By string `json:"by,omitempty"`
-	// Before is the record that restore replaced, and RestoreError why its last try failed
-	// ("": not tried, or under way): a restore that cannot finish (its dump lost, a disk
-	// full) is tried again at the next start, given up for another backup, abandoned (the
-	// record is Before again), or left behind by a newer release a person installs.
-	Before       *Database `json:"before,omitempty"`
-	RestoreError string    `json:"restore_error,omitempty"`
 	// KeptFor is the older release a rollback left this database for with nothing put
 	// back (layout.MarkRecordKept): Version's migrations were all rollback-safe, so KeptFor
 	// starts on the newer schema (its api told it may: MAKTABA_SCHEMA_AHEAD_OK), and
@@ -302,10 +296,6 @@ func (d Database) named() Database {
 		d.Dump = d.Unconfirmed
 	}
 	d.Unconfirmed = ""
-	if d.Before != nil {
-		b := d.Before.named()
-		d.Before = &b
-	}
 	return d
 }
 
@@ -314,10 +304,6 @@ func (d Database) named() Database {
 func (d Database) withheld() Database {
 	if !d.Confirmed && d.Dump != "" && (d.State == DatabaseMigrating || d.State == DatabaseMigrated) {
 		d.Unconfirmed, d.Dump = d.Dump, ""
-	}
-	if d.Before != nil {
-		b := d.Before.withheld()
-		d.Before = &b
 	}
 	return d
 }

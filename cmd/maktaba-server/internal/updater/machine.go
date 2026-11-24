@@ -1124,10 +1124,6 @@ func (m *Machine) Resume() {
 		_ = m.endStep(StepRollback, "done", "")
 		_ = m.mutate(func(j *Journal) { j.State, j.Step = StateRolledBack, "" })
 		m.logf("rolled back to %s (%s)", orNone(running), j.Reason)
-	case StateCommitted:
-		if newRel {
-			m.confirmRecord(j) // a commit cut short before it
-		}
 	}
 }
 
@@ -1397,8 +1393,9 @@ type ConfirmRecords interface {
 	Confirm(version string) error
 }
 
-// confirmRecord tells the database's record that j's release is kept. Best effort: a record
-// that still withholds its backup says it to the releases that know where.
+// confirmRecord tells the database's record that j's release is kept, at the commit. Best
+// effort: the server does it too once the release runs healthy (serve's confirmRecord), a
+// commit cut short included.
 func (m *Machine) confirmRecord(j *Journal) {
 	c, ok := m.Records.(ConfirmRecords)
 	if !ok || j == nil || !j.Job.Home {

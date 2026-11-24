@@ -977,6 +977,23 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 	if _, err := os.Stat(filepath.Join(homeDir, "data", "backups", "pre-0.9.0-to-0.9.1.dump")); err != nil {
 		t.Fatalf("no pre-update dump: %v", err)
 	}
+	// a good update ends with a record every release reads: its backup named, nothing withheld
+	confirmBy := time.Now().Add(2 * time.Minute)
+	for {
+		var rec map[string]any
+		if recs, _ := filepath.Glob(filepath.Join(homeDir, "data", "state", "database*.json")); len(recs) > 0 {
+			raw, _ := os.ReadFile(recs[0])
+			_ = json.Unmarshal(raw, &rec)
+		}
+		dump, _ := rec["dump"].(string)
+		if _, withheld := rec["dump_unconfirmed"]; !withheld && filepath.Base(dump) == "pre-0.9.0-to-0.9.1.dump" {
+			break
+		}
+		if time.Now().After(confirmBy) {
+			t.Fatalf("the record after a good update: %v", rec)
+		}
+		time.Sleep(time.Second)
+	}
 	// the node's copy waited for the node's update, then copied the migrated home anew
 	copyFollows("the node's copy following the migrated home", int64(nextRev), time.Time{})
 

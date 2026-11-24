@@ -72,32 +72,24 @@ Each difference between the built pages and their mockups, fixed in the pull req
 
 ### The images: legal
 
-| Width      | Language | Built (reference)                                                                               | Mockup                                                               |
-| ---------- | -------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 360        | en       | [`legal-privacy-360-en.png`](../e2e/__screenshots__/legal-privacy-360-en.png)                   | [`legal-p3.en.360.dark.png`](mockups/png/legal-p3.en.360.dark.png)   |
-| 360        | ar       | [`legal-privacy-360-ar.png`](../e2e/__screenshots__/legal-privacy-360-ar.png)                   | [`legal-p3.ar.360.dark.png`](mockups/png/legal-p3.ar.360.dark.png)   |
-| 768        | en       | [`legal-privacy-768-en.png`](../e2e/__screenshots__/legal-privacy-768-en.png)                   | [`legal-p3.en.768.dark.png`](mockups/png/legal-p3.en.768.dark.png)   |
-| 768        | ar       | [`legal-privacy-768-ar.png`](../e2e/__screenshots__/legal-privacy-768-ar.png)                   | [`legal-p3.ar.768.dark.png`](mockups/png/legal-p3.ar.768.dark.png)   |
-| 1280       | en       | [`legal-privacy-1280-en.png`](../e2e/__screenshots__/legal-privacy-1280-en.png)                 | [`legal-p3.en.1280.dark.png`](mockups/png/legal-p3.en.1280.dark.png) |
-| 1280       | ar       | [`legal-privacy-1280-ar.png`](../e2e/__screenshots__/legal-privacy-1280-ar.png)                 | [`legal-p3.ar.1280.dark.png`](mockups/png/legal-p3.ar.1280.dark.png) |
-| 1280 light | en       | [`legal-privacy-1280-en-light.png`](../e2e/__screenshots__/legal-privacy-1280-en-light.png)     | none (the part B mockup is dark only)                                |
-| 1280 light | ar       | [`legal-privacy-1280-ar-light.png`](../e2e/__screenshots__/legal-privacy-1280-ar-light.png)     | none (the part B mockup is dark only)                                |
-| 360        | en       | [`legal-terms-360-en.png`](../e2e/__screenshots__/legal-terms-360-en.png)                       | [`legal-p3.en.360.dark.png`](mockups/png/legal-p3.en.360.dark.png)   |
-| 360        | ar       | [`legal-terms-360-ar.png`](../e2e/__screenshots__/legal-terms-360-ar.png)                       | [`legal-p3.ar.360.dark.png`](mockups/png/legal-p3.ar.360.dark.png)   |
-| 768        | en       | [`legal-terms-768-en.png`](../e2e/__screenshots__/legal-terms-768-en.png)                       | [`legal-p3.en.768.dark.png`](mockups/png/legal-p3.en.768.dark.png)   |
-| 768        | ar       | [`legal-terms-768-ar.png`](../e2e/__screenshots__/legal-terms-768-ar.png)                       | [`legal-p3.ar.768.dark.png`](mockups/png/legal-p3.ar.768.dark.png)   |
-| 1280       | en       | [`legal-terms-1280-en.png`](../e2e/__screenshots__/legal-terms-1280-en.png)                     | [`legal-p3.en.1280.dark.png`](mockups/png/legal-p3.en.1280.dark.png) |
-| 1280       | ar       | [`legal-terms-1280-ar.png`](../e2e/__screenshots__/legal-terms-1280-ar.png)                     | [`legal-p3.ar.1280.dark.png`](mockups/png/legal-p3.ar.1280.dark.png) |
-| 1280 light | en       | [`legal-terms-1280-en-light.png`](../e2e/__screenshots__/legal-terms-1280-en-light.png)         | none (the part B mockup is dark only)                                |
-| 1280 light | ar       | [`legal-terms-1280-ar-light.png`](../e2e/__screenshots__/legal-terms-1280-ar-light.png)         | none (the part B mockup is dark only)                                |
-| 360        | en       | [`legal-copyright-360-en.png`](../e2e/__screenshots__/legal-copyright-360-en.png)               | [`legal-p3.en.360.dark.png`](mockups/png/legal-p3.en.360.dark.png)   |
-| 360        | ar       | [`legal-copyright-360-ar.png`](../e2e/__screenshots__/legal-copyright-360-ar.png)               | [`legal-p3.ar.360.dark.png`](mockups/png/legal-p3.ar.360.dark.png)   |
-| 768        | en       | [`legal-copyright-768-en.png`](../e2e/__screenshots__/legal-copyright-768-en.png)               | [`legal-p3.en.768.dark.png`](mockups/png/legal-p3.en.768.dark.png)   |
-| 768        | ar       | [`legal-copyright-768-ar.png`](../e2e/__screenshots__/legal-copyright-768-ar.png)               | [`legal-p3.ar.768.dark.png`](mockups/png/legal-p3.ar.768.dark.png)   |
-| 1280       | en       | [`legal-copyright-1280-en.png`](../e2e/__screenshots__/legal-copyright-1280-en.png)             | [`legal-p3.en.1280.dark.png`](mockups/png/legal-p3.en.1280.dark.png) |
-| 1280       | ar       | [`legal-copyright-1280-ar.png`](../e2e/__screenshots__/legal-copyright-1280-ar.png)             | [`legal-p3.ar.1280.dark.png`](mockups/png/legal-p3.ar.1280.dark.png) |
-| 1280 light | en       | [`legal-copyright-1280-en-light.png`](../e2e/__screenshots__/legal-copyright-1280-en-light.png) | none (the part B mockup is dark only)                                |
-| 1280 light | ar       | [`legal-copyright-1280-ar-light.png`](../e2e/__screenshots__/legal-copyright-1280-ar-light.png) | none (the part B mockup is dark only)                                |
+| Width      | Language | Built (reference)                                                                           | Mockup                                                               |
+| ---------- | -------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| 360        | en       | [`legal-privacy-360-en.png`](../e2e/__screenshots__/legal-privacy-360-en.png)               | [`legal-p3.en.360.dark.png`](mockups/png/legal-p3.en.360.dark.png)   |
+| 360        | ar       | [`legal-privacy-360-ar.png`](../e2e/__screenshots__/legal-privacy-360-ar.png)               | [`legal-p3.ar.360.dark.png`](mockups/png/legal-p3.ar.360.dark.png)   |
+| 768        | en       | [`legal-privacy-768-en.png`](../e2e/__screenshots__/legal-privacy-768-en.png)               | [`legal-p3.en.768.dark.png`](mockups/png/legal-p3.en.768.dark.png)   |
+| 768        | ar       | [`legal-privacy-768-ar.png`](../e2e/__screenshots__/legal-privacy-768-ar.png)               | [`legal-p3.ar.768.dark.png`](mockups/png/legal-p3.ar.768.dark.png)   |
+| 1280       | en       | [`legal-privacy-1280-en.png`](../e2e/__screenshots__/legal-privacy-1280-en.png)             | [`legal-p3.en.1280.dark.png`](mockups/png/legal-p3.en.1280.dark.png) |
+| 1280       | ar       | [`legal-privacy-1280-ar.png`](../e2e/__screenshots__/legal-privacy-1280-ar.png)             | [`legal-p3.ar.1280.dark.png`](mockups/png/legal-p3.ar.1280.dark.png) |
+| 1280 light | en       | [`legal-privacy-1280-en-light.png`](../e2e/__screenshots__/legal-privacy-1280-en-light.png) | none (the part B mockup is dark only)                                |
+| 1280 light | ar       | [`legal-privacy-1280-ar-light.png`](../e2e/__screenshots__/legal-privacy-1280-ar-light.png) | none (the part B mockup is dark only)                                |
+| 360        | en       | [`legal-terms-360-en.png`](../e2e/__screenshots__/legal-terms-360-en.png)                   | [`legal-p3.en.360.dark.png`](mockups/png/legal-p3.en.360.dark.png)   |
+| 360        | ar       | [`legal-terms-360-ar.png`](../e2e/__screenshots__/legal-terms-360-ar.png)                   | [`legal-p3.ar.360.dark.png`](mockups/png/legal-p3.ar.360.dark.png)   |
+| 768        | en       | [`legal-terms-768-en.png`](../e2e/__screenshots__/legal-terms-768-en.png)                   | [`legal-p3.en.768.dark.png`](mockups/png/legal-p3.en.768.dark.png)   |
+| 768        | ar       | [`legal-terms-768-ar.png`](../e2e/__screenshots__/legal-terms-768-ar.png)                   | [`legal-p3.ar.768.dark.png`](mockups/png/legal-p3.ar.768.dark.png)   |
+| 1280       | en       | [`legal-terms-1280-en.png`](../e2e/__screenshots__/legal-terms-1280-en.png)                 | [`legal-p3.en.1280.dark.png`](mockups/png/legal-p3.en.1280.dark.png) |
+| 1280       | ar       | [`legal-terms-1280-ar.png`](../e2e/__screenshots__/legal-terms-1280-ar.png)                 | [`legal-p3.ar.1280.dark.png`](mockups/png/legal-p3.ar.1280.dark.png) |
+| 1280 light | en       | [`legal-terms-1280-en-light.png`](../e2e/__screenshots__/legal-terms-1280-en-light.png)     | none (the part B mockup is dark only)                                |
+| 1280 light | ar       | [`legal-terms-1280-ar-light.png`](../e2e/__screenshots__/legal-terms-1280-ar-light.png)     | none (the part B mockup is dark only)                                |
 
 ### The images: the install chooser (no part B mockup)
 

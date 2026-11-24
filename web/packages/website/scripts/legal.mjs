@@ -1,5 +1,5 @@
-// maktaba.tv's legal pages (Epic 60 story 60.07): /legal/privacy/, /legal/terms/ and
-// /legal/copyright/, in English and Arabic.
+// maktaba.tv's legal pages (Epic 60 story 60.07): /legal/privacy/ and /legal/terms/, in
+// English and Arabic.
 //
 // The content is copy (copy/legal/<page>.<lang>.md, written in each language), and the build
 // turns it into a structured document ({ title, description, updated, summary, sections }),
@@ -23,8 +23,8 @@
 // A copy file: a front matter (title, description, updated, and the page's own keys), the
 // summary (the text before the first heading), then sections, each `## Heading {#id}`. The
 // text is a small Markdown: paragraphs, `-` and `1.` lists (one level of nesting), **bold**,
-// `code` and [links](url). A line `{{name}}` alone is a block the build fills in (the policy,
-// the notice form), and `{{name}}` in a sentence a value (the licence).
+// `code` and [links](url). A line `{{name}}` alone is a block the build fills in (the policy),
+// and `{{name}}` in a sentence a value (the licence).
 
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -32,7 +32,6 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { esc, GITHUB } from "./shell.mjs";
-import { renderNoticeForm, AGENT_EMAIL } from "../src/copyright-form.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PKG = path.resolve(HERE, "..");
@@ -40,7 +39,7 @@ const REPO = path.resolve(PKG, "../../..");
 export const COPY = path.join(PKG, "copy/legal");
 
 /** The legal pages, each in both languages, at /legal/<name>/ and /ar/legal/<name>/. */
-export const LEGAL = ["privacy", "terms", "copyright"];
+export const LEGAL = ["privacy", "terms"];
 
 const T = {
   en: {
@@ -291,10 +290,9 @@ export function renderPolicy(values, labels) {
  * A legal page's structured content in one language: what renderLegal draws.
  * @param {string} name
  * @param {"en" | "ar"} lang
- * @param {{ sources: any, notice?: { endpoint: string, sitekey: string } | null,
- *   noticeScript?: string, dir?: string }} opts
+ * @param {{ sources: any, dir?: string }} opts
  */
-export function legalDoc(name, lang, { sources, notice = null, noticeScript = "", dir = COPY }) {
+export function legalDoc(name, lang, { sources, dir = COPY }) {
   const copy = readCopy(name, lang, dir);
   const where = `copy/legal/${name}.${lang}.md`;
   const blocks = {};
@@ -318,8 +316,6 @@ export function legalDoc(name, lang, { sources, notice = null, noticeScript = ""
         `terms, the software section (#software): LICENSE is the ${licence}, and ${where} was written for ${copy.meta.licence ?? "no licence"}: update the page's copy`
       );
   }
-  if (name === "copyright")
-    blocks.form = notice ? renderNoticeForm(lang, notice, noticeScript) : "";
   const fill = (md) => (licence ? md.replaceAll("{{licence}}", licence) : md);
   return {
     name,
@@ -391,15 +387,12 @@ export function twinSections(en, ar) {
 /**
  * Every legal page in both languages, for the build: [{ name, lang, path, title,
  * description, body }].
- * @param {{ sources?: any, notice?: { endpoint: string, sitekey: string } | null,
- *   noticeScript?: string }} [opts]
+ * @param {{ sources?: any }} [opts]
  */
-export function legalPages({ sources = readSources(), notice = null, noticeScript = "" } = {}) {
+export function legalPages({ sources = readSources() } = {}) {
   const out = [];
   for (const name of LEGAL) {
-    const docs = ["en", "ar"].map((lang) =>
-      legalDoc(name, lang, { sources, notice, noticeScript })
-    );
+    const docs = ["en", "ar"].map((lang) => legalDoc(name, lang, { sources }));
     twinSections(docs[0], docs[1]);
     for (const d of docs)
       out.push({
@@ -414,4 +407,4 @@ export function legalPages({ sources = readSources(), notice = null, noticeScrip
   return out;
 }
 
-export { AGENT_EMAIL, GITHUB };
+export { GITHUB };

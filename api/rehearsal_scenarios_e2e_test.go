@@ -335,6 +335,7 @@ func TestUpdateRehearsal01NormalUpdate(t *testing.T) {
 	if rec.State != "migrated" || rec.Version != k.cur {
 		t.Errorf("the database's record is %+v, want migrated for %s", rec, k.cur)
 	}
+	home.recordConfirmed(k.cur)
 	if !rehearsalTableExists(t, db, "rehearsal_probe") {
 		t.Error("the update's migration did not run (no rehearsal_probe)")
 	}
@@ -461,8 +462,10 @@ func TestUpdateRehearsal03bRollbackDownScripts(t *testing.T) {
 	r := newRehearsal(t)
 	k := r.kit
 	home, _ := r.homeOnPrev(profile("restore"))
+	home.env = append(home.env, "MAKTABA_CONFIRM_AFTER=20s")
 	home.installByHand(k.curSpec())
 	home.waitServing(k.cur, 10*time.Minute)
+	home.recordConfirmed(k.cur) // an app installed by hand: no update run's watch confirms it
 	db := home.superDB("maktaba")
 	before := seedCounts(t, db)
 	run, mon, states := r.update(home, k.nextConstraintFailing(), 25*time.Minute)

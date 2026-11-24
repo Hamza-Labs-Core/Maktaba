@@ -31,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/recovery"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
@@ -590,7 +591,17 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
-	confirmPending(ctx, sup, releaseDir, apppayload.DatabasePath(cfg.StateDir()))
+	confirmPending(ctx, sup, releaseDir)
+	if ver := runningRelease(bundle, releaseDir); ver != "" {
+		root := os.Getenv(envLauncherRoot)
+		go confirmRecord(ctx, sup, apppayload.DatabasePath(cfg.StateDir()), ver, func() bool {
+			var run *updater.Journal
+			if u := upd.Load(); u != nil && u.m != nil {
+				run = u.m.Status().Journal
+			}
+			return releaseTried(root, releaseDir, ver, run)
+		})
+	}
 	if bundle != "" {
 		go confirmAppPayload(ctx, sup, cfg.StateDir(), bundle)
 		go finishMove(ctx, sup, cfg)
