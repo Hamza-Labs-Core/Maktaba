@@ -119,6 +119,8 @@ on:
       - 'api/rehearsal_*_e2e_test.go'
       - 'api/autoupdate_*e2e_test.go'
       - 'api/twomachine_e2e_test.go'
+      # the recorded release list scenario 20 serves at its real size
+      - 'tests/fixtures/github-releases/**'
       - 'tools/rehearsal/**'
       - 'tools/release/linux-app/pins.env'
       - '.github/workflows/update-rehearsal.yml'
@@ -583,6 +585,10 @@ jobs:
           # behind a machine's copy holding a snapshot (its table sync), and a machine's
           # session that comes straight back; the backup taken while the previous release serves
           - { id: '19', name: a CREATE INDEX CONCURRENTLY migration behind a machine's copy, test: TestUpdateRehearsal19ConcurrentIndexBehindACopy, profile: small }
+          # the incident of 2026-11-24: GitHub's release list grew past the cap a home read it to,
+          # and every check failed, only logged. The list at its real size and shape, then past
+          # its cap: the update found in it completes, and a failing check is reported
+          - { id: '20', name: GitHub's release list at its real size and shape (and over its cap), test: TestUpdateRehearsal20RealSizeReleaseList, profile: small }
           # the fault rehearsal (Epic 53 story 53.07, docs/fault-rehearsal.md): one part
           # killed at a time on a home of this commit; the tag guard requires these too
           - { id: 'F03', name: streaming crash (the status says so; it comes back), test: TestFaultRehearsalF03StreamingCrash, profile: small }

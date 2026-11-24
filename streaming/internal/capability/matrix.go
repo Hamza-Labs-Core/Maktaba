@@ -5,6 +5,7 @@
 package capability
 
 import (
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -145,6 +146,19 @@ func (r *Registry) Register(p *Profile) {
 	r.mu.Lock()
 	r.profiles[p.Name] = p
 	r.mu.Unlock()
+}
+
+// Names lists the registry's profiles, sorted: what a client may ask for by name (a player
+// asks the home before it asks for a profile an older home would read as "generic").
+func (r *Registry) Names() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]string, 0, len(r.profiles))
+	for n := range r.profiles {
+		out = append(out, n)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // Get returns the named profile, or the generic fallback when unknown.
@@ -324,6 +338,22 @@ func defaultProfiles() []*Profile {
 			MaxHeight:        1080,
 			MaxBitrateKbps:   20000,
 			MaxAudioChannels: 2,
+			SupportsHLS:      true,
+		},
+		// The desktop player on libmpv (Epic 13 story 13.18): FFmpeg's decoders in software
+		// where the machine has no hardware for a codec, so it plays the home's files as they
+		// are. mpv tone-maps HDR10 and HLG to an SDR screen and folds 5.1 and 7.1 down to the
+		// speakers it has. A Player on a home without this profile asks for desktop-player.
+		// ("mpegts" is ffprobe's name for a TS file: mpv plays one as it is, as JavaFX could not.)
+		{
+			Name:             "desktop-mpv",
+			Containers:       []string{"mkv", "webm", "mp4", "mov", "ts", "mpegts", "m3u8"},
+			VideoCodecs:      []string{"h264", "hevc", "vp9", "av1", "mpeg2video"},
+			AudioCodecs:      []string{"aac", "ac3", "eac3", "dts", "flac", "opus", "vorbis", "mp3"},
+			HDR:              []string{"sdr", "hdr10", "hlg"},
+			MaxHeight:        2160,
+			MaxBitrateKbps:   80000,
+			MaxAudioChannels: 8,
 			SupportsHLS:      true,
 		},
 		{

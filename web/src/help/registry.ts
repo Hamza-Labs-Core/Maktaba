@@ -271,6 +271,7 @@ export const SYSTEM_HEALTH_KINDS = [
   "components",
   "plugin_runners",
   "host_load",
+  "update_check",
 ] as const;
 
 export function systemHealthHelp(kind: string): HelpRef {

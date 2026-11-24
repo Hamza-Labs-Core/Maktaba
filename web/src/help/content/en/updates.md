@@ -99,6 +99,7 @@ Admins open [Admin → Updates](/admin/updates). It shows, in this order:
 - **Release … was withdrawn (…) and will not be installed**: the release was pulled after it came out.
 - **Release … was re-published with other files and was refused**: see below.
 - **No successful update check for … days**: see below.
+- **Can't check for updates: … checks in a row failed**: see [Can't check for updates](/help/updates#check-failing).
 - **The update to … could not start (…)**: see below.
 - **… is installed, but the TV stays on …: its check failed**: see [The TV stayed on the previous version](/help/updates#tv-held).
 
@@ -139,6 +140,13 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 - **What it means:** A version you already have was published again with different files. Maktaba refuses it for safety.
 - **Does Maktaba fix it itself?** Yes: it keeps what you have.
 - **What you can do:** Nothing. Wait for the next release.
+
+### Can't check for updates since … {#check-failing}
+
+- **What it means:** two or more checks in a row (6 hours apart) could not read the list of releases on GitHub. The Updates page and [System health](/admin/health) say since when and why. Until a check works the server does not see new releases: it can only update to a release it already knew, which may be older than the newest one.
+- **The reasons:** **GitHub's list of releases is larger than Maktaba reads** (the list grew past what this version accepts: install the newest release by hand from the release page, or wait for the fix to reach you); **GitHub asked Maktaba to wait** (too many requests from your network: it clears by itself); **GitHub answered with an error**; **GitHub's answer could not be read**; **GitHub could not be reached** (check the server's internet access).
+- **Does Maktaba fix it itself?** It keeps checking every 6 hours, and the notice clears at the first check that works.
+- **What you can do:** Press **Check now** to try again at once. If the reason is that the list is too large, see the release page on GitHub for the newest version.
 
 ### No successful update check for 14 days {#check-stale}
 
