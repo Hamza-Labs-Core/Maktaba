@@ -4,7 +4,7 @@ Story [35.17](story-35-17-separate-updater.md). Status: **proposed, for approval
 Nothing here is built.
 
 Sources:
-- [`docs/research/update-process.md`](../../../docs/research/update-process.md) (#1601) §6. Its issue
+- `docs/research/update-process.md` (#1601) §6. Its issue
   IDs (A1, P3, E8, …) are used below.
 - [design.md](design.md) §5.3 step 9 and §5.6: the update as Epic 35 first designed it, with the
   old release migrating before the switch and a rollback of binaries only.
