@@ -45,6 +45,7 @@ mod redact;
 mod run_entry;
 mod setup;
 mod shell;
+mod shelldialog;
 mod status;
 mod tray;
 mod traypanel;
@@ -297,6 +298,7 @@ pub fn run() {
             traypanel::tray_panel_state,
             traypanel::tray_panel_choose,
             traypanel::tray_panel_hide,
+            shelldialog::shell_dialog_choose,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

@@ -39,6 +39,9 @@ const COMMANDS: &[&str] = &[
     "tray_panel_state",
     "tray_panel_choose",
     "tray_panel_hide",
+    // Epic 13 story 13.11: Maktaba's own dialog for the shell's errors (shelldialog.rs), granted
+    // to its own window only (capabilities/shell-dialog.json)
+    "shell_dialog_choose",
 ];
 
 fn main() {

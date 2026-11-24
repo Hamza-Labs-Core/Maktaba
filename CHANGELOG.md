@@ -14,6 +14,12 @@ build fails when the two differ.
 
 ### Changed
 
+- **Maktaba's own dialog for the app's errors.** When the Maktaba app reports a problem (the
+  server could not start, an update failed, a page could not open), it says so in its own
+  window instead of the system's message box: what happened, the programs' own error as it is,
+  a way to the logs when this computer runs the server, and Close (Enter or Escape). The
+  system's box stays only for a computer that cannot show it. In English and Arabic.
+
 - **The tray's panel.** On Windows and the Mac a click on the tray or menu-bar icon opens a small
   panel beside it: the server's status with its colour, what it waits on (the language model's
   download, a release the home ordered), the update when one waits for a restart, the tray's

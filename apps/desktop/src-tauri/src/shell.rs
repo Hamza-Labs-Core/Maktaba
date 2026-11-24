@@ -425,7 +425,7 @@ fn bundled_url(app: &AppHandle) -> String {
 }
 
 /// An error dialog in the tray's language: `sentence`, then the programs' own
-/// errors as they are (lang::error_message).
+/// errors as they are (lang::error_message), in Maktaba's own dialog (shelldialog.rs).
 fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
     // the dialog goes once it is closed: app.log keeps what it said
     applog::error(
@@ -433,11 +433,18 @@ fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
         lang::error_message(sentence, errors).replace("\n\n", ": "),
     );
     let lang = shell(app).lang;
-    app.dialog()
-        .message(lang::error_message(sentence, errors))
-        .title(lang.words().brand)
-        .kind(MessageDialogKind::Error)
-        .show(|_| {});
+    // story 13.11: Maktaba's own dialog; the system's message box only when it cannot open
+    let logs = crate::traypanel::choosable(&tray_entries(app), "open-logs");
+    let content = crate::shelldialog::DialogContent::new(lang, sentence, errors, logs);
+    let (handle, message) = (app.clone(), lang::error_message(sentence, errors));
+    crate::shelldialog::show(app, content, move || {
+        handle
+            .dialog()
+            .message(message)
+            .title(lang.words().brand)
+            .kind(MessageDialogKind::Error)
+            .show(|_| {});
+    });
 }
 
 /// The record of this app's update attempts (attempts.rs: app-attempts.json beside the

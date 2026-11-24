@@ -1316,6 +1316,10 @@ export const APPS = [
                 "يشغّل الخادم كله على هذا الحاسوب: قاعدة البيانات وخط المعالجة والبث. ويبدأ حين تسجّل الدخول إلى حاسوبك، ويستمر في العمل بعد إغلاق النافذة، ويعرض عنصر في شريط القوائم أو في منطقة الإشعارات حالته."
               ),
               t(
+                "**Its own dialog for errors**: when the app reports a problem (the server could not start, an update failed, a page could not open) it says so in its own window: what happened, the programs' own error as it is, a way to the logs when this computer runs the server, and Close. The system's message box is left only for a computer that cannot show it.",
+                "**نافذة خاصة للأخطاء**: حين يُبلغ التطبيق عن مشكلة (تعذّر تشغيل الخادم، أو فشل تحديث، أو تعذّر فتح صفحة) يقولها في نافذته الخاصة: ما حدث، وخطأ البرامج كما هو، وطريقًا إلى السجلات حين يشغّل هذا الحاسوب الخادم، وزر «إغلاق». ولا يبقى مربع رسائل النظام إلا لحاسوب لا يستطيع عرضها."
+              ),
+              t(
                 "**The tray's panel**: on Windows and the Mac a click on the tray or menu-bar icon opens a small panel beside it: how the server is doing, with its colour, what it waits on (the language model's download, a release the home ordered), the update when one waits for a restart, the tray's actions, and the two ways to quit. It says what the tray menu says, in the system's language; a right click still opens the menu itself, and the arrow keys and Escape work in the panel. On Linux the desktop draws the tray menu.",
                 "**لوحة منطقة الإشعارات**: على ويندوز والماك يفتح النقر على أيقونة منطقة الإشعارات أو شريط القوائم لوحة صغيرة بجانبها: حال الخادم ولونها، وما ينتظره (تنزيل النموذج اللغوي، أو إصدار طلبه الجهاز الرئيسي)، والتحديث حين ينتظر إعادة التشغيل، وإجراءات منطقة الإشعارات، وطريقتا الخروج. وتقول اللوحة ما تقوله القائمة، بلغة النظام؛ ويبقى النقر بالزر الأيمن يفتح القائمة نفسها، وتعمل الأسهم وزر Escape داخل اللوحة. أما على لينكس فيرسم سطح المكتب القائمة."
               ),

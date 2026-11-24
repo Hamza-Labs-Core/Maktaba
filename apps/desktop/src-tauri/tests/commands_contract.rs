@@ -95,6 +95,23 @@ fn every_app_permission_a_capability_grants_is_a_declared_command() {
 }
 
 #[test]
+fn maktaba_s_dialog_may_close_itself_open_the_logs_and_be_dragged_nothing_else() {
+    let cap = capability("shell-dialog.json");
+    assert_eq!(cap["windows"], serde_json::json!(["shell-dialog"]));
+    assert!(cap.get("remote").is_none(), "the app's own pages only");
+    let want: BTreeSet<String> = [
+        "core:event:allow-listen",
+        "core:event:allow-unlisten",
+        "core:window:allow-start-dragging",
+        "allow-shell-dialog-choose",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    assert_eq!(permissions(&cap), want);
+}
+
+#[test]
 fn the_tray_panel_may_call_its_own_commands_and_nothing_else() {
     let cap = capability("tray-panel.json");
     assert_eq!(cap["windows"], serde_json::json!(["tray-panel"]));
@@ -110,19 +127,22 @@ fn the_tray_panel_may_call_its_own_commands_and_nothing_else() {
     .map(String::from)
     .collect();
     assert_eq!(permissions(&cap), want);
-    // and no other capability gives its window anything, by name or by a pattern
-    for name in capabilities()
-        .into_iter()
-        .filter(|n| n != "tray-panel.json")
-    {
+    // and no other capability gives the panel's or the dialog's window anything, by name or by
+    // a pattern: each is named by its own capability only
+    for name in capabilities() {
         let windows = capability(&name)["windows"].clone();
-        let list = windows.as_array().expect("windows");
-        for w in list {
+        for w in windows.as_array().expect("windows") {
             let w = w.as_str().unwrap_or_default();
-            assert!(
-                w != "tray-panel" && !w.contains('*'),
-                "{name} gives the window {w:?} its permissions"
-            );
+            assert!(!w.contains('*'), "{name} names windows by a pattern: {w:?}");
+            for (own, file) in [
+                ("tray-panel", "tray-panel.json"),
+                ("shell-dialog", "shell-dialog.json"),
+            ] {
+                assert!(
+                    w != own || name == file,
+                    "{name} gives the window {w:?} its permissions"
+                );
+            }
         }
     }
 }
