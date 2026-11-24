@@ -1,0 +1,26 @@
+StaticText: UI Tester‏، 127.0.0.1
+Heading: مكتبتك
+Button: سجل المشاهدة
+Button: المفضلة
+Button: قوائم التشغيل
+Heading: الحساب
+Button: الجلسات
+Button: Approve a TV or device
+Button: تبديل «الجهاز الرئيسي»
+Button: تسجيل الخروج
+Heading: إعدادات هذا الجهاز
+StaticText: المظهر
+RadioButton: Dark | 1
+RadioButton: Light | 0
+RadioButton: System | 0
+StaticText: اللغة
+RadioButton: English | 0
+RadioButton: العربية | 0
+RadioButton: System | 1
+Button: التشغيل
+Heading: المساعدة وحول التطبيق
+Button: المساعدة
+StaticText: مشغّل مكتبة ⁨0.1.0⁩ (البناء ⁨1⁩)‏، «الجهاز الرئيسي»: ⁨0.0.0⁩
+Button: التشخيص
+Button: Report a problem
+Button: My reports

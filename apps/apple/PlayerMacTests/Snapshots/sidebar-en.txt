@@ -1,0 +1,6 @@
+Outline: Sections
+Button: Home
+Button: Libraries
+Button: Live TV
+Button: Search
+Button: Profile
