@@ -157,6 +157,10 @@ type P35Deps struct {
 	Getenv func(string) string
 	// GitHubBaseURL overrides the GitHub API base (tests).
 	GitHubBaseURL string
+	// FeedURL overrides the release feed's base (tests: a fake's; "off": none); "" is
+	// updates.DefaultFeed. FeedDownloadBase is where a test's feed downloads from.
+	FeedURL          string
+	FeedDownloadBase string
 	// HTTPClient for GitHub and the supervisor (nil: defaults).
 	HTTPClient *http.Client
 	// Hub is the cluster channel, filled once mounted (nil: a run updates the home only).
@@ -211,6 +215,14 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 		svc.Discoverer = &updates.Discoverer{Store: store, Verifier: d.Verifier, Notifier: hub, Log: d.Logger,
 			HTTP: d.HTTPClient, BaseURL: d.GitHubBaseURL, Repo: getenv("MAKTABA_UPDATE_REPO"),
 			Token: getenv("MAKTABA_GITHUB_TOKEN"), Policy: svc.Policy, Current: d.Current}
+		// the release feed first (GitHub's list only when it cannot be reached)
+		feedURL := d.FeedURL
+		if feedURL == "" {
+			feedURL = updates.DefaultFeed(getenv("MAKTABA_UPDATE_REPO"), getenv)
+		}
+		if fv, ok := d.Verifier.(updates.FeedVerifier); ok && feedURL != "" && feedURL != "off" {
+			svc.Discoverer.Feed = &updates.FeedSource{URL: feedURL, DownloadBase: d.FeedDownloadBase, Verifier: fv}
+		}
 	}
 	sup := getenv("MAKTABA_SUPERVISOR_URL")
 	home := d.Home
@@ -243,6 +255,10 @@ func MountP35(r chi.Router, d P35Deps) *updates.Handler {
 		drv.TV = d.TV
 	}
 	svc.Starter = drv
+	if svc.Discoverer != nil && svc.Discoverer.Feed != nil {
+		// the feeds of every platform the cluster's machines run
+		svc.Discoverer.Feed.Platforms = drv.Platforms
+	}
 	// story 35.15: the update events in the hub's events file, the numbers on /metrics
 	drv.Events = func(fields map[string]any) {
 		if h := d.Hub.Get(); h != nil {
