@@ -148,6 +148,19 @@ class EngineTest {
         assertTrue(lines[2], lines[2].contains("\"msg\":\"playback: JavaFX, chosen in Profile\""))
     }
 
+    // story 13.20: playback's other lines (the home's subtitles not read) go in the same log
+    @Test
+    fun aNoteIsInTheProblemReportsLog() {
+        val e = engines(loaded)
+        e.note("subtitles: the home's list of v1 was not read: HTTP 500", Instant.parse("2026-11-24T10:00:00Z"))
+        val lines = e.logLines(Instant.parse("2026-11-24T10:01:00Z"))
+        assertEquals(2, lines.size)
+        assertTrue(lines[0], lines[0].contains("2026-11-24T10:00:00Z") && lines[0].contains("subtitles: the home's list of v1 was not read"))
+        // only the newest are kept
+        repeat(Engines.KEPT + 5) { e.note("line $it") }
+        assertEquals(Engines.KEPT + 1, e.logLines().size)
+    }
+
     @Test
     fun learnMoreOpensTheHomesHelpInThePlayersLanguage() {
         assertEquals("http://192.0.2.20:8088/help/desktop-player?lang=ar#video-engine", helpUrl("http://192.0.2.20:8088/", Lang.Ar, "video-engine"))
