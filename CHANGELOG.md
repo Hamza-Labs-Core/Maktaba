@@ -14,6 +14,10 @@ build fails when the two differ.
 
 ### Changed
 
+- **maktaba.dev's screenshots show no woman or girl.** The Fire TV, big screen, Roku and web
+  search screenshots on the Apps pages were retaken on test data with men's names only and on
+  the new demo library. In English and Arabic.
+
 - **One page to get Maktaba: maktaba.tv/download.** The download page now lists every setup
   guide under its download buttons: Synology, TrueNAS, Unraid, QNAP, UGREEN and ASUSTOR, Docker,
   after setup and troubleshooting, each with one line on what it covers. The NAS card's button
