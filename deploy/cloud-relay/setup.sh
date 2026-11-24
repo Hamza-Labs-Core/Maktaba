@@ -18,7 +18,14 @@
 #   5. installs a systemd unit that runs `docker compose up`
 #   6. caps container log growth (docker json-file rotation)
 #   7. configures UFW to allow only SSH + 80 + 443
-#   8. pulls images and brings the stack up
+#   8. installs the nightly database backup (maktaba-cloud-backup.timer)
+#   9. pulls images and brings the stack up (SETUP_START=no: only enables it at boot;
+#      the CI deploy starts it with deploy.sh)
+#
+# Settings a deploy hands in (.github/workflows/cloud-deploy.yml), written into .env when set
+# in this script's environment, never printed: RELAY_DOMAIN, API_DOMAIN, APP_DOMAIN,
+# ACME_EMAIL, RELAY_TLS, RELAY_PLANS_ENFORCE, MAKTABA_CLOUD_TAG, MAKTABA_CADDY_TAG and the
+# secret CF_API_TOKEN.
 set -euo pipefail
 
 DEPLOY_DIR=${DEPLOY_DIR:-/opt/maktaba-relay}
@@ -55,11 +62,16 @@ else
 	export DEBIAN_FRONTEND=noninteractive
 	apt-get update -y
 	apt-get install -y ca-certificates curl gnupg openssl ufw
-	# Official convenience script — pulls Engine, CLI, and the compose
-	# plugin from Docker's apt repo. Pinned behaviour for 22.04/24.04.
-	curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
-	sh /tmp/get-docker.sh
-	rm -f /tmp/get-docker.sh
+	# Ubuntu's own packages first: they follow the release's security updates
+	# (unattended-upgrades) and exist on a release Docker's repository has not reached yet
+	# (26.04 when the cloud's servers were set up). Docker's convenience script otherwise.
+	if apt-cache show docker-compose-v2 >/dev/null 2>&1; then
+		apt-get install -y docker.io docker-compose-v2
+	else
+		curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+		sh /tmp/get-docker.sh
+		rm -f /tmp/get-docker.sh
+	fi
 	systemctl enable --now docker
 fi
 # openssl/ufw may be needed even when docker was pre-installed.
@@ -82,8 +94,14 @@ usermod -aG docker "$SERVICE_USER"
 # ---------------------------------------------------------------------
 log "Staging stack in $DEPLOY_DIR ..."
 mkdir -p "$DEPLOY_DIR/secrets"
-install -m 0644 "$SRC_DIR/docker-compose.yml" "$DEPLOY_DIR/docker-compose.yml"
-install -m 0644 "$SRC_DIR/Caddyfile"          "$DEPLOY_DIR/Caddyfile"
+mkdir -p "$DEPLOY_DIR/web" "$DEPLOY_DIR/ops"
+install -m 0644 "$SRC_DIR/docker-compose.yml"  "$DEPLOY_DIR/docker-compose.yml"
+install -m 0644 "$SRC_DIR/Caddyfile"           "$DEPLOY_DIR/Caddyfile"
+install -m 0644 "$SRC_DIR/cloud.toml.template" "$DEPLOY_DIR/cloud.toml.template"
+install -m 0755 "$SRC_DIR/ops/cloud-ops.py"    "$DEPLOY_DIR/ops/cloud-ops.py"
+install -m 0755 "$SRC_DIR/ops/backup.sh"       "$DEPLOY_DIR/ops/backup.sh"
+# the cloud web app's page until a deploy stages its files
+[ -e "$DEPLOY_DIR/web/index.html" ] || printf '%s\n' '<!doctype html><title>Maktaba Cloud</title>' > "$DEPLOY_DIR/web/index.html"
 
 # .env: create from template on first run; never clobber an existing one.
 if [ ! -f "$DEPLOY_DIR/.env" ]; then
@@ -91,10 +109,6 @@ if [ ! -f "$DEPLOY_DIR/.env" ]; then
 	log "Created $DEPLOY_DIR/.env from template — EDIT RELAY_DOMAIN + ACME_EMAIL."
 fi
 
-# cloud.toml: the compose mounts it read-only. Create an empty file so
-# the bind mount doesn't materialise as a directory. Operators running
-# --role api replace it with a real config.
-[ -e "$DEPLOY_DIR/cloud.toml" ] || : > "$DEPLOY_DIR/cloud.toml"
 
 # ---------------------------------------------------------------------
 # 4. Generate secrets (only if unset / placeholder)
@@ -125,6 +139,21 @@ is_placeholder() {
 		*) return 1 ;;
 	esac
 }
+
+# The settings a deploy hands in (see the header): each one set in this script's environment
+# replaces its line in .env. CF_API_TOKEN is a secret: written, never echoed.
+for k in RELAY_DOMAIN API_DOMAIN APP_DOMAIN ACME_EMAIL RELAY_TLS RELAY_PLANS_ENFORCE \
+	MAKTABA_CLOUD_TAG MAKTABA_CADDY_TAG CF_API_TOKEN; do
+	if [ -n "${!k:-}" ]; then
+		set_env "$k" "${!k}"
+	fi
+done
+if [ -n "$(get_env RELAY_DOMAIN)" ]; then
+	set_env MAKTABA_CLOUD_PUBLIC_URL "https://$(get_env RELAY_DOMAIN)"
+fi
+# the cloud's containers run as the maktaba user, which owns the secrets mount
+set_env MAKTABA_UID "$(id -u "$SERVICE_USER")"
+set_env MAKTABA_GID "$(id -g "$SERVICE_USER")"
 
 # Token secret (>= 32 bytes). openssl base64 of 48 random bytes => 64
 # chars, all ASCII.
@@ -174,6 +203,17 @@ if [ ! -s "$LOG_KEY" ]; then
 	openssl rand 32 > "$LOG_KEY"
 fi
 
+# cloud.toml, from its template and .env's names (the compose mounts it read-only into every
+# role). Only the named placeholders are replaced.
+RELAY_PLANS_ENFORCE_V="$(get_env RELAY_PLANS_ENFORCE)"
+case "${RELAY_PLANS_ENFORCE_V:-false}" in true|false) ;; *) die "RELAY_PLANS_ENFORCE is true or false" ;; esac
+sed -e "s|\${RELAY_DOMAIN}|$(get_env RELAY_DOMAIN)|g" \
+	-e "s|\${API_DOMAIN}|$(get_env API_DOMAIN)|g" \
+	-e "s|\${APP_DOMAIN}|$(get_env APP_DOMAIN)|g" \
+	-e "s|\${RELAY_PLANS_ENFORCE}|${RELAY_PLANS_ENFORCE_V:-false}|g" \
+	"$DEPLOY_DIR/cloud.toml.template" > "$DEPLOY_DIR/cloud.toml.new"
+mv "$DEPLOY_DIR/cloud.toml.new" "$DEPLOY_DIR/cloud.toml"
+
 # ---------------------------------------------------------------------
 # 5. Ownership + permissions (secrets are sensitive)
 # ---------------------------------------------------------------------
@@ -212,7 +252,37 @@ ufw default allow outgoing >/dev/null
 ufw --force enable
 
 # ---------------------------------------------------------------------
-# 8. systemd unit
+# 8. The nightly backup (docs/cloud-single-node.md, "Backups")
+# ---------------------------------------------------------------------
+log "Installing the nightly backup (maktaba-cloud-backup.timer)..."
+mkdir -p /var/backups/maktaba-cloud
+chmod 0700 /var/backups/maktaba-cloud
+cat > /etc/systemd/system/maktaba-cloud-backup.service <<UNITEOF
+[Unit]
+Description=Maktaba Cloud: dump the database and keep the node's keys
+Requires=docker.service
+After=docker.service maktaba-relay.service
+
+[Service]
+Type=oneshot
+Environment=DEPLOY_DIR=${DEPLOY_DIR}
+ExecStart=${DEPLOY_DIR}/ops/backup.sh
+UNITEOF
+cat > /etc/systemd/system/maktaba-cloud-backup.timer <<'UNITEOF'
+[Unit]
+Description=Maktaba Cloud: the nightly backup
+
+[Timer]
+OnCalendar=*-*-* 03:17:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNITEOF
+
+# ---------------------------------------------------------------------
+# 9. systemd unit
 # ---------------------------------------------------------------------
 UNIT=/etc/systemd/system/maktaba-relay.service
 log "Installing systemd unit $UNIT ..."
@@ -239,22 +309,32 @@ RestartSec=10
 WantedBy=multi-user.target
 UNITEOF
 systemctl daemon-reload
+systemctl enable --now maktaba-cloud-backup.timer >/dev/null
 
 # ---------------------------------------------------------------------
-# 9. Pull + start (guard against an unedited template)
+# 10. Pull + start (guard against an unedited template)
 # ---------------------------------------------------------------------
 domain="$(get_env RELAY_DOMAIN)"
 acme="$(get_env ACME_EMAIL)"
+tls="$(get_env RELAY_TLS)"; tls="${tls:-dns}"
+case "$tls" in dns|http|internal) ;; *) die "RELAY_TLS is dns, http or internal" ;; esac
 # The Cloudflare DNS-edit token for the wildcard certificate (Epic 50 story
 # 50.02) is never generated: only the owner can make it. Caddy is not started
 # on the template value, which would fail every DNS-01 challenge.
 cf="$(get_env CF_API_TOKEN)"
 if [ "$domain" = "relay.example.com" ] || is_placeholder "$domain" \
-   || [ "$acme" = "ops@example.com" ] || is_placeholder "$acme" || is_placeholder "$cf"; then
-	warn "RELAY_DOMAIN / ACME_EMAIL / CF_API_TOKEN still hold template values."
-	warn "CF_API_TOKEN: a Cloudflare API token with Zone -> DNS -> Edit on the relay domain's zone only."
+   || is_placeholder "$(get_env API_DOMAIN)" || is_placeholder "$(get_env APP_DOMAIN)" \
+   || [ "$acme" = "ops@example.com" ] || is_placeholder "$acme" \
+   || { [ "$tls" = dns ] && is_placeholder "$cf"; }; then
+	warn "RELAY_DOMAIN / API_DOMAIN / APP_DOMAIN / ACME_EMAIL / CF_API_TOKEN still hold template values."
+	warn "CF_API_TOKEN (RELAY_TLS=dns): a Cloudflare API token with Zone -> DNS -> Edit on the relay domain's zone only."
 	warn "Edit $ENV_FILE, then: systemctl enable --now maktaba-relay"
 	log  "Setup complete (stack NOT started — finish .env first)."
+	exit 0
+fi
+if [ "${SETUP_START:-yes}" = no ]; then
+	systemctl enable maktaba-relay >/dev/null
+	log "Setup complete (enabled at boot; the deploy starts the stack)."
 	exit 0
 fi
 

@@ -1,0 +1,377 @@
+# Maktaba Cloud on one node: deploy a release to QA or production, then test it there
+# (docs/cloud-single-node.md). By hand only: Actions → Cloud deploy → target, release.
+#
+#   resolve  the release's images by digest (maktaba-cloud, maktaba-server for the test home,
+#            maktaba-caddy), each verified with cosign against the workflow that signed it; the
+#            cloud rehearsal passed on the release's commit (tools/release/cloud-guard.sh);
+#            production only: a QA run of this workflow passed with the same three digests
+#            and the same deploy files (deploy/cloud-relay's tree), and its web bundle is the
+#            one production gets
+#   web      the cloud web app (web/cloud) built from the release's source (QA only)
+#   deploy   the node's DNS records (with CLOUDFLARE_DNS_TOKEN), setup.sh (idempotent), the
+#            web bundle, deploy.sh (pull by digest, migrate, swap, health, roll back on
+#            failure); over SSH with the pinned host key
+#   test     deploy/cloud-relay/tests/e2e.py against the node: full on QA (a real home linked
+#            through the relay, sign-in and play, plans, a relay restart, firewall, backups,
+#            load and sizing), smoke on production (the same without the restart and the load)
+#   record   QA: the digests and the deploy tree that passed, for production's gate
+#
+# Secrets: RELAY_SSH_KEY (both nodes), CLOUDFLARE_DNS_TOKEN (Zone → DNS → Edit on maktaba.tv
+# and maktaba.dev; without it QA runs on Caddy's own CA and production does not deploy unless
+# the CLOUD_TLS variable is "http" with the records made by hand), MAKTABA_SYMBOLS_TOKEN.
+# Variables: QA_HOST, QA_SSH_USER, QA_SSH_KNOWN_HOSTS; RELAY_HOST, RELAY_SSH_USER,
+# RELAY_SSH_KNOWN_HOSTS. Each target's names are in deploy/cloud-relay/targets/<target>.env.
+name: Cloud deploy
+run-name: cloud deploy ${{ inputs.target || 'qa' }} ${{ inputs.tag || 'latest release' }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Where: qa, or prod (only a release QA passed)'
+        type: choice
+        options: [qa, prod]
+        default: qa
+      tag:
+        description: 'Release tag (vX.Y.Z). Blank: the latest release'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+# one deploy per node at a time; a deploy that waits is never cancelled
+concurrency:
+  group: cloud-deploy-${{ inputs.target || 'qa' }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io/hamza-labs-core
+  TARGET: ${{ inputs.target || 'qa' }}
+  SIGNER: https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      actions: read # the cloud rehearsal's runs; QA's runs and their records
+      packages: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      sha: ${{ steps.tag.outputs.sha }}
+      cloud_ref: ${{ steps.images.outputs.cloud_ref }}
+      server_ref: ${{ steps.images.outputs.server_ref }}
+      caddy_ref: ${{ steps.images.outputs.caddy_ref }}
+      tree: ${{ steps.tree.outputs.tree }}
+      qa_run: ${{ steps.qa.outputs.run }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: The release
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)}"
+          [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a release tag: $tag"; exit 1; }
+          [ "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '.isDraft or .isPrerelease')" = false ] \
+            || { echo "::error::$tag is a draft or a pre-release"; exit 1; }
+          sha="$(git rev-list -n 1 "refs/tags/$tag")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "release $tag at $sha"
+
+      - uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+
+      # each image by digest, and each digest signed by the workflow that built it: the
+      # release's by release.yml at the tag, Caddy's by relay.yml on main
+      - name: The images, by digest, verified
+        id: images
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          caddy_tag="$(sed -n 's/^MAKTABA_CADDY_TAG=//p' deploy/cloud-relay/.env.example)"
+          digest() { docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' | jq -r .digest; }
+          verify() {
+            cosign verify "$1" --certificate-identity "$2" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null
+            echo "verified $1"
+          }
+          cloud="$REGISTRY/maktaba-cloud@$(digest "$REGISTRY/maktaba-cloud:$TAG")"
+          server="$REGISTRY/maktaba-server@$(digest "$REGISTRY/maktaba-server:$TAG")"
+          caddy="$REGISTRY/maktaba-caddy@$(digest "$REGISTRY/maktaba-caddy:$caddy_tag")"
+          verify "$cloud" "$SIGNER/release.yml@refs/tags/$TAG"
+          verify "$server" "$SIGNER/release.yml@refs/tags/$TAG"
+          verify "$caddy" "$SIGNER/relay.yml@refs/heads/main"
+          {
+            echo "cloud_ref=$TAG@${cloud#*@}"
+            echo "server_ref=$server"
+            echo "caddy_ref=$caddy_tag@${caddy#*@}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Epic 50 story 50.06: no cloud deploy of a commit the cloud rehearsal did not pass on
+      - name: The cloud rehearsal passed on the release's commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.tag.outputs.sha }}
+          WAIT_SECONDS: '600'
+        run: bash tools/release/cloud-guard.sh
+
+      - name: The deploy files
+        id: tree
+        run: echo "tree=$(git rev-parse HEAD:deploy/cloud-relay)" >> "$GITHUB_OUTPUT"
+
+      # production deploys only what QA passed: the same three digests and the same deploy
+      # files, in a successful QA run of this workflow (its qa-passed record)
+      - name: QA passed this release (production only)
+        id: qa
+        if: env.TARGET == 'prod'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUD: ${{ steps.images.outputs.cloud_ref }}
+          SERVER: ${{ steps.images.outputs.server_ref }}
+          CADDY: ${{ steps.images.outputs.caddy_ref }}
+          TREE: ${{ steps.tree.outputs.tree }}
+        run: |
+          set -euo pipefail
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/cloud-deploy.yml/runs?status=success&per_page=50" \
+            --jq '.workflow_runs[] | select(.display_title | startswith("cloud deploy qa ")) | .id')"
+          for run in $runs; do
+            d="$(mktemp -d)"
+            if gh run download "$run" --repo "$GITHUB_REPOSITORY" -n qa-passed -D "$d" >/dev/null 2>&1 &&
+              jq -e --arg c "$CLOUD" --arg s "$SERVER" --arg k "$CADDY" --arg t "$TREE" \
+                '.cloud_ref == $c and .server_ref == $s and .caddy_ref == $k and .tree == $t' "$d/qa-passed.json" >/dev/null; then
+              echo "QA passed this release and these deploy files in run $run"
+              echo "run=$run" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "::error::no successful QA run of this workflow with these images and deploy files: deploy to qa first"
+          exit 1
+
+  web:
+    needs: [resolve]
+    if: inputs.target != 'prod'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v6.4.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+      - name: Build the cloud web app (the release's source)
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:cloud
+          tar -C dist-cloud -czf "$RUNNER_TEMP/cloud-web.tar.gz" .
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: cloud-web
+          path: ${{ runner.temp }}/cloud-web.tar.gz
+          retention-days: 90
+
+  deploy:
+    needs: [resolve, web]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && (needs.web.result == 'success' || (inputs.target == 'prod' && needs.web.result == 'skipped')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read # the QA run's web bundle (production)
+    environment:
+      name: ${{ inputs.target || 'qa' }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: The target
+        id: target
+        env:
+          QA_HOST: ${{ vars.QA_HOST }}
+          QA_USER: ${{ vars.QA_SSH_USER }}
+          QA_KH: ${{ vars.QA_SSH_KNOWN_HOSTS }}
+          PROD_HOST: ${{ vars.RELAY_HOST }}
+          PROD_USER: ${{ vars.RELAY_SSH_USER }}
+          PROD_KH: ${{ vars.RELAY_SSH_KNOWN_HOSTS }}
+          HAS_DNS_TOKEN: ${{ secrets.CLOUDFLARE_DNS_TOKEN != '' }}
+          CLOUD_TLS: ${{ vars.CLOUD_TLS }}
+        run: |
+          set -euo pipefail
+          grep -E '^[A-Z_]+=' "deploy/cloud-relay/targets/$TARGET.env" >> "$GITHUB_ENV"
+          if [ "$TARGET" = prod ]; then host="$PROD_HOST" user="$PROD_USER" kh="$PROD_KH"; else host="$QA_HOST" user="$QA_USER" kh="$QA_KH"; fi
+          [ -n "$host" ] && [ -n "$user" ] && [ -n "$kh" ] || { echo "::error::the $TARGET host, user or known_hosts variable is not set"; exit 1; }
+          if [ "$HAS_DNS_TOKEN" = true ]; then tls=dns
+          elif [ "$CLOUD_TLS" = http ]; then tls=http
+          elif [ "$TARGET" = qa ]; then tls=internal
+          else echo "::error::production needs public certificates: the CLOUDFLARE_DNS_TOKEN secret (or CLOUD_TLS=http with the records made by hand)"; exit 1
+          fi
+          {
+            echo "NODE_IP=$host"
+            echo "NODE_USER=$user"
+            echo "RELAY_TLS=$tls"
+          } >> "$GITHUB_ENV"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$kh" > ~/.ssh/known_hosts_node
+          echo "node $host ($TARGET), certificates: $tls"
+
+      - name: SSH to the node (the pinned host key)
+        env:
+          KEY: ${{ secrets.RELAY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$KEY" > ~/.ssh/node_key
+          cat > ~/.ssh/config <<EOF
+          Host node
+            HostName $NODE_IP
+            User $NODE_USER
+            IdentityFile ~/.ssh/node_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts_node
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 15
+            ServerAliveInterval 20
+          EOF
+          ssh node true
+
+      - name: The node's DNS records (with the DNS token)
+        if: env.RELAY_TLS == 'dns'
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_TOKEN }}
+        run: |
+          python3 deploy/cloud-relay/ops/dns-records.py "$DNS_ZONE" "$NODE_IP" \
+            "$RELAY_DOMAIN" "*.$RELAY_DOMAIN" "$API_DOMAIN" "$APP_DOMAIN"
+
+      - name: Set up the node (setup.sh, idempotent)
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_TOKEN }}
+          CLOUD_REF: ${{ needs.resolve.outputs.cloud_ref }}
+          CADDY_REF: ${{ needs.resolve.outputs.caddy_ref }}
+        run: |
+          set -euo pipefail
+          tar -C deploy/cloud-relay -czf - . | ssh node 'rm -rf /opt/maktaba-relay-src && mkdir -p /opt/maktaba-relay-src && tar -xzf - -C /opt/maktaba-relay-src'
+          # the token on stdin, never on a command line; the names expand here, on purpose
+          # shellcheck disable=SC2029
+          printf '%s\n' "${CF_API_TOKEN:-}" | ssh node "read -r t; [ -z \"\$t\" ] || export CF_API_TOKEN=\"\$t\"; \
+            cd /opt/maktaba-relay-src && SETUP_START=no RELAY_DOMAIN='$RELAY_DOMAIN' API_DOMAIN='$API_DOMAIN' \
+            APP_DOMAIN='$APP_DOMAIN' ACME_EMAIL='$ACME_EMAIL' RELAY_TLS='$RELAY_TLS' \
+            RELAY_PLANS_ENFORCE='$RELAY_PLANS_ENFORCE' MAKTABA_CLOUD_TAG='$CLOUD_REF' MAKTABA_CADDY_TAG='$CADDY_REF' \
+            bash setup.sh"
+
+      - name: The cloud web app's bundle (QA's build)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA_RUN: ${{ needs.resolve.outputs.qa_run }}
+        run: |
+          set -euo pipefail
+          d="$(mktemp -d)"
+          if [ "$TARGET" = prod ]; then
+            gh run download "$QA_RUN" --repo "$GITHUB_REPOSITORY" -n cloud-web -D "$d"
+          else
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" -n cloud-web -D "$d"
+          fi
+          sha256sum "$d/cloud-web.tar.gz"
+          # in place (Caddy's bind mount holds the folder itself, so it is never replaced)
+          ssh node 'set -e; cd /opt/maktaba-relay; rm -rf web.new; mkdir web.new; tar -xzf - -C web.new; \
+            test -s web.new/index.html; find web -mindepth 1 -delete; cp -a web.new/. web/; rm -rf web.new; \
+            chown -R maktaba:maktaba web' < "$d/cloud-web.tar.gz"
+
+      - name: Deploy (deploy.sh)
+        env:
+          RELAY_SSH_HOST: ${{ env.NODE_IP }}
+          RELAY_SSH_USER: ${{ env.NODE_USER }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          MAKTABA_SYMBOLS_TOKEN: ${{ secrets.MAKTABA_SYMBOLS_TOKEN }}
+          MAKTABA_CLOUD_TAG: ${{ needs.resolve.outputs.cloud_ref }}
+        run: |
+          set -euo pipefail
+          RELAY_SSH_KNOWN_HOSTS="$(cat ~/.ssh/known_hosts_node)"
+          export RELAY_SSH_KNOWN_HOSTS
+          bash deploy/cloud-relay/deploy.sh
+          ssh node 'cd /opt/maktaba-relay && docker compose --env-file .env ps --format "{{.Service}} {{.Status}}"'
+
+      - name: The node's own CA (certificates before DNS)
+        if: env.RELAY_TLS == 'internal'
+        run: |
+          set -euo pipefail
+          ssh node 'cd /opt/maktaba-relay && docker compose --env-file .env exec -T caddy cat /data/caddy/pki/authorities/local/root.crt' > "$RUNNER_TEMP/node-ca.pem"
+          openssl x509 -in "$RUNNER_TEMP/node-ca.pem" -noout -subject -enddate
+          echo "CA_FILE=$RUNNER_TEMP/node-ca.pem" >> "$GITHUB_ENV"
+          echo "PIN_HOSTS=1" >> "$GITHUB_ENV"
+
+      - name: Test (deploy/cloud-relay/tests/e2e.py)
+        env:
+          HOME_IMAGE: ${{ needs.resolve.outputs.server_ref }}
+          RUN_ID: ${{ github.run_id }}${{ github.run_attempt }}
+          OUT: ${{ runner.temp }}/e2e
+        run: |
+          set -euo pipefail
+          export NODE_SSH="ssh -F $HOME/.ssh/config node"
+          # shellcheck disable=SC2016  # expands on the node
+          NODE_PLAN="$(ssh node 'echo "$(nproc) vCPU, $(free -m | awk "/Mem:/{print \$2}") MB"')"
+          export NODE_PLAN
+          mode=full; [ "$TARGET" = prod ] && mode=smoke
+          python3 deploy/cloud-relay/tests/e2e.py --mode "$mode"
+
+      - name: The node's logs (on failure)
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e"
+          ssh node 'cd /opt/maktaba-relay && docker compose --env-file .env ps -a; docker compose --env-file .env logs --tail 300 --no-color' \
+            > "$RUNNER_TEMP/e2e/node-compose.log" 2>&1 || true
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: e2e-${{ inputs.target || 'qa' }}
+          path: ${{ runner.temp }}/e2e
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Forget the key
+        if: always()
+        run: rm -f ~/.ssh/node_key
+
+  record:
+    needs: [resolve, deploy]
+    if: inputs.target != 'prod'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: What QA passed
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+          CLOUD: ${{ needs.resolve.outputs.cloud_ref }}
+          SERVER: ${{ needs.resolve.outputs.server_ref }}
+          CADDY: ${{ needs.resolve.outputs.caddy_ref }}
+          TREE: ${{ needs.resolve.outputs.tree }}
+        run: |
+          jq -n --arg tag "$TAG" --arg c "$CLOUD" --arg s "$SERVER" --arg k "$CADDY" --arg t "$TREE" \
+            --arg run "$GITHUB_RUN_ID" --arg sha "$GITHUB_SHA" \
+            '{tag: $tag, cloud_ref: $c, server_ref: $s, caddy_ref: $k, tree: $t, run: $run, workflow_sha: $sha}' \
+            > qa-passed.json
+          cat qa-passed.json
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: qa-passed
+          path: qa-passed.json
+          retention-days: 90

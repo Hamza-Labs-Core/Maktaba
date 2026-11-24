@@ -27,6 +27,10 @@
 #                      this is how CI passes secrets.RELAY_SSH_KEY. When
 #                      unset, the caller's ssh-agent / default keys apply.
 #   RELAY_SSH_PORT     SSH port (default: 22).
+#   RELAY_SSH_KNOWN_HOSTS  the host's known_hosts line(s). When set (CI always sets it, from
+#                      the QA_SSH_KNOWN_HOSTS / RELAY_SSH_KNOWN_HOSTS variables), the host
+#                      key must match it (StrictHostKeyChecking=yes); unset, a laptop's own
+#                      known_hosts applies and a new host is accepted on first use.
 #   DEPLOY_DIR         stack dir on the VPS (default: /opt/maktaba-relay,
 #                      matching setup.sh).
 #   HEALTH_URL         extra public health URL to curl from the VPS after
@@ -55,12 +59,24 @@ err() { printf '\033[1;31m[deploy:error]\033[0m %s\n' "$*" >&2; }
 # CI hands the key in via the RELAY_SSH_KEY secret (key *contents*). Stage
 # it as a locked-down temp file and clean it up on exit. Without it, fall
 # back to the caller's ambient SSH config (agent / ~/.ssh/id_*).
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -p "$RELAY_SSH_PORT")
+SSH_OPTS=(-o ConnectTimeout=15 -o BatchMode=yes -p "$RELAY_SSH_PORT")
 KEY_FILE=""
+KH_FILE=""
 # (an if, not `[ ] && rm`: an EXIT trap's last status is the script's, so a run with no
 # key file would end 1 after a good deploy)
-cleanup() { if [ -n "$KEY_FILE" ]; then rm -f "$KEY_FILE"; fi; }
+cleanup() {
+  if [ -n "$KEY_FILE" ]; then rm -f "$KEY_FILE"; fi
+  if [ -n "$KH_FILE" ]; then rm -f "$KH_FILE"; fi
+}
 trap cleanup EXIT
+
+if [ -n "${RELAY_SSH_KNOWN_HOSTS:-}" ]; then
+  KH_FILE="$(mktemp)"
+  printf '%s\n' "$RELAY_SSH_KNOWN_HOSTS" > "$KH_FILE"
+  SSH_OPTS+=(-o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KH_FILE")
+else
+  SSH_OPTS+=(-o StrictHostKeyChecking=accept-new)
+fi
 
 if [ -n "${RELAY_SSH_KEY:-}" ]; then
   KEY_FILE="$(mktemp)"

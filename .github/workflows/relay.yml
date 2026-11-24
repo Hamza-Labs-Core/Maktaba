@@ -402,6 +402,14 @@ jobs:
             docker run --rm -v "$PWD/$f:/etc/caddy/Caddyfile:ro" -e RELAY_DOMAIN=relay.example.com \
               -e ACME_EMAIL=ops@example.com -e CF_API_TOKEN="$tok" -e NODE_ADDR=10.0.0.2 -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" \
               -e "RELAY_METRICS_UPSTREAMS=127.0.0.1:8445 127.0.0.1:8455" \
+              -e API_DOMAIN=api.example.com -e APP_DOMAIN=app.example.com \
+              maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
+          done
+          # the single node's other certificate modes (RELAY_TLS: http with no DNS token,
+          # internal before its names are public; docs/cloud-single-node.md)
+          for tls in http internal; do
+            docker run --rm -v "$PWD/deploy/cloud-relay/Caddyfile:/etc/caddy/Caddyfile:ro" -e RELAY_DOMAIN=relay.example.com \
+              -e API_DOMAIN=api.example.com -e APP_DOMAIN=app.example.com -e ACME_EMAIL=ops@example.com -e RELAY_TLS="$tls" \
               maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
           done
       # Epic 50 story 50.31 T04: the pair's Caddy serves relay names only (no catch-all, no

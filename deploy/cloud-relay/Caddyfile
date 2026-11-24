@@ -1,51 +1,122 @@
-# Maktaba Cloud Relay — Caddy with one wildcard certificate (Epic 50 story 50.02).
+# Maktaba Cloud, one node — Caddy in front of the relay and the api.
 #
-# Caddy terminates TLS and proxies cleartext to the relay on :8443. The relay routes by
-# Host header (apex = control plane + WebSocket; each <slug>.<RELAY_DOMAIN> = a tunnelled
-# home), so Caddy preserves the inbound Host (reverse_proxy's default).
+# Caddy terminates TLS and proxies cleartext on the stack's private network:
+#   RELAY_DOMAIN and *.RELAY_DOMAIN -> the relay (maktaba-cloud:8443). The relay routes by Host
+#     header (apex = control plane + the homes' WebSocket; each <slug>.RELAY_DOMAIN = a
+#     tunnelled home), so Caddy keeps the inbound Host (reverse_proxy's default).
+#   API_DOMAIN -> the api role (172.30.77.10:8090, a private address: the api refuses a public
+#     listener in production, story 50.31). Caddy writes the client's address into
+#     CF-Connecting-IP, replacing whatever the client sent; the api believes it from Caddy's
+#     address only (server.trusted_proxies).
+#   APP_DOMAIN -> the cloud web app (web/cloud, built by CI into ./web): its files, and /v1/*
+#     to the api on the same origin, with the headers its Worker sets on Phase 1
+#     (web/packages/cloud-web/src/site.ts). The operator console is on no public name.
 #
-# One certificate for RELAY_DOMAIN and *.RELAY_DOMAIN, by a DNS-01 challenge through the
-# Cloudflare API (the image is ghcr.io/hamza-labs-core/maktaba-caddy, deploy/caddy): every
-# home is covered, the certificate is on the node before any home asks, and it costs one
-# issuance every ~60 days per node instead of one per home (Let's Encrypt allows 50 new
-# certificates per domain per week: a standby node could never catch up per home).
-# Issuers: Let's Encrypt, then ZeroSSL (Caddy's defaults, with the email below); the
+# Certificates (RELAY_TLS):
+#   dns       one wildcard certificate for *.RELAY_DOMAIN, plus the apex and API_DOMAIN, by a
+#             DNS-01 challenge through the Cloudflare API (Epic 50 story 50.02). CF_API_TOKEN is
+#             a token with Zone -> DNS -> Edit only. The image is ghcr.io/hamza-labs-core/
+#             maktaba-caddy (deploy/caddy: the stock image has no DNS modules).
+#   http      no DNS token: the apex and API_DOMAIN by HTTP-01, each home's name on its first
+#             use (on-demand, only when the relay's /v1/relay/tls-ask approves the name).
+#   internal  Caddy's own CA, for a node whose names are not public yet (QA before its DNS
+#             records exist): clients trust /data/caddy/pki/authorities/local/root.crt.
+# Issuers (dns, http): Let's Encrypt, then ZeroSSL (Caddy's defaults, with ACME_EMAIL); the
 # maktaba.tv CAA records allow both (docs/cloud-dns.md).
 #
-# Env (compose passes them from .env): RELAY_DOMAIN, ACME_EMAIL, CF_API_TOKEN (a Cloudflare
-# API token with Zone -> DNS -> Edit on the zone only).
+# Env (compose passes them from .env): RELAY_DOMAIN, API_DOMAIN, APP_DOMAIN, ACME_EMAIL, RELAY_TLS,
+# CF_API_TOKEN (dns only).
 
 {
 	email {$ACME_EMAIL}
 
-	# The transition from per-home certificates (story 50.02 §3): a name outside the
-	# wildcard (none is expected) still gets an on-demand certificate, only when the
-	# relay's /v1/relay/tls-ask approves it. Removed one release after no on-demand
-	# issuance is logged for 7 days.
+	# on-demand certificates (RELAY_TLS=http, and the transition's catch-all below) only for
+	# names the relay approves (story 25.23)
 	on_demand_tls {
 		ask http://maktaba-cloud:8443/v1/relay/tls-ask
 	}
 }
 
-{$RELAY_DOMAIN}, *.{$RELAY_DOMAIN} {
+(tls_dns_name) {
 	tls {
 		dns cloudflare {env.CF_API_TOKEN}
 		# answer the challenge from public resolvers, not the node's own
 		resolvers 1.1.1.1 9.9.9.9
 	}
+}
+(tls_dns_wild) {
+	import tls_dns_name
+}
+(tls_http_name) {
+}
+(tls_http_wild) {
+	tls {
+		on_demand
+	}
+}
+(tls_internal_name) {
+	tls internal
+}
+(tls_internal_wild) {
+	tls internal
+}
+
+(relay) {
 	encode zstd gzip
+	# a client never sets the address the cloud believes (50.31): the relay reads none, and
+	# a forged one never travels on to a home
+	request_header -CF-Connecting-IP
 	reverse_proxy maktaba-cloud:8443 {
 		flush_interval -1
 	}
 }
 
-# The transition's catch-all, below the wildcard (more specific sites win).
+{$RELAY_DOMAIN} {
+	import tls_{$RELAY_TLS:dns}_name
+	import relay
+}
+
+*.{$RELAY_DOMAIN} {
+	import tls_{$RELAY_TLS:dns}_wild
+	import relay
+}
+
+(api) {
+	reverse_proxy 172.30.77.10:8090 {
+		header_up CF-Connecting-IP {remote_host}
+	}
+}
+
+{$API_DOMAIN} {
+	import tls_{$RELAY_TLS:dns}_name
+	encode zstd gzip
+	import api
+}
+
+{$APP_DOMAIN} {
+	import tls_{$RELAY_TLS:dns}_name
+	encode zstd gzip
+	header {
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; connect-src 'self'; img-src 'self' data: https:; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+	}
+	handle /v1/* {
+		import api
+	}
+	handle {
+		root * /srv/cloud-web
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# The transition's catch-all (story 50.02 §3), below the named sites (more specific sites
+# win): a name outside them gets an on-demand certificate only when the relay approves it.
 https:// {
 	tls {
 		on_demand
 	}
-	encode zstd gzip
-	reverse_proxy maktaba-cloud:8443 {
-		flush_interval -1
-	}
+	import relay
 }
