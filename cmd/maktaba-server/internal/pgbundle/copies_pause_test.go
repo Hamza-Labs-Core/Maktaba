@@ -1,9 +1,11 @@
 package pgbundle
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -61,5 +63,35 @@ func TestTableSyncsSQL(t *testing.T) {
 		if !strings.Contains(TableSyncsSQL, want) {
 			t.Errorf("table syncs lack %q: %s", want, TableSyncsSQL)
 		}
+	}
+}
+
+// pg_hba.conf has several writers at once (the machines' reach, a switch's freeze, the copies'
+// pause): none renames, or reads, what another is writing.
+func TestHBAWritersOneAtATime(t *testing.T) {
+	b := Bundle{Data: t.TempDir(), LAN: true, TLS: true}
+	want := b.hbaConf()
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for range 100 {
+				if err := b.writeHBA(); err != nil {
+					errs <- err
+					return
+				}
+				if got, err := os.ReadFile(filepath.Join(b.Data, "pg_hba.conf")); err != nil || string(got) != want {
+					errs <- fmt.Errorf("pg_hba.conf of %d bytes, want %d (%v)", len(got), len(want), err)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
 	}
 }

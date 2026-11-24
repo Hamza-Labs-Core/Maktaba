@@ -2839,6 +2839,35 @@ func TestAppBundleCopiesStayOutUntilTheSchemaIsSettled(t *testing.T) {
 		}
 		h.check(t, "pause migrated|down|resume migrated|pause migrated|down|resume migrated", false)
 	})
+	t.Run("Down scripts that work after some that failed", func(t *testing.T) {
+		h := newPauseHome(t, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+		g := &migrationGate{stateDir: h.cfg.StateDir(), version: "v0.2.0", pg: testBundle(h.cfg), log: h.log}
+		u := &updates{api: exec.Command("maktaba-api")}
+		h.f.downErr = errors.New("boom")
+		if err := u.migrateDown(context.Background(), nil, 230, g); err == nil {
+			t.Fatal("a Down script that failed is said to have worked")
+		}
+		h.f.downErr = nil
+		if err := u.migrateDown(context.Background(), nil, 230, g); err != nil {
+			t.Fatal(err)
+		}
+		h.check(t, "pause migrated|down|pause migrated|down|resume migrated", false)
+	})
+	t.Run("another release's Down scripts failed", func(t *testing.T) {
+		// what failed on v0.3.0's database says nothing of the one v0.4.0's record is of
+		h := newPauseHome(t, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+		if err := noteDownFailed(h.cfg.StateDir()); err != nil {
+			t.Fatal(err)
+		}
+		for version, settled := range map[string]bool{"v0.3.0": false, "0.3.0": false, "v0.4.0": true} {
+			if err := apppayload.WriteDatabase(h.cfg.StateDir(), apppayload.Database{Version: version, State: apppayload.DatabaseMigrated}); err != nil {
+				t.Fatal(err)
+			}
+			if schemaSettled(h.cfg.StateDir()) != settled {
+				t.Errorf("a Down script failed on v0.3.0's, the record is %s's: settled %v", version, !settled)
+			}
+		}
+	})
 }
 
 // Nothing is done as if a pause or a resume that failed had worked, and a server that does not

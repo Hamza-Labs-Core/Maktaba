@@ -148,6 +148,19 @@ func healthyFor(snap supervisor.Snapshot, d time.Duration) bool {
 // update run's watch owns it.
 const cliRunID = "cli"
 
+// startConfirms starts what confirms the running release (bundle: an app's payload;
+// releaseDir: a layout's) once it runs: the launcher's pending marker (confirmPending) and the
+// database's record (confirmRecord). run is the machine's update run (nil: none).
+func startConfirms(ctx context.Context, sup *supervisor.Supervisor, record, bundle, releaseDir string, run func() *updater.Journal) {
+	confirmPending(ctx, sup, releaseDir)
+	ver := runningRelease(bundle, releaseDir)
+	if ver == "" {
+		return
+	}
+	root := os.Getenv(envLauncherRoot)
+	go confirmRecord(ctx, sup, record, ver, func() bool { return releaseTried(root, releaseDir, ver, run()) })
+}
+
 // confirmsItself reports whether the release a pending marker names confirms itself
 // once healthy (confirmPending): a switch no update run watches, by hand (no run id) or
 // by `maktaba-server update` (cliRunID, from a release before 2026-11-24, whose switch

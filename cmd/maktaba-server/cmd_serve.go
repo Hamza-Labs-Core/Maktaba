@@ -591,17 +591,12 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
-	confirmPending(ctx, sup, releaseDir)
-	if ver := runningRelease(bundle, releaseDir); ver != "" {
-		root := os.Getenv(envLauncherRoot)
-		go confirmRecord(ctx, sup, apppayload.DatabasePath(cfg.StateDir()), ver, func() bool {
-			var run *updater.Journal
-			if u := upd.Load(); u != nil && u.m != nil {
-				run = u.m.Status().Journal
-			}
-			return releaseTried(root, releaseDir, ver, run)
-		})
-	}
+	startConfirms(ctx, sup, apppayload.DatabasePath(cfg.StateDir()), bundle, releaseDir, func() *updater.Journal {
+		if u := upd.Load(); u != nil && u.m != nil {
+			return u.m.Status().Journal
+		}
+		return nil
+	})
 	if bundle != "" {
 		go confirmAppPayload(ctx, sup, cfg.StateDir(), bundle)
 		go finishMove(ctx, sup, cfg)
