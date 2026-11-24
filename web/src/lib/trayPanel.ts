@@ -7,6 +7,7 @@
 //   tray_panel_choose { id }   -> choose one (an enabled item); the panel hides
 //   tray_panel_hide            -> Escape
 //   event "tray-panel-state"   -> the entries changed
+//   event "tray-panel-opened"  -> the shell showed the panel again (its first action takes the focus)
 //
 // The labels are the tray's own (lang.rs), in the system's language.
 import { isDesktop } from "./desktop";
@@ -83,6 +84,24 @@ export async function onTrayPanelState(cb: (s: TrayPanelState) => void): Promise
   } catch {
     return () => {};
   }
+}
+
+/** Calls `cb` each time the shell shows the panel again; returns its stop. */
+export function onTrayPanelOpened(cb: () => void): () => void {
+  if (win().__MAKTABA_TRAY_PREVIEW__ || !isDesktop()) return () => {};
+  let stop = () => {};
+  let live = true;
+  void import("@tauri-apps/api/event")
+    .then(({ listen }) => listen("tray-panel-opened", () => cb()))
+    .then((f) => {
+      if (live) stop = f;
+      else f();
+    })
+    .catch(() => {});
+  return () => {
+    live = false;
+    stop();
+  };
 }
 
 /** The two ways to quit, drawn as the panel's buttons rather than its rows. */

@@ -59,6 +59,59 @@ describe("partsOf", () => {
     expect(p.quits.map((q) => q.id)).toEqual(["quit", "stop-and-quit"]);
   });
 
+  it("draws every action of an app connected to another Maktaba (no status, an update first)", () => {
+    const p = partsOf([
+      item("update", "Update ready: restart to install"),
+      sep,
+      item("show", "Open Maktaba"),
+      item("change-server", "Connect to another Maktaba…"),
+      sep,
+      item("quit", "Quit"),
+    ]);
+    expect(p.status).toBeUndefined();
+    expect(p.update?.id).toBe("update");
+    expect(p.groups.map((g) => g.map((e) => e.id))).toEqual([["show", "change-server"]]);
+  });
+
+  it("draws the recovery actions of a server that cannot start, and its line", () => {
+    const p = partsOf([
+      item("cant-start", "Maktaba can't start: it stopped 3 times in a row", false),
+      item("start-retry", "Try again"),
+      item("start-safe", "Start in safe mode"),
+      item("start-rollback", "Go back to version 0.3.111"),
+      sep,
+      item("status", "Maktaba has a problem: the server does not answer", false),
+      item("model-status", "Language model: ready", false),
+      sep,
+      item("show", "Open Maktaba"),
+      item("open-recovery", "Open recovery page"),
+      sep,
+      item("quit", "Quit (server keeps running)"),
+      item("stop-and-quit", "Stop server and quit"),
+    ]);
+    expect(p.status?.id).toBe("status");
+    expect(p.lines.map((l) => l.id)).toEqual(["cant-start", "model-status"]);
+    expect(p.groups.map((g) => g.map((e) => e.id))).toEqual([
+      ["start-retry", "start-safe", "start-rollback"],
+      ["show", "open-recovery"],
+    ]);
+  });
+
+  it("draws a failed update's line and its way to the logs", () => {
+    const p = partsOf([
+      item("status", "Maktaba is running", false),
+      item("update-failed", "Update to 0.3.113 failed: no space left", false),
+      item("update-logs", "See the logs"),
+      item("update-log-folder", "Open the log folder"),
+      sep,
+      item("show", "Open Maktaba"),
+      sep,
+      item("quit", "Quit"),
+    ]);
+    expect(p.lines.map((l) => l.id)).toEqual(["update-failed"]);
+    expect(p.groups[0]!.map((e) => e.id)).toEqual(["update-logs", "update-log-folder"]);
+  });
+
   it("keeps a release the home ordered as a line, not a button", () => {
     const p = partsOf([
       item("status", "Maktaba is running", false),
@@ -107,6 +160,39 @@ describe("TrayPanel", () => {
     expect(invoke).toHaveBeenCalledWith("tray_panel_hide", undefined);
   });
 
+  it("keeps the keys after a click on the status line, and the focus while the words change", async () => {
+    const { listen } = await import("@tauri-apps/api/event");
+    let push: (s: TrayPanelState) => void = () => {};
+    vi.mocked(listen).mockImplementation(async (name, cb) => {
+      if (name === "tray-panel-state")
+        push = (st) => (cb as (e: { payload: TrayPanelState }) => void)({ payload: st });
+      return () => {};
+    });
+    shell({ lang: "en", tone: "ok", entries: RUNNING });
+    render(<TrayPanel />);
+    const status = await screen.findByRole("status");
+    await userEvent.click(status);
+    await userEvent.keyboard("{ArrowDown}");
+    expect(screen.getByRole("button", { name: /Update ready/ })).toHaveFocus();
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}");
+    const logs = screen.getByRole("button", { name: "Pause server" });
+    expect(logs).toHaveFocus();
+    // the model's percent changes: the focus stays where the person put it
+    await act(async () =>
+      push({
+        lang: "en",
+        tone: "ok",
+        entries: RUNNING.map((e) =>
+          e.id === "model-status" ? { ...e, label: "Language model: downloading qwen (65%)" } : e
+        ),
+      })
+    );
+    expect(screen.getByRole("button", { name: "Pause server" })).toHaveFocus();
+    await userEvent.click(status);
+    await userEvent.keyboard("{Escape}");
+    expect(invoke).toHaveBeenCalledWith("tray_panel_hide", undefined);
+  });
+
   it("speaks the tray's language, right to left in Arabic", async () => {
     shell({
       lang: "ar",
@@ -123,8 +209,9 @@ describe("TrayPanel", () => {
     await screen.findByRole("status");
     expect(document.documentElement.dir).toBe("rtl");
     expect(document.documentElement.lang).toBe("ar");
-    const group = screen.getByRole("group");
-    expect(within(group).getByRole("button", { name: "فتح مكتبة" })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("navigation")).getByRole("button", { name: "فتح مكتبة" })
+    ).toBeInTheDocument();
   });
 
   it("follows the tray when its entries change", async () => {

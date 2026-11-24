@@ -129,15 +129,14 @@
   text-align: start;
 }
 .mkt-tray__row:hover:not(:disabled),
+.mkt-tray__row:focus-visible {
+  background: var(--mkt-tray-hover);
+}
 .mkt-tray__row:focus-visible,
 .mkt-tray__update:focus-visible,
 .mkt-tray__quit:focus-visible {
-  background: var(--mkt-tray-hover);
   outline: 2px solid #e9be63;
   outline-offset: -2px;
-}
-.mkt-tray__row:hover:not(:disabled) {
-  outline: none;
 }
 .mkt-tray__row:disabled {
   color: #a9b3c4;

@@ -4,12 +4,13 @@
 // for a restart, the actions in the tray's own groups, and the two ways to quit as buttons at
 // the foot. The arrow keys move between the actions; Escape hides the panel. The words are the
 // tray's (the system's language); the page takes that language's direction.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   LINE_IDS,
   QUIT_IDS,
   chooseTrayItem,
   hideTrayPanel,
+  onTrayPanelOpened,
   onTrayPanelState,
   trayPanelState,
   type TrayPanelEntry,
@@ -18,26 +19,27 @@ import {
 
 const BRAND = { en: "Maktaba", ar: "مكتبة" } as const;
 
-/** The panel's parts, from the tray's entries in order. */
+/**
+ * The panel's parts, from the tray's entries in order, whatever their shape (a server that
+ * runs, one that cannot start, a failed update, an app connected to another Maktaba): the
+ * status line; every other line of text (disabled items: the language model, a release the
+ * home ordered, why it cannot start, a failed update) under it; the update when it waits for a
+ * restart; every other enabled item in the tray's own groups; and the two ways to quit.
+ */
 export function partsOf(entries: TrayPanelEntry[]) {
   const status = entries.find((e) => e.id === "status");
-  const firstSep = entries.findIndex((e) => e.separator);
-  const head = firstSep < 0 ? [] : entries.slice(0, firstSep);
-  const lines = head.filter((e) => !e.separator && e.id !== "status" && !e.enabled);
-  const update = head.find((e) => e.id === "update" && e.enabled);
-  const rest = firstSep < 0 ? entries : entries.slice(firstSep + 1);
+  const lines = entries.filter((e) => !e.separator && e.id !== "status" && !e.enabled);
+  const update = entries.find((e) => e.id === "update" && e.enabled);
+  const quits = entries.filter((e) => QUIT_IDS.has(e.id) && e.enabled);
   const groups: TrayPanelEntry[][] = [[]];
-  for (const e of rest) {
+  for (const e of entries) {
     if (e.separator) {
       if (groups[groups.length - 1]!.length) groups.push([]);
-    } else if (!QUIT_IDS.has(e.id) && !LINE_IDS.has(e.id)) {
+    } else if (e.enabled && e !== update && !QUIT_IDS.has(e.id) && !LINE_IDS.has(e.id)) {
       groups[groups.length - 1]!.push(e);
     }
   }
-  const quits = entries.filter((e) => QUIT_IDS.has(e.id));
-  // an app with no server here (client mode) has no head: its update is in the first group
-  const lead = firstSep < 0 || !status ? undefined : update;
-  return { status, lines, update: lead, groups: groups.filter((g) => g.length), quits };
+  return { status, lines, update, groups: groups.filter((g) => g.length), quits };
 }
 
 export function TrayPanel() {
@@ -68,10 +70,44 @@ export function TrayPanel() {
 
   const parts = useMemo(() => (state ? partsOf(state.entries) : null), [state]);
 
-  // the first action takes the focus when the panel opens
+  // the first action takes the focus when the panel opens (its first state, and each time the
+  // shell shows it again), never when its words change under a keyboard (a download's percent)
+  const opened = useRef(false);
   useEffect(() => {
-    if (parts) buttons.current.find((b) => b && !b.disabled)?.focus();
+    if (!parts || opened.current) return;
+    opened.current = true;
+    buttons.current.find((b) => b && !b.disabled)?.focus();
   }, [parts]);
+  useEffect(
+    () =>
+      onTrayPanelOpened(() => {
+        buttons.current.find((b) => b && !b.disabled)?.focus();
+      }),
+    []
+  );
+
+  // the keys work wherever the focus is in the panel, the page's body included (a click on the
+  // status line leaves it there)
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        void hideTrayPanel();
+        return;
+      }
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      const live = buttons.current.filter((b): b is HTMLButtonElement => !!b && !b.disabled);
+      if (!live.length) return;
+      const at = live.indexOf(document.activeElement as HTMLButtonElement);
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      const next =
+        at < 0 ? (step > 0 ? 0 : live.length - 1) : (at + step + live.length) % live.length;
+      live[next]?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   if (!state || !parts) return <div className="mkt-tray" aria-busy="true" />;
 
@@ -84,25 +120,11 @@ export function TrayPanel() {
     };
   };
 
-  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      void hideTrayPanel();
-      return;
-    }
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    e.preventDefault();
-    const live = buttons.current.filter((b): b is HTMLButtonElement => !!b && !b.disabled);
-    const at = live.indexOf(document.activeElement as HTMLButtonElement);
-    const next = (at + (e.key === "ArrowDown" ? 1 : -1) + live.length) % live.length;
-    live[next]?.focus();
-  }
-
   const choose = (id: string) => () => void chooseTrayItem(id);
   const brand = BRAND[state.lang];
 
   return (
-    <div className="mkt-tray" onKeyDown={onKeyDown}>
+    <div className="mkt-tray">
       <header className="mkt-tray__top">
         <img src="/icons/icon-192.png" alt="" width={36} height={36} />
         <div className="mkt-tray__status">
@@ -135,7 +157,7 @@ export function TrayPanel() {
       )}
       <nav className="mkt-tray__menu" aria-label={brand}>
         {parts.groups.map((g, gi) => (
-          <div key={gi} className="mkt-tray__group" role="group">
+          <div key={gi} className="mkt-tray__group">
             {g.map((e) => (
               <button
                 key={e.id}

@@ -13,6 +13,7 @@ import { installCrashReports } from "./lib/crashReports";
 import { registerServiceWorker, reloadOnStaleChunks } from "./lib/pwa";
 import { App } from "./App";
 import { isTrayPanel } from "./lib/trayPanel";
+import { TrayPanel } from "./tray/TrayPanel";
 // the theme's fonts, bundled (SIL OFL): Plex for text, Amiri for headings
 import "@fontsource/ibm-plex-sans-arabic/400.css";
 import "@fontsource/ibm-plex-sans-arabic/500.css";
@@ -47,21 +48,11 @@ if (!rootEl) {
   throw new Error("main: #root element missing from index.html");
 }
 
-// story 13.12: the desktop app's tray panel is a window of these pages that draws the panel
-// instead of the app (traypanel.rs marks it before the page loads)
-const TrayPanel = React.lazy(() =>
-  import("./tray/TrayPanel").then((m) => ({ default: m.TrayPanel }))
-);
-
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    {isTrayPanel() ? (
-      <React.Suspense fallback={null}>
-        <TrayPanel />
-      </React.Suspense>
-    ) : (
-      <App />
-    )}
+    {/* story 13.12: the desktop app's tray panel is a window of these pages that draws the
+        panel instead of the app (traypanel.rs marks it before the page loads) */}
+    {isTrayPanel() ? <TrayPanel /> : <App />}
   </React.StrictMode>
 );
 

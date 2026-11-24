@@ -1909,6 +1909,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
             });
     }
     tray.build(app)?;
+    // story 13.12: the tray's panel, made hidden now so a click only shows it
+    #[cfg(any(windows, target_os = "macos"))]
+    crate::traypanel::prepare(app);
 
     // macOS: after an update or a reinstall the server's login item is still the old
     // build's, which launchd refuses to start (agent::register_for_this_build); this

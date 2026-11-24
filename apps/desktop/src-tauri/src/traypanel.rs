@@ -11,10 +11,13 @@
 // the screen reader's way in, and the only one on Linux, where the panel draws the menu itself
 // (StatusNotifier).
 
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
 use serde::Serialize;
 use tauri::{
-    AppHandle, Emitter, Manager, PhysicalPosition, Rect, WebviewUrl, WebviewWindow,
-    WebviewWindowBuilder, WindowEvent,
+    AppHandle, Emitter, Manager, Position, Rect, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+    WindowEvent,
 };
 
 use crate::{applog, shell, tray::Entry};
@@ -22,6 +25,18 @@ use crate::{applog, shell, tray::Entry};
 pub const LABEL: &str = "tray-panel";
 /// The event the panel gets when the tray's entries change.
 pub const STATE_EVENT: &str = "tray-panel-state";
+/// The event the panel gets each time it is shown again (its first action takes the focus).
+pub const OPENED_EVENT: &str = "tray-panel-opened";
+/// A left click this soon after the panel hid on losing the focus was the click that took the
+/// focus away (Windows gives it to the taskbar on the press): it closes the panel, as a
+/// second click on an open flyout does, instead of opening it again.
+const CLOSING_CLICK: Duration = Duration::from_millis(400);
+
+/// When the panel last hid on losing the focus.
+#[derive(Default)]
+pub struct Panel {
+    blurred: Mutex<Option<Instant>>,
+}
 /// The panel's size, in the page's (logical) pixels.
 pub const WIDTH: f64 = 360.0;
 pub const HEIGHT: f64 = 560.0;
@@ -100,10 +115,20 @@ pub fn tray_panel_hide(app: AppHandle) {
     hide(&app);
 }
 
-/// The tray's entries changed: an open panel shows them.
+/// The tray's entries changed: an open panel shows them (the panel's window only).
 pub fn emit_state(app: &AppHandle) {
-    if let Some(w) = app.get_webview_window(LABEL) {
-        let _ = w.emit(STATE_EVENT, shell::tray_panel_state(app));
+    if app.get_webview_window(LABEL).is_some() {
+        let _ = app.emit_to(LABEL, STATE_EVENT, shell::tray_panel_state(app));
+    }
+}
+
+/// The panel's window, made hidden when the tray is (at start, not in an event handler: a
+/// window built in one can deadlock on Windows), so a click only shows it.
+pub fn prepare(app: &AppHandle) {
+    app.manage(Panel::default());
+    if let Err(e) = build(app) {
+        // no panel: a left click opens the window, as it did before
+        applog::warn("the tray's panel could not be made", e);
     }
 }
 
@@ -116,28 +141,28 @@ fn hide(app: &AppHandle) {
 /// A left click on the tray icon, at `icon`: the panel opens beside it, or closes when it is
 /// open.
 pub fn toggle(app: &AppHandle, icon: Rect) {
-    let window = match app.get_webview_window(LABEL) {
-        Some(w) => w,
-        None => match build(app) {
-            Ok(w) => w,
-            Err(e) => {
-                // no panel: the window, as a left click opened it before
-                applog::warn("the tray's panel could not open", e);
-                shell::focus_main(app);
-                return;
-            }
-        },
+    let Some(window) = app.get_webview_window(LABEL) else {
+        // no panel (it could not be made): the window, as a left click opened it before
+        shell::focus_main(app);
+        return;
     };
     if window.is_visible().unwrap_or(false) {
         let _ = window.hide();
         return;
     }
+    let blurred = app
+        .try_state::<Panel>()
+        .and_then(|p| p.blurred.lock().ok().and_then(|mut b| b.take()));
+    if blurred.is_some_and(|at| at.elapsed() < CLOSING_CLICK) {
+        return;
+    }
     if let Some(pos) = position_for(app, icon) {
         let _ = window.set_position(pos);
     }
-    let _ = window.emit(STATE_EVENT, shell::tray_panel_state(app));
+    emit_state(app);
     let _ = window.show();
     let _ = window.set_focus();
+    let _ = app.emit_to(LABEL, OPENED_EVENT, ());
 }
 
 fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
@@ -152,6 +177,7 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .decorations(false)
         .shadow(true)
         .always_on_top(true)
+        .visible_on_all_workspaces(true)
         .skip_taskbar(true)
         .visible(false)
         .focused(true)
@@ -161,19 +187,39 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     window.on_window_event(move |event| {
         // a click elsewhere closes it, as the system's flyouts close
         if let WindowEvent::Focused(false) = event {
-            let _ = w.hide();
+            if w.is_visible().unwrap_or(false) {
+                if let Some(p) = w.app_handle().try_state::<Panel>() {
+                    if let Ok(mut b) = p.blurred.lock() {
+                        *b = Some(Instant::now());
+                    }
+                }
+                let _ = w.hide();
+            }
         }
     });
     Ok(window)
 }
 
-/// Where the panel goes for an icon at `icon`, on the screen that shows it.
-fn position_for(app: &AppHandle, icon: Rect) -> Option<PhysicalPosition<i32>> {
-    let probe = icon.position.to_physical::<f64>(1.0);
-    let monitor = app.monitor_from_point(probe.x, probe.y).ok().flatten()?;
+/// Where the panel goes for an icon at `icon`, on the screen that shows it. The tray gives the
+/// icon's rectangle in physical pixels, and each screen's rectangle is in the same pixels (its
+/// own scale): the screen is the one whose rectangle holds the icon. Windows takes the panel's
+/// place in physical pixels; the Mac takes it in points (the screen's scale divided out).
+fn position_for(app: &AppHandle, icon: Rect) -> Option<Position> {
+    let pos = icon.position.to_physical::<f64>(1.0);
+    let size = icon.size.to_physical::<f64>(1.0);
+    let centre = (pos.x + size.width / 2.0, pos.y + size.height / 2.0);
+    let monitors = app.available_monitors().ok()?;
+    let screens: Vec<Area> = monitors
+        .iter()
+        .map(|m| Area {
+            x: m.position().x as f64,
+            y: m.position().y as f64,
+            w: m.size().width as f64,
+            h: m.size().height as f64,
+        })
+        .collect();
+    let monitor = &monitors[screen_of(&screens, centre)?];
     let scale = monitor.scale_factor();
-    let pos = icon.position.to_physical::<f64>(scale);
-    let size = icon.size.to_physical::<f64>(scale);
     let work = monitor.work_area();
     let (x, y) = place(
         Area {
@@ -191,7 +237,24 @@ fn position_for(app: &AppHandle, icon: Rect) -> Option<PhysicalPosition<i32>> {
         (WIDTH * scale, HEIGHT * scale),
         GAP * scale,
     );
-    Some(PhysicalPosition::new(x.round() as i32, y.round() as i32))
+    if cfg!(target_os = "macos") {
+        Some(Position::Logical(tauri::LogicalPosition::new(
+            x / scale,
+            y / scale,
+        )))
+    } else {
+        Some(Position::Physical(tauri::PhysicalPosition::new(
+            x.round() as i32,
+            y.round() as i32,
+        )))
+    }
+}
+
+/// The screen (by index) whose rectangle holds `point`.
+pub fn screen_of(screens: &[Area], point: (f64, f64)) -> Option<usize> {
+    screens.iter().position(|s| {
+        point.0 >= s.x && point.0 < s.x + s.w && point.1 >= s.y && point.1 < s.y + s.h
+    })
 }
 
 /// A rectangle in physical pixels.
@@ -301,6 +364,29 @@ mod tests {
         let (x, y) = place(icon, work, SIZE, 8.0);
         assert_eq!(x, 56.0, "to the right of the taskbar");
         assert_eq!(y, 1080.0 - 560.0 - 8.0, "kept on the screen");
+    }
+
+    #[test]
+    fn the_icon_s_screen_is_the_one_that_holds_it_in_physical_pixels() {
+        // a 2× Retina screen (1512 points: 3024 pixels) and a 1× screen to its right
+        let screens = [
+            Area {
+                x: 0.0,
+                y: 0.0,
+                w: 3024.0,
+                h: 1964.0,
+            },
+            Area {
+                x: 3024.0,
+                y: 0.0,
+                w: 1920.0,
+                h: 1080.0,
+            },
+        ];
+        // an icon at 1200 points on the Retina screen is at 2400 pixels: still that screen
+        assert_eq!(screen_of(&screens, (2414.0, 24.0)), Some(0));
+        assert_eq!(screen_of(&screens, (3500.0, 12.0)), Some(1));
+        assert_eq!(screen_of(&screens, (-5.0, 12.0)), None);
     }
 
     #[test]

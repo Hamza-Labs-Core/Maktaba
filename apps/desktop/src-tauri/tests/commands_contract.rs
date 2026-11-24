@@ -24,7 +24,8 @@ fn declared() -> BTreeSet<String> {
     let list = &build[start..];
     let list = &list[..list.find("];").expect("the list's end")];
     list.lines()
-        .filter(|l| !l.trim_start().starts_with("//"))
+        // a comment, whole-line or after the code, names no command
+        .map(|l| l.split("//").next().unwrap_or(""))
         .flat_map(|l| l.split('"').skip(1).step_by(2).map(str::to_string))
         .collect()
 }
@@ -46,6 +47,17 @@ fn registered() -> BTreeSet<String> {
 
 fn capability(name: &str) -> serde_json::Value {
     serde_json::from_str(&read(&root().join("capabilities").join(name))).expect("a capability")
+}
+
+/// Every capability file's name.
+fn capabilities() -> Vec<String> {
+    let mut out: Vec<String> = std::fs::read_dir(root().join("capabilities"))
+        .expect("capabilities/")
+        .filter_map(|e| e.ok()?.file_name().into_string().ok())
+        .filter(|n| n.ends_with(".json"))
+        .collect();
+    out.sort();
+    out
 }
 
 fn permissions(cap: &serde_json::Value) -> BTreeSet<String> {
@@ -70,8 +82,8 @@ fn every_declared_command_runs_and_every_running_command_is_declared() {
 #[test]
 fn every_app_permission_a_capability_grants_is_a_declared_command() {
     let d = declared();
-    for name in ["default.json", "local-server.json", "tray-panel.json"] {
-        for p in permissions(&capability(name)) {
+    for name in capabilities() {
+        for p in permissions(&capability(&name)) {
             if let Some(cmd) = p.strip_prefix("allow-") {
                 assert!(
                     d.contains(&cmd.replace('-', "_")),
@@ -88,7 +100,8 @@ fn the_tray_panel_may_call_its_own_commands_and_nothing_else() {
     assert_eq!(cap["windows"], serde_json::json!(["tray-panel"]));
     assert!(cap.get("remote").is_none(), "the app's own pages only");
     let want: BTreeSet<String> = [
-        "core:event:default",
+        "core:event:allow-listen",
+        "core:event:allow-unlisten",
         "allow-tray-panel-state",
         "allow-tray-panel-choose",
         "allow-tray-panel-hide",
@@ -97,12 +110,19 @@ fn the_tray_panel_may_call_its_own_commands_and_nothing_else() {
     .map(String::from)
     .collect();
     assert_eq!(permissions(&cap), want);
-    // and no other capability gives its window anything
-    for name in ["default.json", "local-server.json"] {
-        let windows = capability(name)["windows"].clone();
-        assert!(
-            !windows.to_string().contains("tray-panel"),
-            "{name} names the tray's panel"
-        );
+    // and no other capability gives its window anything, by name or by a pattern
+    for name in capabilities()
+        .into_iter()
+        .filter(|n| n != "tray-panel.json")
+    {
+        let windows = capability(&name)["windows"].clone();
+        let list = windows.as_array().expect("windows");
+        for w in list {
+            let w = w.as_str().unwrap_or_default();
+            assert!(
+                w != "tray-panel" && !w.contains('*'),
+                "{name} gives the window {w:?} its permissions"
+            );
+        }
     }
 }
