@@ -2605,51 +2605,60 @@ func TestAppBundleVenvRemovesTheWheelhouse(t *testing.T) {
 	}
 }
 
-// Research item 5 (E4, E8): an update's migrations wait for the machines' table syncs to
-// end, pause the machines' copies while they run, and let them in again once the schema is
-// settled, and not before: a server killed part way, a held update and a restore not done
-// leave them out; a rollback's Down scripts run with them out; nothing is done as if a pause
-// that failed had worked.
-func TestAppBundleMigrationsPauseTheMachinesCopies(t *testing.T) {
+// pauseHome is a home whose update's migrations pause the machines' copies.
+type pauseHome struct {
+	cfg     config.Config
+	payload string
+	f       *fakeDB
+	log     *strings.Builder
+}
+
+func newPauseHome(t *testing.T, rec apppayload.Database) pauseHome {
+	t.Helper()
 	prevW, prevE := copySyncWait, copySyncEvery
 	t.Cleanup(func() { copySyncWait, copySyncEvery = prevW, prevE })
 	copySyncWait, copySyncEvery = time.Minute, time.Millisecond
-	type home struct {
-		cfg     config.Config
-		payload string
-		f       *fakeDB
-		log     *strings.Builder
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	newHome := func(t *testing.T, rec apppayload.Database) home {
-		cfg, payload := appEnv(t, "v0.3.0", "")
-		if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		record(t, cfg, rec)
-		return home{cfg, payload, installFakeDB(t, cfg), &strings.Builder{}}
-	}
-	start := func(t *testing.T, h home) error {
-		ps := appBundleGates(h.cfg, h.payload, testBundle(h.cfg), gateProcs(true), lockedWriter{mu: &sync.Mutex{}, w: h.log})
-		return prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
-	}
-	check := func(t *testing.T, h home, want string, paused bool) {
-		t.Helper()
-		h.f.mu.Lock()
-		defer h.f.mu.Unlock()
-		if got := strings.Join(h.f.copies, "|"); got != want || h.f.paused != paused {
-			t.Fatalf("copies %q paused %v, want %q paused %v\n%s", got, h.f.paused, want, paused, h.log)
-		}
-	}
-	prev := apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated}
-	broken := errors.New("migrate: ERROR 0144_x.sql: boom")
+	record(t, cfg, rec)
+	return pauseHome{cfg, payload, installFakeDB(t, cfg), &strings.Builder{}}
+}
 
+// start is one start of its database step.
+func (h pauseHome) start(t *testing.T) error {
+	t.Helper()
+	ps := appBundleGates(h.cfg, h.payload, testBundle(h.cfg), gateProcs(true), lockedWriter{mu: &sync.Mutex{}, w: h.log})
+	return prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+}
+
+// check is what was paused and resumed, in order, and whether the copies are out now.
+func (h pauseHome) check(t *testing.T, want string, paused bool) {
+	t.Helper()
+	h.f.mu.Lock()
+	defer h.f.mu.Unlock()
+	if got := strings.Join(h.f.copies, "|"); got != want || h.f.paused != paused {
+		t.Fatalf("copies %q paused %v, want %q paused %v\n%s", got, h.f.paused, want, paused, h.log)
+	}
+}
+
+// pausePrev is the record of a home about to update, errPauseRun a migration that fails.
+var (
+	pausePrev   = apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated}
+	errPauseRun = errors.New("migrate: ERROR 0144_x.sql: boom")
+)
+
+// Research item 5 (E4, E8): an update's migrations wait for the machines' table syncs to end,
+// pause the machines' copies while they run, and let them in again once the schema is settled.
+func TestAppBundleMigrationsPauseTheMachinesCopies(t *testing.T) {
 	t.Run("an update", func(t *testing.T) {
-		h := newHome(t, prev)
+		h := newPauseHome(t, pausePrev)
 		h.f.syncs = []int{2, 1, 0}
-		if err := start(t, h); err != nil {
+		if err := h.start(t); err != nil {
 			t.Fatal(err)
 		}
-		check(t, h, "pause migrating|resume migrated", false)
+		h.check(t, "pause migrating|resume migrated", false)
 		if len(h.f.syncs) != 0 {
 			t.Fatalf("the table syncs were not waited out (%d counts left)", len(h.f.syncs))
 		}
@@ -2662,89 +2671,95 @@ func TestAppBundleMigrationsPauseTheMachinesCopies(t *testing.T) {
 		}
 	})
 	t.Run("no update", func(t *testing.T) {
-		h := newHome(t, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
-		if err := start(t, h); err != nil {
+		h := newPauseHome(t, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+		if err := h.start(t); err != nil {
 			t.Fatal(err)
 		}
-		check(t, h, "", false)
+		h.check(t, "", false)
 	})
 	t.Run("undone by the Down scripts", func(t *testing.T) {
-		h := newHome(t, prev)
-		h.f.back, h.f.backSchema, h.f.before, h.f.applied, h.f.migrateErr = updater.FailedDown, 230, 230, 234, broken
-		_ = start(t, h)
-		check(t, h, "pause migrating|down|resume migrated", false)
+		h := newPauseHome(t, pausePrev)
+		h.f.back, h.f.backSchema, h.f.before, h.f.applied, h.f.migrateErr = updater.FailedDown, 230, 230, 234, errPauseRun
+		_ = h.start(t)
+		h.check(t, "pause migrating|down|resume migrated", false)
 	})
 	t.Run("kept", func(t *testing.T) {
-		h := newHome(t, prev)
-		h.f.back, h.f.migrateErr = updater.FailedKeep, broken
-		_ = start(t, h)
-		check(t, h, "pause migrating|resume migrated", false)
+		h := newPauseHome(t, pausePrev)
+		h.f.back, h.f.migrateErr = updater.FailedKeep, errPauseRun
+		_ = h.start(t)
+		h.check(t, "pause migrating|resume migrated", false)
 	})
+}
+
+// The copies come back only on a settled schema: a held update, migrations a kill or a stop cut
+// short and a Down script that failed leave them out, until a person's choice is done or the
+// next start ends what was begun.
+func TestAppBundleCopiesStayOutUntilTheSchemaIsSettled(t *testing.T) {
 	t.Run("held, until a person's choice is done", func(t *testing.T) {
-		h := newHome(t, prev)
-		h.f.back, h.f.migrateErr = updater.FailedLossy, broken
-		if err := start(t, h); !supervisor.Halted(err) {
+		h := newPauseHome(t, pausePrev)
+		h.f.back, h.f.migrateErr = updater.FailedLossy, errPauseRun
+		if err := h.start(t); !supervisor.Halted(err) {
 			t.Fatalf("the failed update: %v", err)
 		}
-		check(t, h, "pause migrating", true)
+		h.check(t, "pause migrating", true)
 		// each start stops on it, with the copies out (one the switch back made too)
 		h.f.paused = false // a release before the pause ran meanwhile
-		if err := start(t, h); !supervisor.Halted(err) {
+		if err := h.start(t); !supervisor.Halted(err) {
 			t.Fatalf("a start on a held update: %v", err)
 		}
-		check(t, h, "pause migrating|pause held", true)
+		h.check(t, "pause migrating|pause held", true)
 		// the person puts the backup back: they come back once it is done
 		rec := recorded(t, h.cfg)
 		rec.State, rec.By = apppayload.DatabaseRestoring, "admin"
 		record(t, h.cfg, rec)
 		newPayload(t, h.payload, "v0.2.0")
 		h.f.migrateErr = nil
-		if err := start(t, h); err != nil {
+		if err := h.start(t); err != nil {
 			t.Fatalf("the restore: %v", err)
 		}
-		check(t, h, "pause migrating|pause held|pause restoring|resume migrated", false)
+		h.check(t, "pause migrating|pause held|pause restoring|resume migrated", false)
 	})
 	t.Run("held, then a newer release", func(t *testing.T) {
-		h := newHome(t, apppayload.Database{Version: "v0.2.5", State: apppayload.DatabaseHeld, From: "v0.2.0",
+		h := newPauseHome(t, apppayload.Database{Version: "v0.2.5", State: apppayload.DatabaseHeld, From: "v0.2.0",
 			Failed: "v0.2.5", Error: "boom", Held: "db_down_failed", Dump: "/b/pre-v0.2.0-to-v0.2.5.dump"})
-		if err := start(t, h); err != nil {
+		if err := h.start(t); err != nil {
 			t.Fatal(err)
 		}
-		check(t, h, "pause held|pause migrating|resume migrated", false)
+		h.check(t, "pause held|pause migrating|resume migrated", false)
 	})
 	for name, state := range map[string]string{"killed before or while it migrates": apppayload.DatabaseMigrating,
 		"killed after it": apppayload.DatabaseMigrated} {
 		t.Run(name, func(t *testing.T) {
-			h := newHome(t, apppayload.Database{Version: "v0.3.0", State: state, From: "v0.2.0", Dump: "/b/d.dump", SchemaBefore: 230})
+			h := newPauseHome(t, apppayload.Database{Version: "v0.3.0", State: state, From: "v0.2.0", Dump: "/b/d.dump", SchemaBefore: 230})
 			h.f.paused = true // the marker the kill left
-			if err := start(t, h); err != nil {
+			if err := h.start(t); err != nil {
 				t.Fatal(err)
 			}
 			want := "resume migrated"
 			if state == apppayload.DatabaseMigrating {
 				want = "pause migrating|pause migrating|resume migrated" // the step's start, then the migrations'
 			}
-			check(t, h, want, false)
+			h.check(t, want, false)
 		})
 	}
 	t.Run("stopped while it migrates", func(t *testing.T) {
-		h := newHome(t, prev)
+		h := newPauseHome(t, pausePrev)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		h.f.onMigrate = cancel
 		ps := appBundleGates(h.cfg, h.payload, testBundle(h.cfg), gateProcs(true), h.log)
 		_ = prepareOf(t, ps, supervisor.RoleAPI)(ctx, noReport)
-		check(t, h, "pause migrating", true)
+		h.check(t, "pause migrating", true)
 	})
 	t.Run("a rollback's Down scripts", func(t *testing.T) {
-		h := newHome(t, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+		h := newPauseHome(t, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
 		h.f.syncs = []int{1, 1, 1}
 		g := &migrationGate{stateDir: h.cfg.StateDir(), version: "v0.2.0", pg: testBundle(h.cfg), log: h.log}
 		u := &updates{api: exec.Command("maktaba-api")}
 		if err := u.migrateDown(context.Background(), nil, 230, g); err != nil {
 			t.Fatal(err)
 		}
-		check(t, h, "pause migrated|down|resume migrated", false)
+		h.check(t, "pause migrated|down|resume migrated", false)
 		if len(h.f.syncs) != 3 {
 			t.Fatal("a rollback waited for a table sync")
 		}
@@ -2753,44 +2768,49 @@ func TestAppBundleMigrationsPauseTheMachinesCopies(t *testing.T) {
 		if err := u.migrateDown(context.Background(), nil, 230, g); err == nil {
 			t.Fatal("a Down script that failed is said to have worked")
 		}
-		check(t, h, "pause migrated|down|resume migrated|pause migrated|down", true)
+		h.check(t, "pause migrated|down|resume migrated|pause migrated|down", true)
 	})
+}
+
+// Nothing is done as if a pause or a resume that failed had worked, and a server that does not
+// answer bounds the wait.
+func TestAppBundleCopiesPauseThatFails(t *testing.T) {
 	t.Run("the pause fails", func(t *testing.T) {
-		h := newHome(t, prev)
+		h := newPauseHome(t, pausePrev)
 		h.f.pauseErr = errors.New("no space left on device")
-		if err := start(t, h); err != nil {
+		if err := h.start(t); err != nil {
 			t.Fatalf("the update: %v", err)
 		}
-		check(t, h, "pause migrating", false)
+		h.check(t, "pause migrating", false)
 		if !strings.Contains(h.log.String(), "level=error the machines' copies could not be paused") ||
 			strings.Contains(h.log.String(), "copies are paused") {
 			t.Fatalf("not said:\n%s", h.log)
 		}
 	})
 	t.Run("the resume fails", func(t *testing.T) {
-		h := newHome(t, prev)
+		h := newPauseHome(t, pausePrev)
 		h.f.resumeErr = errors.New("server closed the connection")
-		if err := start(t, h); err != nil {
+		if err := h.start(t); err != nil {
 			t.Fatal(err)
 		}
-		check(t, h, "pause migrating|resume migrated", true)
+		h.check(t, "pause migrating|resume migrated", true)
 		h.f.resumeErr = nil
-		if err := start(t, h); err != nil {
+		if err := h.start(t); err != nil {
 			t.Fatal(err)
 		}
-		check(t, h, "pause migrating|resume migrated|resume migrated", false)
+		h.check(t, "pause migrating|resume migrated|resume migrated", false)
 	})
 	t.Run("a server that does not answer bounds the wait", func(t *testing.T) {
-		h := newHome(t, prev)
+		h := newPauseHome(t, pausePrev)
 		was := tableSyncsBundled
 		defer func() { tableSyncsBundled = was }()
 		tableSyncsBundled = func(ctx context.Context, _ pgbundle.Bundle) (int, error) { <-ctx.Done(); return 0, ctx.Err() }
 		copySyncWait = 50 * time.Millisecond
 		defer func() { copySyncWait = time.Minute }()
-		if err := start(t, h); err != nil {
+		if err := h.start(t); err != nil {
 			t.Fatal(err)
 		}
-		check(t, h, "pause migrating|resume migrated", false)
+		h.check(t, "pause migrating|resume migrated", false)
 	})
 }
 

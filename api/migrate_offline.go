@@ -35,87 +35,72 @@ var concurrentlyStmt = regexp.MustCompile(`(?is)^(?:CREATE\s+(?:UNIQUE\s+)?INDEX
 // runs later, maybe online) and comments is left as it is. It returns the text and how
 // many statements it changed.
 func plainIndexBuilds(text string) (string, int) {
+	if !strings.Contains(strings.ToUpper(text), "CONCURRENTLY") {
+		return text, 0 // most migrations build none
+	}
 	up, down := text, ""
 	if loc := gooseDown.FindStringIndex(text); loc != nil {
 		up, down = text[:loc[0]], text[loc[0]:]
 	}
 	var out strings.Builder
-	n := 0
+	n, last := 0, 0   // what is copied so far: up to last
 	stmtStart := true // the next code character begins a statement
 	for i := 0; i < len(up); {
 		c := up[i]
 		switch {
-		case c == '-' && i+1 < len(up) && up[i+1] == '-': // a line comment
-			j := strings.IndexByte(up[i:], '\n')
-			if j < 0 {
-				j = len(up) - i
-			}
-			out.WriteString(up[i : i+j])
-			i += j
+		case c == '-' && strings.HasPrefix(up[i:], "--"): // a line comment
+			i = skipPast(up, i, len("--"), "\n")
 			continue
-		case c == '/' && i+1 < len(up) && up[i+1] == '*': // a block comment
-			j := strings.Index(up[i+2:], "*/")
-			end := len(up)
-			if j >= 0 {
-				end = i + 2 + j + 2
-			}
-			out.WriteString(up[i:end])
-			i = end
+		case c == '/' && strings.HasPrefix(up[i:], "/*"): // a block comment
+			i = skipPast(up, i, len("/*"), "*/")
 			continue
 		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
-			out.WriteByte(c)
 			i++
 			continue
 		}
 		if stmtStart {
 			stmtStart = false
-			if m := concurrentlyStmt.FindStringSubmatchIndex(up[i:]); m != nil {
-				out.WriteString(up[i : i+m[2]])
-				i += m[3] // CONCURRENTLY dropped; the space after it stays
-				n++
-				continue
+			if c == 'C' || c == 'c' || c == 'D' || c == 'd' {
+				if m := concurrentlyStmt.FindStringSubmatchIndex(up[i:]); m != nil {
+					out.WriteString(up[last : i+m[2]])
+					i += m[3] // CONCURRENTLY dropped; the space after it stays
+					last = i
+					n++
+					continue
+				}
 			}
 		}
 		switch c {
 		case ';':
 			stmtStart = true
-			out.WriteByte(c)
 			i++
-		case '\'': // a string ('' inside it is a quote)
-			j := i + 1
-			for j < len(up) {
-				if up[j] == '\'' {
-					if j+1 < len(up) && up[j+1] == '\'' {
-						j += 2
-						continue
-					}
-					break
-				}
-				j++
-			}
-			end := min(j+1, len(up))
-			out.WriteString(up[i:end])
-			i = end
+		case '\'': // a string ('' inside it is a quote: the next one starts right there)
+			i = skipPast(up, i, len("'"), "'")
 		case '$': // a dollar quote: $$ or $tag$
 			tag := dollarTag(up[i:])
 			if tag == "" {
-				out.WriteByte(c)
 				i++
 				continue
 			}
-			j := strings.Index(up[i+len(tag):], tag)
-			end := len(up)
-			if j >= 0 {
-				end = i + len(tag) + j + len(tag)
-			}
-			out.WriteString(up[i:end])
-			i = end
+			i = skipPast(up, i, len(tag), tag)
 		default:
-			out.WriteByte(c)
 			i++
 		}
 	}
+	if n == 0 {
+		return text, 0
+	}
+	out.WriteString(up[last:])
 	return out.String() + down, n
+}
+
+// skipPast is the index after the next end in s, from i plus open (what opens it); len(s)
+// when it never ends.
+func skipPast(s string, i, open int, end string) int {
+	if j := strings.Index(s[i+open:], end); j >= 0 {
+		return i + open + j + len(end)
+	}
+	return len(s)
 }
 
 // dollarTagRe is a dollar quote's opening tag.
