@@ -169,6 +169,24 @@ func TestLayoutInstaller(t *testing.T) {
 		p.Latest.After(time.Now().Add(layout.MaxGuardSpan)) || p.Latest.Before(p.Deadline) {
 		t.Fatalf("latest %v (deadline %v), want after %v", p.Latest, p.Deadline, want)
 	}
+	// a large library's migrations may take over a day (pendingCap): the launcher waits as
+	// long as the watch does, for all the pushes it takes
+	long := *j
+	long.Rehearsal = &Rehearsal{DBBytes: 100 << 30}
+	latest := guardLatest(p.Since, &long)
+	if latest.Sub(p.Since) <= layout.MaxGuardSpan || !layout.GuardLatest(p.Since, latest).Equal(latest) {
+		t.Fatalf("a 100 GiB library: latest %v after the switch, capped to %v", latest.Sub(p.Since),
+			layout.GuardLatest(p.Since, latest).Sub(p.Since))
+	}
+	if err := l.GuardPending("1.5.0", p.Deadline, latest, record); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := l.ExtendPending(j.Job.RunID, p.Since.Add(26*time.Hour)); !ok || err != nil {
+		t.Fatalf("pushed to 26 h: %v %v", ok, err)
+	}
+	if q, _ := l.ReadPending(); !q.Deadline.Equal(p.Since.Add(26 * time.Hour).UTC()) {
+		t.Fatalf("deadline %v, want 26 h after the switch", q.Deadline.Sub(p.Since))
+	}
 	if err := li.Revert(ctx, j); err != nil {
 		t.Fatal(err)
 	}

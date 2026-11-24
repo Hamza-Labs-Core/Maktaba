@@ -206,6 +206,23 @@ func (r requests) set(j *Journal, kind, feed, state string) error {
 	return r.write(q)
 }
 
+// stage moves the run's order from ordered to staged, and says whether it did: an answer
+// that came meanwhile (staged, failed) and an order withdrawn or replaced stay as they are.
+func (r requests) stage(j *Journal) (bool, error) {
+	q, err := r.read()
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if q.RunID != j.Job.RunID || q.State != RequestOrdered {
+		return false, nil
+	}
+	q.State, q.Error = RequestStaged, ""
+	return true, r.write(q)
+}
+
 // failure is the failure the app reported for the run's order (nil: none).
 func (r requests) failure(j *Journal) *Failure {
 	q, err := r.read()

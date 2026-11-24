@@ -241,17 +241,17 @@ func markRecordFailed(path, failed, reason, state string) (bool, error) {
 const MaxGuardSpan = 24 * time.Hour
 
 // GuardLatest is how far a guard's deadline may be pushed: latest when the release that
-// switched set it (never later than MaxGuardSpan past since), else since plus
-// MaxGuardSpan. The launcher never waits past it, whatever the deadline says.
+// switched set it (its database step's own cap and watch, which pass a day on a large
+// library), else since plus MaxGuardSpan. The launcher never waits past it, whatever the
+// deadline says; the release being judged cannot move it.
 func GuardLatest(since, latest time.Time) time.Time {
-	ceiling := since.Add(MaxGuardSpan)
+	if !latest.IsZero() {
+		return latest
+	}
 	if since.IsZero() {
-		ceiling = time.Now().Add(MaxGuardSpan)
+		since = time.Now()
 	}
-	if latest.IsZero() || latest.After(ceiling) {
-		return ceiling
-	}
-	return latest
+	return since.Add(MaxGuardSpan)
 }
 
 // ExtendGuard pushes the guard's deadline to until when the guard is runID's and its

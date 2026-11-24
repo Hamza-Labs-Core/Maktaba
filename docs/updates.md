@@ -200,7 +200,8 @@ the others go, and it takes its turn once staged, with no click. A run waiting o
 download gives way to a newer release. An app that never stages its order (not running on that
 machine, or its start with the order's link failed, which the run's log now says) ends the order
 `app_no_answer` at the time the run installs by (its window's end), else three hours after the
-order, and never within half an hour of it; nothing changed. The Linux app's runtime order has
+order, and never within half an hour of it; nothing changed. It is the machine's, not the
+release's: it counts no attempt, and the next window tries again. The Linux app's runtime order has
 nothing to stage, so an app that does not answer it within 10 minutes no longer holds the run: it
 goes on, and the server switches its runtime itself at the go. A power cut at any step is
 recovered at the next start from the update's journal (`updates/journal.json`).
