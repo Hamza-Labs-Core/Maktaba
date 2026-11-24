@@ -17,10 +17,14 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Story 55.07 T03 and T04: the clock is the test's virtual time. */
+/**
+ * Story 55.07 T03 and T04, and story 13.22 T01 with recording players (the channel's stream in
+ * the engine's player): the clock is the test's virtual time.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChannelPlaybackTest {
     private fun cf(token: String) = "https://customer-abc.cloudflarestream.com/$token/manifest/video.m3u8"
@@ -120,5 +124,53 @@ class ChannelPlaybackTest {
         runCurrent()
         assertEquals(2, cp.opened)
         assertFalse(cp.paused)
+    }
+
+    @Test
+    fun story1322_t01_oneOpenThenTheSameHandleLoadsTheNextChannelAndTheLiveEdgeAgain() = runTest {
+        val players = RecordingPlayers()
+        val (cp, video) = channelOnFakes(players)
+        cp.open("c1")
+        runCurrent()
+        val first = video.video
+        cp.next(twoChannels)
+        runCurrent()
+        assertEquals("c2", cp.channelId)
+        assertSame("the same handle", first, video.video)
+        cp.pause()
+        cp.backToLive()
+        runCurrent()
+        cp.close()
+        assertEquals(listOf("open ${channelUrl("c1")}", "loadfile ${channelUrl("c2")} replace", "pause", "loadfile ${channelUrl("c2")} replace", "dispose 1"), players.calls)
+        assertEquals(3, cp.opened)
+    }
+
+    @Test
+    fun story1322_theStreamsEndIsTheChannelEndedAndAFailureOffersTryAgain() = runTest {
+        val players = RecordingPlayers()
+        val (cp, _) = channelOnFakes(players)
+        cp.open("c1")
+        runCurrent()
+        assertEquals(ChannelStatus.Playing, cp.status)
+        players.events.single().ended()
+        runCurrent()
+        assertEquals(ChannelStatus.Ended, cp.status)
+        assertEquals("live.channelEnded", cp.endedKey)
+        assertTrue(players.calls.toString(), "dispose 1" in players.calls)
+        // Try again is not offered for an end; a failure offers it, and it opens the channel again
+        cp.retry()
+        runCurrent()
+        assertEquals(ChannelStatus.Playing, cp.status)
+        players.events.last().failed("loading failed")
+        runCurrent()
+        assertEquals(ChannelStatus.Failed(null, retryable = true), cp.status)
+        cp.retry()
+        runCurrent()
+        assertEquals(ChannelStatus.Playing, cp.status)
+        assertEquals(3, players.events.size)
+        // an older player's word counts for nothing
+        players.events.first().failed("late")
+        runCurrent()
+        assertEquals(ChannelStatus.Playing, cp.status)
     }
 }

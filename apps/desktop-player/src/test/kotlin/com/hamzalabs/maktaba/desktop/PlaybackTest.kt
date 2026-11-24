@@ -202,4 +202,26 @@ class PlaybackTest {
         assertEquals(QualityOption(720, 3000), onMain { playback.quality })
         assertTrue(onMain { playback.quality in playback.ladder })
     }
+
+    @Test
+    fun aPlayerWithoutLiveOptionsOpensAChannelAsAnyStreamAndCannotLoadIntoItself() {
+        // story 13.22: JavaFX's players have no live options and no reload in place
+        val asked = mutableListOf<String>()
+        val plain = Players { url, fromMs, autoplay, _ ->
+            asked += "$url $fromMs $autoplay"
+            FakeVideo(url)
+        }
+        val none = object : VideoEvents {
+            override val volume = 1f
+            override val muted = false
+            override fun ready(durationMs: Long?, audio: List<AudioOption>) {}
+            override fun position(ms: Long) {}
+            override fun playing(on: Boolean) {}
+            override fun failed(why: String) {}
+            override fun ended() {}
+        }
+        val v = runBlocking { plain.openLive("http://127.0.0.1:1/x/stream/channel/c1/index.m3u8", none) }
+        assertEquals(listOf("http://127.0.0.1:1/x/stream/channel/c1/index.m3u8 0 true"), asked)
+        assertEquals(false, v.load("http://127.0.0.1:1/x/stream/channel/c2/index.m3u8"))
+    }
 }
