@@ -106,6 +106,8 @@ fun main(args: Array<String>) {
     // where it announces itself
     session.discovery = ::discoverOrNothing
     session.discover(true)
+    // story 13.19: what this machine decodes, and its audio device's channels, for device_caps
+    com.hamzalabs.maktaba.desktop.mpv.Engine.startProbe()
 
     application {
         val lang = prefs.lang
@@ -216,7 +218,7 @@ fun main(args: Array<String>) {
                     }
                     if (reporting) {
                         ReportProblemDialog(signedIn.client, signedHome.label, crashHeader, crashOutbox, reference = reportRef,
-                            log = { listOf(com.hamzalabs.maktaba.desktop.mpv.Engine.logLine()) },
+                            log = { com.hamzalabs.maktaba.desktop.mpv.Engine.logLines() },
                             onDismiss = { reporting = false; reportRef = null })
                     }
                     crashNotice?.let { n ->
