@@ -86,6 +86,14 @@ prs: [1561]
     launch the test runner" or "The test runner failed to initialize for UI testing" and
     no test started;
   - bounds the boot at 5 minutes, logging each minute, then makes the simulator once more.
+- **Second run with the non-blocking hook (45325445743, at 1e0918711):** again every shard
+  that ran its tests passed, with no "Failed to terminate". iPad 3/6 ran none: its log has
+  "booting …: 60s" and then nothing, not even the next minute's line, until the job was
+  cancelled 9.5 minutes in.
+  - The runner itself went silent while booting an iPad simulator.
+  - This came three times today (main's 45298651218 and #1561's 45319649409 iPad 6/6, then
+    this one), all on the same image version, and in none of the earlier runs checked.
+  - Its re-run passed.
 - **TV Search's suggestions:** `testSuggestionsShowTheirKindsAndATitleOpensItsPage` failed in
   the same run.
   - Its check of the cells' focus never saw the row's first suggestion, so it always
@@ -121,5 +129,7 @@ prs: [1561]
   may cover it. The next failure's app log will say whether the action ran.
 - "Failed to terminate": it no longer hangs. Whether the non-blocking hook brings it back to
   its rate before #1550 is to be read from the next runs.
+- Runners going silent while booting an iPad simulator (above): nothing in the job can
+  answer for a frozen runner. The boot's per-minute lines say when it happens.
 - The audit's "Text clipped" measured mid-relayout (above), the Mac's "Lost connection" (its
   crash report comes with the next one), and `WalkthroughModel`'s 1 s timing.
