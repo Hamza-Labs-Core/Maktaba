@@ -68,24 +68,58 @@ fn every_menu_id_the_web_app_knows_is_declared_by_the_shell() {
 #[test]
 fn the_view_menu_has_the_way_into_big_screen_and_the_way_out() {
     let lib = read(&root().join("src/lib.rs"));
+    let lang = read(&root().join("src/lang.rs"));
     let web = web_ids();
-    for (constant, id, label) in [
-        ("bigscreen::MENU_ID", "big-screen", "\"Big Screen\""),
+    // the labels are the menu's words in lang.rs (story 13.10), in English and Arabic
+    for (constant, id, word, label) in [
+        (
+            "bigscreen::MENU_ID",
+            "big-screen",
+            "w.big_screen",
+            "big_screen: \"Big Screen\"",
+        ),
         (
             "bigscreen::LEAVE_MENU_ID",
             "big-screen-leave",
-            "\"Leave Big Screen\"",
+            "w.leave_big_screen",
+            "leave_big_screen: \"Leave Big Screen\"",
         ),
     ] {
         assert!(
             lib.contains(constant),
             "{constant} is not a menu item in lib.rs"
         );
-        assert!(lib.contains(label), "{label} is not a menu label in lib.rs");
+        assert!(lib.contains(word), "{word} is not a menu label in lib.rs");
+        assert!(lang.contains(label), "{label} is not in lang.rs");
         assert!(web.contains(id), "the web app does not know {id}");
     }
     // both are in the View menu's own list of items
-    let view = &lib[lib.find("\"View\"").expect("the View menu")..];
+    let view = &lib[lib.find("w.view,").expect("the View menu")..];
     let items = &view[..view.find(")?;").expect("the menu's end")];
     assert!(items.contains("&big_screen,") && items.contains("&big_screen_leave,"));
+}
+
+/// Story 13.10: the menu bar speaks the system's language (the Mac's menu bar, and the title
+/// bar's menu on Windows and Linux, which lists the same items): build_menu names no menu or
+/// item in English itself; every word is lang.rs's MenuWords.
+#[test]
+fn the_menu_bar_takes_every_word_from_lang_rs() {
+    let lib = read(&root().join("src/lib.rs"));
+    let start = lib.find("fn build_menu(").expect("build_menu is in lib.rs");
+    let body = &lib[start..];
+    let body = &body[..body.find("\n}\n").expect("build_menu's end")];
+    let literals: Vec<String> = quoted(body)
+        .into_iter()
+        // ids and accelerators are the contract and the keys, not words
+        .filter(|s| s.chars().next().is_some_and(char::is_uppercase))
+        .filter(|s| !s.starts_with("CmdOrCtrl"))
+        .collect();
+    assert!(
+        literals.is_empty(),
+        "build_menu has words of its own, not lang.rs's: {literals:?}"
+    );
+    assert!(
+        body.contains("lang.menu()"),
+        "build_menu reads lang.rs's menu words"
+    );
 }

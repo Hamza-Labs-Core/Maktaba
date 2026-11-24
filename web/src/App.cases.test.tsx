@@ -29,6 +29,11 @@ vi.mock("./lib/i18n", async () => {
   };
 });
 
+// story 13.10: the desktop shell's frame commands (lib/frame.ts)
+const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+
 import { App } from "./App";
 import { ApiError } from "./lib/api";
 import en from "./i18n/en.json";
@@ -231,6 +236,32 @@ describe("Epic 57 routes (parental controls)", () => {
 // The public pages sit outside AppShell, so App.tsx gives them their own
 // RouteErrorBoundary: a render crash there shows the fallback, and Back
 // brings the app back.
+describe("The desktop app's own window frame (story 13.10)", () => {
+  afterEach(() => {
+    delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+    invoke.mockReset();
+  });
+
+  it("gives the sign-in page a slim title bar when the shell gives the page the frame", async () => {
+    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    invoke.mockImplementation(async (cmd: string) =>
+      cmd === "frame_claim"
+        ? { controls: "windows", layout: "", side: "end", maximized: false, snapLayouts: false }
+        : null
+    );
+    open("/login");
+    const bar = await screen.findByTestId("frame-bar");
+    expect(bar).toHaveAttribute("data-tauri-drag-region", "deep");
+    expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
+  });
+
+  it("draws no frame in a browser", async () => {
+    open("/login");
+    await screen.findByRole("button", { name: en["login.submit"] });
+    expect(screen.queryByTestId("frame-bar")).toBeNull();
+  });
+});
+
 describe("Public page crash (login / register test cases)", () => {
   async function expectFallbackThenBack(backHeading: string) {
     expect(await screen.findByRole("alert", {}, { timeout: 300 })).toHaveTextContent(
