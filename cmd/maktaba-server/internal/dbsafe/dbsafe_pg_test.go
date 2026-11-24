@@ -821,3 +821,48 @@ func TestRestoreOfRowsCutShortCommitsNothing(t *testing.T) {
 		t.Fatalf("the database changed: %d %v\n%s", n, err, log.String())
 	}
 }
+
+// A table's rows cut short where pg_restore does not notice (PostgreSQL 18's ends well): its
+// COPY's end is missing, so psql takes what comes next for rows. Nothing of it is committed,
+// nothing waits for ever, and the restore says it failed.
+func TestRestoreOfRowsCutShortCommitsNothing(t *testing.T) {
+	r := newPGRig(t)
+	if runtime.GOOS == "windows" || !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql and a shell")
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(context.Background(), dump); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('after.update', '1')`); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte("#!/bin/sh\necho 'CREATE TABLE public.cut (t text);'\n"+
+		"echo 'COPY public.cut (t) FROM stdin;'\necho 'a row'\nprintf 'and half of anot'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tg := r.t
+	tg.Bin = func(name string) string {
+		if name == "pg_restore" {
+			return filepath.Join(bin, name)
+		}
+		return r.t.bin(name)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var log bytes.Buffer
+	err := tg.Restore(ctx, dump, &log)
+	if err == nil || ctx.Err() != nil || !strings.Contains(err.Error(), "syntax error") {
+		t.Fatalf("the restore: %v (%v)", err, ctx.Err())
+	}
+	db, err := r.t.open(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("the database changed: %d %v\n%s", n, err, log.String())
+	}
+}
