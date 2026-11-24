@@ -277,3 +277,10 @@ export function safeReleaseUrl(raw: unknown): string | null {
     return null; // relative or malformed
   }
 }
+
+/** Why a check failed, in the reader's language (the server's code; GitHub unreachable when it is not one this app knows). */
+export function checkFailedWhy(code: string | undefined, t: (k: string) => string): string {
+  const key = `updates.checkFailed.${code ?? ""}`;
+  const s = t(key);
+  return code && s !== key ? s : t("updates.checkFailed.unreachable");
+}

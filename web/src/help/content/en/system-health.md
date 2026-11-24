@@ -122,6 +122,14 @@ Something jobs need that Maktaba checks every minute (Queue health): the languag
 
 Maktaba's tuner in Plex: Plex answers, the tuner is registered, the channels are in sync, and the last error. See [Plex](/help/plex). On the Mac app, Plex on your network that does not answer with "no route to host" usually means macOS keeps Maktaba off the Local Network: see [Local Network](/help/mac-app#local-network).
 
+### Update check {#item-update-check}
+
+Whether Maktaba can read the list of releases on GitHub, which it checks every 6 hours to find updates. Shown once the first check has run.
+
+- **Updates are checked every 6 hours**: fine.
+- **The last update check failed**: one check failed (GitHub was busy, or the network dropped). It is tried again in 6 hours. Nothing to do yet.
+- **Can't check for updates since …**: two or more checks in a row failed, with what they failed on. While this lasts the server does not see new releases, and can only update to one it already knew. Open [Updates](/admin/updates) for the details, and see [Can't check for updates](/help/updates#check-failing).
+
 ### Folder access {#item-host-access}
 
 Whether the server can read each library folder, tried every time the page refreshes. Shown when maktaba-server runs the server (the Mac, Windows and Linux apps), not for a Docker install. One tile for all the folders, and one per folder:

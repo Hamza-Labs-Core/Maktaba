@@ -38,6 +38,7 @@ const (
 	NoticeReleaseHeld     = "update.release_held"
 	NoticeReleaseWithdrew = "update.release_withdrawn"
 	NoticeCheckStale      = "update.check_stale"
+	NoticeCheckFailing    = "update.check_failing"
 	NoticeHeldStale       = "update.held_stale"
 	NoticeReplay          = "update.replay"
 	NoticeRunFailed       = "update.run_failed"
@@ -149,6 +150,26 @@ func (d *Discoverer) get(ctx context.Context, url string, api bool, limit int64)
 // errTooLarge marks an answer longer than the caller allows.
 var errTooLarge = errors.New("too large")
 
+// tooLargeError is an answer longer than its cap: errors.Is(err, errTooLarge).
+type tooLargeError struct {
+	url   string
+	limit int64
+}
+
+func (e *tooLargeError) Error() string {
+	return fmt.Sprintf("GET %s: larger than %d bytes", e.url, e.limit)
+}
+
+func (e *tooLargeError) Is(target error) bool { return target == errTooLarge }
+
+// httpStatusError is an answer that is not 200 (nor a rate limit).
+type httpStatusError struct {
+	url  string
+	code int
+}
+
+func (e *httpStatusError) Error() string { return fmt.Sprintf("GET %s: HTTP %d", e.url, e.code) }
+
 // capped passes at most limit bytes of r on; one byte more is errTooLarge. failed
 // keeps what stopped the reading, when it was not the end of r.
 type capped struct {
@@ -227,13 +248,13 @@ func (d *Discoverer) read(ctx context.Context, url string, api bool, limit int64
 		return resp.StatusCode, fmt.Errorf("%w for %s", ErrRateLimited, wait)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return resp.StatusCode, fmt.Errorf("GET %s: HTTP %d", url, resp.StatusCode)
+		return resp.StatusCode, &httpStatusError{url: url, code: resp.StatusCode}
 	}
 	body := &capped{r: resp.Body, left: limit}
 	err = use(body)
 	switch {
 	case errors.Is(body.failed, errTooLarge):
-		return resp.StatusCode, fmt.Errorf("GET %s: larger than %d bytes", url, limit)
+		return resp.StatusCode, &tooLargeError{url: url, limit: limit}
 	case body.failed != nil:
 		// the answer broke off: that, whatever use made of the part it read
 		return resp.StatusCode, body.failed
@@ -243,14 +264,62 @@ func (d *Discoverer) read(ctx context.Context, url string, api bool, limit int64
 
 // The releases list is asked for in listPages pages of listPerPage releases, each answer
 // held to listPageLimit bytes. One page of 30 passed 8 MiB on 2026-11-23 (some 190
-// assets a release, 10.5 MB): every check failed from then on, and the home went on
-// choosing from a catalog that no longer knew the newest releases (the incident of
-// 2026-11-24). Ten a page is some 3.5 MB.
+// assets a release): every check failed from then on, and the home went on choosing from a
+// catalog that no longer knew the newest releases (the incident of 2026-11-24). A release
+// is some 330 KB as GitHub lists it today (tests/fixtures/github-releases), so a page of
+// ten is some 3.3 MB: the cap is 16 MiB, room for each release to double its assets and
+// still use under ListHeadroom of it. The list is read one release at a time
+// (system.DecodeJSONArray), so the cap bounds the answer, not the memory.
+//
+// tagReadLimit holds GitHub's answer for one release (Recheck, before a run starts).
+//
+// Every cap is checked against the live list hourly and after each release
+// (cmd/release-list-check: ProbeReleaseList) and against a recorded real page in the tests.
 const (
 	listPages     = 3
 	listPerPage   = 10
-	listPageLimit = 8 << 20
+	listPageLimit = 16 << 20
+	tagReadLimit  = 8 << 20
 )
+
+// ListHeadroom is the share of a cap an answer from GitHub may use before the list check
+// fails (and the home warns): an answer over it is one release's growth away from a home
+// that can no longer read its updates.
+const ListHeadroom = 0.70
+
+// countingReader counts what is read through it.
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+// listPage reads page (from 1) of the list as list does: its releases, and the answer's
+// length in bytes. err is an answer that did not come (or came too long); decodeErr one
+// that came and is not a list of releases.
+func (d *Discoverer) listPage(ctx context.Context, page int) (part []ghRelease, n int64, decodeErr, err error) {
+	u := fmt.Sprintf("%s/repos/%s/releases?per_page=%d&page=%d", d.base(), d.repo(), listPerPage, page)
+	_, err = d.read(ctx, u, true, listPageLimit, func(r io.Reader) error {
+		cr := &countingReader{r: r}
+		part, decodeErr = system.DecodeJSONArray[ghRelease](cr) // reads to the end of the answer
+		n = cr.n
+		return nil // an answer that broke off or is too long is read's error
+	})
+	if err != nil {
+		return nil, 0, nil, err
+	}
+	if float64(n) > float64(listPageLimit)*ListHeadroom {
+		// still read, but one release's growth from failing: say so before it does
+		d.log().Warn("updates: GitHub's list of releases is near its cap", "event", "update_release_list_near_cap",
+			"page", page, "bytes", n, "cap", listPageLimit)
+	}
+	return part, n, decodeErr, nil
+}
 
 // list asks GitHub for the newest releases (listPages pages of listPerPage), each page
 // read one release at a time (system.DecodeJSONArray). err is an answer that did not
@@ -258,17 +327,12 @@ const (
 // page shorter than listPerPage is the last one.
 func (d *Discoverer) list(ctx context.Context) (rels []ghRelease, decodeErr, err error) {
 	for page := 1; page <= listPages; page++ {
-		var part []ghRelease
-		u := fmt.Sprintf("%s/repos/%s/releases?per_page=%d&page=%d", d.base(), d.repo(), listPerPage, page)
-		_, err = d.read(ctx, u, true, listPageLimit, func(r io.Reader) error {
-			part, decodeErr = system.DecodeJSONArray[ghRelease](r)
-			return nil // an answer that broke off or is too long is read's error
-		})
-		if err != nil {
-			return nil, nil, err
+		part, _, pageDecodeErr, pageErr := d.listPage(ctx, page)
+		if pageErr != nil {
+			return nil, nil, pageErr
 		}
-		if decodeErr != nil {
-			return nil, decodeErr, nil
+		if pageDecodeErr != nil {
+			return nil, pageDecodeErr, nil
 		}
 		rels = append(rels, part...)
 		if len(part) < listPerPage {
@@ -358,14 +422,11 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 	}
 	rels, decodeErr, err := d.list(ctx)
 	if err != nil {
-		st.LastCheckErr = err.Error()
-		d.Store.SaveState(ctx, st)
-		d.staleHint(ctx, st)
+		d.checkFailed(ctx, st, now, CheckErrorCode(err), err.Error())
 		return res, err
 	}
 	if decodeErr != nil {
-		st.LastCheckErr = "decode releases: " + decodeErr.Error()
-		d.Store.SaveState(ctx, st)
+		d.checkFailed(ctx, st, now, CheckFailDecode, "decode releases: "+decodeErr.Error())
 		return res, fmt.Errorf("decode releases: %w", decodeErr)
 	}
 	wm, err := d.Store.Watermark(ctx)
@@ -374,17 +435,10 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 	}
 	floor := maxVersion(NormalizeVersion(d.Current), wm)
 	for _, g := range rels {
-		if g.Draft || !ValidVersion(g.TagName) {
+		r, ok := d.candidate(g, pol.Channel, floor)
+		if !ok {
 			continue
 		}
-		r := g.release()
-		if pol.Channel != ChannelBeta && r.IsPrerelease() {
-			continue
-		}
-		if floor != "" && CompareVersions(r.Version, floor) < 0 {
-			continue
-		}
-		r.Assets = d.pinnedAssets(r)
 		res.Seen++
 		created, err := d.Store.Seen(ctx, r)
 		if err != nil {
@@ -425,9 +479,79 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 		}
 	}
 	st.LastCheckOK = &now
-	st.LastCheckErr = ""
+	st.LastCheckErr, st.LastCheckCode = "", ""
+	st.Failures, st.FailingSince = 0, nil
 	d.Store.SaveState(ctx, st)
 	return res, nil
+}
+
+// What a failed check failed on (State.LastCheckCode; the web app's
+// "updates.checkFailed.<code>").
+const (
+	CheckFailTooLarge    = "too_large"    // GitHub's answer is longer than the home reads
+	CheckFailRateLimited = "rate_limited" // GitHub asked the home to wait
+	CheckFailHTTP        = "http_error"   // GitHub answered with an error
+	CheckFailDecode      = "decode"       // GitHub's answer is not a list of releases
+	CheckFailUnreachable = "unreachable"  // no answer: the network, DNS, a timeout
+)
+
+// FailingAfter is how many checks in a row must fail before the home raises it (a
+// notification, and the System health page's "Update check" item turns degraded): one
+// failure is often GitHub's own moment; two, six hours apart, are not.
+const FailingAfter = 2
+
+// CheckErrorCode is the CheckFail code of a check's error.
+func CheckErrorCode(err error) string {
+	var hs *httpStatusError
+	switch {
+	case errors.Is(err, errTooLarge):
+		return CheckFailTooLarge
+	case errors.Is(err, ErrRateLimited):
+		return CheckFailRateLimited
+	case errors.As(err, &hs):
+		return CheckFailHTTP
+	}
+	return CheckFailUnreachable
+}
+
+// checkFailed records a failed check: the streak of failures, since when, and on what. From
+// the FailingAfter-th failure in a row it notifies the admins (once a day at most); the
+// 14-day stale warning follows its own rule.
+func (d *Discoverer) checkFailed(ctx context.Context, st State, now time.Time, code, msg string) {
+	st.LastCheckErr, st.LastCheckCode = msg, code
+	st.Failures++
+	if st.FailingSince == nil {
+		st.FailingSince = &now
+	}
+	d.Store.SaveState(ctx, st)
+	if st.Failures >= FailingAfter {
+		d.log().Error("updates: the update check keeps failing", "event", "update_check_failing",
+			"failures", st.Failures, "since", st.FailingSince.Format(time.RFC3339), "code", code, "err", msg)
+		d.notify(ctx, NoticeCheckFailing, notify.Payload{Severity: notify.SeverityWarn,
+			Params: map[string]any{"since": st.FailingSince.Format(time.RFC3339), "failures": st.Failures,
+				"code": code, "error": msg},
+			Link:    "/admin/updates",
+			Subject: "update_check_failing", Every: 24 * time.Hour})
+	}
+	d.staleHint(ctx, st)
+}
+
+// candidate is g as the catalog keeps it, with its assets the pinned repository's own; false
+// when the catalog passes over it: a draft, a tag that is not a version, a prerelease on
+// the stable channel, or a version below floor ("" for none).
+func (d *Discoverer) candidate(g ghRelease, channel, floor string) (Release, bool) {
+	if g.Draft || !ValidVersion(g.TagName) {
+		return Release{}, false
+	}
+	r := g.release()
+	if channel != ChannelBeta && r.IsPrerelease() {
+		return Release{}, false
+	}
+	if floor != "" && CompareVersions(r.Version, floor) < 0 {
+		return Release{}, false
+	}
+	r.Assets = d.pinnedAssets(r)
+	return r, true
 }
 
 // staleHint raises the 14-day warning (once a day at most).
@@ -590,7 +714,7 @@ const (
 // (and notifies); it returns the reason ("" when the release is still good). An error
 // reaching GitHub is returned as is: the run does not start on an unknown answer.
 func (d *Discoverer) Recheck(ctx context.Context, r Release, channel string) (string, error) {
-	body, code, err := d.get(ctx, d.base()+"/repos/"+d.repo()+"/releases/tags/"+r.Tag, true, 8<<20)
+	body, code, err := d.get(ctx, d.base()+"/repos/"+d.repo()+"/releases/tags/"+r.Tag, true, tagReadLimit)
 	reason := ""
 	switch {
 	case code == http.StatusNotFound:
