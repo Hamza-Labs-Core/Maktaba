@@ -22,7 +22,7 @@ struct MacSidebar: View {
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let bottom = rows.bottom {
                 row(bottom)
-                    .padding(.horizontal, MaktabaTokens.Spacing.s2 + 2)
+                    .padding(.horizontal, MaktabaTokens.Spacing.s4) // in line with the list's rows
                     .padding(.vertical, MaktabaTokens.Spacing.s3)
             }
         }
@@ -98,6 +98,9 @@ struct MacRowButtonStyle: ButtonStyle {
                 .padding(.horizontal, MaktabaTokens.Spacing.s2)
                 .contentShape(.rect)
                 .background(fill, in: .rect(cornerRadius: MaktabaTokens.Radius.md))
+                // the fill reaches past the label; the label stays in line with the list's
+                // other rows (the theme, the language) and its group heads
+                .padding(.horizontal, -MaktabaTokens.Spacing.s2)
                 .opacity(enabled ? 1 : 0.5)
                 .onHover { hovering = $0 }
         }

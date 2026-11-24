@@ -1,6 +1,17 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Cancel" : {
+      "comment" : "Keeps the Player in its language: no restart",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إلغاء"
+          }
+        }
+      }
+    },
     "Enter Full Screen" : {
       "comment" : "View menu (Control-Command-F): the window on a space of its own",
       "localizations" : {
@@ -52,6 +63,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "التشغيل"
+          }
+        }
+      }
+    },
+    "Restart" : {
+      "comment" : "Restarts the Player in the language chosen in Profile",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة التشغيل"
           }
         }
       }
@@ -111,6 +133,28 @@
         }
       }
     },
+    "Start Maktaba Player again in Arabic?" : {
+      "comment" : "Asked before the Player restarts in Arabic, chosen in Profile",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تريد إعادة تشغيل مشغل مكتبة بالعربية؟"
+          }
+        }
+      }
+    },
+    "Start Maktaba Player again in English?" : {
+      "comment" : "Asked before the Player restarts in English, chosen in Profile",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "هل تريد إعادة تشغيل مشغل مكتبة بالإنجليزية؟"
+          }
+        }
+      }
+    },
     "Stop" : {
       "comment" : "Playback menu (Command-period)",
       "localizations" : {
@@ -129,6 +173,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "الترجمة"
+          }
+        }
+      }
+    },
+    "The Player closes and opens again in the new language. Anything playing stops." : {
+      "comment" : "Under the question before the Player restarts in another language",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يُغلَق المشغل ثم يُفتح من جديد باللغة الجديدة، ويتوقف ما يُعرض الآن."
           }
         }
       }
