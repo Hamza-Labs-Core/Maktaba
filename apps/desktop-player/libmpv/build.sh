@@ -160,13 +160,18 @@ else
     # the library's own licence: MSYS2 labels the other parts' ("documentation:spdx:GPL-3.0-or-
     # later" for libiconv's manual), which the Player does not carry
     libl="$(sed -E 's/[a-z]+:spdx:[^ ]+//g' <<<"$lic")"
-    # a GPL licence (not LGPL) is refused unless the package offers another (" OR ") or carries
-    # a linking exception (" WITH ")
-    if grep -qE '(^|[^L])GPL' <<<"$libl" && ! grep -qE ' OR | WITH ' <<<"$libl"; then
+    # a GPL licence (not LGPL) is refused unless the package offers another (" OR "), carries a
+    # linking exception (" WITH "), or the DLL is one whose own licence is known below (its
+    # package's GPL covers programs the Player does not carry)
+    why=""
+    case "$(basename "$path")" in
+      libintl-8.dll) why="gettext's libintl is LGPL-2.1-or-later; the package's GPL-3.0 is gettext's programs'" ;;
+    esac
+    if [ -z "$why" ] && grep -qE '(^|[^L])GPL' <<<"$libl" && ! grep -qE ' OR | WITH ' <<<"$libl"; then
       echo "::error::$(basename "$path") ($owner) is $lic" >&2
       exit 1
     fi
-    note "$(basename "$path"): MSYS2 $owner ($lic)"
+    note "$(basename "$path"): MSYS2 $owner ($lic)${why:+; $why}"
     for f in /ucrt64/share/licenses/"${owner#mingw-w64-ucrt-x86_64-}"/*; do
       if [ -f "$f" ]; then cp "$f" "$out/licences/${owner#mingw-w64-ucrt-x86_64-}-$(basename "$f").txt"; fi
     done
