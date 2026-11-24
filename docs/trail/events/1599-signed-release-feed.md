@@ -54,10 +54,26 @@ agent: claude-code
 - **The fixture.** A recorded release's three signed files still verify against the embedded
   root. So the generator's tests verify the real v0.3.161, not a fake.
 
+- An independent review of the green-in-local-tests branch found two defects that would have
+  stopped installs on real homes, and one security hole:
+  - Machine jobs ask for packs by name through `MachineJob.Assets`, built from the catalog. A
+    catalog holding only the feed's files would have failed every pack download. The catalog now
+    keeps every file the signed `checksums.txt` lists, from beside it.
+  - The CUDA constraints were listed for Windows only, but a layout install fetches every set
+    `release.json` names.
+  - The site deploy took the newest artifact named `update-feed` with `head_branch == main`,
+    which a fork's pull request from its own `main` could have supplied. It now takes only the
+    artifacts of `update-feed.yml`'s own runs, by their own triggers, with feed file names only.
+- A feed's age needs a ceiling as well as monotonicity (21 days; it is re-signed weekly), or
+  re-serving the newest feed freezes homes. Too old falls back to GitHub.
+
 ## Keep doing
 - Record a real release (`gh release view` plus its signed files) as the fixture for anything
   that reads release metadata, and measure sizes from it.
 - Verify what a workflow signs with the homes' own code before publishing it.
+- Before narrowing what a home is told about a release, list every consumer of the asset map
+  (`grep -n 'Assets\['` across api/ and cmd/): the review found two the first cut missed.
+- Select a workflow's artifact by the workflow's own runs and events, never by name and branch.
 
 ## Stop doing
 - Reading an unbounded, unfilterable third-party list on every home when a small file we sign
