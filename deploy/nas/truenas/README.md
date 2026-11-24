@@ -10,9 +10,8 @@ catalog's own source layout, ready to go into its **community** train, and the s
 | `ix-dev/community/maktaba/` | the app, as `truenas/apps` keeps it: `app.yaml` (metadata), `item.yaml` (its catalog entry, generated from `app.yaml`), `ix_values.yaml` (the image and constants), `questions.yaml` (the install form), `README.md`, `templates/docker-compose.yaml` (the template, on the catalog's rendering library) and `templates/test_values/` (what the catalog's CI renders and starts) |
 | `custom-app.yaml` | the Custom App (Apps → Discover → ⋮ → Install via YAML), with the questions as comments |
 
-The household's guide is maktaba.tv/install/truenas (its source:
-[web/packages/install/site/install/truenas](../../../web/packages/install/site/install/truenas/index.html), in Arabic
-[ar/install/truenas](../../../web/packages/install/site/ar/install/truenas/index.html)). The device checklist is
+The household's guide is [maktaba.tv/install/truenas](https://maktaba.tv/install/truenas/)
+(in Arabic, [maktaba.tv/ar/install/truenas](https://maktaba.tv/ar/install/truenas/)). The device checklist is
 [docs/nas/checklists/truenas.md](../../../docs/nas/checklists/truenas.md).
 
 ## The app

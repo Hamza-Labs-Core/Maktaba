@@ -59,8 +59,10 @@ release's tag) runs Maktaba in one container (`ghcr.io/hamza-labs-core/maktaba-s
 multi-arch): `docker compose up -d`, then `docker compose run --rm maktaba setup` once. It updates
 itself on its volume like every other install. It runs as whichever user is set (`user:` in the
 compose file; on a NAS, the user that owns the folders; never root), and its first start needs no
-internet beyond pulling the image. The NAS files made from it (Unraid's template, Synology's and TrueNAS's) are in
-[`deploy/nas/`](../../deploy/nas/README.md). `deploy/compose/docker-compose.yml` (section 3) is
+internet beyond pulling the image. [maktaba.tv/install/docker](https://maktaba.tv/install/docker/)
+fills the file in for a household, and [maktaba.tv/install/nas](https://maktaba.tv/install/nas/)
+says which guide each NAS follows. The NAS files made from it (Unraid's template, Synology's and
+TrueNAS's) are in [`deploy/nas/`](../../deploy/nas/README.md). `deploy/compose/docker-compose.yml` (section 3) is
 the development and CI stack, built from source: not for a NAS.
 
 ### Ports of the one-container install (the Docker image, a NAS)
