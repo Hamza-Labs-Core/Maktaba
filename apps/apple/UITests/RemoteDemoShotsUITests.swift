@@ -30,6 +30,7 @@ final class RemoteDemoShotsUITests: XCTestCase {
     override func tearDown() async throws {
         app?.terminate()
         home?.stop()
+        XCUIDevice.shared.orientation = .portrait
     }
 
     func testQueue() throws {
@@ -73,7 +74,9 @@ final class RemoteDemoShotsUITests: XCTestCase {
             stubAttention(home)
             signIn(language, locale: locale, home: home)
             openTab(language == "ar" ? "ما يحتاج إلى انتباه" : "Needs attention")
-            let group = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", title(home, "v-apollo-11-launch"))).firstMatch
+            // a title with no ": " in it: a sample's right-to-left parts between ": " are each
+            // set apart by isolates (`AttentionWords.isolateRTL`), which a label keeps
+            let group = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", title(home, "v-ghost-octopus"))).firstMatch
             XCTAssertTrue(group.waitForExistence(timeout: 15), "a group's sample, on a demo title; the home saw \(home.seen)")
             waitForQuiet(home)
             attach(XCUIScreen.main.screenshot(), "remote-attention")
@@ -96,8 +99,13 @@ final class RemoteDemoShotsUITests: XCTestCase {
             XCTAssertTrue(field.waitForExistence(timeout: 10), "the code field")
             field.typeExactly("K7M4P2XR", in: app)
             field.typeText("\n")
-            XCTAssertTrue(element("approve.approve").waitForExistence(timeout: 15), "what is asking, and Approve; the home saw \(home.seen)")
+            XCTAssertTrue(element("approve.found").waitForExistence(timeout: 15), "what is asking; the home saw \(home.seen)")
             XCTAssertTrue(wait(timeout: 10) { !self.app.keyboards.firstMatch.exists }, "the keyboard gone")
+            // up to Approve, below the fold on an iPhone (the form makes its rows as they show)
+            let ok = element("approve.approve")
+            for _ in 0 ..< 4 where !(ok.exists && ok.isHittable) { app.swipeUp(velocity: .slow) }
+            XCTAssertTrue(ok.waitForExistence(timeout: 5), "Approve")
+            waitStill(ok)
             waitForQuiet(home)
             attach(XCUIScreen.main.screenshot(), "remote-approve-code")
         }
@@ -130,15 +138,17 @@ final class RemoteDemoShotsUITests: XCTestCase {
             let pts = (0 ..< 24).map { i in "[\(now - (23 - i) * 3600),\(value(i))]" }.joined(separator: ",")
             return #"{"name":"\#(name)","labels":"\#(labels)","kind":"gauge","points":[\#(pts)]}"#
         }
-        // an evening's viewing: more requests from late afternoon, the disk filling slowly
+        // an evening's viewing: the requests rise through the afternoon to a peak at 18:00 and
+        // are quiet overnight (by each point's own hour); the disk fills slowly
         let evening = { (i: Int) -> Double in
-            let h = Double((i + 13) % 24)
-            return (40 + 160 * max(0, sin((h - 14) / 10 * .pi))).rounded()
+            let at = Date(timeIntervalSince1970: TimeInterval(now - (23 - i) * 3600))
+            let h = Double(Calendar.current.component(.hour, from: at))
+            return (30 + 170 * max(0, sin((h - 12) / 12 * .pi))).rounded()
         }
         home.stub("GET", "/api/admin/dashboards/overview", body: """
         {"board":"overview","range":"24h","step":3600,"series":[
-          \(series("maktaba_tv_channels_on_air", "", { _ in 3 })),
           \(series("http_request_duration_seconds_count", "", evening)),
+          \(series("maktaba_tv_channels_on_air", "", { _ in 3 })),
           \(series("maktaba_component_up", "id=core.api", { _ in 1 })),
           \(series("maktaba_component_up", "id=streaming", { _ in 1 })),
           \(series("maktaba_host_memory_free_bytes", "machine=home", { 6_000_000_000 + 400_000_000 * sin(Double($0) / 3) })),
@@ -171,7 +181,7 @@ final class RemoteDemoShotsUITests: XCTestCase {
         let (mac, pc) = language == "ar" ? ("ماك ميني", "حاسوب المكتب") : ("Mac mini", "Study PC")
         home.stub("GET", "/api/cluster/updates", body: """
         {"current_version":"0.3.44","watermark":"0.3.44",
-         "policy":{"auto_install":true,"channel":"stable","window":"03:00-05:00"},
+         "policy":{"auto_install":true,"window":"03:00-05:00"},
          "plan":{"target":{"version":"0.3.45","verify_state":"verified"},"newest":{"version":"0.3.45","verify_state":"verified"},
                  "held":false,"stepping_stone":false,"auto_install":true,"due":false,"next_run_at":"\(t(next))"},
          "last_run":{"id":"r12","version":"0.3.44","from_version":"0.3.43","trigger":"auto","state":"done","step":"watch",
@@ -209,10 +219,16 @@ final class RemoteDemoShotsUITests: XCTestCase {
     /// The Home tab's name ("Home", in Arabic the home itself: «الجهاز الرئيسي»).
     private var homeTab: String { language == "ar" ? "الجهاز الرئيسي" : "Home" }
 
-    /// A fresh demo home in `language`, its clock pinned, the app closed.
+    private var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
+
+    /// A fresh demo home in `language`, its clock pinned, the app closed. The iPad is turned to
+    /// landscape: the store's iPad size is landscape, and there the Remote's five tabs and its
+    /// toolbar's buttons all show (upright, Home went behind the tab bar's Next Page, and
+    /// Approve a TV or device into the toolbar's More).
     private func start(_ language: String) throws -> MockHome {
         app.terminate()
         home?.stop()
+        if isPad { XCUIDevice.shared.orientation = .landscapeLeft }
         let home = try MockHome(demo: language)
         home.clock = MockHome.demoClock
         try home.start()
@@ -268,10 +284,27 @@ final class RemoteDemoShotsUITests: XCTestCase {
         }
     }
 
-    /// The screen as `shot-<device>-<name>-<language>`, kept always.
+    /// The screen as `shot-<device>-<name>-<language>`, kept always. On the iPad (landscape)
+    /// the screen's picture can come as the panel's, upright with the content's top at its
+    /// right edge: it is turned a quarter to the left, as the screen is seen (as
+    /// PlayerDemoShots does for the iPhone's player).
     private func attach(_ shot: XCUIScreenshot, _ name: String) {
-        let a = XCTAttachment(screenshot: shot)
-        a.name = "shot-\(UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone")-\(name)-\(language)"
+        let image = shot.image
+        let a: XCTAttachment
+        if isPad, image.size.width < image.size.height {
+            let size = CGSize(width: image.size.height, height: image.size.width)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = image.scale
+            let upright = UIGraphicsImageRenderer(size: size, format: format).pngData { ctx in
+                ctx.cgContext.translateBy(x: 0, y: size.height)
+                ctx.cgContext.rotate(by: -.pi / 2)
+                image.draw(at: .zero)
+            }
+            a = XCTAttachment(data: upright, uniformTypeIdentifier: "public.png")
+        } else {
+            a = XCTAttachment(screenshot: shot)
+        }
+        a.name = "shot-\(isPad ? "ipad" : "iphone")-\(name)-\(language)"
         a.lifetime = .keepAlways
         add(a)
     }

@@ -116,6 +116,9 @@ final class TVDemoShotsUITests: XCTestCase {
     func testSearch() throws {
         for language in ["en", "ar"] {
             try signIn(language)
+            // no suggestions row under the keyboard: Down goes from the keys to Search for
+            // (TVSearchUITests does the same)
+            home?.stub("GET", "/api/search/suggest", body: #"{"suggestions": []}"#)
             let query = language == "ar" ? "المريخ" : "Mars"
             openTab(language == "ar" ? "البحث" : "Search")
             let field = app.searchFields.firstMatch
