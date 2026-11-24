@@ -24,6 +24,9 @@ The sixth build story of the approved desktop design (mockups `setup-welcome`, `
   - Big Screen during setup put the hidden main window full screen;
   - started hidden at sign-in, a set-up server was no longer re-registered.
 - A saved Start in Big Screen also waits for the setup to end (d0cba6d01).
+- **CI's first run** (45424162224):
+  - desktop-frame wrote the eight references, which were checked against the mockups and committed (ab7830bf3);
+  - unit failed one new test: `SetupWindow.test.tsx` checked Set up this PC before the Windows look for an install to move in (the adopt step) had answered, which passed locally but not on the slower runner. It now waits for the button to be enabled (ab7830bf3).
 
 ## What we learned
 - **Tauri 2's global `listen` hears events sent to any window.** `emit_to(label)` scopes nothing unless the page listens with `getCurrentWebviewWindow().listen`.
@@ -33,6 +36,9 @@ The sixth build story of the approved desktop design (mockups `setup-welcome`, `
 - **Sizes need isolating in Arabic.** `formatBytes` values in an Arabic sentence must each be isolated (`bidiIsolate`), or "412.0 GB" reorders to "GB 412.0".
 - **A preview stand-in for the shell must answer DesktopGate's first `status` step,** or the gate waits forever.
 - **A flake:** `web/src/pages/Admin/Channels.cases.test.tsx` CHN-13 (keyboard and drag reorder) failed once in a full local vitest run and passed three times alone. It is unrelated to this change.
+
+- **A test that finds a button may find it before an async step enables it.** On Windows the welcome's Set up this PC waits for the adopt step; `findByRole` returns the disabled button at once. Wait for the state the test asserts.
+- **The scratchpad is shared between sessions:** another session overwrote `prbody.md` there. Use a file named for the PR.
 
 ## Keep doing
 - Rendering the Playwright specs headless locally to compare them with the mockups, then deleting the PNGs so only CI's are committed.
