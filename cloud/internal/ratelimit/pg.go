@@ -3,6 +3,7 @@ package ratelimit
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -34,27 +35,33 @@ func NewPG(db *sql.DB, name string, capacity, ratePerSec float64, logger *slog.L
 		Fallback: NewLimiter(capacity, ratePerSec), Logger: logger}
 }
 
-// takeSQL refills the bucket for the time since its last update (up to the capacity) and takes
+// takeSQL refills the bucket for the time since its last take (up to the capacity) and takes
 // one token when there is one, in one statement: concurrent requests on any node serialize on
-// the row. A refused request leaves the row as it was, so updated_at = now() (the statement's
-// time) exactly when the request was allowed. A new key starts full, less the token taken.
+// the row. A new key starts full, less the token taken. The answer is whether a row came
+// back: ON CONFLICT ... WHERE writes and returns the row only when a token was there, so a
+// refusal returns nothing and leaves the bucket as it was.
+//
+// (It used to return "updated_at = now()", reading an allowed take from the time it wrote. Two
+// requests whose transactions start in the same microsecond share now(), so a refusal right
+// after an allowed take read as allowed: 31 of 90 at once with a burst of 30.)
+//
+// A request whose transaction started before the bucket's last take (it waited on the row's
+// lock) refills nothing and keeps the later updated_at: setting its own earlier now() would
+// refill that gap a second time on the next take.
 const takeSQL = `
 INSERT INTO cloud_rate_buckets AS b (key, tokens, updated_at)
 VALUES ($1, $2::float8 - 1, now())
 ON CONFLICT (key) DO UPDATE SET
-    tokens = CASE WHEN LEAST($2::float8, b.tokens + GREATEST(0, EXTRACT(EPOCH FROM now() - b.updated_at)) * $3::float8) >= 1
-                  THEN LEAST($2::float8, b.tokens + GREATEST(0, EXTRACT(EPOCH FROM now() - b.updated_at)) * $3::float8) - 1
-                  ELSE b.tokens END,
-    updated_at = CASE WHEN LEAST($2::float8, b.tokens + GREATEST(0, EXTRACT(EPOCH FROM now() - b.updated_at)) * $3::float8) >= 1
-                      THEN now() ELSE b.updated_at END
-RETURNING updated_at = now()`
+    tokens = LEAST($2::float8, b.tokens + GREATEST(0, EXTRACT(EPOCH FROM now() - b.updated_at)) * $3::float8) - 1,
+    updated_at = GREATEST(b.updated_at, now())
+WHERE LEAST($2::float8, b.tokens + GREATEST(0, EXTRACT(EPOCH FROM now() - b.updated_at)) * $3::float8) >= 1
+RETURNING true`
 
 // Allow takes a token from key's shared bucket and reports whether the request may go on.
 func (p *PG) Allow(ctx context.Context, key string) bool {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	var ok bool
-	err := p.DB.QueryRowContext(ctx, takeSQL, p.Name+":"+key, p.Capacity, p.Rate).Scan(&ok)
+	ok, err := take(ctx, p.DB, p.Name+":"+key, p.Capacity, p.Rate)
 	if err != nil {
 		if p.Logger != nil {
 			p.Logger.Warn("ratelimit: the shared bucket did not answer; this node's decides",
@@ -66,6 +73,21 @@ func (p *PG) Allow(ctx context.Context, key string) bool {
 		return p.Fallback.Allow(key)
 	}
 	return ok
+}
+
+// queryer is a *sql.DB or a *sql.Tx (the tests take inside one transaction).
+type queryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// take reports whether key's bucket had a token, and takes it. No row back is a refusal.
+func take(ctx context.Context, q queryer, key string, capacity, rate float64) (bool, error) {
+	var ok bool
+	err := q.QueryRowContext(ctx, takeSQL, key, capacity, rate).Scan(&ok)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return ok, err
 }
 
 // RetryAfter is the whole seconds until one token refills, for a Retry-After header.
