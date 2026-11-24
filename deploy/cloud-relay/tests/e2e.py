@@ -280,11 +280,16 @@ BROADCAST_ROUTES = (
     ("GET", "/v1/broadcast/analytics"),
     ("GET", "/v1/broadcast/takedowns"), ("POST", f"/v1/broadcast/takedowns/{ZERO}/ack"),
     ("GET", "/v1/broadcast/moderation"), ("POST", "/v1/broadcast/moderation/counter-notices"),
+    ("GET", "/v1/broadcast/revocations"), ("GET", "/v1/broadcast/access"), ("PUT", "/v1/broadcast/viewer-limits"),
+    ("GET", "/v1/broadcast/invites"), ("POST", "/v1/broadcast/invites"), ("DELETE", f"/v1/broadcast/invites/{ZERO}"),
+    ("GET", f"/v1/broadcast/homes/{ZERO}/access"), ("GET", "/v1/broadcast/home/analytics"),
+    ("POST", "/_edge/usage"), ("GET", f"/_edge/publishers/{ZERO}"),
     ("POST", "/v1/moderation/notices"), ("POST", "/v1/moderation/reports"),
     ("GET", "/v1/billing/broadcast"), ("PUT", "/v1/billing/broadcast"),
     ("PATCH", "/v1/billing/broadcast/payg"), ("PATCH", "/v1/billing/broadcast/extras"),
     ("GET", "/v1/admin/moderation"), ("GET", "/v1/admin/broadcast/geo-deny"),
     ("GET", "/v1/admin/broadcast/analytics"), ("GET", "/v1/admin/broadcast/revocations"),
+    ("POST", f"/v1/admin/servers/{ZERO}/broadcast"),
 )
 SERVICES = {"caddy", "maktaba-cloud", "api", "worker", "postgres", "redis"}
 
