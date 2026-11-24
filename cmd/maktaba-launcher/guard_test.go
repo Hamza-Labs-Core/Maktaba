@@ -397,9 +397,11 @@ func TestGuardTimeOfEachKind(t *testing.T) {
 				ln.saveGuardRan()
 			}
 			ln = &launcher{cfg: cfg, l: ln.l}
-			for tick = 0; tick < 3*time.Minute && !ln.guardLook("2.0.0"); tick += time.Minute {
+			up := false
+			for tick = 0; tick < 3*time.Minute && !up; tick += time.Minute {
+				up = ln.guardLook("2.0.0")
 			}
-			if tick >= 3*time.Minute {
+			if !up {
 				t.Fatalf("its ten minutes used in two starts, the third gave it %s more", tick)
 			}
 			ln.forgetGuard()
