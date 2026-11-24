@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "shell-dialog",
-  "description": "Epic 13 story 13.11: Maktaba's own dialog for the shell's errors (shelldialog.rs), a window of the app's own bundled pages. It closes itself or opens the logs (the tray's Open logs, only when the tray offers it), is dragged by its title bar, and listens for new words; it may not emit events. Nothing else.",
+  "description": "Epic 13 story 13.11: Maktaba's own dialog for the shell's errors (shelldialog.rs), a window of the app's own bundled pages. It reads the newest error's words (which shows it), closes itself or opens the logs (the tray's Open logs, only when the tray offers it), is dragged by its title bar, and listens for new words; it may not emit events. Nothing else.",
   "windows": [
     "shell-dialog"
   ],
@@ -9,6 +9,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "core:window:allow-start-dragging",
+    "allow-shell-dialog-content",
     "allow-shell-dialog-choose"
   ]
 }

@@ -23,14 +23,18 @@ const PORT: DialogContent = {
   logs: true,
   close: "Close",
   seeLogs: "See the logs",
+  revision: 1,
 };
 
-function open(content: DialogContent) {
+async function open(content: DialogContent) {
   const w = window as unknown as W;
   w.__TAURI_INTERNALS__ = {};
   w.__MAKTABA_PANEL__ = "dialog";
-  w.__MAKTABA_DIALOG__ = content;
-  return render(<ShellDialog />);
+  invoke.mockImplementation(async (cmd: string) =>
+    cmd === "shell_dialog_content" ? content : null
+  );
+  render(<ShellDialog />);
+  await screen.findByRole("alertdialog");
 }
 
 describe("ShellDialog", () => {
@@ -39,13 +43,15 @@ describe("ShellDialog", () => {
     invoke.mockResolvedValue(null);
   });
   afterEach(() => {
-    for (const k of ["__TAURI_INTERNALS__", "__MAKTABA_PANEL__", "__MAKTABA_DIALOG__"])
+    for (const k of ["__TAURI_INTERNALS__", "__MAKTABA_PANEL__"])
       delete (window as unknown as W)[k];
     document.documentElement.dir = "";
   });
 
-  it("says what happened, and the programs' own errors as they are", () => {
-    open(PORT);
+  it("says what happened, and the programs' own errors as they are", async () => {
+    await open(PORT);
+    // asking for its words is what shows the dialog
+    expect(invoke).toHaveBeenCalledWith("shell_dialog_content");
     const dialog = screen.getByRole("alertdialog", { name: PORT.title });
     expect(dialog).toHaveAccessibleDescription(PORT.errors[0]!);
     // the errors stay left to right, in an Arabic dialog too
@@ -53,26 +59,26 @@ describe("ShellDialog", () => {
   });
 
   it("has the focus on Close, so Enter closes, and Escape closes too", async () => {
-    open(PORT);
-    // the title bar's ✕ and the foot's Close share the name: the foot's has the focus
-    const [, close] = screen.getAllByRole("button", { name: "Close" });
+    await open(PORT);
+    // the title bar's ✕ shares the name but is no tab stop: the foot's Close has the focus
+    const [x, close] = screen.getAllByRole("button", { name: "Close" });
+    expect(x).toHaveAttribute("tabindex", "-1");
     expect(close).toHaveFocus();
     await userEvent.keyboard("{Enter}");
     expect(invoke).toHaveBeenCalledWith("shell_dialog_choose", { action: "close" });
     invoke.mockClear();
     await userEvent.keyboard("{Escape}");
     expect(invoke).toHaveBeenCalledWith("shell_dialog_choose", { action: "close" });
-    expect(close).toBeInTheDocument();
   });
 
   it("offers the logs only when this machine has them", async () => {
-    open(PORT);
+    await open(PORT);
     await userEvent.click(screen.getByRole("button", { name: "See the logs" }));
     expect(invoke).toHaveBeenCalledWith("shell_dialog_choose", { action: "logs" });
   });
 
-  it("offers no logs in an app that runs no server here, and speaks Arabic right to left", () => {
-    open({
+  it("offers no logs in an app that runs no server here, and speaks Arabic right to left", async () => {
+    await open({
       ...PORT,
       lang: "ar",
       brand: "مكتبة",
@@ -87,8 +93,8 @@ describe("ShellDialog", () => {
     expect(screen.getByRole("alertdialog")).not.toHaveAccessibleDescription(/./);
   });
 
-  it("keeps an address in a sentence as its own left-to-right run", () => {
-    open({ ...PORT, lang: "ar", title: "يتعذّر فتح http://192.168.1.20:8080.", errors: [] });
+  it("keeps an address in a sentence as its own left-to-right run", async () => {
+    await open({ ...PORT, lang: "ar", title: "يتعذّر فتح http://192.168.1.20:8080.", errors: [] });
     const run = screen.getByText("http://192.168.1.20:8080");
     expect(run.tagName).toBe("BDI");
     expect(run).toHaveAttribute("dir", "ltr");

@@ -73,6 +73,7 @@
   display: flex;
   gap: 16px;
   min-block-size: 0;
+  overflow-y: auto;
   padding: 10px 24px 0;
 }
 .mkt-dlg__icon {
@@ -101,6 +102,9 @@
 .mkt-dlg__text h1 {
   margin: 0 0 6px;
   font-family: inherit;
+  /* two sentences on two lines, and a long address wraps */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
   font-size: 18px;
   line-height: 26px;
   font-weight: 600;
@@ -161,7 +165,8 @@
   background: #efcb7c;
 }
 .mkt-dlg__btn:focus-visible,
-.mkt-dlg__x:focus-visible {
+.mkt-dlg__x:focus-visible,
+.mkt-dlg__errors:focus-visible {
   outline: 2px solid #e9be63;
   outline-offset: 2px;
 }

@@ -435,15 +435,18 @@ fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
     let lang = shell(app).lang;
     // story 13.11: Maktaba's own dialog; the system's message box only when it cannot open
     let content = error_content(lang, sentence, errors, &tray_entries(app));
-    let (handle, message) = (app.clone(), lang::error_message(sentence, errors));
-    crate::shelldialog::show(app, content, move || {
-        handle
-            .dialog()
-            .message(message)
-            .title(lang.words().brand)
-            .kind(MessageDialogKind::Error)
-            .show(|_| {});
-    });
+    let message = lang::error_message(sentence, errors);
+    crate::shelldialog::show(app, content, message, system_box);
+}
+
+/// The system's message box: Maktaba's own dialog could not be made, or its page never showed.
+fn system_box(app: &AppHandle, message: String) {
+    let lang = shell(app).lang;
+    app.dialog()
+        .message(message)
+        .title(lang.words().brand)
+        .kind(MessageDialogKind::Error)
+        .show(|_| {});
 }
 
 /// The error dialog's words: the way to the logs only when the tray offers Open logs (a
@@ -1872,6 +1875,8 @@ fn start_after_failed_update(app: &AppHandle) -> (&'static str, Option<String>) 
 /// update check. Called from lib.rs setup().
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(Shell::new(app));
+    // story 13.11: Maktaba's own dialog for the shell's errors
+    app.manage(crate::shelldialog::Dialog::default());
 
     let sh = shell(app);
     // the failed update's notification: its button and a click on it see the logs (the

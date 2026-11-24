@@ -6,7 +6,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   chooseDialog,
-  dialogContent,
+  loadDialogContent,
   onDialogContent,
   type DialogContent,
 } from "../lib/shellDialog";
@@ -26,10 +26,19 @@ export function withAddresses(text: string) {
 }
 
 export function ShellDialog() {
-  const [content, setContent] = useState<DialogContent | null>(() => dialogContent());
+  const [content, setContent] = useState<DialogContent | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => onDialogContent(setContent), []);
+  // the newest error's words (asking shows the dialog), then any newer one's
+  useEffect(() => {
+    let live = true;
+    void loadDialogContent().then((c) => live && c && setContent(c));
+    const stop = onDialogContent(setContent);
+    return () => {
+      live = false;
+      stop();
+    };
+  }, []);
 
   useLayoutEffect(() => {
     if (!content) return;
@@ -58,6 +67,8 @@ export function ShellDialog() {
   const close = () => void chooseDialog("close");
   return (
     <div
+      // a new error is a new dialog: a screen reader says it again
+      key={content.revision}
       className="mkt-dlg"
       role="alertdialog"
       aria-modal="true"
@@ -68,7 +79,13 @@ export function ShellDialog() {
         <img src="/icons/icon-192.png" alt="" width={16} height={16} />
         <span className="mkt-dlg__brand">{content.brand}</span>
         <span className="mkt-dlg__grow" />
-        <button type="button" className="mkt-dlg__x" aria-label={content.close} onClick={close}>
+        <button
+          type="button"
+          className="mkt-dlg__x"
+          aria-label={content.close}
+          tabIndex={-1}
+          onClick={close}
+        >
           <svg viewBox="0 0 10 10" aria-hidden="true">
             <path d="M.5.5l9 9M9.5.5l-9 9" />
           </svg>
@@ -84,7 +101,7 @@ export function ShellDialog() {
         <div className="mkt-dlg__text">
           <h1 id="mkt-dlg-title">{withAddresses(content.title)}</h1>
           {content.errors.length > 0 && (
-            <pre id="mkt-dlg-errors" className="mkt-dlg__errors" dir="ltr">
+            <pre id="mkt-dlg-errors" className="mkt-dlg__errors" dir="ltr" tabIndex={0}>
               {content.errors.join("\n")}
             </pre>
           )}

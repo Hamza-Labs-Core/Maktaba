@@ -3,25 +3,35 @@
 //
 // An error the shell reports (the server could not start, an update failed, a page could not
 // open) opens a small window of the app's own bundled pages, marked before it loads
-// (window.__MAKTABA_PANEL__ = 'dialog', with the words in window.__MAKTABA_DIALOG__): the
-// web app's ShellDialog. It shows the sentence, the programs' own errors as they are, a way to
-// the logs when this machine runs the server, and Close (Enter); Escape closes it. A second
-// error while it is open replaces its words. The system's message box stays only for when the
-// window cannot be made (no WebView: WebView2 missing on Windows), so an error is never lost.
+// (window.__MAKTABA_PANEL__ = 'dialog'): the web app's ShellDialog. The window is made hidden;
+// its page asks for the newest error's words (shell_dialog_content), which shows it with the
+// focus. It shows the sentence, the programs' own errors as they are, a way to the logs when
+// this machine runs the server, and Close (Enter); Escape closes it. Errors that come while it
+// is being made or shown go to the same window, the newest words winning.
+//
+// The system's message box says an error only when the dialog cannot: its window could not be
+// made (no WebView: WebView2 missing on Windows), or its page never asked for its words within
+// READY_WAIT (it failed to load), when the window is closed. So no error is lost, and none is
+// shown twice.
 //
 // The window is built off the main thread: shell.rs reports errors from its event handlers,
 // where building a window can deadlock on Windows.
 
+use std::sync::Mutex;
+use std::time::Duration;
+
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 
 use crate::lang::Lang;
 
 pub const LABEL: &str = "shell-dialog";
-/// The event an open dialog gets with new words.
+/// The event a shown dialog gets with new words (its window only).
 pub const EVENT: &str = "shell-dialog";
 pub const WIDTH: f64 = 560.0;
 pub const HEIGHT: f64 = 300.0;
+/// How long a new dialog's page has to ask for its words (and so show it).
+const READY_WAIT: Duration = Duration::from_secs(5);
 
 /// What the dialog says.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -38,6 +48,8 @@ pub struct DialogContent {
     pub logs: bool,
     pub close: &'static str,
     pub see_logs: &'static str,
+    /// counts the errors: a new one is a new dialog, for a screen reader
+    pub revision: u64,
 }
 
 impl DialogContent {
@@ -58,75 +70,200 @@ impl DialogContent {
             logs,
             close: w.close,
             see_logs: w.see_logs,
+            revision: 0,
         }
     }
 }
 
-/// Opens the dialog with `content` (or gives an open one these words); `fallback` runs when
-/// the window cannot be made.
-pub fn show(app: &AppHandle, content: DialogContent, fallback: impl FnOnce() + Send + 'static) {
-    if let Some(w) = app.get_webview_window(LABEL) {
-        let _ = w.emit(EVENT, &content);
-        let _ = w.show();
-        let _ = w.set_focus();
-        return;
+/// The dialog's window: none, being made (its page has not asked for its words), or shown.
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+enum Phase {
+    #[default]
+    None,
+    Building,
+    Shown,
+}
+
+/// What `show` does with a new error.
+#[derive(Debug, PartialEq)]
+pub enum Step {
+    /// make the window
+    Build,
+    /// the window being made asks for the newest words itself
+    Wait,
+    /// the dialog is shown: give it the new words
+    Update,
+}
+
+/// The dialog's state: its phase and the newest error (its words, and what the system's box
+/// would say).
+#[derive(Default)]
+pub struct Dialog {
+    inner: Mutex<Inner>,
+}
+
+#[derive(Default)]
+struct Inner {
+    phase: Phase,
+    content: Option<DialogContent>,
+    message: String,
+    revision: u64,
+}
+
+impl Dialog {
+    fn lock(&self) -> std::sync::MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
-    let app = app.clone();
-    std::thread::spawn(move || {
-        let script = match init_script(&content) {
-            Some(s) => s,
-            None => return fallback(),
+
+    /// A new error, kept as the newest: what to do with it.
+    fn report(&self, mut content: DialogContent, message: String) -> (Step, DialogContent) {
+        let mut i = self.lock();
+        i.revision += 1;
+        content.revision = i.revision;
+        i.content = Some(content.clone());
+        i.message = message;
+        let step = match i.phase {
+            Phase::None => {
+                i.phase = Phase::Building;
+                Step::Build
+            }
+            Phase::Building => Step::Wait,
+            Phase::Shown => Step::Update,
         };
-        let built = WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::App("index.html".into()))
-            .initialization_script(&script)
-            .title(content.brand)
-            .inner_size(WIDTH, HEIGHT)
-            .resizable(false)
-            .maximizable(false)
-            .minimizable(false)
-            .decorations(false)
-            .shadow(true)
-            .always_on_top(true)
-            .center()
-            .focused(true)
-            .background_color(tauri::window::Color(0x18, 0x24, 0x3a, 0xff))
-            .build();
-        if let Err(e) = built {
+        (step, content)
+    }
+
+    /// The page asks for its words: the dialog is shown from now on.
+    fn words(&self) -> Option<DialogContent> {
+        let mut i = self.lock();
+        if i.phase == Phase::Building {
+            i.phase = Phase::Shown;
+        }
+        i.content.clone()
+    }
+
+    /// The window is gone (closed, or never made): the next error makes a new one. Returns what
+    /// the system's box must say when the page never showed the error.
+    fn gone(&self) -> Option<String> {
+        let mut i = self.lock();
+        let unshown = i.phase == Phase::Building;
+        i.phase = Phase::None;
+        i.content = None;
+        let message = std::mem::take(&mut i.message);
+        unshown.then_some(message).filter(|m| !m.is_empty())
+    }
+
+    fn shown(&self) -> bool {
+        self.lock().phase == Phase::Shown
+    }
+}
+
+/// Opens the dialog with `content`, or gives the shown one these words. `message` is what the
+/// system's box (`fallback`) says when the dialog cannot be made or its page never shows it.
+pub fn show(
+    app: &AppHandle,
+    content: DialogContent,
+    message: String,
+    fallback: fn(&AppHandle, String),
+) {
+    let (step, content) = app.state::<Dialog>().report(content, message);
+    match step {
+        Step::Wait => {}
+        Step::Update => {
+            // its window only: the main window's pages never hear an error's words
+            let _ = app.emit_to(LABEL, EVENT, &content);
+            if let Some(w) = app.get_webview_window(LABEL) {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }
+        Step::Build => {
+            let app = app.clone();
+            std::thread::spawn(move || build(&app, content.brand, fallback));
+        }
+    }
+}
+
+/// Makes the dialog's window, hidden; gives the error to the system's box if it cannot be made
+/// or its page never asks for its words.
+fn build(app: &AppHandle, title: &str, fallback: fn(&AppHandle, String)) {
+    let built = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+        .initialization_script("window.__MAKTABA_PANEL__ = 'dialog';")
+        .title(title)
+        .inner_size(WIDTH, HEIGHT)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .decorations(false)
+        .shadow(true)
+        .always_on_top(true)
+        .visible_on_all_workspaces(true)
+        .center()
+        .visible(false)
+        .background_color(tauri::window::Color(0x18, 0x24, 0x3a, 0xff))
+        .build();
+    let window = match built {
+        Ok(w) => w,
+        Err(e) => {
             crate::applog::warn("Maktaba's dialog could not open: the system's says it", e);
-            fallback();
+            if let Some(m) = app.state::<Dialog>().gone() {
+                fallback(app, m);
+            }
+            return;
+        }
+    };
+    let handle = app.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::Destroyed = event {
+            handle.state::<Dialog>().gone();
         }
     });
+    // a page that never asks for its words failed to load: the system's box says them
+    std::thread::sleep(READY_WAIT);
+    let state = app.state::<Dialog>();
+    if state.shown() {
+        return;
+    }
+    let message = state.gone();
+    if let Some(w) = app.get_webview_window(LABEL) {
+        let _ = w.destroy();
+    }
+    if let Some(m) = message {
+        fallback(app, m);
+    }
 }
 
-/// The script that marks the dialog's page and gives it its words, before the page loads.
-pub fn init_script(content: &DialogContent) -> Option<String> {
-    // JSON is a JavaScript expression; `</` and the line separators are escaped so the words
-    // cannot end the script or break its line
-    let json = serde_json::to_string(content)
-        .ok()?
-        .replace("</", "<\\/")
-        .replace('\u{2028}', "\\u2028")
-        .replace('\u{2029}', "\\u2029");
-    Some(format!(
-        "window.__MAKTABA_PANEL__ = 'dialog'; window.__MAKTABA_DIALOG__ = {json};"
-    ))
+/// The page asks for its words: the newest error's. The dialog shows, with the focus.
+#[tauri::command]
+pub fn shell_dialog_content(app: AppHandle) -> Option<DialogContent> {
+    let content = app.state::<Dialog>().words();
+    if let Some(w) = app.get_webview_window(LABEL) {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+    content
 }
 
-/// A button of the dialog: "close", or "logs" (the tray's Open logs, then close).
+/// A button of the dialog: "close", or "logs" (the dialog closes, then the tray's Open logs).
 #[tauri::command]
 pub fn shell_dialog_choose(app: AppHandle, action: String) -> Result<(), String> {
-    match action.as_str() {
-        "close" => {}
+    let logs = match action.as_str() {
+        "close" => false,
         "logs" => {
             if !crate::traypanel::choosable(&crate::shell::tray_entries(&app), "open-logs") {
                 return Err("no logs to open here".into());
             }
-            crate::shell::choose_tray_item(&app, "open-logs");
+            true
         }
         other => return Err(format!("no dialog action {other}")),
-    }
+    };
+    // closed first: an error opening the logs gets a dialog of its own, not this one closing
+    app.state::<Dialog>().gone();
     if let Some(w) = app.get_webview_window(LABEL) {
-        let _ = w.close();
+        let _ = w.destroy();
+    }
+    if logs {
+        crate::shell::choose_tray_item(&app, "open-logs");
     }
     Ok(())
 }
@@ -134,6 +271,10 @@ pub fn shell_dialog_choose(app: AppHandle, action: String) -> Result<(), String>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn words() -> DialogContent {
+        DialogContent::new(Lang::En, "The update could not be installed.", &[], true)
+    }
 
     #[test]
     fn the_words_are_the_sentence_and_the_programs_errors_as_they_are() {
@@ -151,20 +292,37 @@ mod tests {
     }
 
     #[test]
-    fn the_words_cannot_end_the_script_that_carries_them() {
-        let c = DialogContent::new(
-            Lang::En,
-            "</script><script>alert(1)</script>",
-            &["a\u{2028}b"],
-            false,
+    fn one_window_for_errors_that_come_together_with_the_newest_words() {
+        let d = Dialog::default();
+        let (step, first) = d.report(words(), "first".into());
+        assert_eq!(step, Step::Build);
+        // a second error while the window is being made: no second window
+        let (step, second) = d.report(
+            DialogContent::new(Lang::En, "The server could not be paused.", &[], true),
+            "second".into(),
         );
-        let s = init_script(&c).unwrap();
-        assert!(!s.contains("</script>"), "{s}");
-        assert!(!s.contains('\u{2028}'));
-        assert!(s.starts_with("window.__MAKTABA_PANEL__ = 'dialog';"));
-        // still the same words, as JSON reads them
-        let json = s.split(" = ").nth(2).unwrap().trim_end_matches(';');
-        let back: serde_json::Value = serde_json::from_str(json).unwrap();
-        assert_eq!(back["title"], "</script><script>alert(1)</script>");
+        assert_eq!(step, Step::Wait);
+        assert!(
+            second.revision > first.revision,
+            "a new error is a new dialog"
+        );
+        // the page asks: the newest words, and the dialog is shown
+        assert_eq!(d.words().unwrap().title, "The server could not be paused.");
+        assert!(d.shown());
+        assert_eq!(d.report(words(), "third".into()).0, Step::Update);
+        // closed: nothing for the system's box, and the next error makes a new window
+        assert_eq!(d.gone(), None);
+        assert_eq!(d.report(words(), "fourth".into()).0, Step::Build);
+    }
+
+    #[test]
+    fn a_page_that_never_shows_its_words_gives_them_to_the_system_s_box_once() {
+        let d = Dialog::default();
+        d.report(words(), "The update could not be installed.".into());
+        assert_eq!(
+            d.gone().as_deref(),
+            Some("The update could not be installed.")
+        );
+        assert_eq!(d.gone(), None);
     }
 }

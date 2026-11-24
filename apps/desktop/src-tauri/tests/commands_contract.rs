@@ -103,6 +103,7 @@ fn maktaba_s_dialog_may_close_itself_open_the_logs_and_be_dragged_nothing_else()
         "core:event:allow-listen",
         "core:event:allow-unlisten",
         "core:window:allow-start-dragging",
+        "allow-shell-dialog-content",
         "allow-shell-dialog-choose",
     ]
     .into_iter()

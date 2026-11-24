@@ -298,6 +298,7 @@ pub fn run() {
             traypanel::tray_panel_state,
             traypanel::tray_panel_choose,
             traypanel::tray_panel_hide,
+            shelldialog::shell_dialog_content,
             shelldialog::shell_dialog_choose,
         ])
         .run(tauri::generate_context!())

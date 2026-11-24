@@ -1,10 +1,11 @@
 // Maktaba's own dialog for the desktop shell's errors (Epic 13 story 13.11; the design:
 // docs/design/desktop/mockups/dialog.html). The shell (apps/desktop/src-tauri/src/shelldialog.rs)
-// opens it in a window of the app's own pages, marked before the page loads:
+// opens it, hidden, in a window of the app's own pages marked before the page loads
+// (window.__MAKTABA_PANEL__ = "dialog"):
 //
-//   window.__MAKTABA_PANEL__ = "dialog"; window.__MAKTABA_DIALOG__ = { …DialogContent }
-//   shell_dialog_choose { action }   -> "close" | "logs" (the tray's Open logs, then close)
-//   event "shell-dialog"             -> new words, for a dialog already open
+//   shell_dialog_content             -> the newest error's words; the dialog shows
+//   shell_dialog_choose { action }   -> "close" | "logs" (the dialog closes, then Open logs)
+//   event "shell-dialog"             -> a newer error's words, while it is shown
 import { isDesktop } from "./desktop";
 
 export interface DialogContent {
@@ -15,13 +16,14 @@ export interface DialogContent {
   logs: boolean;
   close: string;
   seeLogs: string;
+  /** counts the errors: a new one is a new dialog */
+  revision: number;
 }
 
 interface DialogWindow {
   __MAKTABA_PANEL__?: string;
-  __MAKTABA_DIALOG__?: DialogContent;
-  /** the visual references (web/e2e/desktop): no shell to send the choice to */
-  __MAKTABA_DIALOG_PREVIEW__?: boolean;
+  /** the visual references and tests (web/e2e/desktop): the words, without the shell */
+  __MAKTABA_DIALOG_PREVIEW__?: DialogContent;
 }
 
 function win(): DialogWindow {
@@ -34,13 +36,29 @@ export function isShellDialog(): boolean {
 
 function isContent(v: unknown): v is DialogContent {
   const c = v as DialogContent;
-  return !!c && typeof c.title === "string" && Array.isArray(c.errors);
+  return (
+    !!c &&
+    (c.lang === "en" || c.lang === "ar") &&
+    typeof c.title === "string" &&
+    Array.isArray(c.errors) &&
+    typeof c.close === "string" &&
+    typeof c.seeLogs === "string" &&
+    typeof c.brand === "string"
+  );
 }
 
-/** The words the shell gave the page before it loaded. */
-export function dialogContent(): DialogContent | null {
-  const c = win().__MAKTABA_DIALOG__;
-  return isContent(c) ? c : null;
+/** The newest error's words, which also shows the dialog (null: nothing to show). */
+export async function loadDialogContent(): Promise<DialogContent | null> {
+  const p = win().__MAKTABA_DIALOG_PREVIEW__;
+  if (p) return isContent(p) ? p : null;
+  if (!isDesktop()) return null;
+  try {
+    const core = await import("@tauri-apps/api/core");
+    const c = await core.invoke<DialogContent | null>("shell_dialog_content");
+    return isContent(c) ? c : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function chooseDialog(action: "close" | "logs"): Promise<void> {
