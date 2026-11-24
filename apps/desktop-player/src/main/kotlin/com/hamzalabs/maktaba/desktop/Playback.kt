@@ -14,6 +14,7 @@ import com.hamzalabs.maktaba.core.api.ProgressAnswer
 import com.hamzalabs.maktaba.core.api.TimeReason
 import com.hamzalabs.maktaba.core.api.Rendition as Rung
 import com.hamzalabs.maktaba.core.api.chapters
+import com.hamzalabs.maktaba.core.api.streamCapabilities
 import com.hamzalabs.maktaba.core.api.myVideo
 import com.hamzalabs.maktaba.core.api.videoDetail
 import com.hamzalabs.maktaba.core.playback.PlaybackValues
@@ -82,13 +83,22 @@ object ResumePosition {
 /** An audio track the Audio menu offers: an HLS rendition (by its NAME) or a direct file's track (by its index). */
 data class AudioOption(val name: String?, val language: String?, val rendition: String? = null, val index: Int = 0)
 
-/** The player a video plays in: JavaFX's ([FxVideo]), or a test's. Each call returns at once. */
+/**
+ * The player a video plays in: libmpv's (`mpv.MpvVideo`, story 13.18), JavaFX's ([FxVideo]), or
+ * a test's. Each call returns at once.
+ */
 interface Video {
     fun toggle()
     fun pause()
     fun seek(ms: Long)
     fun sound(volume: Float, muted: Boolean)
     fun dispose()
+
+    /** A direct file's audio track [index] played in place; false: this player cannot (the stream is reopened). */
+    fun selectAudio(index: Int): Boolean = false
+
+    /** The caption to draw over the picture, for a player that draws it itself (libmpv's). */
+    fun caption(text: String?, rtl: Boolean, scale: Float) {}
 }
 
 /** What a [Video] tells its [Playback], from any thread. */
@@ -106,6 +116,9 @@ interface VideoEvents {
 /** Makes the [Video] for a stream the proxy serves at [url], from [fromMs] (playing at once when [autoplay]). */
 fun interface Players {
     suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video
+
+    /** The streaming service's profile for what these players play. */
+    val profile: String get() = STREAM_PROFILE
 }
 
 /** A JavaFX player, driven on its own thread. */
@@ -168,7 +181,7 @@ class Playback(
     private val settings: () -> PlaybackValues = { PlaybackValues() },
     /** What the home has on now (chapters are read only when they are on). */
     private val features: () -> Capabilities = { Capabilities.AllOn },
-    private val players: Players = FxPlayers,
+    private val players: Players = com.hamzalabs.maktaba.desktop.mpv.Engine.players,
     private val proxyFor: (ApiClient) -> StreamProxy = ::StreamProxy,
     /** The time now, in milliseconds: when the stream was opened and when to renew it (a test gives its own clock). */
     private val nowMs: () -> Long = System::currentTimeMillis,
@@ -268,6 +281,12 @@ class Playback(
     private val proxy by lazy { proxyFor(client) }
     private var session: String? = null
     private var hls = false
+    /** The session plays the file as it is (its mode "direct"). */
+    private var direct = false
+    /** This video was opened again as a transcode after its file did not play as it is (once). */
+    private var forced = false
+    /** Whether this home knows [players]' profile (null: not asked yet; story 13.18). */
+    private var homeKnowsProfile: Boolean? = null
     private var renewAt = Long.MAX_VALUE
     private var openedAt = 0L
     @Volatile private var failed: String? = null
@@ -336,6 +355,8 @@ class Playback(
         audioTrack = null
         currentLocal = null
         hls = false
+        direct = false
+        forced = false
         upNext.reset(null)
         proxy.forget()
     }
@@ -484,6 +505,9 @@ class Playback(
             val was = proxy.audio
             proxy.audio = o.rendition
             if (reload()) audio = o else proxy.audio = was
+        } else if (player?.selectAudio(o.index) == true) {
+            // libmpv switches a direct file's track in place
+            audio = o
         } else {
             // a direct file: its first track plays as it is, another one as HLS
             val was = audioTrack
@@ -539,6 +563,24 @@ class Playback(
      */
     private suspend fun open(fromMs: Long, kbps: Int? = quality.maxBitrateKbps) = opening.withLock { openNow(fromMs, kbps) }
 
+    /**
+     * The profile to ask for: [players]' own when this home lists it (story 13.18), else
+     * desktop-player, which every home knows (a home reads a profile it does not know as its
+     * 720p "generic"). Asked once per Playback; a home that cannot answer is taken as older.
+     */
+    private suspend fun profileForHome(): String {
+        val want = players.profile
+        if (want == STREAM_PROFILE) return want
+        val knows = homeKnowsProfile ?: try {
+            want in client.streamCapabilities().clientProfiles
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }.also { homeKnowsProfile = it }
+        return if (knows) want else STREAM_PROFILE
+    }
+
     private suspend fun openNow(fromMs: Long, kbps: Int? = quality.maxBitrateKbps) {
         val r = request ?: return
         val g = generation
@@ -546,10 +588,12 @@ class Playback(
         suspend fun stale() = g != generation || !currentCoroutineContext().isActive
         val old = session
         try {
+            val profile = profileForHome()
             val s = withContext(NonCancellable) {
                 client.openStream(
-                    r.videoId, (fromMs / 1000).toInt(), STREAM_PROFILE, maxBitrateKbps = kbps,
+                    r.videoId, (fromMs / 1000).toInt(), profile, maxBitrateKbps = kbps,
                     audioTrack = audioTrack, format = if (audioTrack != null) "hls" else null,
+                    forceTranscode = forced,
                 )
             }
             try {
@@ -572,6 +616,7 @@ class Playback(
             }
             session = s.sessionId
             hls = s.isHls
+            direct = s.mode == "direct"
             ladder = QualityOption.of(s.ladder.ifEmpty { emptyList<Rung>() })
             // a default from the settings (720p at its own cap) is the ladder's rung of that height
             if (quality.height != null) ladder.firstOrNull { it.height == quality.height }?.let { quality = it }
@@ -630,6 +675,13 @@ class Playback(
         }
 
         override fun failed(why: String) {
+            // story 13.18: a file that does not play as it is opens once more as a transcode
+            if (direct && !forced && players.profile != STREAM_PROFILE) {
+                forced = true
+                val at = positionMs
+                video?.launch { open(fromMs = at) } ?: run { failed = why }
+                return
+            }
             failed = why
         }
 

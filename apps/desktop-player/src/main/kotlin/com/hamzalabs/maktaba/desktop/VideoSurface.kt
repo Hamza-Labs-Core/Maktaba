@@ -85,3 +85,30 @@ fun VideoSurface(player: MediaPlayer?, modifier: Modifier = Modifier, caption: S
         modifier = modifier,
     )
 }
+
+/**
+ * A watch screen's picture (story 13.18): libmpv's window for an [com.hamzalabs.maktaba.desktop.mpv.MpvVideo],
+ * which draws its caption itself; JavaFX's panel for an [FxVideo]. One Swing host for the
+ * screen; a reopened stream's window takes the place of the one before.
+ */
+@Composable
+fun VideoSurface(video: Video?, modifier: Modifier = Modifier, caption: String? = null, captionScale: Float = 1f) {
+    val mpv = video as? com.hamzalabs.maktaba.desktop.mpv.MpvVideo
+    if (mpv == null) {
+        VideoSurface((video as? FxVideo)?.media, modifier, caption, captionScale)
+        return
+    }
+    mpv.caption(caption, caption?.let(::isRtlText) == true, captionScale)
+    SwingPanel(
+        background = Color.Black,
+        factory = { javax.swing.JPanel(java.awt.BorderLayout()).apply { background = java.awt.Color.BLACK } },
+        update = { host ->
+            if (host.componentCount != 1 || host.getComponent(0) !== mpv.canvas) {
+                host.removeAll()
+                host.add(mpv.canvas, java.awt.BorderLayout.CENTER)
+                host.revalidate()
+            }
+        },
+        modifier = modifier,
+    )
+}
