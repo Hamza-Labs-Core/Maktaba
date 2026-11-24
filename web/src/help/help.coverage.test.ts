@@ -261,6 +261,19 @@ describe("help links from the app", () => {
     expect(arWords["updates.fix.app_no_answer"]?.trim()).toBeTruthy();
   });
 
+  // a failed update is undone by its Down scripts: when the whole backup went back instead,
+  // the Updates page says why, in both languages, and links the database entry
+  it("the reasons the whole backup went back are said and explained", () => {
+    const enWords = en as Record<string, string>;
+    const arWords = ar as Record<string, string>;
+    for (const c of ["db_down_failed", "db_restored_lossy", "db_restored_unknown"]) {
+      expect(UPDATE_CODE_HELP.get(c), c).toBe("code-database");
+      expect(updateCodeHelp(c)).toEqual({ topic: "updates", anchor: "code-database" });
+      expect(enWords[`updates.code.${c}`], c).toMatch(/backup/);
+      expect(arWords[`updates.code.${c}`]?.trim(), c).toBeTruthy();
+    }
+  });
+
   it("every reason an update stops with has its entry, listed by name", () => {
     const codes = Object.keys(en)
       .filter((k) => k.startsWith("updates.code."))

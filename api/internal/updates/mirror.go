@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -584,6 +585,16 @@ func (m *Mirror) keepOrFetch(ctx context.Context, rel Release, name, want, dir, 
 	return nil
 }
 
+// siblingURL is name's download address beside the release's checksums.txt ("" when the
+// catalog has none, or name is not a plain file name).
+func siblingURL(rel Release, name string) string {
+	u := assetURL(rel, ChecksumsFile)
+	if u == "" || !plainName(name) || !strings.HasSuffix(u, "/"+ChecksumsFile) {
+		return ""
+	}
+	return strings.TrimSuffix(u, ChecksumsFile) + url.PathEscape(name)
+}
+
 // assetSize is the size GitHub gives a release file (0 not known).
 func assetSize(rel Release, name string) int64 {
 	for _, a := range rel.Assets {
@@ -611,6 +622,11 @@ func (m *Mirror) intact(rel Release, name, want, path string) bool {
 // constraints), else the release's GitHub asset; kept only when its digest is want.
 func (m *Mirror) fetch(ctx context.Context, rel Release, name, want, dir, path string) error {
 	u := assetURL(rel, name)
+	if u == "" && want != "" {
+		// a file the release feed does not list (it lists a platform's own), but signed in
+		// checksums.txt: it is beside checksums.txt, and kept only when its digest is want
+		u = siblingURL(rel, name)
+	}
 	if u == "" {
 		return fmt.Errorf("%w: %s publishes no %s", errNotMirrored, rel.Tag, name)
 	}

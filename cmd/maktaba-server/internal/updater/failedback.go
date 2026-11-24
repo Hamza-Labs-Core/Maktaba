@@ -1,23 +1,34 @@
 package updater
 
-// The way back from an update whose migrations failed part way (the outage of 2026-11-23:
-// a CREATE INDEX CONCURRENTLY cancelled by its lock timeout, and the database step put the
-// whole 35 GB dump back, 2 h 44 min with the library stopped). Before, only a rollback
-// after migrations that all ran could keep the schema (schemakeep.go) or run the Down
-// scripts (schemadown.go); a failure part way always put the dump back. The same two rules
-// decide it now, on what the failed run left:
+// The way back from an update whose migrations failed part way. A failed update is undone
+// by the migrations' own Down scripts (#831); the dump goes back only when they fail, or
+// in the one case where they cannot give back what an Up script already lost (below).
+//
+// The outages of 2026-11-23 (0.3.153 to 0.3.158) and 2026-11-24 (to 0.3.157): 0235's
+// CREATE INDEX CONCURRENTLY was cancelled by its lock timeout, and the database step put
+// the whole 34 GB dump back, about three hours with the library stopped each time. The
+// Down scripts of 0231 to 0234 lose nothing, and 0235's own Down drops what it made part
+// way. Before, the database step had no Down path at all (#1538 added one, with the dump
+// for any part way failure of a NO TRANSACTION migration that was not additive).
 //
 //   - keep: the release before runs on a newer schema and every migration since its own is
 //     rollback-safe. Whatever part of them ran is additive, so it starts on the database as
 //     it is; the next try runs what did not finish again (a migration in a transaction
 //     left nothing; a NO TRANSACTION one runs again whole, every statement harmless twice:
 //     shared/db/migrations/README.md rule 11).
-//   - down: the migrations that ran (goose recorded them) lose no data on their way up, so
-//     their Down scripts undo them; the one that failed part way left nothing (it ran in a
-//     transaction) or only additive work that loses no data (a NO TRANSACTION one whose Up
-//     section is rollback-safe and changes no row), which the release before does not see
-//     and the next try finishes. The database is then the release before's schema.
-//   - restore: anything else, and whatever cannot be told: the dump goes back, as before.
+//   - down: the one that failed is undone by its own Down script (`migrate undo-failed`:
+//     goose rolled a transactional one back already), then the ones that ran by theirs
+//     (`migrate down-to`), back to the slot the database was at before the update. Every
+//     Down script runs after a partial Up, or none (migration-lint's down-script rule, the
+//     rehearsal's down-after-partial test).
+//   - lossy: a migration that ran deleted, overwrote, recast or dropped data (its Up
+//     script: losesData), and its Down script cannot bring that data back. Running the
+//     Down scripts would start the release before on a database missing that data, so the
+//     dump goes back, loudly (db_restored_lossy). migration-lint refuses such an Up script
+//     in a new migration unless shared/db/migrations/meta/lints.json exempts it for a time,
+//     so a release whose migrations pass the lint never takes this way.
+//   - restore: what cannot be told (this release's migrations, or the slot the database was
+//     at before the update, not known): the dump, loudly (db_restored_unknown).
 
 import (
 	"fmt"
@@ -32,52 +43,85 @@ import (
 const (
 	FailedKeep    = "keep"
 	FailedDown    = "down"
+	FailedLossy   = "lossy"
 	FailedRestore = "restore"
 )
 
 // FailedBack decides the way back from an update whose migrations failed: from and to are
-// the migrations folders of the release before and of the failed release, applied the
-// newest migration the database records (goose's version) after the failure, and onKept
-// whether the database before the update was itself a schema kept for the release before
-// (a newer release's: its Down scripts are not to's, so it is not undone). schema is the
-// slot the Down scripts go back to (FailedDown); why says what decided it.
-func FailedBack(from, to string, applied int64, onKept bool) (how string, schema int64, why string) {
-	if from == "" || to == "" {
-		return FailedRestore, 0, "the releases' migrations are not known"
+// the migrations folders of the release before ("" when not kept) and of the failed
+// release, applied the newest migration the database records after the failure (goose's
+// version; -1 when it cannot be read), before the slot the database was at before the
+// update's migrations started (0 when not recorded: a record from before 2026-11-24), and
+// onKept whether that database was itself a schema kept for the release before (a newer
+// release's). schema is the slot the Down scripts go back to (FailedDown); why says what
+// decided it.
+func FailedBack(from, to string, applied, before int64, onKept bool) (how string, schema int64, why string) {
+	toSchema := int64(0)
+	if to != "" {
+		toSchema = newestMigration(to)
 	}
-	fromSchema, toSchema := newestMigration(from), newestMigration(to)
-	if fromSchema == 0 || toSchema == 0 {
-		return FailedRestore, 0, "the releases' schemas are not known"
+	if toSchema == 0 {
+		return FailedRestore, 0, "this release's migrations are not known"
+	}
+	fromSchema := int64(0)
+	if from != "" {
+		fromSchema = newestMigration(from)
 	}
 	keepWhy := ""
-	if !keepsNewerSchema(from) {
+	switch {
+	case fromSchema == 0:
+		keepWhy = "the release before's migrations are not known"
+	case !keepsNewerSchema(from):
 		keepWhy = "the release before does not run on a newer schema (it has no " + SchemaKeepFile + ")"
-	} else if ok, why := RollbackSafe(to, fromSchema, toSchema); ok {
-		return FailedKeep, 0, why
-	} else {
+	default:
+		ok, why := RollbackSafe(to, fromSchema, toSchema)
+		if ok {
+			return FailedKeep, 0, why
+		}
 		keepWhy = why
 	}
+	// the slot the Down scripts go back to: where the database was before the update
+	target := before
 	switch {
+	case target > 0:
 	case onKept:
-		return FailedRestore, 0, keepWhy + "; the database before the update was a newer release's schema, kept"
-	case applied < fromSchema || applied >= toSchema:
-		return FailedRestore, 0, fmt.Sprintf("%s; the database is at slot %04d, not between %04d and %04d",
-			keepWhy, applied, fromSchema, toSchema)
+		return FailedRestore, 0, keepWhy + "; the database before the update was a newer release's schema, kept, " +
+			"and the slot it was at is not recorded"
+	case fromSchema > 0:
+		target = fromSchema
+	default:
+		return FailedRestore, 0, keepWhy + "; the slot the database was at before the update is not known"
 	}
-	failed := nextMigration(to, applied)
-	if failed == 0 {
-		return FailedRestore, 0, keepWhy + "; the migration that failed is not known"
+	if target > toSchema {
+		return FailedRestore, 0, fmt.Sprintf("%s; the database before the update (slot %04d) was ahead of this "+
+			"release's migrations (to %04d)", keepWhy, target, toSchema)
 	}
-	if why := partWayLeft(to, failed); why != "" {
-		return FailedRestore, 0, keepWhy + "; the migration that failed part way: " + why
+	if applied >= 0 && applied < target {
+		return FailedRestore, 0, fmt.Sprintf("%s; the database is at slot %04d, below slot %04d where it was before "+
+			"the update", keepWhy, applied, target)
 	}
-	if applied > fromSchema {
-		if ok, why := Reversible(to, fromSchema, applied); !ok {
-			return FailedRestore, 0, keepWhy + "; " + why
+	// the migrations that ran: every one above target when that cannot be read
+	ran := applied
+	if ran < 0 || ran > toSchema {
+		ran = toSchema
+	}
+	if ran > target {
+		if ok, why := Reversible(to, target, ran); !ok {
+			return FailedLossy, 0, keepWhy + "; " + why
 		}
 	}
-	return FailedDown, fromSchema, fmt.Sprintf("%s; the migrations that ran (to slot %04d) lose no data and "+
-		"their Down scripts undo them, and slot %04d, which failed, left only additive work", keepWhy, applied, failed)
+	failed := nextMigration(to, ran)
+	if failed != 0 {
+		if why := partWayLossy(to, failed); why != "" {
+			return FailedLossy, 0, keepWhy + "; the migration that failed part way: " + why
+		}
+	}
+	said := fmt.Sprintf("%s; the migrations that ran (to slot %04d) lose no data and their Down scripts undo them",
+		keepWhy, ran)
+	if failed != 0 {
+		said += fmt.Sprintf(", and slot %04d, which failed, is undone by its own Down script", failed)
+	}
+	return FailedDown, target, said
 }
 
 // nextMigration is the first migration of dir above slot (0: none).
@@ -112,11 +156,11 @@ func migrationSlots(dir string) []int64 {
 	return out
 }
 
-// partWayLeft says why what the migration at slot of dir may have left after failing part
-// way is not safe to leave ("" when it is): nothing, when it runs in a transaction (goose
-// rolled it back); else its Up section must be rollback-safe and lose no data, as the
-// migrations the Down scripts undo must.
-func partWayLeft(dir string, slot int64) string {
+// partWayLossy says why what the migration at slot of dir did before it failed part way
+// cannot be undone by its Down script ("" when it can): in a transaction, goose rolled it
+// back; else its Down script must have a statement, and its Up script lose no data (a
+// statement that ran before the failure may have deleted or overwritten rows).
+func partWayLossy(dir string, slot int64) string {
 	name := ""
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -140,11 +184,11 @@ func partWayLeft(dir string, slot int64) string {
 	if !noTransaction.Match(b) {
 		return "" // its transaction was rolled back: it left nothing
 	}
-	if ok, why := RollbackSafe(dir, slot-1, slot); !ok {
-		return why
+	up, down := sections(string(b))
+	if strings.TrimSpace(down) == "" {
+		return name + " has no Down script"
 	}
-	up, _ := sections(string(b))
-	if what := losesData(up); what != "" {
+	if what := losesData(up); what != "" && !downRestores.Match(b) {
 		return name + " " + what
 	}
 	return ""

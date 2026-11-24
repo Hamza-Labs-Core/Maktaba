@@ -1227,7 +1227,8 @@ func (m *Machine) cameBackOld(running, why string) {
 		if marked, err := m.Records.MarkRestore(j.Job.Version, j.From, why); err != nil {
 			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
 		} else if marked {
-			m.logf("the database goes back to the dump taken before %s's migrations", j.Job.Version)
+			m.errorf("the whole dump taken before %s's migrations goes back: %s came back on its own (%s), and its "+
+				"start puts the dump back", j.Job.Version, orNone(j.From), why)
 		}
 	}
 	_ = m.mutate(func(j *Journal) {
@@ -1536,6 +1537,9 @@ func (m *Machine) rollback(reason string) {
 	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
 	if migrated && !m.keepSchema(j, reason) && !m.migrateDown(j, reason) {
+		// not the way back (the Down scripts are): said loudly, the Updates page shows it
+		m.errorf("neither keeping %s's schema nor its Down scripts take the database back: the whole dump taken "+
+			"before its migrations goes back", j.Job.Version)
 		marked, err := m.Records.MarkRestore(j.Job.Version, j.From, reason)
 		if err != nil {
 			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
@@ -1589,7 +1593,7 @@ func (m *Machine) keepSchema(j *Journal, reason string) bool {
 	}
 	safe, why := k.KeepsSchema(j)
 	if !safe {
-		m.logf("the database goes back to the dump taken before %s's migrations: %s", j.Job.Version, why)
+		m.logf("%s's schema cannot be kept for %s: %s", j.Job.Version, orNone(j.From), why)
 		return false
 	}
 	marked, err := kr.MarkKept(j.Job.Version, j.From, reason)

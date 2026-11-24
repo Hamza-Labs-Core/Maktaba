@@ -226,5 +226,15 @@ describe("caching", () => {
     expect(cacheControl("/assets/site.css", "text/css", 200)).not.toMatch(/immutable/);
     expect(cacheControl("/install/docker/", HTML, 200)).toBe("public, max-age=0, must-revalidate");
     expect(cacheControl("/x", HTML, 404)).toBe("no-store");
+    // the release feed: a minute, so a release or a pull reaches homes at once
+    expect(cacheControl("/updates/v1/stable/linux-amd64.json", "application/json", 200)).toBe(
+      "public, max-age=60, must-revalidate"
+    );
+    expect(
+      cacheControl("/updates/v1/stable/linux-amd64.json.sigstore.json", "application/json", 200)
+    ).toBe("public, max-age=60, must-revalidate");
+    expect(cacheControl("/updates/v1/stable/linux-amd64.json", "application/json", 404)).toBe(
+      "no-store"
+    );
   });
 });
