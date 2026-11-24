@@ -70,6 +70,16 @@ func (k *rehearsalKit) nextConstraintFailing() payloadSpec {
 	return payloadSpec{variant: "next", version: k.next, extra: map[string]string{n1: b1, n2: b2}}
 }
 
+// afterConstraintFailing is this commit as the release after next, with next's additive
+// migration (kept by its rollback) and a CHECK past what its API takes: it migrates, then
+// cannot run, and its CHECK cannot be kept.
+func (k *rehearsalKit) afterConstraintFailing() payloadSpec {
+	p := k.afterSpec()
+	n, b := constraintNextMigration(k.rev + 3)
+	p.extra[n] = b
+	return p
+}
+
 // nextDestructiveFailing is the same with a destructive migration in place of the second.
 func (k *rehearsalKit) nextDestructiveFailing() payloadSpec {
 	n1, b1 := additiveMigration(k.rev + 1)
@@ -484,6 +494,65 @@ func TestUpdateRehearsal03bRollbackDownScripts(t *testing.T) {
 	}
 	if !rehearsalTableExists(t, db, "rehearsal_probe") {
 		t.Error("this commit's own migration (rehearsal_probe) was undone too")
+	}
+	r.countsUnchanged(before, seedCounts(t, db))
+}
+
+// =====================================================================================
+// 03c A rollback on a schema an earlier rollback kept undoes only its own migrations.
+// =====================================================================================
+
+// 03, then data written into what the failed release's kept schema added, then an update to
+// the release after it, whose own migration (03b's CHECK) cannot be kept and whose API
+// refuses what it migrated. Only that migration is undone: until 2026-11-24 the Down scripts
+// went back to this commit's newest migration, so they also dropped the kept one's table
+// with what was written since. The schema stays kept for this commit, which serves on it.
+func TestUpdateRehearsal03cRollbackOnAKeptSchema(t *testing.T) {
+	r := newRehearsal(t)
+	k := r.kit
+	if k.after == "" {
+		r.skipUnlessRequired("the kit has no release after the next")
+	}
+	home, _ := r.homeOnPrev(profile("restore"))
+	home.installByHand(k.curSpec())
+	home.waitServing(k.cur, 10*time.Minute)
+	db := home.superDB("maktaba")
+	before := seedCounts(t, db)
+	run, mon, _ := r.update(home, k.nextAdditiveFailing(), 25*time.Minute)
+	if run.State != "rolled_back" {
+		t.Fatalf("the update to %s ended %s, want rolled_back: %s", k.next, run.State, run.Error)
+	}
+	home.waitServing(k.cur, 5*time.Minute)
+	r.budget(mon, "a rollback after additive migrations", 4*time.Minute)
+	if rec, _ := home.record(); rec.KeptFor != k.cur {
+		t.Fatalf("the database's record is %+v: not kept for %s", rec, k.cur)
+	}
+	if _, err := db.Exec(`INSERT INTO rehearsal_probe_next (id) VALUES (1), (2), (3)`); err != nil {
+		t.Fatal(err)
+	}
+	run, mon, states := r.update(home, k.afterConstraintFailing(), 25*time.Minute)
+	if run.State != "rolled_back" {
+		t.Fatalf("the update to %s ended %s, want rolled_back: %s", k.after, run.State, run.Error)
+	}
+	home.waitServing(k.cur, 5*time.Minute)
+	r.budget(mon, "a rollback by the Down scripts on a kept schema", 4*time.Minute)
+	home.assertServing(k.cur)
+	r.noRestore(home, states)
+	rec, all := home.record()
+	if layoutVersion(rec.Version) != layoutVersion(k.cur) || layoutVersion(rec.KeptFor) != layoutVersion(k.cur) {
+		t.Errorf("the database's record is %+v: want %s's, kept for it", rec, k.cur)
+	}
+	if df, _ := all["down_from"].(string); layoutVersion(df) != layoutVersion(k.after) {
+		t.Errorf("the record does not say %s's Down scripts brought it back: %v", k.after, all)
+	}
+	if n := queryInt(t, db, `SELECT count(*) FROM rehearsal_probe_next`); n != 3 {
+		t.Errorf("%d of the 3 rows written on the kept schema are left", n)
+	}
+	if n := queryInt(t, db, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`); n != int64(k.rev+2) {
+		t.Errorf("the schema is at %d, want the kept %d", n, k.rev+2)
+	}
+	if n := queryInt(t, db, `SELECT count(*) FROM pg_constraint WHERE conname = 'rehearsal_probe_note_short'`); n != 0 {
+		t.Error("the failed release's CHECK is still there: its Down script did not run")
 	}
 	r.countsUnchanged(before, seedCounts(t, db))
 }

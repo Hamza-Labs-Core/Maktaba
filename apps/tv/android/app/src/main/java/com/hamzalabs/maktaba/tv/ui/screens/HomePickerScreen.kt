@@ -80,7 +80,9 @@ fun HomePickerScreen(app: MaktabaTVApp, probe: HomeProbe = remember { HomeProbe(
     val nearby = HomeChoices.nearby(found, saved)
     // story 50.27: nobody is signed in here, so the limits kept on this TV decide (failing closed)
     val guestAccess by app.guestGate.access.collectAsState(initial = remember { app.guestGate.now() })
-    val guestAllowed = guestAccess == com.hamzalabs.maktaba.core.guest.GuestAccess.Allowed
+    // never while the build has broadcasting off (GuestBroadcast)
+    val guestAllowed = com.hamzalabs.maktaba.core.guest.GuestBroadcast.ENABLED &&
+        guestAccess == com.hamzalabs.maktaba.core.guest.GuestAccess.Allowed
 
     // a home in the list takes focus (never the text field: focus there opens the keyboard)
     val anyHome = saved.isNotEmpty() || nearby.isNotEmpty()

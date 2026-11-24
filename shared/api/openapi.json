@@ -21150,7 +21150,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21239,7 +21239,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21313,7 +21313,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21380,7 +21380,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21469,7 +21469,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21532,7 +21532,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21610,7 +21610,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21682,7 +21682,7 @@
             "$ref": "#/components/responses/Unauthorized"
           },
           "403": {
-            "description": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+            "description": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
             "content": {
               "application/problem+json": {
                 "schema": {

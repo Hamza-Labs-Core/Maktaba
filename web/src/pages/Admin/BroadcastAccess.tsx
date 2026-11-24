@@ -26,6 +26,8 @@ import { useI18n } from "../../lib/i18n";
 import { errorText } from "../../lib/errorText";
 import { usePageData } from "../../lib/usePageData";
 import { AdminGate } from "../../components/AdminGate";
+import { useFlag } from "../../lib/flags";
+import { NotFound } from "../NotFound";
 
 const BASE = "/api/broadcast/access";
 
@@ -93,6 +95,10 @@ export function accessErrorText(e: unknown, t: T): string {
 }
 
 export function BroadcastAccess() {
+  // broadcasting is off by default (2026-11-24): without the licence's broadcast flag the page
+  // is not there, as the nav has no link to it
+  const on = useFlag("broadcast");
+  if (!on) return <NotFound />;
   return (
     <AdminGate>
       <BroadcastAccessInner />

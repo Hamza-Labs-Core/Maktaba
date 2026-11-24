@@ -12,7 +12,7 @@ import (
 // owner, named by id, is 403; no credential, or a customer's token alone, is 401; and the owner's
 // bearer route at /v1/broadcast/analytics is still the owner's (the two mounts don't collide).
 func TestBroadcastHomeAnalyticsDoorOnTheRealRouter(t *testing.T) {
-	e := newEnv(t)
+	e := newEnvCfg(t, nil, broadcastOn(t, nil))
 	owner := e.registerVerified("analytics-owner@example.test")
 	home := claimHome(e, owner, "viewers-home")
 	sibling := claimHome(e, owner, "viewers-sibling")

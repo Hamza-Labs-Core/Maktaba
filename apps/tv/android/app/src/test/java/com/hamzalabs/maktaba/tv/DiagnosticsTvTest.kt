@@ -93,10 +93,28 @@ class DiagnosticsTvTest {
         assertFalse("a TV picks no time", shows("Earlier today"))
     }
 
+    /**
+     * While the build has broadcasting off ([com.hamzalabs.maktaba.core.guest.GuestBroadcast]):
+     * Account has no Watch a broadcast, even where no parental limit is known to be on.
+     */
+    @Test
+    fun broadcastingOffLeavesWatchABroadcastOutOfAccount() {
+        val app = ApplicationProvider.getApplicationContext<MaktabaTVApp>()
+        CrashConsent(app).set(false, home)
+        assertEquals(false, com.hamzalabs.maktaba.core.guest.GuestBroadcast.ENABLED)
+        assertEquals(com.hamzalabs.maktaba.core.guest.GuestAccess.Allowed, app.guestGate.now())
+        compose.setContent { MaktabaTvTheme { DiagnosticsHost(client, home, tv = true) { AccountScreen(app, User(id = "u1", username = "viewer")) } } }
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Report a problem") }
+        compose.onNodeWithTag("account-watch-broadcast").assertDoesNotExist()
+        assertFalse(shows("Watch a broadcast"))
+    }
+
     @Test
     fun watchABroadcastIsInAccountOnlyOnceTheHomeSaysThereIsNoLimit() {
         val app = ApplicationProvider.getApplicationContext<MaktabaTVApp>()
         CrashConsent(app).set(false, home)
+        // broadcasting on for this test (the build has it off: GuestBroadcast)
+        com.hamzalabs.maktaba.core.guest.GuestBroadcast.override = true
         val server = MockWebServer()
         fun answer(body: String) = MockResponse.Builder().code(200).addHeader("Content-Type", "application/json").body(body).build()
         server.enqueue(answer("""{"restricted":false,"allow_only":false,"version":1}"""))
@@ -122,6 +140,7 @@ class DiagnosticsTvTest {
             compose.waitUntil(5_000) { compose.waitForIdle(); !shows("Watch a broadcast") }
             compose.onNodeWithTag("account-watch-broadcast").assertDoesNotExist()
         } finally {
+            com.hamzalabs.maktaba.core.guest.GuestBroadcast.override = null
             app.guestDoor.close()
             server.close()
         }

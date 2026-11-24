@@ -16,8 +16,9 @@ struct SettingsView: View {
             Form {
                 // story 50.27: Watch a broadcast, apart from the home and its account; only once
                 // the home said there is no parental limit (Epic 57): a broadcast is outside the
-                // home's ratings, and the entry fails closed
-                if session.guestGate.allowed {
+                // home's ratings, and the entry fails closed; never while the build has
+                // broadcasting off (`GuestBroadcast`)
+                if session.showsWatchBroadcast {
                     Section {
                         Button {
                             watchingBroadcast = true

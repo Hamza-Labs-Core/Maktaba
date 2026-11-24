@@ -1,7 +1,7 @@
 ---
 title: Privacy
 description: What Maktaba's website, apps and cloud do with your information, in plain words: no cookies, no analytics, and your library stays in your home.
-updated: 2026-11-11
+updated: 2026-11-24
 apps-source: sha256:4b4400ce620949688eeb8c7e01408b5a2290cba96ea4622277e763c89da525a8
 ---
 
@@ -11,10 +11,9 @@ Maktaba runs in your home, and your films, series and recordings stay there. Thi
 
 - It sets no cookies.
 - It runs no analytics script and shows no advertising.
-- It loads nothing from another website. The one exception is the copyright page, once it carries its notice form: that page alone then loads Cloudflare Turnstile, which tells a person from an automated sender. [Cloudflare's Turnstile privacy addendum](https://www.cloudflare.com/turnstile-privacy-policy/) says what Turnstile handles.
+- It loads nothing from another website.
 - Cloudflare serves this website. As for any site it serves, Cloudflare counts the requests to the whole site: how many, from which countries, and how many failed. These are totals, not a record of you. [Cloudflare's privacy policy](https://www.cloudflare.com/privacypolicy/) covers what Cloudflare itself keeps.
 - The install guides' forms keep every answer in the page. Nothing you type there is sent anywhere.
-- The copyright notice form sends only what it asks for, to the place it names before you send it.
 
 ## The apps {#apps}
 

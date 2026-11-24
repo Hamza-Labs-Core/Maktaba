@@ -6398,8 +6398,8 @@
       "ar": "عرض الوصول."
     },
     "/paths/~1broadcast~1access/get/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access/get/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6422,8 +6422,8 @@
       "ar": "حُفظ."
     },
     "/paths/~1broadcast~1access~1channels~1{id}/put/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1channels~1{id}/put/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6446,8 +6446,8 @@
       "ar": "حُفظ."
     },
     "/paths/~1broadcast~1access~1limits/put/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1limits/put/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6470,8 +6470,8 @@
       "ar": "الدعوات."
     },
     "/paths/~1broadcast~1access~1invites/get/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites/get/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6494,8 +6494,8 @@
       "ar": "الدعوة الجديدة، برابطها ورمزها."
     },
     "/paths/~1broadcast~1access~1invites/post/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites/post/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6518,8 +6518,8 @@
       "ar": "سُحبت."
     },
     "/paths/~1broadcast~1access~1invites~1{id}/delete/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites~1{id}/delete/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6542,8 +6542,8 @@
       "ar": "الأجهزة."
     },
     "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6566,8 +6566,8 @@
       "ar": "أُزيل."
     },
     "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",

@@ -5,12 +5,18 @@ import userEvent from "@testing-library/user-event";
 import { renderPage, memberUser } from "../../test/pageHarness";
 import { routeGet } from "../../test/queueHarness";
 
-const { get, post, put, del } = vi.hoisted(() => ({
+const { get, post, put, del, flag } = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   put: vi.fn(),
   del: vi.fn(),
+  flag: { on: true },
 }));
+// the licence's broadcast flag: on for these tests (broadcasting is off by default)
+vi.mock("../../lib/flags", async () => {
+  const actual = await vi.importActual<typeof import("../../lib/flags")>("../../lib/flags");
+  return { ...actual, useFlag: () => flag.on };
+});
 vi.mock("../../lib/api", async () => {
   const actual = await vi.importActual<typeof import("../../lib/api")>("../../lib/api");
   return { ...actual, api: { ...actual.api, get, post, put, patch: vi.fn(), delete: del } };
@@ -163,5 +169,21 @@ describe("broadcast access (home)", () => {
     open();
     expect(await screen.findByText("من يمكنه المشاهدة")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "أنشئ رابط دعوة" })).toBeInTheDocument();
+  });
+});
+
+// Broadcasting is off by default (2026-11-24): without the licence's broadcast flag the page is
+// not found and asks the home nothing
+describe("broadcasting off", () => {
+  afterEach(() => {
+    flag.on = true;
+  });
+  it("shows the not-found page and makes no request", async () => {
+    flag.on = false;
+    get.mockReset();
+    renderPage(<BroadcastAccess />, { path: "/admin/broadcast-access" });
+    expect(await screen.findByRole("heading")).toBeInTheDocument();
+    expect(screen.queryByText(/broadcast/i)).toBeNull();
+    expect(get).not.toHaveBeenCalled();
   });
 });
