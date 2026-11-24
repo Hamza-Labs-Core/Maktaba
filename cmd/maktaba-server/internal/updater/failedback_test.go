@@ -176,15 +176,3 @@ func TestFailedBackRepositoryMigrations(t *testing.T) {
 		t.Fatalf("DownToFrom 0.3.153 -> 0.3.157: %d %v (%s)", schema, ok, why)
 	}
 }
-
-func slotName(t *testing.T, dir, slot string) string {
-	t.Helper()
-	ents, _ := os.ReadDir(dir)
-	for _, e := range ents {
-		if strings.HasPrefix(e.Name(), slot+"_") && !strings.HasSuffix(e.Name(), ".sqlite.sql") {
-			return strings.TrimPrefix(e.Name(), slot+"_")
-		}
-	}
-	t.Fatalf("no %s migration", slot)
-	return ""
-}
