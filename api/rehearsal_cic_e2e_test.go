@@ -241,12 +241,17 @@ func TestUpdateRehearsal19ConcurrentIndexBehindACopy(t *testing.T) {
 	for _, want := range []string{
 		"table syncs run (a machine copying the database): the migrations wait",
 		"the machines' table syncs ended",
-		"the machines' copies are paused for the migrations (" + copyRole,
 		"index builds run plainly, not CONCURRENTLY",
-		"the machines' copies may log in again (" + copyRole,
 	} {
 		if !strings.Contains(log, want) {
 			t.Errorf("the log lacks %q", want)
+		}
+	}
+	// the seed's own machine has a replication role too: the copy's is one of those named
+	for _, said := range []string{"the machines' copies are paused for the migrations (",
+		"the machines' copies may log in again ("} {
+		if line := lineWith(log, said); !strings.Contains(line, copyRole) {
+			t.Errorf("the log does not name %s in %q (line %q)", copyRole, said, line)
 		}
 	}
 	if strings.Contains(log, "waited too long for a lock another session holds") {
@@ -270,4 +275,14 @@ func TestUpdateRehearsal19ConcurrentIndexBehindACopy(t *testing.T) {
 	if rec, _ := home.record(); rec.State != "migrated" || rec.Version != k.cur {
 		t.Errorf("the database's record is %+v, want migrated for %s", rec, k.cur)
 	}
+}
+
+// lineWith is the first line of log that holds s ("" when none).
+func lineWith(log, s string) string {
+	for _, l := range strings.Split(log, "\n") {
+		if strings.Contains(l, s) {
+			return l
+		}
+	}
+	return ""
 }

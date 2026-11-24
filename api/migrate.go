@@ -247,7 +247,8 @@ func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
 			return fmt.Errorf("the migrations' index builds: %w", err)
 		}
 		if n > 0 {
-			fmt.Fprintf(os.Stderr, "migrate: the library is stopped: %d index builds run plainly, not CONCURRENTLY\n", n)
+			// counted over every migration file, applied or not: goose runs only the pending ones
+			fmt.Fprintln(os.Stderr, "migrate: the library is stopped: the index builds run plainly, not CONCURRENTLY")
 		}
 	}
 	if err := goose.UpContext(ctx, db, stage); err != nil {
