@@ -544,6 +544,14 @@ jobs:
             -resultBundlePath "$RESULTS/mac.xcresult" "${only[@]}" || status=1
           log show --start "$start" --style compact --info --debug \
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true
+          # and the Mac app's crash reports from this run, as the simulators' jobs keep theirs
+          # (tools/apple/sim-log.py): in run 45238693973 the app under
+          # PlayerMacDemoShotsUITests.testLibrary ended without a line ("Lost connection to the
+          # application"), and nothing said why
+          mkdir -p "$RESULTS/mac-crashes"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -iname '*maktaba*' -newer "$RESULTS/mac.selection" \
+            -exec cp {} "$RESULTS/mac-crashes/" \; 2>/dev/null || true
+          ls "$RESULTS/mac-crashes" | sed 's/^/crash report kept: /'
           python3 ../../tools/apple/check-app-log.py "$RESULTS/mac-app.log" || status=1
           exit $status
 
