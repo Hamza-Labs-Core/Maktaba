@@ -4,7 +4,10 @@
   "stores": {
     "apple": {
       "name": "Apple App Store (App Store Connect; TestFlight today)",
-      "locales": { "en": "en-US", "ar": "ar-SA" },
+      "locales": {
+        "en": "en-US",
+        "ar": "ar-SA"
+      },
       "rules": [
         "Screenshots show the app in use, not only title art, a sign-in page or a splash screen; text and image overlays are allowed (App Review Guidelines 2.3.3).",
         "No prices, no unverifiable claims, nothing above a 4+ rating, no names or imagery of other platforms (2.3.7, 2.3.8, 2.3.10, 2.3.14).",
@@ -26,7 +29,9 @@
           "size": [1206, 2622],
           "accepts": [
             [1179, 2556],
-            [1206, 2622]
+            [1206, 2622],
+            [2556, 1179],
+            [2622, 1206]
           ],
           "count": [1, 10],
           "formats": ["png", "jpeg"],
@@ -40,7 +45,10 @@
           "accepts": [
             [1260, 2736],
             [1290, 2796],
-            [1320, 2868]
+            [1320, 2868],
+            [2736, 1260],
+            [2796, 1290],
+            [2868, 1320]
           ],
           "count": [1, 10],
           "formats": ["png", "jpeg"],
@@ -121,7 +129,10 @@
     },
     "google": {
       "name": "Google Play (Play Console; internal testing today)",
-      "locales": { "en": "en-US", "ar": "ar" },
+      "locales": {
+        "en": "en-US",
+        "ar": "ar"
+      },
       "rules": [
         "Screenshots demonstrate the app's actual experience; the first three put the interface first.",
         "Taglines take at most 20% of the image and are localized.",
@@ -158,13 +169,17 @@
           "source": "https://support.google.com/googleplay/android-developer/answer/9866151"
         },
         "phone": {
-          "label": "Phone screenshots, 9:16",
+          "label": "Phone screenshots, 9:16 (16:9 for a landscape shot)",
           "size": [1080, 1920],
           "count": [2, 8],
           "formats": ["png", "jpeg"],
           "alpha": false,
           "maxBytes": 8388608,
-          "source": "https://support.google.com/googleplay/android-developer/answer/9866151"
+          "source": "https://support.google.com/googleplay/android-developer/answer/9866151",
+          "accepts": [
+            [1080, 1920],
+            [1920, 1080]
+          ]
         },
         "tablet-7": {
           "label": "7-inch tablet screenshots, 9:16",
@@ -213,7 +228,10 @@
     },
     "amazon": {
       "name": "Amazon Appstore, Fire TV (Fire OS; the same images serve Vega OS)",
-      "locales": { "en": "en-US", "ar": "ar" },
+      "locales": {
+        "en": "en-US",
+        "ar": "ar"
+      },
       "rules": [
         "Screenshots show only the app itself, as on the TV: no photographs of people using it, no other devices, dummy data for anything personal.",
         "The Fire TV app icon carries only the logo or key art, no slogan or badge, edge to edge with no border or rounded corners; main subject and title inside 882x448.",
@@ -282,7 +300,10 @@
     },
     "roku": {
       "name": "Roku Streaming Store (Developer Dashboard)",
-      "locales": { "en": "en", "ar": "ar" },
+      "locales": {
+        "en": "en",
+        "ar": "ar"
+      },
       "rules": [
         "A name, description and poster in each language the channel supports (certification).",
         "Artwork represents the app's name or identity in broadcast-safe colours and is not transparent (certification 6.4).",
@@ -315,7 +336,9 @@
     },
     "samsung": {
       "name": "Samsung Smart TV Seller Office (Tizen)",
-      "locales": { "single": "every language" },
+      "locales": {
+        "single": "every language"
+      },
       "rules": [
         "Icons and screenshots cannot differ per language or country: one set serves every listing (Seller Office FAQ).",
         "Exactly 4 screenshots; number 3 is not shown on some TV models; with in-app purchases number 4 must show prices (Maktaba sells nothing).",
@@ -381,7 +404,9 @@
     },
     "lg": {
       "name": "LG Content Store (Seller Lounge, webOS)",
-      "locales": { "single": "every language" },
+      "locales": {
+        "single": "every language"
+      },
       "rules": [
         "The 400x400 store icon has no transparency or gradient in its background, which matches the app tile colour (official app resources page).",
         "unconfirmed: 1 primary and 2 to 5 secondary screenshots, 1920x1080 recommended, one set for every language (Seller Lounge User Guide v11.5, 2021; the Seller Lounge itself needs a login). Check at upload time, as docs/stores/lg.md says."
@@ -471,7 +496,12 @@
       "bundle": "com.hamzalabs.maktaba.player.tablet",
       "built": ".github/workflows/testflight.yml",
       "sets": [
-        { "asset": "ipad-13", "style": "captioned", "surface": "ipad", "langs": "per-language" }
+        {
+          "asset": "ipad-13",
+          "style": "captioned",
+          "surface": "ipad",
+          "langs": "per-language"
+        }
       ]
     },
     {
@@ -481,7 +511,14 @@
       "bundle": "com.hamzalabs.maktaba.player.mac",
       "built": ".github/workflows/testflight.yml",
       "note": "the Mac App Store; the server app (Maktaba, Tauri) is a direct download with no store listing",
-      "sets": [{ "asset": "mac", "style": "captioned", "surface": "mac", "langs": "per-language" }]
+      "sets": [
+        {
+          "asset": "mac",
+          "style": "captioned",
+          "surface": "mac",
+          "langs": "per-language"
+        }
+      ]
     },
     {
       "id": "apple-remote-iphone",
@@ -511,7 +548,12 @@
       "bundle": "com.hamzalabs.maktaba.remote.tablet",
       "built": ".github/workflows/testflight.yml",
       "sets": [
-        { "asset": "ipad-13", "style": "captioned", "surface": "ipad", "langs": "per-language" }
+        {
+          "asset": "ipad-13",
+          "style": "captioned",
+          "surface": "ipad",
+          "langs": "per-language"
+        }
       ]
     },
     {
@@ -521,7 +563,12 @@
       "bundle": "com.hamzalabs.maktaba.tv",
       "built": ".github/workflows/testflight.yml",
       "sets": [
-        { "asset": "appletv", "style": "captioned", "surface": "appletv", "langs": "per-language" }
+        {
+          "asset": "appletv",
+          "style": "captioned",
+          "surface": "appletv",
+          "langs": "per-language"
+        }
       ]
     },
     {
@@ -531,8 +578,16 @@
       "bundle": "com.hamzalabs.maktaba.player",
       "built": ".github/workflows/play-bundles.yml",
       "sets": [
-        { "asset": "icon", "style": "icon", "langs": "single" },
-        { "asset": "feature", "style": "feature", "langs": "per-language" },
+        {
+          "asset": "icon",
+          "style": "icon",
+          "langs": "single"
+        },
+        {
+          "asset": "feature",
+          "style": "feature",
+          "langs": "per-language"
+        },
         {
           "asset": "phone",
           "style": "captioned",
@@ -560,8 +615,16 @@
       "bundle": "com.hamzalabs.maktaba.remote",
       "built": ".github/workflows/play-bundles.yml",
       "sets": [
-        { "asset": "icon", "style": "icon", "langs": "single" },
-        { "asset": "feature", "style": "feature", "langs": "per-language" },
+        {
+          "asset": "icon",
+          "style": "icon",
+          "langs": "single"
+        },
+        {
+          "asset": "feature",
+          "style": "feature",
+          "langs": "per-language"
+        },
         {
           "asset": "phone",
           "style": "captioned",
@@ -589,10 +652,27 @@
       "bundle": "com.hamzalabs.maktaba.tv",
       "built": ".github/workflows/play-bundles.yml",
       "sets": [
-        { "asset": "icon", "style": "icon", "langs": "single" },
-        { "asset": "feature", "style": "feature", "langs": "per-language" },
-        { "asset": "tv-banner", "style": "tile", "langs": "per-language" },
-        { "asset": "tv", "style": "plain", "surface": "androidtv", "langs": "per-language" }
+        {
+          "asset": "icon",
+          "style": "icon",
+          "langs": "single"
+        },
+        {
+          "asset": "feature",
+          "style": "feature",
+          "langs": "per-language"
+        },
+        {
+          "asset": "tv-banner",
+          "style": "tile",
+          "langs": "per-language"
+        },
+        {
+          "asset": "tv",
+          "style": "plain",
+          "surface": "androidtv",
+          "langs": "per-language"
+        }
       ]
     },
     {
@@ -603,12 +683,37 @@
       "built": ".github/workflows/tv-release.yml",
       "doc": "docs/stores/amazon.md",
       "sets": [
-        { "asset": "tv-icon", "style": "tile", "langs": "per-language" },
-        { "asset": "tv", "style": "plain", "surface": "firetv", "langs": "per-language" },
-        { "asset": "background", "style": "art", "langs": "single" },
-        { "asset": "small-icon", "style": "icon", "langs": "single" },
-        { "asset": "large-icon", "style": "icon", "langs": "single" },
-        { "asset": "promo", "style": "feature", "langs": "per-language" }
+        {
+          "asset": "tv-icon",
+          "style": "tile",
+          "langs": "per-language"
+        },
+        {
+          "asset": "tv",
+          "style": "plain",
+          "surface": "firetv",
+          "langs": "per-language"
+        },
+        {
+          "asset": "background",
+          "style": "art",
+          "langs": "single"
+        },
+        {
+          "asset": "small-icon",
+          "style": "icon",
+          "langs": "single"
+        },
+        {
+          "asset": "large-icon",
+          "style": "icon",
+          "langs": "single"
+        },
+        {
+          "asset": "promo",
+          "style": "feature",
+          "langs": "per-language"
+        }
       ]
     },
     {
@@ -619,8 +724,17 @@
       "built": ".github/workflows/roku-release.yml",
       "doc": "docs/stores/roku.md",
       "sets": [
-        { "asset": "poster", "style": "tile", "langs": "per-language" },
-        { "asset": "tv", "style": "plain", "surface": "roku", "langs": "per-language" }
+        {
+          "asset": "poster",
+          "style": "tile",
+          "langs": "per-language"
+        },
+        {
+          "asset": "tv",
+          "style": "plain",
+          "surface": "roku",
+          "langs": "per-language"
+        }
       ]
     },
     {
@@ -631,10 +745,27 @@
       "built": ".github/workflows/tv-web-release.yml",
       "doc": "docs/stores/samsung.md",
       "sets": [
-        { "asset": "logo", "style": "tile", "langs": "single" },
-        { "asset": "logo-background", "style": "art", "langs": "single" },
-        { "asset": "detail-background", "style": "art", "langs": "single" },
-        { "asset": "tv", "style": "plain", "surface": "samsung", "langs": "single" }
+        {
+          "asset": "logo",
+          "style": "tile",
+          "langs": "single"
+        },
+        {
+          "asset": "logo-background",
+          "style": "art",
+          "langs": "single"
+        },
+        {
+          "asset": "detail-background",
+          "style": "art",
+          "langs": "single"
+        },
+        {
+          "asset": "tv",
+          "style": "plain",
+          "surface": "samsung",
+          "langs": "single"
+        }
       ]
     },
     {
@@ -645,9 +776,22 @@
       "built": ".github/workflows/tv-web-release.yml",
       "doc": "docs/stores/lg.md",
       "sets": [
-        { "asset": "icon", "style": "icon", "langs": "single" },
-        { "asset": "tv", "style": "plain", "surface": "lg", "langs": "single" },
-        { "asset": "background", "style": "art", "langs": "single" }
+        {
+          "asset": "icon",
+          "style": "icon",
+          "langs": "single"
+        },
+        {
+          "asset": "tv",
+          "style": "plain",
+          "surface": "lg",
+          "langs": "single"
+        },
+        {
+          "asset": "background",
+          "style": "art",
+          "langs": "single"
+        }
       ]
     }
   ]

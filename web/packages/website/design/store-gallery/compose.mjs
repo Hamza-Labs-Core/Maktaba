@@ -128,9 +128,15 @@ export function plan({ only } = {}) {
             listing.app,
             set.surface === "android-tablet-7" ? "android-tablet" : set.surface
           );
+          // a beat that reads better on its side (the phone's player) takes the asset's landscape
+          // size, where the store accepts one (App Store iPhone sizes, Google Play's 16:9)
+          const turn = (beat) =>
+            beat.canvas?.[set.surface] === "landscape" &&
+            (spec.accepts ?? []).some(([w, h]) => w === H && h === W);
           beats.forEach((beat, i) =>
             jobs.push({
               ...base,
+              ...(turn(beat) ? { W: H, H: W } : {}),
               n: i + 1,
               name: beat.id,
               beat,
@@ -268,14 +274,19 @@ async function encode(sharp, buf, spec) {
   return null;
 }
 
-/** A file against its manifest entry. */
-export async function check(sharp, file, spec) {
+/** A file against its manifest entry: `size` is the one it was drawn at (the asset's, or a
+ * landscape size the store also accepts). */
+export async function check(sharp, file, spec, size = spec.size) {
   const problems = [];
   const meta = await sharp(file).metadata();
   const bytes = readFileSync(file).length;
   const fmt = meta.format === "jpeg" ? "jpeg" : meta.format;
-  if (meta.width !== spec.size[0] || meta.height !== spec.size[1])
-    problems.push(`${meta.width}x${meta.height}, want ${spec.size.join("x")}`);
+  const accepted = [spec.size, ...(spec.accepts ?? [])].some(
+    ([w, h]) => w === size[0] && h === size[1]
+  );
+  if (!accepted) problems.push(`drawn at ${size.join("x")}, which the store does not take`);
+  if (meta.width !== size[0] || meta.height !== size[1])
+    problems.push(`${meta.width}x${meta.height}, want ${size.join("x")}`);
   if (!spec.formats.includes(fmt)) problems.push(`${fmt}, want ${spec.formats.join(" or ")}`);
   if (spec.alpha === false && meta.hasAlpha) problems.push("has an alpha channel");
   if (spec.maxBytes && bytes > spec.maxBytes)
@@ -367,7 +378,7 @@ export async function compose({ captureDirs, out, only, allowMissing = false, lo
       const file = join(out, `${rel}.${enc.ext}`);
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, enc.data);
-      const c = await check(sharp, file, job.spec);
+      const c = await check(sharp, file, job.spec, [job.W, job.H]);
       for (const pr of c.problems) problems.push(`${rel}.${enc.ext}: ${pr}`);
       report.push({
         file: `${rel}.${enc.ext}`,
