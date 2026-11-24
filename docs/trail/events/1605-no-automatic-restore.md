@@ -6,7 +6,7 @@ title: "A failed update never puts the backup back by itself: it stops and asks 
 date: 2026-11-24
 session: 1d933885-c614-466d-9dec-f738a7b6a527
 agent: claude-code
-prs: [1598, 1601]
+prs: [1598, 1601, 1663]
 ---
 
 ## What happened
@@ -24,7 +24,14 @@ prs: [1598, 1601]
 - **Words:** `db_held` has words on web, Apple and Android. The recovery page shows a held banner with a button for the named backup.
 - **Update rehearsal 04–06:** they now expect the hold and then play the person's restore.
 
+- **After its review:**
+  - the update's record withholds its backup (`dump_unconfirmed`) until its watch passes, so an older launcher's guard and an older release coming back by itself leave it alone;
+  - a held record stays held when the switch back fails;
+  - a restore a person asked for that cannot finish can be tried again, replaced, given up, or left behind by a newer release.
+
 ## What we learned
+- **The code that decides the first update is the old code.** A rule in the new launcher does nothing under the old one. The barrier has to be something the old code already honours: here, "no dump, left alone", in `MarkRecordRestoring` since the first release with a guard.
+- **Prove it with the released binary:** a test of today's copy of the old function passes whatever the old release does. Rehearsal 21 runs the previous release's launcher and server, with a control that must fail.
 - **Why `held` keeps the failed release's version:** every release from before the change refuses the database as older (`db_refused_older`) instead of restoring it. The new state stops even code that was never taught it.
 - **A restore asked by a person** (`restorer.mark`) builds a fresh record, so the dump's kept-schema marker (`dump_kept_for`) was lost on that path. It must be carried over from the held record, or the release kept for the schema halts with `db_ahead` after the restore.
 - **Layout installs (deb/rpm, self-managed) had no Down-script path at all.** `LayoutInstaller` implemented neither `KeepsSchema` nor `DownTo`, so `migrateDown` returned false silently and the whole dump was their only way back. The auto-update e2e's 0.9.2 (a lossless migration) stopped and asked once restoring was gone. It now reads the release before's migrations from `bin/releases/<from>/`.
@@ -36,5 +43,5 @@ prs: [1598, 1601]
 
 ## Open
 - Release-before-the-fix paths are unchanged:
-  - Layout installs keep their old launcher, which still writes `restoring`. Only a release with this change holds it.
+  - Under an older launcher, an update whose migrations were all additive also stops (the older release refuses the newer database) instead of running on.
   - An update *to* a release from before this change runs that release's own database step.
