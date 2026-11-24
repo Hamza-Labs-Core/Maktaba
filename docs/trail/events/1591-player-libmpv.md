@@ -16,7 +16,8 @@ The fifth build story of the approved desktop design (D4).
   - A direct file's audio track switches in place.
   - Without libmpv, JavaFX plays: the Player says so once, and the problem report names the engine and the hardware decoder.
 - **Build:** `libmpv/build.sh` builds dav1d 1.5.5, FFmpeg 8.1.3 (LGPL), libplacebo 7.387.0 and mpv 0.42.0 (`-Dgpl=false`) from pinned sources. It runs on Linux and in MSYS2's UCRT64, is cached by its pins and saved from main, and goes into the installers through compose's app resources.
-- **Measured (Linux CI, the real library):** T01's 1080p H.264 + AC-3 5.1 MKV played directly with its first frame at 226 ms; T02's 2160p HEVC 10-bit at 165 ms in software. T05's undecodable file reopened as a transcode.
+- **Measured (CI, the real library):** T01's 1080p H.264 + AC-3 5.1 MKV played directly with its first frame at 226 ms on Linux. T02's 2160p HEVC 10-bit took 62–165 ms on Linux and 27 ms on Windows, both in software. T05's undecodable file reopened as a transcode on both.
+- An independent review of e31e6c2b1 found a native-memory leak per frame, a forced transcode losing the resume point, a lost audio choice, a teardown blocking the UI thread, and FFmpeg's symbols exported into the process. All were fixed in ffdc6c8dd and after.
 
 ## What we learned
 - **An LGPL mpv has no X11 output.** mpv's `meson.build` requires `-Dgpl=true` for x11, so drawing into a native child window (`wid`) cannot work on Linux with an LGPL build. Compose does not share Skiko's OpenGL context either. That leaves mpv's software render API (`vo=libmpv`, `sw`): frames at the screen's size into the app's own memory.
@@ -26,6 +27,8 @@ The fifth build story of the approved desktop design (D4).
   - Link with `--exclude-libs,ALL` and load `RTLD_LOCAL`, so FFmpeg's symbols do not meet JavaFX's system FFmpeg in the same process.
 - **mpv 0.42 needs libplacebo ≥ 7.387.0.** On Windows its D3D11VA decoding builds only beside its D3D11 output (shaderc and SPIRV-Cross).
 - **A tag's SHA from `git/refs/tags` may be the tag object.** Pin `git ls-remote`'s `^{}` commit.
+- **JNA's `OPTION_OPEN_FLAGS` is `LoadLibraryEx`'s flags on Windows.** `1` (`RTLD_LAZY` on Linux) there is `DONT_RESOLVE_DLL_REFERENCES`: the DLL loads without its imports, an import-free call answers, and the first real one crashes ("Invalid memory access"). Use `LOAD_WITH_ALTERED_SEARCH_PATH` (`0x8`) so the DLLs beside it are found.
+- **MSYS2 on Windows:** `ldd` lists a DLL's transitive dependencies with POSIX paths (`ntldd -R` gave nothing usable). mpv 0.42's `libcurl` stream backend is on whenever curl is found, and brings OpenSSL, libssh2 and libidn2. MSYS2's licence field labels parts (`documentation:spdx:…`) and lists a package's licences together (gettext-runtime: "GPL-3.0-or-later AND LGPL-2.1-or-later"), so a licence gate reads the library's own and keeps a short, reasoned list.
 - **jpackage computes Linux dependencies from the runtime only,** not from the app's resources. Name them with `--linux-package-deps`, without spaces, since compose's args file splits on them.
 
 ## Keep doing
@@ -34,6 +37,7 @@ The fifth build story of the approved desktop design (D4).
 
 ## Stop doing
 - Pushing again while a long Windows leg runs: each push cancelled it, and its first real error came only after several pushes.
+- A gate that stops at its first violation when each run takes twenty minutes: let it name them all.
 
 ## Open
 - Not done:
