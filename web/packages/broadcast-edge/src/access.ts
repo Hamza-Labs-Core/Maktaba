@@ -225,9 +225,10 @@ export class ViewerAccess extends DurableObject<Env> {
     if (!st) return [];
     return Object.entries(st.channels)
       .filter(([ch, c]) => {
-        if (cred.kind === "pass") return cred.chs.length === 0 || cred.chs.includes(ch);
-        if (cred.kind === "open") return c.access === "open" && st.open_allowed;
-        return false;
+        // invitation only (README §14, 2026-11-24): a guest pass is the only credential that
+        // opens a channel; a channel still marked open, and an open session, open none
+        void c;
+        return cred.kind === "pass" && (cred.chs.length === 0 || cred.chs.includes(ch));
       })
       .map(([ch]) => ch)
       .sort();
@@ -243,9 +244,12 @@ export class ViewerAccess extends DurableObject<Env> {
     return this.channelsFor(cred);
   }
 
-  /** openChannels lists the channels anyone may watch after Turnstile (none when open is off). */
+  /**
+   * openChannels was the channels anyone could watch after Turnstile. Broadcasting is by
+   * invitation only (README §14), so it is always empty; story 50.36 removes it.
+   */
   async openChannels(): Promise<string[]> {
-    return this.channelsFor({ kind: "open", id: "" });
+    return [];
   }
 
   /** play admits a new session on ch, or says which rule refused it. */
@@ -255,13 +259,9 @@ export class ViewerAccess extends DurableObject<Env> {
     const st = this.s.settings;
     const c = st?.channels[ch];
     if (!st || !c) return { ok: false, status: 404, error: "channel_unknown" };
-    const open = c.access === "open" && st.open_allowed;
-    // access
-    if (cred.kind === "none") {
-      return open
-        ? { ok: false, status: 403, error: "turnstile_required" }
-        : { ok: false, status: 401, error: "invite_required" };
-    }
+    // access: by invitation only (README §14); no channel is open, whatever its stored setting
+    const open = false;
+    if (cred.kind === "none") return { ok: false, status: 401, error: "invite_required" };
     if (cred.kind === "pass") {
       if (this.revoked(cred.inv, cred.id) || !this.s.passes[cred.id])
         return { ok: false, status: 403, error: "pass_revoked" };

@@ -1706,8 +1706,8 @@
       "ar": "`true` عندما يعود الوضع الهجين إلى البحث النصي الكامل وحده."
     },
     "/components/schemas/SessionRequest/properties/client_profile/description": {
-      "en": "The client profile the streaming service decides direct play, remux or transcode by: `generic` (also the fallback for a name it does not know), `desktop-player`, `browser-chrome`, `browser-safari`, `ios-native`, `tvos`, `android-native`, `androidtv`, and the TV platforms `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega`. A TV profile alone is a baseline every model of its platform plays (H.264 1080p in HLS); `device_caps` widens it.",
-      "ar": "ملف تعريف العميل الذي تقرّر خدمة البث على أساسه التشغيل المباشر أو إعادة التغليف أو تحويل الترميز: `generic` (وهو أيضًا البديل لأي اسم لا تعرفه)، و`desktop-player` و`browser-chrome` و`browser-safari` و`ios-native` و`tvos` و`android-native` و`androidtv`، ومنصات التلفاز `firetv` و`tizen` و`webos` و`roku` و`cast` و`vega`. وملف التلفاز وحده خطّ أساس يشغّله كل طراز من منصته (H.264 بدقة 1080p عبر HLS)؛ ويوسّعه `device_caps`."
+      "en": "The client profile the streaming service decides direct play, remux or transcode by: `generic` (also the fallback for a name it does not know), `desktop-player`, `desktop-mpv`, `browser-chrome`, `browser-safari`, `ios-native`, `tvos`, `android-native`, `androidtv`, and the TV platforms `firetv`, `tizen`, `webos`, `roku`, `cast` and `vega`. A TV profile alone is a baseline every model of its platform plays (H.264 1080p in HLS); `device_caps` widens it. `desktop-mpv` (the desktop Player on libmpv) takes `device_caps` too: it narrows each codec to what the machine decodes smoothly, and a transcode keeps up to its `max_audio_channels` (6 or more, for a source of 6 or more: E-AC-3 5.1; fewer: stereo AAC; none said: the audio as any transcode's).",
+      "ar": "ملف تعريف العميل الذي تقرّر خدمة البث على أساسه التشغيل المباشر أو إعادة التغليف أو تحويل الترميز: `generic` (وهو أيضًا البديل لأي اسم لا تعرفه)، و`desktop-player` و`desktop-mpv` و`browser-chrome` و`browser-safari` و`ios-native` و`tvos` و`android-native` و`androidtv`، ومنصات التلفاز `firetv` و`tizen` و`webos` و`roku` و`cast` و`vega`. وملف التلفاز وحده خطّ أساس يشغّله كل طراز من منصته (H.264 بدقة 1080p عبر HLS)؛ ويوسّعه `device_caps`. ويأخذ `desktop-mpv` (مشغّل سطح المكتب على libmpv) ‏`device_caps` أيضًا: يضيّق كل مرمِّز إلى ما يفكّه الجهاز بسلاسة، ويحتفظ تحويل الترميز بعدد قنوات يصل إلى `max_audio_channels` (ست قنوات أو أكثر لمصدر من ست قنوات أو أكثر: E-AC-3 بنظام 5.1؛ وأقل من ذلك: AAC ستيريو؛ وإن لم يُذكر عددها: الصوت كما في أي تحويل ترميز)."
     },
     "/components/schemas/SessionRequest/properties/audio_track/description": {
       "en": "Language tag or stream id.",
@@ -6210,8 +6210,8 @@
       "ar": "مرمِّز فيديو واحد يفكّه الجهاز وحدوده."
     },
     "/components/schemas/DeviceVideoCap/properties/codec/description": {
-      "en": "`h264`, `hevc`, `av1` or `vp9`.",
-      "ar": "`h264` أو `hevc` أو `av1` أو `vp9`."
+      "en": "`h264`, `hevc`, `av1`, `vp9` or `mpeg2video`.",
+      "ar": "`h264` أو `hevc` أو `av1` أو `vp9` أو `mpeg2video`."
     },
     "/components/schemas/DeviceVideoCap/properties/max_height/description": {
       "en": "The tallest picture it decodes in this codec (clamped to the platform's ceiling).",
@@ -6224,6 +6224,10 @@
     "/components/schemas/DeviceVideoCap/properties/bit_depth/description": {
       "en": "The deepest samples it decodes in this codec.",
       "ar": "أعمق عيّنات يفكّها بهذا المرمِّز."
+    },
+    "/components/schemas/DeviceVideoCap/properties/hardware/description": {
+      "en": "Whether a hardware decoder takes this codec: `false` is decoded in software, and `max_height` is then the tallest picture it decodes smoothly (the desktop Player on libmpv measures it). Left out: not said. No decision reads it; a transcode's reason names it.",
+      "ar": "هل يتولّى مفكّك عتادي هذا المرمِّز: `false` يعني أنه يُفكّ برمجيًا، ويكون `max_height` عندئذٍ أطول صورة يفكّها بسلاسة (يقيسها مشغّل سطح المكتب على libmpv). وإن غاب: لم يُذكر. لا يعتمد عليه أي قرار؛ ويذكره سبب تحويل الترميز."
     },
     "/components/schemas/Session/properties/stream_sig/description": {
       "en": "The signed-URL token for every path under the session's `/stream/{session_id}/` (its subtitle renditions, `subs/sidecar/{lang}.vtt`, `subs/auto.vtt`, `chapters.json`), in every mode, direct play too. A player that cannot send a header (a TV's media player, a Cast receiver) fetches them with `?sig=` and this token. It expires with the session's URLs.",
@@ -6394,8 +6398,8 @@
       "ar": "عرض الوصول."
     },
     "/paths/~1broadcast~1access/get/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access/get/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6418,8 +6422,8 @@
       "ar": "حُفظ."
     },
     "/paths/~1broadcast~1access~1channels~1{id}/put/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1channels~1{id}/put/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6442,8 +6446,8 @@
       "ar": "حُفظ."
     },
     "/paths/~1broadcast~1access~1limits/put/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1limits/put/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6466,8 +6470,8 @@
       "ar": "الدعوات."
     },
     "/paths/~1broadcast~1access~1invites/get/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites/get/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6490,8 +6494,8 @@
       "ar": "الدعوة الجديدة، برابطها ورمزها."
     },
     "/paths/~1broadcast~1access~1invites/post/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites/post/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6514,8 +6518,8 @@
       "ar": "سُحبت."
     },
     "/paths/~1broadcast~1access~1invites~1{id}/delete/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites~1{id}/delete/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6538,8 +6542,8 @@
       "ar": "الأجهزة."
     },
     "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites~1{id}~1devices/get/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",
@@ -6562,8 +6566,8 @@
       "ar": "أُزيل."
     },
     "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/403/description": {
-      "en": "Owner or admin only, or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
-      "ar": "للمالك أو المدير فقط، أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
+      "en": "Owner or admin only; `license-required`: the home's licence doesn't carry broadcasting (always while broadcasting is off), and nothing is asked of Maktaba Cloud; or Maktaba Cloud refused the change (its own code, such as `broadcast_open_needs_verification`).",
+      "ar": "للمالك أو المدير فقط؛ `license-required`: ترخيص المنزل لا يشمل البث (وهذا هو الحال دائمًا ما دام البث متوقفًا)، ولا يُطلب شيء من سحابة مكتبة؛ أو رفضت سحابة مكتبة التغيير (برمزها الخاص، مثل `broadcast_open_needs_verification`)."
     },
     "/paths/~1broadcast~1access~1invites~1{id}~1devices~1{pass}/delete/responses/409/description": {
       "en": "`cloud_not_linked`: the home is not linked to Maktaba Cloud.",

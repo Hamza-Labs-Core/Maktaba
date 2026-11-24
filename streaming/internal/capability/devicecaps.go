@@ -29,12 +29,16 @@ type DeviceCaps struct {
 }
 
 // VideoCap is one video codec the device decodes, with its limits (0: the
-// profile's).
+// profile's). Hardware says whether a hardware decoder takes it (story 13.19:
+// the desktop Player on libmpv measures what it decodes in software, and
+// MaxHeight is then the tallest picture it decodes smoothly); nil: not said.
+// No decision reads it: the verdict's Reason names it, and it is in Key.
 type VideoCap struct {
 	Codec     string `json:"codec"`
 	MaxHeight int    `json:"max_height,omitempty"`
 	MaxFPS    int    `json:"max_fps,omitempty"`
 	BitDepth  int    `json:"bit_depth,omitempty"`
+	Hardware  *bool  `json:"hardware,omitempty"`
 }
 
 // ParseDeviceCaps reads a device_caps object. Keys it does not know are
@@ -199,6 +203,7 @@ func Apply(p *Profile, c *DeviceCaps) (*Profile, []string) {
 		out.VideoHeights = map[string]int{}
 		out.VideoBitDepths = map[string]int{}
 		out.VideoFPS = map[string]int{}
+		out.VideoHardware = map[string]bool{}
 		top := 0
 		for _, v := range c.Video {
 			codec := canonVideo(v.Codec)
@@ -221,6 +226,9 @@ func Apply(p *Profile, c *DeviceCaps) (*Profile, []string) {
 			}
 			if v.MaxFPS > 0 {
 				out.VideoFPS[codec] = v.MaxFPS
+			}
+			if v.Hardware != nil {
+				out.VideoHardware[codec] = *v.Hardware
 			}
 			top = max(top, h)
 		}

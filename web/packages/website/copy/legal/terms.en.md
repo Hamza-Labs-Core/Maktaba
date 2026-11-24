@@ -1,7 +1,7 @@
 ---
 title: Terms
 description: The terms for using Maktaba: free software under the MIT License, with no warranty, and Maktaba Cloud's own terms when you sign up for it.
-updated: 2026-11-11
+updated: 2026-11-24
 licence: MIT License
 ---
 
@@ -23,10 +23,6 @@ Maktaba is free software. You may use it, change it and share it under the {{lic
 ## Maktaba Cloud {#cloud}
 
 Maktaba Cloud is a paid service that lets you reach your home from outside it. It is not open for sign-up yet. Its plans, prices and rules of use come with its sign-up, and you see them before you agree to anything. Until then, nothing on this page binds you to the cloud.
-
-## Copyright {#copyright}
-
-If you believe something shared through Maktaba's services uses your work without your permission, the [copyright page](/legal/copyright/) says how to tell us.
 
 ## Changes {#changes}
 

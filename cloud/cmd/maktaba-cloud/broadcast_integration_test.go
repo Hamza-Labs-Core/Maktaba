@@ -36,6 +36,22 @@ func withBroadcastPrices(t *testing.T) {
 	t.Cleanup(func() { billingpkg.Broadcaster = old })
 }
 
+// broadcastOn opens the broadcasting gate (broadcast.enabled) for one test's api: its prices set
+// and its signing key there. While it is off the broadcast routes answer 404
+// (broadcast_off_integration_test.go).
+func broadcastOn(t *testing.T, adjust func(*config.Config)) func(*config.Config) {
+	t.Helper()
+	withBroadcastPrices(t)
+	key := ingestKeyFile(t)
+	return func(c *config.Config) {
+		c.Broadcast.Enabled = true
+		c.Broadcast.KeyPath = key
+		if adjust != nil {
+			adjust(c)
+		}
+	}
+}
+
 type bhome struct {
 	id, secret string
 	agent      *client // the home: its id and secret as basic auth
@@ -90,29 +106,18 @@ func TestBroadcastPublishAndAgreement(t *testing.T) {
 	uid := e.userID("pub@example.test")
 	h := claimHome(e, owner, "pubhome")
 
-	// the edge's routes are off without its key
-	if r := e.client().do("POST", "/_edge/usage", []byte(`{}`)); r.code != http.StatusServiceUnavailable {
-		t.Fatalf("edge without a key: %d %s", r.code, r.body)
-	}
-	if r := e.client().do("POST", "/v1/broadcast/channels", channel("news", "invite", true, 1)); r.code != http.StatusUnauthorized {
-		t.Fatalf("publish without a home's secret: %d", r.code)
-	}
-
-	// Free and Basic: publishing needs Pro
-	for _, plan := range []string{billingpkg.PlanFree, billingpkg.PlanBasic} {
+	// the gate shut: no plan makes the route answer, and there is no licence flag
+	for _, plan := range []string{billingpkg.PlanFree, billingpkg.PlanBasic, billingpkg.PlanPro} {
 		setPlan(e, uid, plan)
-		if r := h.agent.do("POST", "/v1/broadcast/channels", channel("news", "invite", true, 1)); r.code != http.StatusPaymentRequired || r.errCode() != "broadcast_needs_plan" {
-			t.Fatalf("%s publishes: %d %s", plan, r.code, r.body)
+		if r := h.agent.do("POST", "/v1/broadcast/channels", channel("news", "invite", true, 1)); r.code != http.StatusNotFound {
+			t.Fatalf("%s publishes with the gate shut: %d %s", plan, r.code, r.body)
 		}
 	}
+	setPlan(e, uid, billingpkg.PlanBasic)
 	if f := licenceFeatures(t, h); slices.Contains(f, license.FeatureBroadcast) {
 		t.Fatalf("basic's licence carries broadcast: %v", f)
 	}
-	// Pro with the gate shut: not open yet, and the licence doesn't carry the flag
 	setPlan(e, uid, billingpkg.PlanPro)
-	if r := h.agent.do("POST", "/v1/broadcast/channels", channel("news", "invite", true, 1)); r.code != http.StatusForbidden || r.errCode() != "broadcast_not_enabled" {
-		t.Fatalf("pro with the gate shut: %d %s", r.code, r.body)
-	}
 	if f := licenceFeatures(t, h); f == nil || slices.Contains(f, license.FeatureBroadcast) {
 		t.Fatalf("pro's licence with the gate shut: %v", f)
 	}
@@ -140,6 +145,18 @@ func TestBroadcastPublishAndAgreement(t *testing.T) {
 	if f := licenceFeatures(t, h); !slices.Contains(f, license.FeatureBroadcast) {
 		t.Fatalf("a granted pro home's licence: %v", f)
 	}
+
+	// marked, and the secret still counts; without Pro it can't publish
+	if r := e.client().do("POST", "/v1/broadcast/channels", channel("news", "invite", true, 1)); r.code != http.StatusNotFound {
+		t.Fatalf("publish without a home's secret: %d", r.code)
+	}
+	for _, plan := range []string{billingpkg.PlanFree, billingpkg.PlanBasic} {
+		setPlan(e, uid, plan)
+		if r := h.agent.do("POST", "/v1/broadcast/channels", channel("news", "invite", true, 1)); r.code != http.StatusPaymentRequired || r.errCode() != "broadcast_needs_plan" {
+			t.Fatalf("%s publishes: %d %s", plan, r.code, r.body)
+		}
+	}
+	setPlan(e, uid, billingpkg.PlanPro)
 
 	// guest sharing's limits, each named
 	for _, c := range []struct {
@@ -196,11 +213,15 @@ func TestBroadcastPublishAndAgreement(t *testing.T) {
 	if st["agreement_accepted"] != true {
 		t.Fatalf("the owner accepted the agreement: %v", st)
 	}
-	// the catalog shows both tiers, prices TBD
+	// broadcasting off (broadcast.enabled, the default): the catalog offers no broadcasting, and
+	// the sign-in providers say it is off, so the web app shows none of its pages
 	cat := e.client().mustStatus(e.client().do("GET", "/v1/billing/plans", nil), http.StatusOK).json(t)
-	b := cat["broadcast"].(map[string]any)["broadcaster"].(map[string]any)
-	if b["max_channels"].(float64) != 3 || b["viewer_hours_per_month"].(float64) != 5000 || b["price_cents"] != nil {
-		t.Fatalf("the catalog's Broadcaster: %v", b)
+	if _, ok := cat["broadcast"]; ok {
+		t.Fatalf("broadcasting off, the catalog still offers it: %v", cat["broadcast"])
+	}
+	prov := e.client().mustStatus(e.client().do("GET", "/v1/auth/providers", nil), http.StatusOK).json(t)
+	if prov["broadcast"] != false {
+		t.Fatalf("broadcasting off, providers: %v", prov)
 	}
 }
 
@@ -214,6 +235,15 @@ func TestBroadcastBillingRolesAndItems(t *testing.T) {
 		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
 		c.Broadcast.OpenAccess = true          // open channels (50.26)
 	})
+	// broadcasting on: the catalog shows both tiers, prices TBD, and providers say it is on
+	cat := e.client().mustStatus(e.client().do("GET", "/v1/billing/plans", nil), http.StatusOK).json(t)
+	b := cat["broadcast"].(map[string]any)["broadcaster"].(map[string]any)
+	if b["max_channels"].(float64) != 3 || b["viewer_hours_per_month"].(float64) != 5000 {
+		t.Fatalf("the catalog's Broadcaster: %v", b)
+	}
+	if prov := e.client().mustStatus(e.client().do("GET", "/v1/auth/providers", nil), http.StatusOK).json(t); prov["broadcast"] != true {
+		t.Fatalf("broadcasting on, providers: %v", prov)
+	}
 	owner := e.registerVerified("bowner@example.test")
 	uid := e.userID("bowner@example.test")
 	h := claimHome(e, owner, "bhome")

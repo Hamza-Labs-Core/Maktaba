@@ -359,10 +359,39 @@ func RecordMigrated(path, version string) bool {
 	return NormalizeVersion(rec.Version) == NormalizeVersion(version) && (rec.State == "migrated" || rec.State == "migrating")
 }
 
+// RecordSchemaBefore is the slot the database was at before version's migrations
+// (schema_before; 0: not recorded) and whether it was then a newer release's schema, kept
+// for the release before (dump_kept_for; kept_for: version's own start ran no migration on
+// it). A record that is not version's says neither.
+func RecordSchemaBefore(path, version string) (slot int64, onKept bool, err error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	var rec struct {
+		Version      string `json:"version"`
+		SchemaBefore int64  `json:"schema_before"`
+		KeptFor      string `json:"kept_for"`
+		DumpKeptFor  string `json:"dump_kept_for"`
+	}
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return 0, false, fmt.Errorf("%s: %w", path, err)
+	}
+	if NormalizeVersion(rec.Version) != NormalizeVersion(version) {
+		return 0, false, nil
+	}
+	return rec.SchemaBefore, rec.KeptFor != "" || rec.DumpKeptFor != "", nil
+}
+
 // MarkRecordDown says the database is back on from's schema: failed's Down scripts undid
 // its migrations (a rollback that undoes only what the release changed). The record
 // becomes from's, migrated, as if failed had never migrated it; down_from names failed.
-// It reports whether it changed the record (one that is not failed's, migrated, stays).
+// A database that was a newer schema kept for from before failed's update (dump_kept_for)
+// is that again: kept_for from, which would else refuse it as ahead of its own. It reports
+// whether it changed the record (one that is not failed's, migrated, stays).
 func MarkRecordDown(path, failed, from, reason string) (bool, error) {
 	if path == "" || from == "" {
 		return false, nil
@@ -389,9 +418,14 @@ func MarkRecordDown(path, failed, from, reason string) (bool, error) {
 	}
 	rec["down_from"], rec["down_reason"] = str("version"), reason
 	rec["version"] = back
+	onKept := str("dump_kept_for") != ""
 	// from starts on it as on its own: the release that ran last is from
-	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for"} {
+	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for", "schema_before"} {
 		delete(rec, k)
+	}
+	if onKept {
+		rec["kept_for"] = NormalizeVersion(from)
+		rec["kept_reason"] = "kept before the update to " + failed + ", which was undone"
 	}
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	out, err := json.MarshalIndent(rec, "", "  ")
