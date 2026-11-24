@@ -3,7 +3,8 @@
 // opened from file://, as a packaged app's is, with a Samsung (Tizen) or LG (webOS) shim;
 // its subnet probe, the home's discovery answer, /tv/ and the home's API are answered by the
 // test (e2e/launcher/launcher.ui.spec.ts, on top of e2e/tv/mockHome.ts): /tv/ itself is
-// dist/tv, served by `vite preview --mode tv` on :5177. No home runs.
+// dist/tv (launcher.ui.spec.ts reads it from disk, webos.ui.spec.ts from `vite preview --mode
+// tv` on :5177). No home runs.
 //
 // The report keeps the screenshots (dark, English and Arabic), the launcher's own log, the
 // console and network logs and the traces: _tv-web.yml uploads them for 30 days.
