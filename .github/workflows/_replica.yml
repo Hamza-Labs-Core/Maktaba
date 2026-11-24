@@ -176,6 +176,40 @@ jobs:
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/search18.out" || { echo "::error::$t did not pass on PostgreSQL 18"; exit 1; }
           done
 
+      # The second listen on PostgreSQL 18 with a machine's copy published (slot 0237): 18
+      # refuses an UPDATE or DELETE on a published table whose replica identity holds a
+      # generated column the publication does not send, and the integration tier's Postgres is
+      # 16, which does not check. The home as it was from 2026-11-20 (transcript_segments at
+      # REPLICA IDENTITY FULL), the slot, and the sweep that queues the videos left behind.
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: pipeline/uv.lock
+          prune-cache: false
+          # restore main's uv cache; the integration job saves it on a push to main
+          save-cache: false
+
+      - name: Install pipeline deps
+        working-directory: pipeline
+        run: ../tools/ci/pipeline-deps.sh
+
+      - name: The second listen with a machine's copy published, on PostgreSQL 18 (pipeline)
+        working-directory: pipeline
+        run: |
+          set -euo pipefail
+          MAKTABA_TEST_PG_URL="postgres://postgres@127.0.0.1:$PG18_PORT/postgres?sslmode=disable" \
+            uv run pytest -q -rA -p no:cacheprovider tests/stages/test_second_listen.py \
+            -k "failed_to_store or copy_published" | tee "$RUNNER_TEMP/listen18.out"
+          for t in 'test_it_stores_with_a_machine_s_copy_published[postgres]' \
+            'test_a_transcript_whose_second_listen_failed_to_store_is_heard_again[postgres]'; do
+            grep -qF "PASSED tests/stages/test_second_listen.py::$t" "$RUNNER_TEMP/listen18.out" ||
+              { echo "::error::$t did not pass on PostgreSQL 18"; exit 1; }
+          done
+
       - name: Two machines, the home on PostgreSQL 18, its machine on 16 then on 18 (e2e)
         working-directory: api
         env:

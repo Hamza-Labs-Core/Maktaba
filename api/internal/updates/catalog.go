@@ -61,6 +61,8 @@ type Discoverer struct {
 	// signing identity inside the verifier).
 	Repo  string
 	Token string
+	// Feed, when set, is read before GitHub's list (feed.go).
+	Feed *FeedSource
 	// Policy is the effective policy (channel, auto_install).
 	Policy func(ctx context.Context) (Policy, error)
 	// Current is the running version.
@@ -420,7 +422,7 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 	if st.Since == nil {
 		st.Since = &now
 	}
-	rels, decodeErr, err := d.list(ctx)
+	rels, withdrawn, decodeErr, err := d.listing(ctx, pol.Channel, &st)
 	if err != nil {
 		d.checkFailed(ctx, st, now, CheckErrorCode(err), err.Error())
 		return res, err
@@ -439,6 +441,10 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 		if !ok {
 			continue
 		}
+		if held, err := d.Store.Get(ctx, r.Version); err == nil {
+			// the feed lists a platform's files; the signed others found before are kept
+			r.Assets = keepSignedAssets(r, held.Assets)
+		}
 		res.Seen++
 		created, err := d.Store.Seen(ctx, r)
 		if err != nil {
@@ -452,6 +458,11 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 			return res, err
 		}
 		if cur.WithdrawnAt != nil {
+			continue
+		}
+		if why, ok := withdrawn[r.Tag]; ok {
+			// the feed pulled it
+			d.pull(ctx, r.Version, why)
 			continue
 		}
 		if cur.VerifyState == VerifyVerified || cur.VerifyState == VerifyFailed {
@@ -493,6 +504,9 @@ const (
 	CheckFailHTTP        = "http_error"   // GitHub answered with an error
 	CheckFailDecode      = "decode"       // GitHub's answer is not a list of releases
 	CheckFailUnreachable = "unreachable"  // no answer: the network, DNS, a timeout
+	// CheckFailFeedRefused: the release feed was read and failed its checks (its signature,
+	// its content, its size): nothing of it is used, and GitHub's list is not read instead
+	CheckFailFeedRefused = "feed_refused"
 )
 
 // FailingAfter is how many checks in a row must fail before the home raises it (a
@@ -504,6 +518,8 @@ const FailingAfter = 2
 func CheckErrorCode(err error) string {
 	var hs *httpStatusError
 	switch {
+	case errors.Is(err, errFeedRefused):
+		return CheckFailFeedRefused
 	case errors.Is(err, errTooLarge):
 		return CheckFailTooLarge
 	case errors.Is(err, ErrRateLimited):
@@ -635,6 +651,8 @@ func (d *Discoverer) verify(ctx context.Context, r Release) (bool, *VerifyError)
 					d.log().Warn("update catalog write failed", "event", "update_catalog_error", "err", err.Error())
 					return false, nil
 				}
+				// every file the signed checksums.txt lists, by name, for the machines' jobs
+				noteStore(d.log(), "SetAssets", d.Store.SetAssets(ctx, r.Version, signedAssets(r, files.Checksums)))
 				d.Store.Audit(ctx, "", "system", "release_verified", r.Version, map[string]any{
 					"tag": r.Tag, "identity": v.Identity, "checksums_sha256": v.ChecksumsSHA256})
 				return true, nil
@@ -714,6 +732,13 @@ const (
 // (and notifies); it returns the reason ("" when the release is still good). An error
 // reaching GitHub is returned as is: the run does not start on an unknown answer.
 func (d *Discoverer) Recheck(ctx context.Context, r Release, channel string) (string, error) {
+	// the feed first: a release pulled there is withdrawn (it is not marked on GitHub)
+	if why, ok, err := d.feedWithdrawn(ctx, r, channel); err != nil {
+		return "", err
+	} else if ok && why != "" {
+		d.pull(ctx, r.Version, why)
+		return WithdrawnGone, nil
+	}
 	body, code, err := d.get(ctx, d.base()+"/repos/"+d.repo()+"/releases/tags/"+r.Tag, true, tagReadLimit)
 	reason := ""
 	switch {
