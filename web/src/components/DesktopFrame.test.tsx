@@ -113,6 +113,22 @@ describe("DesktopFrame", () => {
     expect(within(header).getByRole("button", { name: "Menu" })).toBeInTheDocument();
   });
 
+  it("titles the setup's own window as the setup, with no menu (story 13.13)", async () => {
+    (window as unknown as W).__MAKTABA_PANEL__ = "setup";
+    try {
+      shell({ controls: "windows" });
+      renderFrame();
+      const bar = await screen.findByTestId("frame-bar");
+      expect(bar).toHaveTextContent("Set up Maktaba");
+      expect(bar).toHaveClass("mkt-frame-bar--own");
+      expect(within(bar).queryByRole("button", { name: "Menu" })).toBeNull();
+      expect(within(bar).getByRole("button", { name: "Close" })).toBeInTheDocument();
+      expect(invoke).not.toHaveBeenCalledWith("frame_menu_items", undefined);
+    } finally {
+      delete (window as unknown as W).__MAKTABA_PANEL__;
+    }
+  });
+
   it("sends the caption buttons to the shell", async () => {
     shell({ controls: "windows" });
     renderFrame();

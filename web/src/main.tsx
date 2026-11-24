@@ -12,6 +12,10 @@ import { installErrorLog } from "./lib/errorLog";
 import { installCrashReports } from "./lib/crashReports";
 import { registerServiceWorker, reloadOnStaleChunks } from "./lib/pwa";
 import { App } from "./App";
+import { ownWindow } from "./lib/ownWindow";
+import { I18nProvider } from "./lib/i18n";
+import { DesktopFrame } from "./components/DesktopFrame";
+import { StatusWindow } from "./status/StatusWindow";
 // the theme's fonts, bundled (SIL OFL): Plex for text, Amiri for headings
 import "@fontsource/ibm-plex-sans-arabic/400.css";
 import "@fontsource/ibm-plex-sans-arabic/500.css";
@@ -23,6 +27,8 @@ import "./styles/tokens.css";
 import "./styles/app.css";
 // story 13.10: the desktop app's own window frame
 import "./styles/frame.css";
+// story 13.13: the desktop app's setup and status windows
+import "./styles/desktopWindows.css";
 import "./styles/library.css";
 import "./styles/browse.css";
 import "./styles/connect.css";
@@ -46,10 +52,22 @@ if (!rootEl) {
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    <App />
+    {/* story 13.13: the desktop app's status window is a window of these pages that draws
+        the server's status instead of the app (ownwindows.rs marks it before the page loads);
+        the setup window is the app, which shows the setup */}
+    {ownWindow() === "status" ? (
+      <I18nProvider>
+        <DesktopFrame />
+        <StatusWindow />
+      </I18nProvider>
+    ) : (
+      <App />
+    )}
   </React.StrictMode>
 );
 
-registerServiceWorker();
-// a page an older release left open: its chunks are gone after an update
-reloadOnStaleChunks();
+if (ownWindow() === null) {
+  registerServiceWorker();
+  // a page an older release left open: its chunks are gone after an update
+  reloadOnStaleChunks();
+}

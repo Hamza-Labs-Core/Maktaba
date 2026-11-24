@@ -5,7 +5,13 @@
 // own web app inside the shell) it renders its children untouched.
 import { useEffect, useState, type ReactNode } from "react";
 import { useI18n } from "../lib/i18n";
-import { isBundledDesktop, tauriSetupApi, type AppState, type SetupApi } from "../lib/desktopSetup";
+import {
+  isBundledDesktop,
+  previewSetupApi,
+  tauriSetupApi,
+  type AppState,
+  type SetupApi,
+} from "../lib/desktopSetup";
 import { SetupWizard } from "../pages/Setup/SetupWizard";
 import { ServerStarting } from "../pages/Setup/ServerStarting";
 
@@ -55,8 +61,8 @@ function AdoptError({ text }: { text: string }) {
 
 export function DesktopGate({
   children,
-  api = tauriSetupApi,
-  bundled = isBundledDesktop(),
+  api = previewSetupApi() ?? tauriSetupApi,
+  bundled = isBundledDesktop() || previewSetupApi() !== null,
 }: {
   children: ReactNode;
   api?: SetupApi;
@@ -70,6 +76,8 @@ export function DesktopGate({
     api
       .appState()
       .then(async (st) => {
+        // story 13.13: the setup's own window shows it (and adopts a set-up server)
+        if (st.target === "setup" && st.setup_window) return setState(st);
         if (st.target === "setup" && st.server_available && !st.reset) {
           // the app forgot its mode (a reset config dir) but this Mac's
           // server is set up: register it again instead of a second setup
@@ -88,6 +96,8 @@ export function DesktopGate({
   if (state === "failed") return <>{children}</>;
   switch (state.target) {
     case "setup":
+      // story 13.13: this (main) window waits hidden while the setup window has the setup
+      if (state.setup_window) return null;
       return (
         <>
           {adoptError && <AdoptError text={adoptError} />}

@@ -21,6 +21,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useI18n } from "../lib/i18n";
+import { ownWindow } from "../lib/ownWindow";
 import {
   SNAP_DELAY_MS,
   chooseFrameMenu,
@@ -121,7 +122,7 @@ export function useFrameHost(): FrameInfo | null {
 }
 
 /** The parts a header puts at its start: the traffic lights' room (Mac), the menu button. */
-export function FrameStart() {
+export function FrameStart({ menu = ownWindow() === null }: { menu?: boolean } = {}) {
   const { info } = useFrame();
   if (!info) return null;
   if (info.controls === "mac") return <span className="mkt-frame__traffic" aria-hidden="true" />;
@@ -129,7 +130,8 @@ export function FrameStart() {
   return (
     <>
       {start.length > 0 && <GtkButtons buttons={start} />}
-      <FrameMenuButton />
+      {/* the menu bar's items: the main window's (story 13.13: not the setup's or status's) */}
+      {menu && <FrameMenuButton />}
     </>
   );
 }
@@ -148,12 +150,18 @@ export function WindowControls() {
 /** The slim title bar of a page without the app's header (setup, sign-in…). */
 export function FrameBar() {
   const { t } = useI18n();
+  // story 13.13: the setup's own window is titled as the setup
+  const setup = ownWindow() === "setup";
   return (
-    <div className="mkt-frame-bar" data-tauri-drag-region="" data-testid="frame-bar">
+    <div
+      className={`mkt-frame-bar${setup ? " mkt-frame-bar--own" : ""}`}
+      data-tauri-drag-region=""
+      data-testid="frame-bar"
+    >
       <FrameStart />
       <span className="mkt-frame-bar__title">
         <img src="/icons/favicon-32.png" alt="" width={16} height={16} />
-        {t("app.title")}
+        {setup ? t("frame.setupTitle") : t("app.title")}
       </span>
       <span className="mkt-frame-bar__grow" />
       <WindowControls />

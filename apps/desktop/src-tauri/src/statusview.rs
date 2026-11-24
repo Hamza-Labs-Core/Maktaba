@@ -48,7 +48,7 @@ pub struct Part {
     pub running: usize,
     /// what it waits on or why it fails, as the server says it (its code and values for the
     /// page's words)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(flatten)]
     pub detail: Option<Detail>,
     /// a download or an install under way, 0 to 1
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -303,6 +303,11 @@ mod tests {
         let d = p[0].detail.as_ref().expect("the detail");
         assert_eq!(d.code.as_deref(), Some("venv_install"));
         assert_eq!(p[0].progress, Some(0.4));
+        // flat, as the starting screen reads a status's detail
+        let j = serde_json::to_value(&p[0]).unwrap();
+        assert_eq!(j["detail"], "Installing (40%)");
+        assert_eq!(j["detail_code"], "venv_install");
+        assert_eq!(j["detail_params"]["pct"], 40);
         // a running process's detail is no news
         let done: Child = serde_json::from_value(json!({
             "role": "pipeline", "state": "running", "detail": "Installed"

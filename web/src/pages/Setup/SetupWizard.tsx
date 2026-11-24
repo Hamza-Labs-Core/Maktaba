@@ -48,6 +48,7 @@ import {
 } from "../../lib/desktopSetup";
 import { HOURS, hourLabel, type StorageDisk } from "../../lib/serverSettingsApi";
 import { ServerStarting } from "./ServerStarting";
+import { DesktopIcon, type DesktopIconName } from "../../components/DesktopIcon";
 import { PermissionList, usePermissions } from "../../components/MacPermissions/PermissionList";
 import { tauriPermissionsApi, type PermissionsApi } from "../../lib/macPermissions";
 import { codedText, diskProblem, type Translate } from "./codedText";
@@ -162,12 +163,157 @@ function runText(
   return text;
 }
 
+/** Each part's icon in the list of what will run. */
+const RUN_ICONS: Record<string, DesktopIconName> = {
+  postgres: "db",
+  api: "server",
+  streaming: "live",
+  pipeline: "sparkle",
+};
+
+/** Memory or disk against what Maktaba needs: the bar is full when there is enough. */
+function Meter({
+  icon,
+  label,
+  have,
+  need,
+}: {
+  icon: DesktopIconName;
+  label: string;
+  have: number;
+  need: number;
+}) {
+  const { t } = useI18n();
+  const enough = have >= need;
+  const share = need > 0 ? Math.min(1, have / need) : 1;
+  return (
+    <div className={`mkt-setup__meter${enough ? "" : " is-short"}`}>
+      <div className="mkt-setup__meter-label">
+        <DesktopIcon name={icon} size={16} />
+        <span>{label}</span>
+      </div>
+      <div className="mkt-setup__meter-value" dir="ltr">
+        {t("setup.check.have", { have: formatBytes(have), need: formatBytes(need) })}
+      </div>
+      <div className="mkt-dbar" aria-hidden="true">
+        <i style={{ inlineSize: `${Math.round(share * 100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function asError(e: unknown): StepError {
   if (isStepError(e)) return e;
   return { code: "internal", message: e instanceof Error ? e.message : String(e), details: [] };
 }
 
-/** One screen's frame: title, the step counter, body, error, nav. */
+/** The screen on show: the brand pane's step list follows it. */
+const ScreenContext = createContext<Screen>("welcome");
+
+/** The five steps the brand pane lists (docs/design/desktop/README.md, "Setup and installer
+ * frame"), and the screens each one gathers. */
+export const SETUP_STEPS: { key: string; screens: Screen[] }[] = [
+  { key: "welcome", screens: ["welcome"] },
+  { key: "check", screens: ["check", "storage"] },
+  { key: "admin", screens: ["admin"] },
+  { key: "libraries", screens: ["libraries", "bundle", "models", "plex", "permissions"] },
+  { key: "ready", screens: ["install", "move", "starting"] },
+];
+
+/** Which of the five steps a screen is in. */
+export function setupStepOf(screen: Screen): number {
+  return Math.max(
+    0,
+    SETUP_STEPS.findIndex((s) => s.screens.includes(screen))
+  );
+}
+
+/** The arch of the app's icon, the setup's one decoration (the design's kit.js ARCH):
+ * symmetric, so it never mirrors. */
+function Arch() {
+  return (
+    <svg className="mkt-wizard__arch" viewBox="0 0 360 460" aria-hidden="true" focusable="false">
+      <defs>
+        <radialGradient
+          id="mkt-wizard-lamp"
+          cx="180"
+          cy="372"
+          r="190"
+          gradientUnits="userSpaceOnUse"
+        >
+          <stop offset="0" stopColor="var(--color-brand-500)" stopOpacity="0.34" />
+          <stop offset="0.55" stopColor="var(--color-brand-500)" stopOpacity="0.08" />
+          <stop offset="1" stopColor="var(--color-brand-500)" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <path
+        d="M42 460V220C42 164 90 136 138 112C164 99 177 80 180 60C183 80 196 99 222 112C270 136 318 164 318 220V460Z"
+        fill="url(#mkt-wizard-lamp)"
+      />
+      <path
+        className="mkt-wizard__line"
+        d="M24 460V214C24 150 76 118 128 92C158 77 176 52 180 22C184 52 202 77 232 92C284 118 336 150 336 214V460"
+      />
+      <path
+        className="mkt-wizard__line mkt-wizard__line--soft"
+        d="M42 460V220C42 164 90 136 138 112C164 99 177 80 180 60C183 80 196 99 222 112C270 136 318 164 318 220V460"
+      />
+      <path
+        className="mkt-wizard__line"
+        d="M112 392C140 378 166 378 180 390C194 378 220 378 248 392M180 390V366M112 392V404C140 392 166 392 180 404C194 392 220 392 248 404V392"
+      />
+    </svg>
+  );
+}
+
+/** The brand pane at the start: the wordmark, the five steps (done, now, to come), the arch. */
+export function SetupBrand({ screen }: { screen: Screen }) {
+  const { t, n } = useI18n();
+  const now = setupStepOf(screen);
+  return (
+    <aside className="mkt-wizard__brand" aria-label={t("setup.steps.label")}>
+      <div className="mkt-wizard__wordmark">
+        <img src="/icons/icon-192.png" alt="" width={36} height={36} />
+        <span>{t("app.title")}</span>
+      </div>
+      <ol className="mkt-wizard__steps">
+        {SETUP_STEPS.map((s, i) => {
+          const state = i < now ? "done" : i === now ? "now" : "next";
+          return (
+            <li
+              key={s.key}
+              className={`mkt-wizard__step mkt-wizard__step--${state}`}
+              aria-current={state === "now" ? "step" : undefined}
+            >
+              <span className="mkt-wizard__n" aria-hidden="true">
+                {state === "done" ? <DesktopIcon name="check" size={16} /> : n(i + 1)}
+              </span>
+              <span>{t(`setup.steps.${s.key}`)}</span>
+              {state === "done" && (
+                <span className="mkt-visually-hidden"> ({t("setup.steps.done")})</span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <Arch />
+    </aside>
+  );
+}
+
+/** The two panes every setup screen sits in: the brand pane, then the page. */
+export function SetupLayout({ children }: { children: ReactNode }) {
+  const screen = useContext(ScreenContext);
+  return (
+    <div className="mkt-wizard" data-testid="setup-wizard">
+      <SetupBrand screen={screen} />
+      {children}
+    </div>
+  );
+}
+
+/** One screen's frame: title, the step counter (for screen readers: the brand pane shows the
+ * place), body, error, and the footer: `foot` at its start, Back and `next` at its end. */
 function Frame({
   title,
   step,
@@ -175,6 +321,7 @@ function Frame({
   error,
   onBack,
   next,
+  foot,
 }: {
   title: string;
   step?: number;
@@ -182,34 +329,61 @@ function Frame({
   error?: StepError | null;
   onBack?: () => void;
   next?: ReactNode;
+  foot?: ReactNode;
 }) {
   const { t } = useI18n();
   const order = useContext(OrderContext);
   return (
-    <main className="mkt-setup" aria-labelledby="mkt-setup-h">
-      <section className="mkt-setup__card">
-        {step !== undefined && (
-          <p className="mkt-setup__step">
-            {t("setup.stepOf", { n: step + 1, total: order.length })}
-          </p>
-        )}
-        <h1 id="mkt-setup-h" className="mkt-setup__title">
-          {title}
-        </h1>
-        {children}
-        {error && <ErrorBox error={error} />}
-        {(onBack || next) && (
-          <div className="mkt-setup__actions">
+    <SetupLayout>
+      <main className="mkt-setup" aria-labelledby="mkt-setup-h">
+        <section className="mkt-setup__card">
+          {step !== undefined && (
+            <p className="mkt-setup__step mkt-visually-hidden">
+              {t("setup.stepOf", { n: step + 1, total: order.length })}
+            </p>
+          )}
+          <h1 id="mkt-setup-h" className="mkt-setup__title">
+            {title}
+          </h1>
+          {children}
+          {error && <ErrorBox error={error} />}
+        </section>
+        {(onBack || next || foot) && (
+          <div className="mkt-setup__foot">
+            {foot}
+            <span className="mkt-setup__grow" />
             {onBack && (
-              <Button type="button" variant="secondary" onClick={onBack}>
+              <Button type="button" variant="secondary" size="lg" onClick={onBack}>
                 {t("setup.back")}
               </Button>
             )}
             {next}
           </div>
         )}
-      </section>
-    </main>
+      </main>
+    </SetupLayout>
+  );
+}
+
+/** The welcome screen's language switch (the footer's start). */
+function LanguageSwitch() {
+  const { t, locale, setLocale } = useI18n();
+  return (
+    <div className="mkt-wizard__lang" role="group" aria-label={t("setup.language")}>
+      {(["en", "ar"] as const).map((l) => (
+        <button
+          key={l}
+          type="button"
+          lang={l}
+          dir={l === "ar" ? "rtl" : "ltr"}
+          aria-pressed={locale === l}
+          className={locale === l ? "is-on" : undefined}
+          onClick={() => setLocale(l)}
+        >
+          {l === "en" ? "English" : "العربية"}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -294,7 +468,7 @@ export function SetupWizard({
   return (
     <OrderContext.Provider value={order}>
       <WordsContext.Provider value={platformWords(t, platform)}>
-        {screenOf(screen)}
+        <ScreenContext.Provider value={screen}>{screenOf(screen)}</ScreenContext.Provider>
       </WordsContext.Provider>
     </OrderContext.Provider>
   );
@@ -366,7 +540,11 @@ export function SetupWizard({
       case "install":
         return <Install {...props} needs={needs} />;
       case "starting":
-        return <ServerStarting api={api} platform={platform} />;
+        return (
+          <SetupLayout>
+            <ServerStarting api={api} platform={platform} />
+          </SetupLayout>
+        );
     }
   }
 }
@@ -454,8 +632,12 @@ function Welcome({
       alive = false;
     };
   }, [api, looks, findAttempt]);
-  const connect = (e: FormEvent) => {
-    e.preventDefault();
+  // story 13.13: the two ways as option cards (a radio each), and one button in the footer
+  // for the way chosen; typing an address chooses another Maktaba
+  const [way, setWay] = useState<"here" | "remote">(serverAvailable ? "here" : "remote");
+  const chosenWay = serverAvailable ? way : "remote";
+  const connect = (e?: FormEvent) => {
+    e?.preventDefault();
     setBusy(true);
     setError(null);
     api
@@ -490,7 +672,36 @@ function Welcome({
   const node = found?.find((s) => s.db === "node");
   const freshBlocked = looks && (found === null || findError !== null || node !== undefined);
   return (
-    <Frame title={t("setup.welcome.title")} error={error}>
+    <Frame
+      title={t("setup.welcome.title")}
+      error={error}
+      foot={<LanguageSwitch />}
+      next={
+        chosenWay === "here" ? (
+          <Button
+            type="button"
+            variant={found && found.length > 0 ? "secondary" : "primary"}
+            disabled={freshBlocked}
+            onClick={onThisMachine}
+            trailingIcon={<DesktopIcon name="onward" size={16} dir />}
+          >
+            {found && found.length > 0
+              ? t("setup.move.fresh")
+              : t("setup.welcome.thisMachineGo", words)}
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            loading={busy}
+            disabled={!url.trim()}
+            onClick={() => connect()}
+            trailingIcon={<DesktopIcon name="onward" size={16} dir />}
+          >
+            {t("setup.welcome.remoteGo")}
+          </Button>
+        )
+      }
+    >
       <p>{t("setup.welcome.intro", words)}</p>
       {restoredNow && (
         <p className="mkt-setup__note" role="status">
@@ -568,51 +779,85 @@ function Welcome({
           </Button>
         </div>
       )}
-      {serverAvailable && (
-        <div className="mkt-setup__choice">
-          <h2>{t("setup.welcome.thisMachine", words)}</h2>
-          <p className="mkt-setup__note">{t("setup.welcome.thisMachineNote", words)}</p>
-          {node && (
-            <p className="mkt-setup__warn">
-              {t("setup.move.freshNode", { ...words, home: node.home ?? "" })}
-            </p>
-          )}
-          {!node && leftover && (
-            <p className="mkt-setup__note">
-              {t("setup.move.freshLeftover", {
-                ...words,
-                home: leftover.home,
-                path: leftover.path,
-              })}
-            </p>
-          )}
-          <Button
-            type="button"
-            variant={found && found.length > 0 ? "secondary" : "primary"}
-            disabled={freshBlocked}
-            onClick={onThisMachine}
+      <div className="mkt-setup__options" role="radiogroup" aria-label={t("setup.welcome.title")}>
+        {serverAvailable && (
+          <div
+            className={`mkt-setup__option${chosenWay === "here" ? " is-on" : ""}`}
+            onClick={() => setWay("here")}
           >
-            {found && found.length > 0
-              ? t("setup.move.fresh")
-              : t("setup.welcome.thisMachineGo", words)}
-          </Button>
-        </div>
-      )}
-      <form className="mkt-setup__choice" onSubmit={connect}>
-        <h2>{t("setup.welcome.remote")}</h2>
-        <Input
-          label={t("setup.welcome.remoteUrl")}
-          dir="ltr"
-          inputMode="url"
-          placeholder="https://maktaba.example.com"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          required
-        />
-        <Button type="submit" variant="secondary" loading={busy}>
-          {t("setup.welcome.remoteGo")}
-        </Button>
-      </form>
+            <span className="mkt-setup__option-icon">
+              <DesktopIcon name="server" />
+            </span>
+            <div className="mkt-setup__option-text">
+              <h2 id="mkt-setup-here">{t("setup.welcome.thisMachine", words)}</h2>
+              <p className="mkt-setup__note">{t("setup.welcome.thisMachineNote", words)}</p>
+              {found && found.length === 0 && (
+                <span className="mkt-setup__badge">{t("setup.welcome.recommended")}</span>
+              )}
+              {node && (
+                <p className="mkt-setup__warn">
+                  {t("setup.move.freshNode", { ...words, home: node.home ?? "" })}
+                </p>
+              )}
+              {!node && leftover && (
+                <p className="mkt-setup__note">
+                  {t("setup.move.freshLeftover", {
+                    ...words,
+                    home: leftover.home,
+                    path: leftover.path,
+                  })}
+                </p>
+              )}
+            </div>
+            <input
+              type="radio"
+              name="mkt-setup-way"
+              className="mkt-setup__radio"
+              aria-labelledby="mkt-setup-here"
+              checked={chosenWay === "here"}
+              onChange={() => setWay("here")}
+            />
+          </div>
+        )}
+        <form
+          className={`mkt-setup__option${chosenWay === "remote" ? " is-on" : ""}`}
+          onSubmit={connect}
+          onClick={() => setWay("remote")}
+        >
+          <span className="mkt-setup__option-icon">
+            <DesktopIcon name="wifi" />
+          </span>
+          <div className="mkt-setup__option-text">
+            <h2 id="mkt-setup-remote">{t("setup.welcome.remote")}</h2>
+            <p className="mkt-setup__note">{t("setup.welcome.remoteNote")}</p>
+            <label className="mkt-setup__address">
+              <DesktopIcon name="globe" size={16} />
+              <input
+                aria-label={t("setup.welcome.remoteUrl")}
+                dir="ltr"
+                inputMode="url"
+                placeholder={t("setup.welcome.remoteExample")}
+                value={url}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setWay("remote");
+                }}
+                required
+              />
+            </label>
+          </div>
+          {serverAvailable && (
+            <input
+              type="radio"
+              name="mkt-setup-way"
+              className="mkt-setup__radio"
+              aria-labelledby="mkt-setup-remote"
+              checked={chosenWay === "remote"}
+              onChange={() => setWay("remote")}
+            />
+          )}
+        </form>
+      </div>
     </Frame>
   );
 }
@@ -653,13 +898,27 @@ function Check({
       step={step}
       error={error}
       onBack={back}
+      foot={
+        res && (
+          <span className="mkt-setup__datadir" title={t("setup.check.dataDir")}>
+            <DesktopIcon name="folder" size={16} />
+            <span className="mkt-visually-hidden">{t("setup.check.dataDir")}: </span>
+            <bdi dir="ltr">{res.data_dir}</bdi>
+          </span>
+        )
+      }
       next={
         error ? (
           <Button type="button" onClick={() => setAttempt((n) => n + 1)}>
             {t("common.retry")}
           </Button>
         ) : (
-          <Button type="button" onClick={next} disabled={!res?.ok}>
+          <Button
+            type="button"
+            onClick={next}
+            disabled={!res?.ok}
+            trailingIcon={<DesktopIcon name="onward" size={16} dir />}
+          >
             {t("setup.next")}
           </Button>
         )
@@ -669,42 +928,46 @@ function Check({
       {res && (
         <>
           <p>{t("setup.check.intro", words)}</p>
-          <ul className="mkt-setup__list">
+          <ul className="mkt-setup__runs">
             {res.runs.map((r) => (
-              <li key={r.role}>{runText(t, r, words)}</li>
+              <li key={r.role}>
+                <DesktopIcon name={RUN_ICONS[r.role] ?? "sparkle"} />
+                <span className="mkt-setup__runs-text">{runText(t, r, words)}</span>
+                <DesktopIcon name="checkcircle" className="mkt-setup__ok" />
+              </li>
             ))}
           </ul>
-          <dl className="mkt-setup__facts">
-            <dt>{t("setup.check.ram")}</dt>
-            <dd dir="ltr">
-              {t("setup.check.have", {
-                have: formatBytes(res.ram_bytes),
-                need: formatBytes(res.need.ram_bytes),
-              })}
-            </dd>
-            <dt>{t("setup.check.disk")}</dt>
-            <dd dir="ltr">
-              {t("setup.check.have", {
-                have: formatBytes(res.disk_free_bytes),
-                need: formatBytes(res.need.disk_bytes),
-              })}
-            </dd>
-            <dt>{t("setup.check.dataDir")}</dt>
-            <dd dir="ltr">{res.data_dir}</dd>
-          </dl>
+          <div className="mkt-setup__meters">
+            <Meter
+              icon="chip"
+              label={t("setup.check.ram")}
+              have={res.ram_bytes}
+              need={res.need.ram_bytes}
+            />
+            <Meter
+              icon="disk"
+              label={t("setup.check.disk")}
+              have={res.disk_free_bytes}
+              need={res.need.disk_bytes}
+            />
+          </div>
           {res.warnings.map((n) => (
-            <p key={n.code} className="mkt-setup__warn">
-              {codedText(t, "setup.check.note", n.code, n.params, words, n.message)}
+            <p key={n.code} className="mkt-setup__warn mkt-setup__callout">
+              <DesktopIcon name="warn" />
+              <span>{codedText(t, "setup.check.note", n.code, n.params, words, n.message)}</span>
             </p>
           ))}
           {!res.ok && (
-            <div role="alert">
-              {(res.problems ?? []).map((n) => (
-                <p key={n.code} className="mkt-setup__warn">
-                  {codedText(t, "setup.check.note", n.code, n.params, words, n.message)}
-                </p>
-              ))}
-              <p className="mkt-setup__warn">{t("setup.check.blocked", words)}</p>
+            <div role="alert" className="mkt-setup__callout mkt-setup__callout--error">
+              <DesktopIcon name="warn" />
+              <div>
+                {(res.problems ?? []).map((n) => (
+                  <p key={n.code} className="mkt-setup__warn">
+                    {codedText(t, "setup.check.note", n.code, n.params, words, n.message)}
+                  </p>
+                ))}
+                <p className="mkt-setup__warn">{t("setup.check.blocked", words)}</p>
+              </div>
             </div>
           )}
         </>
