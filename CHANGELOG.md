@@ -3880,6 +3880,12 @@ build fails when the two differ.
   plugin directory's report form has no Copyright reason. maktaba.dev no longer describes
   watching a broadcast. In English and Arabic.
 
+- **No help or setting about broadcasting while it is off.** The Broadcast access help topic is
+  gone from the app's help and from maktaba.tv, in English and Arabic; its old address opens the
+  help index. The web app's Rules page has no Broadcasting section, the Components page has no
+  broadcasting row and Subscription does not list it, unless the home's licence includes
+  broadcasting.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings

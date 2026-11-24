@@ -133,16 +133,16 @@ export function pageHelp(pathname: string): HelpRef | null {
 }
 
 /**
- * Rules sections whose help lives in the rules topic under their own
- * anchor (codeAnchor(key)). Each field links to its section's entry.
- */
-/**
  * The rules sections about broadcasting: the Rules page shows them only while the licence
  * carries the broadcast flag, and the rules topic has no entry for them while broadcasting is
  * off (2026-11-24).
  */
 export const BROADCAST_RULE_SECTIONS: ReadonlySet<string> = new Set(["broadcast"]);
 
+/**
+ * Rules sections whose help lives in the rules topic under their own
+ * anchor (codeAnchor(key)). Each field links to its section's entry.
+ */
 export function ruleHelp(sectionKey: string): HelpRef {
   return { topic: "rules", anchor: codeAnchor(sectionKey) };
 }
