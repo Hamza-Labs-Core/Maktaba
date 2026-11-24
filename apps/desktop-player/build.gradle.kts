@@ -48,6 +48,7 @@ dependencies {
     implementation(compose.desktop.currentOs)
     implementation(desk.compose.material3)
     implementation(desk.compose.icons)
+    implementation(desk.jewel.decorated.window)
     implementation(libs.zxing.core)
     implementation(desk.jmdns)
     implementation(desk.jna.platform)
@@ -102,11 +103,17 @@ sourceSets.main {
     kotlin.srcDir(writeBuildInfo)
     // the apps' fonts (IBM Plex Sans Arabic, Amiri), from the Android core rather than a copy
     resources.srcDir("../android/core/src/main/res/font")
+    // story 13.15: the app's icon, in the title bar
+    resources.srcDir("icons")
 }
 
 compose.desktop {
     application {
         mainClass = "com.hamzalabs.maktaba.desktop.MainKt"
+        // story 13.15: the installers' runtime is jlinked from the JetBrains Runtime (jbr.sh),
+        // whose custom title bar the Player's own frame needs; without the property (a local
+        // build, the tests) the build's JDK, and the Player falls back to the system's frame
+        providers.gradleProperty("maktaba.jbr").orNull?.let { javaHome = it }
         jvmArgs += listOf("-Dfile.encoding=UTF-8")
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Deb, TargetFormat.Rpm)

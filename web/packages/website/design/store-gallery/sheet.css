@@ -1,0 +1,77 @@
+/* The review sheets of the store gallery mockups (story 60.14): not part of any image. */
+
+html,
+body {
+  margin: 0;
+  background: #05080d;
+  color: #e8ecf3;
+  font-family: "Maktaba Text", "Maktaba Text Fallback", system-ui, sans-serif;
+}
+
+.sprite {
+  position: absolute;
+}
+
+.sheet {
+  box-sizing: border-box;
+  inline-size: 1600px;
+  padding: 40px 40px 24px;
+}
+
+.sheet-head h1 {
+  margin: 0 0 8px;
+  font-size: 26px;
+  line-height: 34px;
+  font-weight: 600;
+}
+.sheet-head p {
+  margin: 0 0 4px;
+  font-size: 15px;
+  line-height: 24px;
+  color: #a9b3c4;
+}
+.sheet-head .standin {
+  color: #e3b252;
+}
+
+.row {
+  margin-block-start: 28px;
+}
+.row h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  color: #a9b3c4;
+}
+
+.shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 16px;
+}
+
+.cell {
+  margin: 0;
+}
+.fit {
+  direction: ltr;
+  overflow: hidden;
+  border-radius: 6px;
+  outline: 1px solid #22304a;
+}
+.scale {
+  transform-origin: 0 0;
+  inline-size: max-content;
+}
+.cell figcaption {
+  direction: ltr;
+  margin-block-start: 6px;
+  font-size: 13px;
+  line-height: 18px;
+  color: #a9b3c4;
+}
+
+.full {
+  margin: 0;
+}

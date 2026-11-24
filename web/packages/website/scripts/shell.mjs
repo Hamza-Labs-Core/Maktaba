@@ -231,7 +231,6 @@ export const T = {
     skip: "Skip to the page",
     menu: "Menu",
     nav: "Main",
-    install: "Install",
     messages: "Messages",
     download: "Download",
     other: { lang: "ar", dir: "rtl", label: "العربية" },
@@ -241,7 +240,7 @@ export const T = {
       [
         "Get Maktaba",
         [
-          ["Install guides", "/install/"],
+          ["Download", "/download/"],
           ["Downloads on GitHub", LATEST_RELEASE],
         ],
       ],
@@ -280,7 +279,6 @@ export const T = {
     skip: "الانتقال إلى محتوى الصفحة",
     menu: "القائمة",
     nav: "الرئيسية",
-    install: "التثبيت",
     messages: "الرسائل",
     download: "التنزيل",
     other: { lang: "en", dir: "ltr", label: "English" },
@@ -290,7 +288,7 @@ export const T = {
       [
         "الحصول على مكتبة",
         [
-          ["أدلة التثبيت", "/install/"],
+          ["التنزيل", "/download/"],
           ["التنزيلات على GitHub", LATEST_RELEASE],
         ],
       ],
@@ -340,7 +338,6 @@ export const T_B = {
         "Get Maktaba",
         [
           ...(l.download === LATEST_RELEASE ? [] : [["Download", l.download]]),
-          ["Install guides", "/install/"],
           ["Every file on GitHub", LATEST_RELEASE],
         ],
       ],
@@ -379,7 +376,6 @@ export const T_B = {
         "الحصول على مكتبة",
         [
           ...(l.download === LATEST_RELEASE ? [] : [["التنزيل", l.download]]),
-          ["أدلة التثبيت", "/install/"],
           ["كل الملفات على GitHub", LATEST_RELEASE],
         ],
       ],
@@ -457,9 +453,9 @@ export function twinOf(lang, p) {
 export function currentOf(sitePath) {
   if (!sitePath) return null;
   const en = sitePath.replace(/^\/ar(?=\/)/, "");
-  if (en.startsWith("/install/")) return "install";
+  // an install guide belongs to Download: the one page that lists every guide (60.05, 60.11)
+  if (en === "/download/" || en.startsWith("/install/")) return "download";
   if (en.startsWith("/problems/")) return "messages";
-  if (en === "/download/") return "download";
   if (en.startsWith("/help/")) return "help";
   return null;
 }
@@ -486,9 +482,8 @@ export function header(lang, sitePath, { skipTo = "main", variant = "a", links =
     <a class="mark" href="${inLang(lang, "/")}"><img src="${mark}" width="32" height="32" alt="" data-nomirror />${esc(t.name)}</a>
     <nav class="nav" id="site-nav" aria-label="${esc(t.nav)}">
       <ul>
-        ${item("install", "/install/")}
+        ${item("download", "/download/")}
         ${item("messages", "/problems/")}
-        ${item("download", LATEST_RELEASE)}
       </ul>
     </nav>
     <a id="lang-switch" class="lang-switch" href="${switchHref(lang, sitePath)}" hreflang="${o.lang}" lang="${o.lang}" dir="${o.dir}">${ICONS.lang}<span>${esc(o.label)}</span></a>
@@ -498,7 +493,8 @@ export function header(lang, sitePath, { skipTo = "main", variant = "a", links =
 }
 
 /** Part B's header (design/README.md, part B): the single-script lockup, then the Phase 2 nav
- * (Download, Install, Help, Messages), the language switch and the Menu button. */
+ * (Download, Help, Messages: the install guides are reached from Download, 60.05), the language
+ * switch and the Menu button. */
 function headerB(lang, sitePath, links) {
   const t = { ...T[lang], ...T_B[lang] };
   const o = t.other;
@@ -515,7 +511,6 @@ ${SPRITE}
     <nav class="nav" id="site-nav" aria-label="${esc(t.nav)}">
       <ul>
         ${item("download", links.download)}
-        ${item("install", "/install/")}
         ${item("help", links.help)}
         ${item("messages", "/problems/")}
       </ul>
@@ -611,7 +606,7 @@ ${items.map((s) => `  <li><h3>${esc(s.title)}</h3>${s.html}</li>`).join("\n")}
 // ---- the document -----------------------------------------------------------------------------
 
 /**
- * A whole document. `path` is the page's English path (`/`, `/install/`), or null for a page
+ * A whole document. `path` is the page's English path (`/`, `/download/`), or null for a page
  * with no address of its own (the 404 page): no canonical, alternates or card, and the switch
  * goes to the other language's front door. The head's links and social tags are head.mjs's.
  * `body` is the content of <main id="main">; `head`, tags a page adds after the shell's (part B's

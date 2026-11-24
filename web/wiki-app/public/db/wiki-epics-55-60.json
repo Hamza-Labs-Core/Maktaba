@@ -3104,6 +3104,32 @@
       "metadata": {
         "slug": "pricing"
       }
+    },
+    {
+      "id": "story-60.14",
+      "type": "story",
+      "title": "Store gallery images: every app's listing, in every store it ships to, in English and Arabic",
+      "epic": "60-website",
+      "phase": 5,
+      "content": "# Story 60.14 — Store gallery images: every app's listing, in every store it ships to, in English and Arabic\n\n> Epic 60 · Phase 2 · Part 1 (design) gates part 2 (the full set) · Depends on: 60.01 part B\n> (tokens, the display face, the wordmark), 60.02 (the voice, the tagline), 60.09 (the capture\n> pipeline), the new demo library that replaces 60.09's · Needed by: each store submission (an\n> owner action)\n\n## Why\n\nEvery store a Maktaba app ships to shows a gallery before anyone installs: App Store Connect,\nGoogle Play, Amazon's Fire TV store, Roku, Samsung and LG. The apps reach testers throug",
+      "tags": [
+        "story",
+        "60-website",
+        "phase-5"
+      ],
+      "related": [
+        "epic-60-website"
+      ],
+      "files": {
+        "story": "specs/epics/60-website/story-60-14-store-gallery.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "store-gallery"
+      }
     }
   ]
 }

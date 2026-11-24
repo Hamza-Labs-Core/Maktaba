@@ -1,0 +1,135 @@
+---
+schema: 1
+kind: pr
+pr: 1561
+title: "Search changes the screen once the keyboard has hidden; a failure in tearDown no longer hangs XCTest; a hung test is cut at 10 minutes"
+date: 2026-11-24
+session: 71f9924d-5382-420c-bb6a-d0e85685bd01
+agent: claude-code
+prs: [1561]
+---
+
+## What happened
+- This follows #1550 on what it left open.
+- **The cap:** the Player UI shards run with xcodebuild's per-test allowance
+  (`-test-timeouts-enabled YES`, 600 s). The longest test that passed in the surveyed runs
+  took 411 s, including its shard's first launch. Twice on #1550 (run 45264580791, iPhone 2/6)
+  a test hung in its tearDown after "Failed to terminate" and held the shard until the
+  job's 60 minutes ran out.
+- **The logging:** Search taps that changed nothing left no word of whether the action ran.
+  The app's log now has:
+  - Search's steps: each change asked for, whether it waited for the field, when it runs.
+    The words are never logged.
+  - Under the UI tests' touch hook: the view each touch landed on, and every gesture
+    recognizer's state as it ended.
+
+  A diagnostic PR (#1562, closed unmerged) ran `PlayerSearchUITests` alone on all 12
+  iPhone and iPad shards with it.
+- **Search's "never went idle" found and fixed:**
+  - The diagnostic's first run (45296281858) caught it on iPhone
+    (`testDidYouMeanRunsTheCorrectedWordsInArabic`).
+  - The log shows Return asking for the search, the field letting go of the keyboard at
+    00:45:09.267, and "search runs" at 00:45:09.267, the same millisecond. Two 60 s idle
+    waits followed.
+  - `LetGoFirst` waits for the field to drop focus, which is when the keyboard starts to
+    hide, so the results replaced the screen mid-animation. This is #1419's stall, which its
+    Open list had named for Search.
+  - #1561 runs the held change on iOS only after `keyboardDidHideNotification` (a new
+    `KeyboardWatch`): at once when no keyboard is up, and after 2 s at the latest.
+  - The second run with the fix (45302034688): 11 of 12 shards green, with no idle wait and
+    no lost press. The one failure was the audit's "Text clipped" below.
+- **The audit's "Text clipped", explained:**
+  - It flagged AI mode's "27:02" again, at the same frame as on main, `(63, 274.67, 68.33,
+    19.67)`. The screenshot shows it whole.
+  - The screen recording during the audit shows the app stepping through text sizes (the
+    clipping check lays the app out at each size, as `accessibilityAudit`'s comment says).
+    At an accessibility size, the List's cells had not yet resized, and the enlarged source
+    card was cut off by the one below it.
+  - So the check measures mid-relayout on a slow simulator. No fix yet: excusing the check
+    would be a skip.
+- **"Failed to terminate" then a hang, root-caused:**
+  - #1561's own run 45302179115 hit it on iPad 4/6
+    (`PlayerReportProblemUITests.testAlsoSendToMaktabaWhenTheHomeAllowsIt`). The 10-minute
+    cap cut it, and the shard went on.
+  - The spindump XCTest kept has the runner's main thread in `PlayerUITestCase.tearDown` →
+    `close` → `terminate` → `record(_:)` → `_interruptTest` → `_performTearDownSequence…` →
+    `XCTWaiter _synchronouslyWaitForTimeInterval`.
+  - With `continueAfterFailure` false, XCTest answers a failure inside an async tearDown by
+    running the tear-down sequence again from inside it. It then waits on the main thread
+    for that inner async tearDown, which needs the main thread, so neither ends. The app had
+    already exited.
+  - Every UI-test tearDown that ends its app now sets `continueAfterFailure = true` first.
+    "Failed to terminate" itself, XCTest giving up on ending the app, still has no cause.
+- **"Failed to terminate" follows #1550's console hook:**
+  - It came in 5 of about 8 full Player UI runs since #1550, each time a different test:
+    #1550's 45264580791 twice, #1561's 45302179115, and main's 45307274819 twice (29725fb36,
+    iPhone 3/6 and 6/6, each then hung until the 60-minute timeout on main's code).
+  - In the 31 runs surveyed before #1550 it came once.
+  - In main's case the app ended on SIGTERM 35 s after XCTest asked (02:39:46 to 02:40:21),
+    after XCTest had given up, and the error names pid 0.
+  - `dup2` to /dev/null let go of the stream Xcode gives the app (its console, which the
+    result bundle keeps) as the app started instead of as it ended. That was the one change
+    every launch shared.
+  - #1561 keeps that stream and sets `O_NONBLOCK` on it instead. A copy that would wait is
+    dropped (20,000 messages into a full pipe took 0.03 s, with no spin), so queries still
+    never wait on the reader.
+- **First run with the non-blocking hook (45319649409):** every shard that ran its tests
+  passed: 10 Player UI shards, both shots shards, Mac, TV and Remote. There was no "Failed
+  to terminate". Two shards ran no test at all:
+  - iPhone 1/6: SpringBoard refused to launch the test runner ("The request was denied by
+    service delegate (SBMainWorkspace)") after the simulator never settled.
+  - iPad 6/6: its log stopped at `simctl bootstatus -b` and the job was cancelled 12 minutes
+    in, as main's 45298651218 iPad 6/6 was at 9.
+
+  #1561 now:
+  - runs xcodebuild once more, with a warning, only when it reports "Failed to install or
+    launch the test runner" or "The test runner failed to initialize for UI testing" and
+    no test started;
+  - bounds the boot at 5 minutes, logging each minute, then makes the simulator once more.
+- **Second run with the non-blocking hook (45325445743, at 1e0918711):** again every shard
+  that ran its tests passed, with no "Failed to terminate". iPad 3/6 ran none: its log has
+  "booting …: 60s" and then nothing, not even the next minute's line, until the job was
+  cancelled 9.5 minutes in.
+  - The runner itself went silent while booting an iPad simulator.
+  - This came three times today (main's 45298651218 and #1561's 45319649409 iPad 6/6, then
+    this one), all on the same image version, and in none of the earlier runs checked.
+  - Its re-run passed.
+- **TV Search's suggestions:** `testSuggestionsShowTheirKindsAndATitleOpensItsPage` failed in
+  the same run.
+  - Its check of the cells' focus never saw the row's first suggestion, so it always
+    pressed Down four times, main's passing run 45292196113 included.
+  - In 45302179115 those presses went past the row to Search for "se", as the screen
+    recording shows.
+  - It now moves by where the focused element is, relative to the title suggestion's row.
+- **The Mac's "Lost connection":** the Mac app's last line was "connect" at 18:33:53. The next
+  test's app launched at 18:34:04, so the app ended without a word. The Mac job now keeps the
+  Maktaba apps' crash reports from `~/Library/Logs/DiagnosticReports`.
+- **"The test runner failed to initialize for UI testing (Timed out waiting for AX loaded
+  notification)"** happened once (iPad 1/6 of 45296281858), and in no other job log on hand.
+
+## What we learned
+- "Failed to terminate" is older than #1550's console hook. On main before it, iPad 3/6 of
+  45189795489 (`testShimmer`, the shard's third test) failed the same way, and its shard went
+  on after about 80 s. The two hangs on #1550 were the Cast test as the shard's first test.
+  The app was alive: it served its stream proxy, and RunningBoard logged no termination
+  request until it was killed.
+- MaktabaKit's `WalkthroughModel` timeouts, as far as checked:
+  - Both failures ended `.unknown`, which is the timed-out-before-any-signal path.
+  - A feeder on the main actor was the first guess, and it does not hold. `ScriptedProbe`
+    buffers its whole script, and in Swift 6 mode the feeder's answers are queued before the
+    ticker's next job.
+  - Local runs with the main actor hogged (0.3 s and 1.2 s slices) and the full suite in
+    parallel under CPU load did not reproduce it.
+
+  No change was made to it.
+
+## Open
+- Search's lost presses (Filters after Return; a recent search after a row was removed): none
+  in 24 diagnostic runs of the suite. The Filters case followed Return, so the keyboard fix
+  may cover it. The next failure's app log will say whether the action ran.
+- "Failed to terminate": it no longer hangs. Whether the non-blocking hook brings it back to
+  its rate before #1550 is to be read from the next runs.
+- Runners going silent while booting an iPad simulator (above): nothing in the job can
+  answer for a frozen runner. The boot's per-minute lines say when it happens.
+- The audit's "Text clipped" measured mid-relayout (above), the Mac's "Lost connection" (its
+  crash report comes with the next one), and `WalkthroughModel`'s 1 s timing.

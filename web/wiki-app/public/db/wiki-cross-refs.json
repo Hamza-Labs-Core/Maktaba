@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 60,
-    "stories": 745,
+    "stories": 746,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -7872,6 +7872,15 @@
       "slug": "pricing",
       "title": "Pricing, from the plans the cloud enforces",
       "story_file": "specs/epics/60-website/story-60-13-pricing.md",
+      "plan_files": []
+    },
+    {
+      "id": "60.14",
+      "epic": 60,
+      "num": "14",
+      "slug": "store-gallery",
+      "title": "Store gallery images: every app's listing, in every store it ships to, in English and Arabic",
+      "story_file": "specs/epics/60-website/story-60-14-store-gallery.md",
       "plan_files": []
     }
   ],

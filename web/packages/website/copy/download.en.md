@@ -257,3 +257,103 @@ The server alone, macOS with Apple silicon (`.tar.gz`)
 ## server.other.windows
 
 The server alone, Windows (`.zip`)
+
+## guides.h2
+
+Set it up, step by step
+
+## guides.lead
+
+Each guide takes you through it in your browser, one step at a time, and Maktaba updates itself afterwards.
+
+## guides.nas-guides
+
+On a NAS
+
+## guides.nas-guides.unsure
+
+Not sure which guide fits your NAS? The list of models says which one to follow.
+
+## guides.nas-guides.find
+
+Find your NAS
+
+## guides.synology
+
+Synology
+
+## guides.synology.line
+
+DSM 7.2 or newer, with Container Manager
+
+## guides.truenas
+
+TrueNAS
+
+## guides.truenas.line
+
+TrueNAS 25.04 or newer, as an app
+
+## guides.unraid
+
+Unraid
+
+## guides.unraid.line
+
+From Community Applications
+
+## guides.qnap
+
+QNAP
+
+## guides.qnap.line
+
+With Container Station
+
+## guides.ugreen
+
+UGREEN
+
+## guides.ugreen.line
+
+With UGOS Pro’s Docker app
+
+## guides.asustor
+
+ASUSTOR
+
+## guides.asustor.line
+
+With Portainer from App Central
+
+## guides.docker-guide
+
+On any other computer
+
+## guides.docker
+
+Docker
+
+## guides.docker.line
+
+Any Linux computer that stays on: the guide fills in the compose file as you answer
+
+## guides.after-guides
+
+Once it runs
+
+## guides.after-setup
+
+After setup
+
+## guides.after-setup.line
+
+Your libraries, who can see what, updates and more
+
+## guides.troubleshooting
+
+Troubleshooting
+
+## guides.troubleshooting.line
+
+When something doesn’t work, one problem at a time

@@ -20,7 +20,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadTokens, nativeFiles, resolvedThemes, SITE_CSS_PATH } from "./build-tokens.mjs";
-import { contrastPairs, contrastProblems, parity } from "./checks.mjs";
+import { contrastPairs, contrastProblems, desktopContrastProblems, parity } from "./checks.mjs";
 import { KOTLIN_PATH, ROKU_PATH, SWIFT_PATH } from "./native.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -129,7 +129,7 @@ if (drift.length > 0) {
 // Step 4 — contrast, light and dark
 // ---------------------------------------------------------------------------
 
-const low = contrastProblems(themes);
+const low = [...contrastProblems(themes), ...desktopContrastProblems(themes.dark)];
 if (low.length > 0) {
   fail(`contrast under WCAG AA:\n  ${low.join("\n  ")}`);
 }

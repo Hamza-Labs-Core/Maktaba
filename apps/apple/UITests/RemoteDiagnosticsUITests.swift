@@ -23,6 +23,9 @@ final class RemoteDiagnosticsUITests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        // a failure here is recorded, not an interruption: one inside an async tearDown hangs
+        // XCTest (`PlayerUITestCase.tearDown`)
+        continueAfterFailure = true
         app?.terminate()
         home?.stop()
     }

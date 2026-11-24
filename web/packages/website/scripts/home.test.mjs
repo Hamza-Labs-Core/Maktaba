@@ -47,7 +47,7 @@ test("T04: a feature links its help topic once built, else the install guides or
   const html = homePage("en", { links: bLinks(none), resolves: none }).body;
   assert.equal(html.match(/<li class="feature"/g).length, 6);
   assert.doesNotMatch(html, /href="\/help\//);
-  assert.match(html, /data-feature="runs"[\s\S]*?href="\/install\/"/);
+  assert.match(html, /data-feature="runs"[\s\S]*?href="\/download\/#nas-guides"/);
   const later = homePage("ar", { links: bLinks(all), resolves: all }).body;
   assert.match(later, /href="\/ar\/help\/search\/"/);
 });

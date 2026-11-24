@@ -21,7 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.AlertDialog
+import com.hamzalabs.maktaba.desktop.shell.MaktabaAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -84,7 +84,7 @@ internal fun AccountPage(state: ProfileState, home: DesktopHome) {
         Button(onClick = { confirm = true }, modifier = Modifier.testTag("sign-out")) { Text(t["profile.signOut"]) }
     }
     if (confirm) {
-        AlertDialog(
+        MaktabaAlertDialog(
             onDismissRequest = { confirm = false },
             title = { Text(t["profile.signOutTitle", home.homeLabel]) },
             text = { Text(t["profile.signOutBody"]) },

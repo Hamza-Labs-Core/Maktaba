@@ -262,6 +262,26 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # The store galleries' composer (story 60.14 part 2) on synthetic captures: every listing's
+  # images at the store's size, format, alpha and count, the fastlane layout, a missing capture
+  # reported. In the Playwright image: it draws with Chromium and the site's fonts.
+  store-gallery:
+    name: store gallery (compose)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host --init
+    defaults:
+      run:
+        working-directory: web/packages/website
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Install
+        run: npm ci --no-audit --no-fund
+      - name: Compose on synthetic captures
+        run: node --test design/store-gallery/tests/compose.test.mjs
+
   quality:
     name: quality (axe, keyboard, layout, RTL, visual; shard ${{ matrix.shard }}/4)
     needs: [website]
