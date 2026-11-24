@@ -821,3 +821,36 @@ func TestRestoreOfRowsCutShortCommitsNothing(t *testing.T) {
 		t.Fatalf("the database changed: %d %v\n%s", n, err, log.String())
 	}
 }
+
+// A psql that failed and does not end is not waited for: its session says the transaction is
+// over.
+func TestRestoreDoesNotWaitForAPsqlThatFailed(t *testing.T) {
+	r := newPGRig(t)
+	if runtime.GOOS == "windows" || !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql and a shell")
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(context.Background(), dump); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	for name, body := range map[string]string{
+		"pg_restore": "#!/bin/sh\necho 'SELECT nothing FROM nowhere;'\n",
+		"psql":       "#!/bin/sh\n'" + r.t.bin("psql") + "' \"$@\"\n[ \"$1\" = --version ] || while kill -0 $PPID; do sleep 1; done\n",
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tg := r.t
+	tg.Bin = func(name string) string { return filepath.Join(bin, name) }
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var log bytes.Buffer
+	if err := tg.Restore(ctx, dump, &log); err == nil || ctx.Err() != nil || !strings.Contains(err.Error(), "psql failed and did not end (its session: gone)") {
+		t.Fatalf("the restore: %v (%v)", err, ctx.Err())
+	}
+	if !r.has(t, "videos") {
+		t.Fatal("the library's tables are gone")
+	}
+}

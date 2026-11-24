@@ -724,6 +724,27 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 	return t.verifyRestore(ctx, d, dump)
 }
 
+// psqlLookEvery is how often a restore looks at its psql's session while it waits for it.
+const psqlLookEvery = time.Second
+
+// restoreSession is what the session of a restore's psql does (pg_stat_activity's state;
+// "gone": it has none; "": not known).
+func (t Target) restoreSession(ctx context.Context) string {
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	d, err := t.open(cctx, "")
+	if err != nil {
+		return ""
+	}
+	defer d.Close()
+	var state string
+	if err := d.QueryRowContext(cctx, `SELECT coalesce(max(state), 'gone') FROM pg_stat_activity
+		WHERE application_name = $1 AND datname = current_database()`, pgbundle.RestoreApp).Scan(&state); err != nil {
+		return ""
+	}
+	return state
+}
+
 // signal is a writer that closes seen once word was written to it.
 type signal struct {
 	word string
@@ -887,10 +908,29 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, tell func(step s
 	}
 	ended := make(chan error, 1)
 	go func() { ended <- cmd.Wait() }()
-	select {
-	case <-ran.seen:
-	case err := <-ended:
-		return fmt.Errorf("restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(out.Bytes()))
+	look := time.NewTicker(psqlLookEvery)
+	defer look.Stop()
+	for waiting, failed := true, 0; waiting; {
+		select {
+		case <-ran.seen:
+			waiting = false
+		case err := <-ended:
+			return fmt.Errorf("restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(out.Bytes()))
+		case <-look.C:
+			// a psql whose transaction failed and that does not end would be waited for for ever
+			state := t.restoreSession(pctx)
+			if state != "gone" && state != "idle in transaction (aborted)" {
+				failed = 0
+				continue
+			}
+			if failed++; failed < 5 {
+				continue
+			}
+			kill()
+			<-ended
+			return fmt.Errorf("restore %s (nothing changed: one transaction): psql failed and did not end (its session: %s): %s",
+				dump, state, tail(out.Bytes()))
+		}
 	}
 	if err := tell(pgbundle.StepReplaced); err != nil {
 		kill()
