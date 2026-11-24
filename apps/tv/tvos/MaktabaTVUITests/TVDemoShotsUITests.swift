@@ -94,6 +94,10 @@ final class TVDemoShotsUITests: XCTestCase {
                           "the stream's segments; the home saw \(seen)")
             let asked = seen.count
             XCTAssertTrue(wait(timeout: 20) { self.seen.count > asked + 1 }, "it plays on")
+            // the picture drawn, not only asked for: a store gallery run shot a black player
+            // once, its segments fetched before the first frame was on screen (run 45359873399)
+            XCTAssertTrue(wait(timeout: 30) { self.meanLuminance() > 0.08 },
+                          "the picture on screen (mean luminance \(meanLuminance()))")
             shot("player")
         }
     }
@@ -311,6 +315,22 @@ final class TVDemoShotsUITests: XCTestCase {
             usleep(200_000)
             if seen.count != count { count = seen.count; since = Date() } else if Date().timeIntervalSince(since) >= 2 { return }
         }
+    }
+
+    /// The screen's mean luminance (0 black … 1 white), from a 64 × 64 sample.
+    private func meanLuminance() -> Double {
+        guard let cg = XCUIScreen.main.screenshot().image.cgImage else { return -1 }
+        let w = 64, h = 64
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        guard let ctx = CGContext(data: &pixels, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return -1 }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        var total = 0.0
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            total += (0.2126 * Double(pixels[i]) + 0.7152 * Double(pixels[i + 1]) + 0.0722 * Double(pixels[i + 2])) / 255
+        }
+        return total / Double(w * h)
     }
 
     private func shot(_ screen: String) {
