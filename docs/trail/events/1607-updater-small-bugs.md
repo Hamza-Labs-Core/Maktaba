@@ -25,6 +25,8 @@ These are research item 3's small bugs (`docs/research/update-process.md`, #1601
   - The Linux runtime order, which stages nothing, goes on without the app after 10 minutes.
   - `app_no_answer` has its words on web, Apple and Android.
 
+- **After its review (Kimi K3.1 Pro: 2 majors, 2 minors):** `app_no_answer` counts no attempt (three windows without the app had blocked the release); a guard's explicit `latest` is honoured past a day; a release is confirmed watermark first, marker next, database record last; the runtime's fallback never overwrites a late answer or a withdrawn order.
+
 ## What we learned
 - **The updater rig's clock moves a minute on every read.** A deadline check made at every tick of `await` would fire in other order tests on a slow CI runner. The check looks once a minute of wall time (`AnswerCheckEvery`, -1 in tests).
 - **The `affected-tests` gate counts tests per changed source file, not per package.**
