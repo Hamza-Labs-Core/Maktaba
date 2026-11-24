@@ -73,6 +73,19 @@ prs: [1561]
   - #1561 keeps that stream and sets `O_NONBLOCK` on it instead. A copy that would wait is
     dropped (20,000 messages into a full pipe took 0.03 s, with no spin), so queries still
     never wait on the reader.
+- **First run with the non-blocking hook (45319649409):** every shard that ran its tests
+  passed: 10 Player UI shards, both shots shards, Mac, TV and Remote. There was no "Failed
+  to terminate". Two shards ran no test at all:
+  - iPhone 1/6: SpringBoard refused to launch the test runner ("The request was denied by
+    service delegate (SBMainWorkspace)") after the simulator never settled.
+  - iPad 6/6: its log stopped at `simctl bootstatus -b` and the job was cancelled 12 minutes
+    in, as main's 45298651218 iPad 6/6 was at 9.
+
+  #1561 now:
+  - runs xcodebuild once more, with a warning, only when it reports "Failed to install or
+    launch the test runner" or "The test runner failed to initialize for UI testing" and
+    no test started;
+  - bounds the boot at 5 minutes, logging each minute, then makes the simulator once more.
 - **TV Search's suggestions:** `testSuggestionsShowTheirKindsAndATitleOpensItsPage` failed in
   the same run.
   - Its check of the cells' focus never saw the row's first suggestion, so it always
