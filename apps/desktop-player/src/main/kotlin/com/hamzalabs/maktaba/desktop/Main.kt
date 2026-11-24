@@ -108,6 +108,8 @@ fun main(args: Array<String>) {
     // where it announces itself
     session.discovery = ::discoverOrNothing
     session.discover(true)
+    // story 13.19: what this machine decodes, and its audio device's channels, for device_caps
+    com.hamzalabs.maktaba.desktop.mpv.Engine.startProbe()
 
     application {
         val lang = prefs.lang
