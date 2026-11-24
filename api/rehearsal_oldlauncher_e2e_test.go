@@ -130,7 +130,7 @@ func TestUpdateRehearsal21OldLauncherKinds(t *testing.T) {
 		write(filepath.Join(root, "updates", "pending.json"), string(raw), 0o600)
 	}
 	kinds := map[string]func(t *testing.T, root, record string) *exec.Cmd{
-		"app": func(t *testing.T, root, record string) *exec.Cmd {
+		"app": func(_ *testing.T, root, record string) *exec.Cmd {
 			bundle, kept := filepath.Join(root, "Maktaba.app", "server"), filepath.Join(root, "updates", "payloads", "1.0.0")
 			for dir, v := range map[string]string{bundle: "2.0.0", kept: "1.0.0"} {
 				write(filepath.Join(dir, "bin", "maktaba-server"), stub, 0o755)
@@ -154,7 +154,7 @@ func TestUpdateRehearsal21OldLauncherKinds(t *testing.T) {
 			guard(root, record, map[string]any{"previous_runtime": "1.0.0"})
 			return exec.Command(filepath.Join(runtimes, "2.0.0", "bin", "maktaba-launcher"), "--root", root, "serve")
 		},
-		"layout": func(t *testing.T, root, record string) *exec.Cmd {
+		"layout": func(_ *testing.T, root, record string) *exec.Cmd {
 			sum := sha256.Sum256([]byte(stub))
 			for _, v := range []string{"1.0.0", "2.0.0"} {
 				dir := filepath.Join(root, "bin", "releases", v)
