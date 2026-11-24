@@ -60,6 +60,19 @@ prs: [1561]
     already exited.
   - Every UI-test tearDown that ends its app now sets `continueAfterFailure = true` first.
     "Failed to terminate" itself, XCTest giving up on ending the app, still has no cause.
+- **"Failed to terminate" follows #1550's console hook:**
+  - It came in 5 of about 8 full Player UI runs since #1550, each time a different test:
+    #1550's 45264580791 twice, #1561's 45302179115, and main's 45307274819 twice (29725fb36,
+    iPhone 3/6 and 6/6, each then hung until the 60-minute timeout on main's code).
+  - In the 31 runs surveyed before #1550 it came once.
+  - In main's case the app ended on SIGTERM 35 s after XCTest asked (02:39:46 to 02:40:21),
+    after XCTest had given up, and the error names pid 0.
+  - `dup2` to /dev/null let go of the stream Xcode gives the app (its console, which the
+    result bundle keeps) as the app started instead of as it ended. That was the one change
+    every launch shared.
+  - #1561 keeps that stream and sets `O_NONBLOCK` on it instead. A copy that would wait is
+    dropped (20,000 messages into a full pipe took 0.03 s, with no spin), so queries still
+    never wait on the reader.
 - **TV Search's suggestions:** `testSuggestionsShowTheirKindsAndATitleOpensItsPage` failed in
   the same run.
   - Its check of the cells' focus never saw the row's first suggestion, so it always
@@ -93,7 +106,7 @@ prs: [1561]
 - Search's lost presses (Filters after Return; a recent search after a row was removed): none
   in 24 diagnostic runs of the suite. The Filters case followed Return, so the keyboard fix
   may cover it. The next failure's app log will say whether the action ran.
-- "Failed to terminate": it no longer hangs, but the test still fails. Why XCTest cannot end
-  the app (twice the app was alive and serving, once it had exited) is not known.
+- "Failed to terminate": it no longer hangs. Whether the non-blocking hook brings it back to
+  its rate before #1550 is to be read from the next runs.
 - The audit's "Text clipped" measured mid-relayout (above), the Mac's "Lost connection" (its
   crash report comes with the next one), and `WalkthroughModel`'s 1 s timing.
