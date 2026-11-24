@@ -7791,7 +7791,6 @@
   "plugins.report.does_not_work": "لا تعمل",
   "plugins.report.misleading": "مضلِّلة",
   "plugins.report.offensive": "مسيئة",
-  "plugins.report.copyright": "حقوق النشر",
   "plugins.report.other": "غير ذلك",
   "plugins.error.rating_too_early": "يمكنك التقييم بعد أن تستخدمها يومًا.",
   "plugins.error.rating_no_home": "اربط هذا الجهاز الرئيسي بحساب في المتجر لتقيّم.",

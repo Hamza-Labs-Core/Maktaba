@@ -121,6 +121,8 @@ writeFileSync(
     "BROADCAST_ENV=rehearsal",
     "BROADCAST_DELIVERY=r2",
     "BROADCAST_GLOBAL_OFF=0",
+    // the rehearsal plays viewers: broadcasting on here (wrangler.toml keeps it off)
+    "BROADCAST_ENABLED=1",
   ].join("\n") + "\n"
 );
 const wrangler = spawn(
