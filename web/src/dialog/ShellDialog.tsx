@@ -47,8 +47,8 @@ export function ShellDialog() {
     document.title = content.brand;
   }, [content]);
 
-  // a new error takes the focus back to Close
-  useEffect(() => {
+  // a new error takes the focus back to Close, with its first picture
+  useLayoutEffect(() => {
     closeRef.current?.focus();
   }, [content]);
 
