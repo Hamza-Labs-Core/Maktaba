@@ -334,6 +334,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		Secure:           true,
 		Turnstile:        tsGuard,
 		TurnstileSiteKey: cfg.Turnstile.SiteKey,
+		BroadcastEnabled: cfg.Broadcast.Enabled,
 	}
 	accountDeps := &accounth.Deps{Users: users, Sessions: sess, Audit: auditLog, Logger: logger}
 	// Build the router. Order matters: health probes mount on the
@@ -403,6 +404,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 			DB: pool.DB, Provider: payments, Users: users, Sessions: sess, Abuse: detector, Audit: auditLog,
 			Mailer: mailer, Logger: logger, Entitlements: entSigner, Broadcast: broadcastStore,
 			WebURL: cfg.Server.WebURL, AccessPush: broadcastDeps.PushAccess,
+			BroadcastEnabled: cfg.Broadcast.Enabled,
 		}
 		// Public billing routes: the catalog, the entitlement key, and the
 		// payment-provider webhook (verified by the provider, not our token).

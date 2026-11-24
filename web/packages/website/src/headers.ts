@@ -31,34 +31,9 @@ const BASE_CSP = [
   "upgrade-insecure-requests",
 ];
 
-// the base policy with some directives replaced, and any new ones added
-function csp(over: Record<string, string>): string {
-  const names = BASE_CSP.map((d) => d.split(" ")[0]);
-  const base = BASE_CSP.map((d, i) => (names[i] in over ? `${names[i]} ${over[names[i]]}` : d));
-  const added = Object.entries(over)
-    .filter(([k]) => !names.includes(k))
-    .map(([k, v]) => `${k} ${v}`);
-  return [...base, ...added].join("; ");
-}
-
-/** Every page: nothing from another origin, no inline code, never in a frame. */
-export const CSP_DEFAULT = csp({});
-
-/** The copyright page only (60.07): its notice form needs Turnstile and posts to the cloud
- * API (as JSON from its script, or as a plain form without JavaScript: form-action). No other
- * path gets either origin. */
-export const CSP_COPYRIGHT = csp({
-  "script-src": "'self' https://challenges.cloudflare.com",
-  "frame-src": "https://challenges.cloudflare.com",
-  "connect-src": "'self' https://api.maktaba.tv",
-  "form-action": "https://api.maktaba.tv",
-});
-
-const COPYRIGHT = /^(\/ar)?\/legal\/copyright\/?$/;
-
-export function cspFor(path: string): string {
-  return COPYRIGHT.test(path) ? CSP_COPYRIGHT : CSP_DEFAULT;
-}
+/** Every page: nothing from another origin, no inline code, never in a frame. No path has a
+ * policy of its own. */
+export const CSP_DEFAULT = BASE_CSP.join("; ");
 
 export const SECURITY_HEADERS: Record<string, string> = {
   // a year, and no includeSubDomains: the relay's names are DNS-only and must not inherit it
@@ -93,7 +68,7 @@ export function redirect(to: string, status = 301): Response {
 export function withHeaders(res: Response, path: string): Response {
   const out = new Response(res.body, res);
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v);
-  out.headers.set("Content-Security-Policy", cspFor(path));
+  out.headers.set("Content-Security-Policy", CSP_DEFAULT);
   out.headers.set("X-Frame-Options", "DENY");
   if (res.status < 300 || res.status >= 400) {
     const type = out.headers.get("Content-Type") ?? "";

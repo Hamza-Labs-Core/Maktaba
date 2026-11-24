@@ -84,7 +84,8 @@ function siteOff(env: Env): boolean {
 /** lineup is the publisher's channels a credential allows, with their state and now and next. */
 export async function lineup(env: Env, pub: string, cred: Cred): Promise<Lineup> {
   const access = viewer(env, pub);
-  const ids = cred.kind === "none" ? await access.openChannels() : await access.allowed(cred);
+  // no pass, no channels: a visitor without an invite sees nothing (README §14, invitation only)
+  const ids = cred.kind === "none" ? [] : await access.allowed(cred);
   const t0 = now();
   const list = await revocationsFor(env);
   const off = globallyOff(env);
@@ -222,7 +223,6 @@ export async function handleSite(request: Request, env: Env, url: URL): Promise<
     return messagePage(lang, path, key, live, 404);
   }
   const g = await getGuide(env, pub, ch);
-  const settings = await viewer(env, pub).settings();
   return channelPage(
     lang,
     {
@@ -231,7 +231,8 @@ export async function handleSite(request: Request, env: Env, url: URL): Promise<
       today: g ? today(g.programmes, now()) : [],
       ...(env.TURNSTILE_SITE_KEY ? { turnstileSiteKey: env.TURNSTILE_SITE_KEY } : {}),
       ...(apiOriginOf(env) ? { reportApi: apiOriginOf(env) } : {}),
-      indexable: settings?.channels[ch]?.indexable === true,
+      // invitation only: never indexed, whatever the stored setting (README §14)
+      indexable: false,
     },
     live
   );
@@ -252,7 +253,7 @@ async function apiGuide(request: Request, env: Env, url: URL): Promise<Response>
   if (!PUB_RE.test(pub) || !CH_RE.test(ch)) return refuse(request, 400, "bad_request");
   const { cred } = await credOf(request, env, pub);
   const v = viewer(env, pub);
-  const ids = cred.kind === "none" ? await v.openChannels() : await v.allowed(cred);
+  const ids = cred.kind === "none" ? [] : await v.allowed(cred);
   if (!ids.includes(ch))
     return refuse(request, 403, cred.kind === "none" ? "invite_required" : "not_invited");
   const g = await getGuide(env, pub, ch);

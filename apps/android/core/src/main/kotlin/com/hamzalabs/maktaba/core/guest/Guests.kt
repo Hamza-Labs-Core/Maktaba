@@ -118,8 +118,27 @@ object Guests {
 fun guestWords(key: String): String = stringResource(Guests.words(key))
 
 /**
+ * Whether this build shows Watch a broadcast (story 50.27) at all: off while home broadcasting is
+ * off. Off, no app shows the entry (the home picker, Profile, the TV's Account), an invite's link
+ * opens nothing and saved broadcasts never show; the guest code stays, unreached, for when
+ * broadcasting is turned on ([BUILT] set to true). On, [GuestGate] still decides each time.
+ */
+object GuestBroadcast {
+    /** The build's switch. */
+    const val BUILT = false
+
+    /** Tests turn it on (or off); null: the build's switch. */
+    @Volatile
+    var override: Boolean? = null
+
+    /** Whether the entry, invite links and saved broadcasts may show in this build. */
+    val ENABLED: Boolean get() = override ?: BUILT
+}
+
+/**
  * Opens the app's Watch a broadcast from the home picker; null in an app without it (the Remote)
- * or where it is shut ([GuestGate]: a parental limit, or the signed-in home has not said yet).
+ * or where it is shut ([GuestGate]: a parental limit, or the signed-in home has not said yet), and
+ * in every app while the build has broadcasting off ([GuestBroadcast]).
  * The Player provides it.
  */
 val LocalWatchBroadcast = staticCompositionLocalOf<(() -> Unit)?> { null }

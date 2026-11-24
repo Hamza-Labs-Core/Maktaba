@@ -50,11 +50,13 @@ fun AccountScreen(
             parental?.let { TvManaged(it, Modifier.padding(top = 16.dp)) }
             // story 50.27: Watch a broadcast, apart from the home and its account; not under a
             // parental limit (Epic 57): a broadcast is outside the home's ratings. Fails closed: shown
-            // only once the home has said this sign-in has no limit
+            // only once the home has said this sign-in has no limit; never while the build has
+            // broadcasting off (GuestBroadcast)
             val guestAccess by app.guestGate.access.collectAsState(initial = remember { app.guestGate.now() })
             val limited = parental?.mine?.collectAsState()?.value?.limited == true
             val known = parental == null || parental.answers.collectAsState().value > 0
-            if (guestAccess == com.hamzalabs.maktaba.core.guest.GuestAccess.Allowed && known && !limited) {
+            if (com.hamzalabs.maktaba.core.guest.GuestBroadcast.ENABLED &&
+                guestAccess == com.hamzalabs.maktaba.core.guest.GuestAccess.Allowed && known && !limited) {
                 MaktabaButton(onClick = { app.guestDoor.request(null, guestAccess) }, modifier = Modifier.padding(top = 16.dp).testTag("account-watch-broadcast")) {
                     Text(stringResource(com.hamzalabs.maktaba.core.R.string.guest_watch_broadcast))
                 }

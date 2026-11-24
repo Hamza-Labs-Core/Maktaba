@@ -30,6 +30,23 @@ export type Host = "ingest" | "live" | "watch";
  * CI rehearsal) is routed by path: /v1/… is ingest; /api/…, /i/…, /s/…, /pair and /ar/… or /en/…
  * watch (the pages, 50.27); everything else live.
  */
+/** broadcastingOn is BROADCAST_ENABLED: off (the default), watch and live serve nothing. */
+export function broadcastingOn(env: Env): boolean {
+  return env.BROADCAST_ENABLED === "1" || env.BROADCAST_ENABLED === "true";
+}
+
+/** The answer of watch and live while broadcasting is off: nothing about any channel. */
+function offResponse(): Response {
+  return new Response("Not found\n", {
+    status: 404,
+    headers: {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "no-store",
+      "X-Robots-Tag": "noindex, nofollow",
+    },
+  });
+}
+
 export function hostOf(env: Env, url: URL): Host {
   const h = url.hostname;
   if (h === (env.INGEST_HOST || DEFAULT_INGEST_HOST)) return "ingest";
@@ -52,8 +69,11 @@ export default {
             return await handleAccessControl(request, env, url.pathname);
           return await handleIngest(request, env, url);
         case "live":
+          if (!broadcastingOn(env)) return offResponse();
           return await handleLive(request, env, url);
         case "watch":
+          // broadcasting is off (2026-11-24): no page, guide, invite or pairing is served
+          if (!broadcastingOn(env)) return offResponse();
           // the viewer API and the invite page (50.26); the pages, guide and pairing (50.27)
           return await handleWatch(request, env, url);
       }

@@ -8,7 +8,10 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performSemanticsAction
@@ -192,6 +195,11 @@ class CloudCodeTvTest {
         compose.waitForIdle()
         compose.onRoot().captureRoboImage("src/test/screenshots/$name.png", roborazziOptions = options)
         assertTrue(seenNow().none { POLL_SECRET in it.second.url.toString() })
+        // the build has broadcasting off (GuestBroadcast): the other ways have no Watch a broadcast
+        val otherWays = compose.onNode(hasScrollToNodeAction() and hasAnyAncestor(hasTestTag("picker-other-ways")))
+        otherWays.assertExists()
+        assertTrue("no Watch a broadcast on the picker", runCatching { otherWays.performScrollToNode(hasTestTag("picker-watch-broadcast")) }.isFailure)
+        assertFalse(shown("picker-watch-broadcast"))
     }
 
     @Test @Config(qualifiers = TV)

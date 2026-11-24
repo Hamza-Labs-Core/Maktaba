@@ -14,6 +14,18 @@ build fails when the two differ.
 
 ### Changed
 
+- **Broadcasting is off, and nothing about copyright shows.** Home broadcasting stays off for
+  now: no app shows **Watch a broadcast** (iPhone, iPad, Mac, Apple TV, Android, Android TV), and
+  invite links open nothing. The web app has no **Broadcast access** page unless the home's
+  licence includes broadcasting, and Maktaba Cloud's web app shows no **Broadcast** page,
+  broadcasting offer or **Viewers** link while the cloud has broadcasting off. The broadcast edge
+  (watch.maktaba.tv, live.maktaba.tv) answers "not found" to everything while broadcasting is
+  off. When it is on, a visitor without an invite sees no channel or guide, and no watch page is
+  indexed. maktaba.tv has no copyright page any more: /legal/copyright opens the terms page, and
+  the menu, footer, terms and privacy pages no longer mention it or copyright@maktaba.tv. The
+  plugin directory's report form has no Copyright reason. maktaba.dev no longer describes
+  watching a broadcast. In English and Arabic.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with

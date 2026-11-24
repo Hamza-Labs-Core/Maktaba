@@ -360,7 +360,6 @@ function StorePlugin({
           "does_not_work",
           "misleading",
           "offensive",
-          "copyright",
           "other",
         ].map((r) => (
           <option key={r} value={r}>
