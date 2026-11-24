@@ -119,6 +119,14 @@ labelled empty panel.
 
 **The gate:** the style, the beats and the captions are approved before part 2 starts.
 
+**Approved (2026-11-24),** all six decisions as proposed:
+1. the captioned style, with no device frame;
+2. the beats and the captions above;
+3. plain screens for the TV stores, with Apple TV captioned;
+4. Samsung and LG as one set for every language: English screens, the Arabic screen second;
+5. the full set as a CI artifact in fastlane's layout, not committed;
+6. no app preview or promo video.
+
 ## Part 2: the full set (after approval, its own pull request)
 
 - **Captures:** every beat on every surface, on the new demo library, dark, in both languages,
