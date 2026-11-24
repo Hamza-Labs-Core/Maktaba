@@ -4541,6 +4541,13 @@ build fails when the two differ.
   says so. The update rehearsal runs every new migration's Down script after each partial Up on
   the bundled PostgreSQL.
 
+- **Text that was cut or backwards on TVs and tablets.** On Samsung and LG TVs the subtitle's
+  last line sits clear of the screen's edge, and the hints name the remote's OK and Back instead
+  of a keyboard's keys. On Apple TV the sign-in page's buttons show their whole words. On Android
+  TV and Fire TV the cards of Live TV's On now no longer cut an Arabic line. In Arabic, the
+  Android apps' "Code ABCD-1234" reads from the right. On a tablet on its side, a series' picture
+  is smaller, so its seasons and episodes show without scrolling.
+
 - **Maktaba Remote on iPhone and iPad says the queue's stages, steps and causes in Arabic.** In
   the Arabic Remote the queue showed what the home sends in English: stage names (Transcribe,
   Length), the stage ids under each Needs attention group (`probe`, `transcribe`), a running

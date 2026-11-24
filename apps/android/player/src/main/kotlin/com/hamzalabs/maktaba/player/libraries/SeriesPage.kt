@@ -136,7 +136,10 @@ private fun Header(state: SeriesState, client: ApiClient, onContinue: (Episode) 
         Modifier.fillMaxWidth().padding(MaktabaTokens.Spacing.s4),
         verticalArrangement = Arrangement.spacedBy(MaktabaTokens.Spacing.s3),
     ) {
-        Box(Modifier.widthIn(max = 640.dp).fillMaxWidth().aspectRatio(POSTER_ASPECT).clip(RoundedCornerShape(MaktabaTokens.Radius.lg))) {
+        // a landscape window is short: a smaller picture leaves the seasons and episodes in view
+        val window = LocalConfiguration.current
+        val art = if (window.screenWidthDp > window.screenHeightDp) 400.dp else 640.dp
+        Box(Modifier.widthIn(max = art).fillMaxWidth().aspectRatio(POSTER_ASPECT).clip(RoundedCornerShape(MaktabaTokens.Radius.lg))) {
             HomePicture(series.posterVideoId?.let { posterUrl(client, it, PosterSize.Full) }, Modifier.fillMaxSize()) { MissingPosterMark() }
         }
         Text(

@@ -1,5 +1,5 @@
 {
-  "$comment": "Story 60.14: the story beats of each app's gallery, in order, with each shot's caption in English and Arabic (each written on its own, in the voice of ../../copy/voice.md) and the screen it shows on each surface. 'capture' names the screen the full set captures on the new demo library (60.14 part 2; 'new' marks a screen no CI job captures yet). 'standin' is the test-data screen the mockups draw in its place ({lang} is the shot's language, {other} the other one); a beat with no stand-in on a surface is drawn as an empty, labelled panel in the mockups. 'only' limits a beat to some surfaces. 'ui' says which language the screen is in when it is not the shot's own: the Arabic beat shows the Arabic screen in the English set and the English screen in the Arabic set.",
+  "$comment": "Story 60.14: the story beats of each app's gallery, in order, with each shot's caption in English and Arabic (each written on its own, in the voice of ../../copy/voice.md) and the screen it shows on each surface. 'capture' names the screen the full set captures on the new demo library (60.14 part 2; 'new' marks a screen no CI job captures yet). 'standin' is the test-data screen the mockups draw in its place ({lang} is the shot's language, {other} the other one); a beat with no stand-in on a surface is drawn as an empty, labelled panel in the mockups. 'only' limits a beat to some surfaces. 'fit' (the subtitles) shows the whole of a landscape screen on a landscape canvas: the subtitle is its last line. 'ui' says which language the screen is in when it is not the shot's own: the Arabic beat shows the Arabic screen in the English set and the English screen in the Arabic set.",
   "apps": {
     "player": {
       "name": {
@@ -60,6 +60,7 @@
         },
         {
           "id": "subtitles",
+          "fit": true,
           "en": {
             "h": "Subtitles, made at home.",
             "sub": "Maktaba listens to each film and writes its subtitles, in Arabic and English."
@@ -363,7 +364,7 @@
           "capture": {
             "appletv": "series",
             "androidtv": "series new",
-            "firetv": "library",
+            "firetv": "series new",
             "roku": "series new",
             "samsung": "series new",
             "lg": "series new"
@@ -379,6 +380,7 @@
         },
         {
           "id": "subtitles",
+          "fit": true,
           "en": {
             "h": "Subtitles, made at home.",
             "sub": "Arabic drawn right to left, as it should be."
@@ -415,9 +417,9 @@
             "sub": "ولها دليلها، كالتلفاز تمامًا."
           },
           "capture": {
-            "appletv": "guide",
-            "androidtv": "guide",
-            "firetv": "guide",
+            "appletv": "live new",
+            "androidtv": "live new",
+            "firetv": "live new",
             "roku": "guide new",
             "samsung": "guide new",
             "lg": "guide new"

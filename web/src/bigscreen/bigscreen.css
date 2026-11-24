@@ -872,6 +872,11 @@
   object-fit: contain;
   background: #000;
 }
+/* the subtitle's last line clear of the picture's edge: a TV may crop it, and Arabic's
+   descenders were cut by it */
+.bs-watch .mkt-player__video::-webkit-media-text-track-container {
+  transform: translateY(calc(var(--bs-safe-y) * -1));
+}
 .bs-watch .mkt-player__chapters,
 .bs-watch .mkt-player__marks {
   display: none;

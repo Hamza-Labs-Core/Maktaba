@@ -51,7 +51,7 @@ object DemoRemoteHome {
         fun at(secondsAgo: Long) = now.minusSeconds(secondsAgo).toString()
 
         home.answer("/api/pairing/pending") { FakeRemoteHome.json("""{"count":0,"requests":[]}""") }
-        home.answer("/api/issues") { FakeRemoteHome.json(ISSUES) }
+        home.answer("/api/issues") { FakeRemoteHome.json(issues(q(title(demo, "v-lake-nasser")))) }
         listOf("probe", "transcribe", "subtitle_gen", "chapter_thumbs").forEach { s ->
             home.answer("/api/queues/$s/failures") { FakeRemoteHome.json("""{"groups":[]}""") }
         }
@@ -122,12 +122,14 @@ object DemoRemoteHome {
 
     /**
      * Needs attention: what a home shows after a night's work. The causes' titles are the app's
-     * own words, and so are its stages' names; the messages are the home's.
+     * own words, and so are its stages' names; the messages are the home's: the film it happened to
+     * ([film]), a count the app has words for, none. (A system's own message, "no space left on
+     * device", is always English: no store image shows one.)
      */
-    private val ISSUES = """{"groups":[
-        {"stage":"fingerprint","cause":"nas_timeout","label":"NAS read timed out","count":3,"action":"retry","sample_message":"read timed out after 30 s"},
+    private fun issues(film: String) = """{"groups":[
+        {"stage":"fingerprint","cause":"nas_timeout","label":"NAS read timed out","count":3,"action":"retry","sample_message":"$film"},
         {"stage":"check_clips","cause":"model_unavailable","label":"The model did not answer","count":2,"action":"retry","sample_message":"4 of 4 clips got no answer from the model"},
-        {"stage":"chapter_thumbs","cause":"disk_full","label":"The disk is full","count":1,"action":"open_settings","sample_message":"no space left on device"}
+        {"stage":"chapter_thumbs","cause":"disk_full","label":"The disk is full","count":1,"action":"open_settings"}
     ]}"""
 
     /** The processing stages: their counts today, nothing paused. */

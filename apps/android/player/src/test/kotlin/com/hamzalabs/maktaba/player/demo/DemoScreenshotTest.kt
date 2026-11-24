@@ -34,6 +34,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
@@ -43,7 +44,10 @@ import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.Tracks
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.PlayerView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import coil3.ImageLoader
 import coil3.asImage
@@ -118,10 +122,13 @@ import java.util.TimeZone
  * page is the child's side of parental controls: a limited sign-in opening a film the home does
  * not show it, with Ask a parent; its limit, its parent (the household's own account) and the
  * film's 404 are this test's, the fixture has none. The player: Media3 cannot decode a stream on
- * the JVM, so the shot is the app's own controls ([PlayerControls]) over the film's backdrop
- * where the picture would be, paused at Curiosity's resume point with its two subtitle tracks
- * and (on the 10" tablet) the picker open; the controls are given a paused player as the playback's own (see
- * [showing]). CI's `verifyRoborazziDebug` fails when one no longer matches.
+ * the JVM, so the film's backdrop is where the picture would be, at Curiosity's resume point.
+ * Over it, on the phone and the 7" tablet, the view Watch draws the video and its subtitles in
+ * ([PlayerView]) with the film's Arabic line (the one Apple's demo player shows), its controls
+ * hidden as they are while a film plays; on the 10" tablet, the app's own controls
+ * ([PlayerControls]) paused, with the subtitles picker open on the film's two tracks (the controls
+ * are given a paused player as the playback's own, see [showing]). CI's `verifyRoborazziDebug`
+ * fails when one no longer matches.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -247,11 +254,14 @@ class DemoScreenshotTest {
             .map { it.jsonObject["video_id"]!!.jsonPrimitive.content }
         open(Route.Series(CAMINANDES))
         compose.settled(home, "the series $name") { count("series-page") > 0 && shows(name) }
-        // a landscape tablet's window ends under the series' picture: down to the first season's episodes
         compose.settled(home, "the episodes' list") { count("episodes") > 0 }
-        compose.onNodeWithTag("episodes").performScrollToNode(hasTestTag("episode-${first.last()}"))
-        compose.settled(home, "its first season's episodes") { first.all { count("episode-$it") > 0 } }
-        compose.settled(home, "its pictures") { picturesShown(atLeast = 1 + first.size) }
+        // upright, down to the first season's last episode; a landscape tablet stays at the top,
+        // where the picture, Continue, the seasons and the first episode fit
+        if (surface() != Form.Tablet) {
+            compose.onNodeWithTag("episodes").performScrollToNode(hasTestTag("episode-${first.last()}"))
+            compose.settled(home, "its first season's episodes") { first.all { count("episode-$it") > 0 } }
+        }
+        compose.settled(home, "its pictures") { picturesShown(atLeast = 2) }
         shoot("series")
     }
 
@@ -291,9 +301,10 @@ class DemoScreenshotTest {
     }
 
     /**
-     * The player paused on Curiosity at its resume point: the app's controls over the film's
-     * backdrop, and on the landscape tablet the subtitles picker open on its two tracks (the
-     * shot's language chosen).
+     * The player on Curiosity at its resume point, over the film's backdrop: its Arabic subtitle
+     * line as Watch's own view draws it; on the landscape tablet, paused, the app's controls with
+     * the subtitles picker (a side panel there; upright it would cover the film) open on its two
+     * tracks (the shot's language chosen).
      */
     private fun playerScreen() {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
@@ -311,7 +322,10 @@ class DemoScreenshotTest {
             durationMs = durationMs,
             positionMs = positionMs,
             subtitles = subtitles.map { Triple(it["lang"]!!.jsonPrimitive.content, it["label"]!!.jsonPrimitive.content, it["default"]!!.jsonPrimitive.boolean) },
+            line = subtitleLine(),
         )
+        val picker = surface() == Form.Tablet
+        var view: PlayerView? = null
         val activity = compose.activity
         compose.setContent {
             val scope = rememberCoroutineScope()
@@ -325,13 +339,29 @@ class DemoScreenshotTest {
                 Box(Modifier.fillMaxSize().background(Color.Black)) {
                     // where the video would be drawn: the picture fitted, as a 16:9 film plays
                     Image(picture, contentDescription = null, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
-                    PlayerControls(playback, clock, title = title, onClose = {}, hasNext = false, onNext = {})
+                    if (picker) {
+                        PlayerControls(playback, clock, title = title, onClose = {}, hasNext = false, onNext = {})
+                    } else {
+                        // as Watch sets it up; there is no video on the JVM, so its shutter is clear
+                        AndroidView(
+                            modifier = Modifier.fillMaxSize(),
+                            factory = { ctx ->
+                                PlayerView(ctx).apply {
+                                    useController = false
+                                    setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                    this.player = player
+                                    view = this
+                                }
+                            },
+                        )
+                    }
                 }
             }
         }
-        compose.settled(home, "the player's controls") { count("controls") > 0 && count("tracks-button") > 0 }
-        // the picker is a side panel in a landscape window; upright it would cover the film
-        if (surface() == Form.Tablet) {
+        if (!picker) {
+            compose.settled(home, "the subtitle's view") { (view?.subtitleView?.width ?: 0) > 0 }
+        } else {
+            compose.settled(home, "the player's controls") { count("controls") > 0 && count("tracks-button") > 0 }
             compose.onNodeWithTag("tracks-button").performClick()
             compose.settled(home, "the subtitles picker") { count("subtitle-off") > 0 && count("subtitle-1") > 0 }
         }
@@ -512,8 +542,20 @@ private fun Playback.showing(player: Player) {
 }
 
 /**
+ * Curiosity's Arabic line, as Apple's demo player shows it (its WebVTT's last line of text). A
+ * device gives the line its first letter's direction; the JVM's StaticLayout lays it out left to
+ * right, so a right-to-left mark keeps its full stop where a device draws it.
+ */
+private fun subtitleLine(): String =
+    generateSequence(java.io.File("").absoluteFile) { it.parentFile }
+        .map { java.io.File(it, "apps/apple/UITests/Fixtures/Stream/demo-subs-ar.vtt") }
+        .first { it.exists() }
+        .readLines().last { it.isNotBlank() } + "\u200F"
+
+/**
  * A player paused at [positionMs] of a [durationMs] film, with a subtitle track per
- * [subtitles] (language, label, chosen): what the controls read, with no stream behind it.
+ * [subtitles] (language, label, chosen) and [line] on screen: what the controls and the
+ * player's view read, with no stream behind it.
  */
 private class PausedPlayer(
     id: String,
@@ -521,6 +563,7 @@ private class PausedPlayer(
     durationMs: Long,
     positionMs: Long,
     subtitles: List<Triple<String, String, Boolean>>,
+    line: String,
 ) : SimpleBasePlayer(Looper.getMainLooper()) {
     private val state: State = State.Builder()
         .setAvailableCommands(
@@ -528,8 +571,10 @@ private class PausedPlayer(
                 Player.COMMAND_PLAY_PAUSE, Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_BACK,
                 Player.COMMAND_SEEK_FORWARD, Player.COMMAND_GET_TIMELINE, Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
                 Player.COMMAND_GET_METADATA, Player.COMMAND_GET_TRACKS, Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS,
+                Player.COMMAND_GET_TEXT,
             ).build(),
         )
+        .setCurrentCues(CueGroup(listOf(Cue.Builder().setText(line).build()), positionMs * 1000))
         .setPlaylist(
             listOf(
                 MediaItemData.Builder(id)

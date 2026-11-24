@@ -319,9 +319,12 @@ function Frame() {
       </main>
       {!player && (
         <footer className="bs-hints" aria-hidden="true">
-          <Hint k={pad ? glyphs.select : "Enter"}>{t("big.hint.select")}</Hint>
-          <Hint k={pad ? glyphs.back : "Esc"}>{t("big.hint.back")}</Hint>
-          <Hint k={pad ? "Y" : "/"}>{t("big.hint.search")}</Hint>
+          {/* a TV's remote has OK and Back, and no key for search; a keyboard has Enter, Esc, / */}
+          <Hint k={pad ? glyphs.select : mode === "tv" ? "OK" : "Enter"}>
+            {t("big.hint.select")}
+          </Hint>
+          <Hint k={pad ? glyphs.back : mode === "tv" ? "↩" : "Esc"}>{t("big.hint.back")}</Hint>
+          {(pad || mode !== "tv") && <Hint k={pad ? "Y" : "/"}>{t("big.hint.search")}</Hint>}
         </footer>
       )}
       {menuFor && <CardMenu card={menuFor} onClose={() => setMenuFor(null)} onDone={setNotice} />}

@@ -41,6 +41,8 @@ import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.Tracks
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ApplicationProvider
@@ -77,7 +79,6 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import okio.Buffer
 import org.junit.After
-import org.junit.Assume.assumeTrue
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -92,9 +93,8 @@ import java.util.TimeZone
 
 /**
  * Android TV's product screenshots for maktaba.tv and the store galleries (stories 60.09 and
- * 60.14): Home, a library, the player, the live guide, search, a series (Caminandes, the Google
- * Play build only: Fire TV's gallery shows the library instead) and signing in with a code, on
- * a 1080p TV, in English and Arabic, on the demo library
+ * 60.14): Home, a library, the player, Live TV (On now, and the guide), search, a series (Caminandes) and
+ * signing in with a code, on a 1080p TV, in English and Arabic, on the demo library
  * (`tests/fixtures/demo-library`): every answer and picture comes from its route table, its
  * posters are the films' own art, its times follow the library's pinned clock. Written to
  * `src/test/screenshots/demo/<build>-<screen>-<lang>.png`, `<build>` being `androidtv` for the
@@ -107,9 +107,10 @@ import java.util.TimeZone
  * sign-in screen as SignInScreen lays it out, for the demo home, with the code the Remote's demo
  * shots approve and an approve page at a `.local` name (no address of a real network).
  *
- * The player: Media3 cannot decode a stream on the JVM, so the shot is the TV player's own
- * transport ([PlayerView], set up as `PlayerScreen` sets it up) paused on Curiosity at its resume
- * point, with the film's subtitle tracks, over the film's backdrop where the picture would be.
+ * The player: Media3 cannot decode a stream on the JVM, so the shot is the TV player's own view
+ * ([PlayerView], set up as `PlayerScreen` sets it up, its transport hidden as it is while a film
+ * plays) on Curiosity at its resume point, with the film's Arabic subtitle line (the one Apple's
+ * demo player shows), over the film's backdrop where the picture would be.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -206,6 +207,20 @@ class DemoScreenshotTest {
         shoot("guide")
     }
 
+    /** Live TV's On now: the channels, what plays on each and what comes next. */
+    private fun liveScreen() {
+        signedIn()
+        val live = compose.activity.getString(R.string.tab_live)
+        until("the Live TV tab") { compose.onAllNodes(hasText(live), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        // a TV tab is chosen when it takes focus (the D-pad)
+        compose.onNode(hasText(live)).performSemanticsAction(SemanticsActions.RequestFocus)
+        val channels = Json.parseToJsonElement(String(demo.answer("GET", "/api/channels")!!.body)).jsonObject["items"]!!.jsonArray
+            .map { it.jsonObject["id"]!!.jsonPrimitive.content }
+        until("the channels $channels on now") { channels.all { count("live-channel-$it") > 0 } }
+        until("their pictures, every one drawn") { count("poster-loading") == 0 }
+        shoot("live")
+    }
+
     private fun playerScreen() {
         val film = Json.parseToJsonElement(String(demo.answer("GET", "/api/videos/$CURIOSITY")!!.body)).jsonObject
         val mine = Json.parseToJsonElement(String(demo.answer("GET", "/api/me/videos/$CURIOSITY")!!.body)).jsonObject
@@ -218,6 +233,7 @@ class DemoScreenshotTest {
             durationMs = film["duration_sec"]!!.jsonPrimitive.int * 1000L,
             positionMs = mine["position_sec"]!!.jsonPrimitive.int * 1000L,
             subtitles = subtitles.map { Triple(it["lang"]!!.jsonPrimitive.content, it["label"]!!.jsonPrimitive.content, it["default"]!!.jsonPrimitive.boolean) },
+            line = subtitleLine(),
         )
         var view: PlayerView? = null
         compose.setContent {
@@ -227,14 +243,14 @@ class DemoScreenshotTest {
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
-                            // as PlayerScreen sets it up, its controls kept on screen for the shot
+                            // as PlayerScreen sets it up, its controls hidden, as while a film plays
                             PlayerView(ctx).apply {
                                 useController = true
+                                controllerAutoShow = false
                                 setShowSubtitleButton(true)
-                                controllerShowTimeoutMs = 0
                                 setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
                                 this.player = player
-                                showController()
+                                hideController()
                                 view = this
                             }
                         },
@@ -242,9 +258,9 @@ class DemoScreenshotTest {
                 }
             }
         }
-        until("the player's controls") {
+        until("the subtitle's view, with no controls") {
             shadowOf(Looper.getMainLooper()).idle()
-            view?.isControllerFullyVisible == true
+            (view?.subtitleView?.width ?: 0) > 0 && view?.isControllerFullyVisible == false
         }
         shoot("player")
         player.release()
@@ -280,8 +296,6 @@ class DemoScreenshotTest {
 
     /** Caminandes: the series' page with its seasons and the episodes of the one to go on with. */
     private fun seriesScreen() {
-        // Fire TV's gallery shows the library in this beat (beats.json): no series shot there
-        assumeTrue("the series is Google TV's shot", BuildConfig.TV_PLATFORM == "androidtv")
         val client = ApiClient(server.url("/"), MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "refresh"))
         val api = TvApi(client)
         compose.setContent {
@@ -353,6 +367,12 @@ class DemoScreenshotTest {
     fun guideArabic() = guideScreen()
 
     @Test @Config(qualifiers = TV)
+    fun liveEnglish() = liveScreen()
+
+    @Test @Config(qualifiers = "ar-$TV")
+    fun liveArabic() = liveScreen()
+
+    @Test @Config(qualifiers = TV)
     fun searchEnglish() = searchScreen()
 
     @Test @Config(qualifiers = "ar-$TV")
@@ -388,8 +408,20 @@ class DemoScreenshotTest {
 }
 
 /**
+ * Curiosity's Arabic line, as Apple's demo player shows it (its WebVTT's last line of text). A
+ * device gives the line its first letter's direction; the JVM's StaticLayout lays it out left to
+ * right, so a right-to-left mark keeps its full stop where a device draws it.
+ */
+private fun subtitleLine(): String =
+    generateSequence(java.io.File("").absoluteFile) { it.parentFile }
+        .map { java.io.File(it, "apps/apple/UITests/Fixtures/Stream/demo-subs-ar.vtt") }
+        .first { it.exists() }
+        .readLines().last { it.isNotBlank() } + "\u200F"
+
+/**
  * A player paused at [positionMs] of a [durationMs] film, with a subtitle track per
- * [subtitles] (language, label, chosen): what the TV's transport reads, with no stream behind it.
+ * [subtitles] (language, label, chosen) and [line] on screen: what the TV's player view reads,
+ * with no stream behind it.
  */
 private class PausedPlayer(
     id: String,
@@ -397,6 +429,7 @@ private class PausedPlayer(
     durationMs: Long,
     positionMs: Long,
     subtitles: List<Triple<String, String, Boolean>>,
+    line: String,
 ) : SimpleBasePlayer(Looper.getMainLooper()) {
     private val state: State = State.Builder()
         .setAvailableCommands(
@@ -404,8 +437,10 @@ private class PausedPlayer(
                 Player.COMMAND_PLAY_PAUSE, Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_BACK,
                 Player.COMMAND_SEEK_FORWARD, Player.COMMAND_GET_TIMELINE, Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
                 Player.COMMAND_GET_METADATA, Player.COMMAND_GET_TRACKS, Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS,
+                Player.COMMAND_GET_TEXT,
             ).build(),
         )
+        .setCurrentCues(CueGroup(listOf(Cue.Builder().setText(line).build()), positionMs * 1000))
         .setPlaylist(
             listOf(
                 MediaItemData.Builder(id)

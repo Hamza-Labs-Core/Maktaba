@@ -51,7 +51,7 @@ the listing as the console has it; `tools/release/amazon_submit.py` only replace
 >
 > يحتاج التطبيق إلى جهاز مكتبة رئيسي (مجاني وتستضيفه بنفسك). لا يُباع شيء داخل التطبيق.
 
-**Screenshots:** `apps/tv/android/app/src/test/screenshots/demo/firetv-{home,library,player,guide}-{en,ar}.png`
+**Screenshots:** `apps/tv/android/app/src/test/screenshots/demo/firetv-{home,series,player,live,search,code}-{en,ar}.png`
 (1920×1080, the Fire TV build on the demo library, dark), the same shots CI checks.
 
 **Submission notes for Amazon's reviewer:** the review home of story 58.04 (`review.maktaba.tv`,

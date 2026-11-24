@@ -68,7 +68,8 @@ final class TVDemoShotsUITests: XCTestCase {
         }
     }
 
-    /// Curiosity from Home's Continue row: Resume (focused first) plays it through a queue.
+    /// Curiosity from Home's Continue row: Resume (focused first) plays it through a queue, then
+    /// its Arabic subtitles are chosen in the transport bar, which goes by itself.
     func testPlayer() throws {
         for language in ["en", "ar"] {
             try signIn(language)
@@ -98,7 +99,24 @@ final class TVDemoShotsUITests: XCTestCase {
             // once, its segments fetched before the first frame was on screen (run 45359873399)
             XCTAssertTrue(wait(timeout: 30) { self.meanLuminance() > 0.08 },
                           "the picture on screen (mean luminance \(meanLuminance()))")
+            arabicSubtitles()
+            // the transport bar goes by itself as it plays; the subtitle's letters stay
+            let line = CGRect(x: 0.3, y: 0.8, width: 0.4, height: 0.17)
+            sleep(8)
+            XCTAssertTrue(wait(timeout: 20) { self.brightPixels(in: line) >= 500 }, "the subtitle line")
             shot("player")
+        }
+    }
+
+    /// Live TV's Now: the channels, what is on each and what comes next (the guide's quarter
+    /// hours are too short for their titles).
+    func testLive() throws {
+        for language in ["en", "ar"] {
+            try signIn(language, clock: MockHome.quarterHour())
+            openLiveTab(language == "ar" ? "البث المباشر" : "Live TV")
+            XCTAssertTrue(app.buttons["live.mode.now"].waitForExistence(timeout: 20), "Now | Guide; the home saw \(seen)")
+            waitForQuiet()
+            shot("live")
         }
     }
 
@@ -119,7 +137,7 @@ final class TVDemoShotsUITests: XCTestCase {
     // MARK: the store gallery's screens (story 60.14 part 2)
 
     /// Search for the demo's query ("Mars", «المريخ»): typed with the TV's keyboard, Search
-    /// for, then down into the results (Curiosity among the titles, In the transcript under it).
+    /// for, then down through the results to In the transcript.
     func testSearch() throws {
         for language in ["en", "ar"] {
             try signIn(language)
@@ -148,14 +166,16 @@ final class TVDemoShotsUITests: XCTestCase {
             remote.press(.select)
             XCTAssertTrue(element("search.titles").waitForExistence(timeout: 20), "the results; the home saw \(seen)")
             XCTAssertTrue(element("search.transcripts").waitForExistence(timeout: 10), "In the transcript")
-            // down into the titles: the keyboard's rows scroll away and the results show
-            let curiosity = app.buttons["search.titles.v-curiosity"]
-            XCTAssertTrue(curiosity.waitForExistence(timeout: 10), "Curiosity among the titles")
-            for _ in 0..<8 where !curiosity.hasFocus {
+            // down past the titles to what was said: the keyboard's rows scroll away, and the
+            // moments the word is spoken show
+            XCTAssertTrue(app.buttons["search.titles.v-curiosity"].waitForExistence(timeout: 10), "Curiosity among the titles")
+            let said = app.buttons["search.transcripts.v-curiosity"]
+            // (its card is made as it scrolls in)
+            for _ in 0..<12 where !(said.exists && said.hasFocus) {
                 remote.press(.down)
                 usleep(500_000)
             }
-            XCTAssertTrue(curiosity.hasFocus, "the focus on Curiosity's card")
+            XCTAssertTrue(said.exists && said.hasFocus, "the focus on what Curiosity says")
             waitForQuiet()
             shot("search")
         }
@@ -191,6 +211,46 @@ final class TVDemoShotsUITests: XCTestCase {
     }
 
     // MARK: helpers
+
+    /// The Arabic subtitles, from the system player's transport bar: Select (it pauses and the
+    /// bar shows), up to the buttons, along to Subtitles, its Language, Arabic (choosing one
+    /// turns them on); then Play.
+    private func arabicSubtitles() {
+        remote.press(.select)
+        sleep(1)
+        remote.press(.up)
+        sleep(1)
+        let subtitles = app.cells["AVLegibleSettings"].firstMatch
+        XCTAssertTrue(subtitles.waitForExistence(timeout: 10), "Subtitles in the transport bar")
+        for _ in 0..<5 where !subtitles.hasFocus {
+            remote.press(language == "ar" ? .left : .right)
+            usleep(600_000)
+        }
+        XCTAssertTrue(subtitles.hasFocus, "the focus on Subtitles")
+        remote.press(.select)
+        let languages = app.cells["AVLanguagesMenu"].firstMatch
+        XCTAssertTrue(languages.waitForExistence(timeout: 10), "its menu")
+        for _ in 0..<5 where !languages.hasFocus {
+            remote.press(.down)
+            usleep(600_000)
+        }
+        XCTAssertTrue(languages.hasFocus, "the focus on Language")
+        remote.press(.select)
+        sleep(1)
+        let arabic = app.cells.matching(NSPredicate(format: "label ENDSWITH 'Arabic' OR label ENDSWITH 'العربية'")).firstMatch
+        XCTAssertTrue(arabic.waitForExistence(timeout: 10), "Arabic among the languages")
+        for _ in 0..<5 where !arabic.hasFocus {
+            remote.press(.down)
+            usleep(600_000)
+        }
+        XCTAssertTrue(arabic.hasFocus, "the focus on Arabic")
+        remote.press(.select)
+        sleep(1)
+        // back in the menu, its On checked: Back closes it
+        if languages.exists { remote.press(.menu) }
+        sleep(1)
+        remote.press(.playPause)
+    }
 
     /// Up to the tab bar, along it to `title`, Select.
     private func openTab(_ title: String) {
@@ -331,6 +391,24 @@ final class TVDemoShotsUITests: XCTestCase {
             total += (0.2126 * Double(pixels[i]) + 0.7152 * Double(pixels[i + 1]) + 0.0722 * Double(pixels[i + 2])) / 255
         }
         return total / Double(w * h)
+    }
+
+    /// The near-white pixels in `area` (shares of the screen): a subtitle line's letters.
+    private func brightPixels(in area: CGRect) -> Int {
+        guard let whole = XCUIScreen.main.screenshot().image.cgImage,
+              let cg = whole.cropping(to: CGRect(x: area.minX * CGFloat(whole.width), y: area.minY * CGFloat(whole.height),
+                                                 width: area.width * CGFloat(whole.width), height: area.height * CGFloat(whole.height)))
+        else { return -1 }
+        var pixels = [UInt8](repeating: 0, count: cg.width * cg.height * 4)
+        guard let ctx = CGContext(data: &pixels, width: cg.width, height: cg.height, bitsPerComponent: 8, bytesPerRow: cg.width * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return -1 }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: cg.width, height: cg.height))
+        var count = 0
+        for i in stride(from: 0, to: pixels.count, by: 4) where pixels[i] > 235 && pixels[i + 1] > 235 && pixels[i + 2] > 235 {
+            count += 1
+        }
+        return count
     }
 
     private func shot(_ screen: String) {

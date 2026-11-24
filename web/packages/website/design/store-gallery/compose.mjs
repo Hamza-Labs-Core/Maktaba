@@ -98,6 +98,9 @@ export function indexCaptures(dirs) {
   return out;
 }
 
+/** The status bar's height in a surface's captures, in pixels: 24 points at 2×. */
+const STATUS_BAR = { ipad: 48 };
+
 const other = (lang) => (lang === "en" ? "ar" : "en");
 const screenOf = (beat, surface) => (beat.capture?.[surface] ?? "").replace(/ new$/, "");
 
@@ -244,8 +247,13 @@ function serve(captureDir, pages) {
     const path = resolve(root, "." + (rel.startsWith("/") ? rel : "/" + rel));
     if (path !== root && !path.startsWith(root + sep)) return res.writeHead(403).end();
     try {
+      let body = readFileSync(path);
+      // the site's faces are `font-display: optional`, which leaves the fallback face in place
+      // when the face comes a moment late; an image waits for it
+      if (url.endsWith("/design/fonts.css"))
+        body = body.toString().replaceAll("font-display: optional", "font-display: block");
       res.writeHead(200, { "content-type": TYPES[extname(path)] ?? "application/octet-stream" });
-      res.end(readFileSync(path));
+      res.end(body);
     } catch {
       res.writeHead(404).end();
     }
@@ -272,6 +280,16 @@ async function encode(sharp, buf, spec) {
     }
   }
   return null;
+}
+
+/** In the page: the screen narrowed until all of it, and a margin under it, is on the canvas. */
+function fitScreen() {
+  const shot = document.querySelector(".shot");
+  const screen = document.querySelector(".screen");
+  if (!shot || !screen) return;
+  const r = screen.getBoundingClientRect();
+  const room = shot.getBoundingClientRect().bottom - r.top - 0.055 * shot.clientHeight;
+  if (r.height > room) screen.style.inlineSize = `${(r.width * room) / r.height}px`;
 }
 
 /** A file against its manifest entry: `size` is the one it was drawn at (the asset's, or a
@@ -330,12 +348,19 @@ export async function compose({ captureDirs, out, only, allowMissing = false, lo
           continue;
         }
         const link = `${job.capture}.png`;
-        writeFileSync(join(linkDir, link), readFileSync(file));
+        const m = await sharp(file).metadata();
+        // the iPad's own status bar is the simulator's, in its language: an Arabic screen showed
+        // an English date, so the panel starts under it
+        const top = job.set.style === "captioned" ? (STATUS_BAR[job.set.surface] ?? 0) : 0;
+        if (top)
+          await sharp(file)
+            .extract({ left: 0, top, width: m.width, height: m.height - top })
+            .toFile(join(linkDir, link));
+        else writeFileSync(join(linkDir, link), readFileSync(file));
         src = `/captures/${link}`;
         // a portrait screen on a landscape canvas (the iPad Player upright, in the iPad 13" set)
         // is sized by the height, so its panel shows most of the screen instead of its top
         if (job.set.style === "captioned" && job.W > job.H) {
-          const m = await sharp(file).metadata();
           if (m.height > m.width) job.screenW = (1.05 * job.H * (m.width / m.height)) / job.W;
         }
       }
@@ -352,6 +377,20 @@ export async function compose({ captureDirs, out, only, allowMissing = false, lo
         const p = await ctx.newPage();
         await p.goto(`${base}/page.html`, { waitUntil: "networkidle" });
         await p.evaluate(() => document.fonts.ready);
+        // every face the page asks for is loaded: no caption is drawn in a fallback face
+        const faces = await p.evaluate(() =>
+          [...document.fonts]
+            .filter((f) => f.status !== "unloaded" && !f.family.includes("Fallback"))
+            .map((f) => ({ family: f.family.replaceAll('"', ""), status: f.status }))
+        );
+        for (const f of faces)
+          if (f.status !== "loaded") problems.push(`${rel}: ${f.family} is ${f.status}`);
+        for (const [sel, family] of [
+          [".cap .h", "Maktaba Display"],
+          [".cap .sub", "Maktaba Text"],
+        ])
+          if ((await p.locator(sel).count()) && !faces.some((f) => f.family === family))
+            problems.push(`${rel}: ${family} was not loaded`);
         await p.waitForFunction(
           () => [...document.images].every((i) => i.complete && i.naturalWidth > 0),
           null,
@@ -359,6 +398,8 @@ export async function compose({ captureDirs, out, only, allowMissing = false, lo
             timeout: 15000,
           }
         );
+        // a subtitle is the screen's last line: on a landscape canvas its screen shows whole
+        if (job.beat?.fit && job.W > job.H && !job.screenW) await p.evaluate(fitScreen);
         for (const m of await p.evaluate(measure)) {
           if (m.share > MAX_CAPTION_SHARE)
             problems.push(`${rel}: caption ${(m.share * 100).toFixed(1)}%, over 20%`);
