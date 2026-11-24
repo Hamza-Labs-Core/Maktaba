@@ -352,6 +352,12 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 		if s.hwaccel() == ffmpeg.HWAccelSoftware || req.ForceSoftware {
 			ladder = capLadder(ladder, s.SoftwareMaxHeight)
 		}
+		if reuse.Mode == session.ModeTranscode {
+			// story 13.19: the same report's cap as when the session was opened (it fits it)
+			if h := capability.ReportH264Height(profile, req.DeviceCaps); h > 0 {
+				ladder = capLadder(ladder, h)
+			}
+		}
 		return s.respFor(reuse, ladder), nil
 	}
 
@@ -434,6 +440,10 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 
 	sessID := uuid.New()
 	ladder := ladderFor(row, req)
+	if mode == session.ModeTranscode && verdict.ReportHeightCap > 0 {
+		// story 13.19: no rung taller than the device's report says it decodes H.264
+		ladder = capLadder(ladder, verdict.ReportHeightCap)
+	}
 
 	// HLB-328: spawn FFmpeg for active transcode sessions *before*
 	// persisting the row, so the stored row carries the live handle +
@@ -513,6 +523,8 @@ func (s *Server) OpenSession(ctx context.Context, req OpenSessionRequest) (OpenS
 			VAAPI:        vaapi,
 			SourcePixFmt: row.PixFmt,
 			Segments:     verdict.Segments,
+			// story 13.19: desktop-mpv's audio by the device's channels ("": AAC, as always)
+			AudioCodec: verdict.AudioCodec,
 		})
 		if terr != nil {
 			release()

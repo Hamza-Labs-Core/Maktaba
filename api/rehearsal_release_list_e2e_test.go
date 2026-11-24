@@ -11,6 +11,10 @@ package main
 // newest releases (the incident of 2026-11-24). Every rehearsal scenario served a short list
 // of a few small releases, so no scenario ever read a list the size of GitHub's.
 //
+// This commit's homes read the release feed first (docs/updates.md, "How a home finds a
+// release") and GitHub's list only when the feed cannot be reached: the fake serves no feed
+// here, so the list is what is rehearsed.
+//
 // Here the fake GitHub serves the list as GitHub does (useRealShape: its paging, each
 // release in the recorded release's shape, tests/fixtures/github-releases), every release
 // twice the recorded size (AssetGrowth in api/internal/updates). The previous release asks
@@ -98,6 +102,10 @@ func TestUpdateRehearsal20RealSizeReleaseList(t *testing.T) {
 	home, _ := r.homeOnPrev(profile("small"))
 	home.installByHand(k.curSpec())
 	home.waitServing(k.cur, 10*time.Minute)
+
+	// GitHub's list is what this commit's home reads when the release feed cannot be
+	// reached: the feed is not served here, so every check falls back to the list
+	r.gh.withoutFeed()
 
 	// (a) a list of real shape, twice the recorded size: the next release is found in it
 	// and installed

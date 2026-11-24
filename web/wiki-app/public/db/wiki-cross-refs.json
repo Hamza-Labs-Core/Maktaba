@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 60,
-    "stories": 748,
+    "stories": 752,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -2064,6 +2064,42 @@
       "slug": "player-libmpv",
       "title": "The Player plays with libmpv: direct play, reported to the home",
       "story_file": "specs/epics/13-desktop/story-13-18-player-libmpv.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.19",
+      "epic": 13,
+      "num": "19",
+      "slug": "player-device-caps",
+      "title": "The desktop Player reports what it plays (`device_caps`)",
+      "story_file": "specs/epics/13-desktop/story-13-19-player-device-caps.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.20",
+      "epic": 13,
+      "num": "20",
+      "slug": "player-mpv-subtitles",
+      "title": "Subtitles through mpv: a file's own tracks, size and colour",
+      "story_file": "specs/epics/13-desktop/story-13-20-player-mpv-subtitles.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.21",
+      "epic": 13,
+      "num": "21",
+      "slug": "player-engine-choice",
+      "title": "The video engine as a setting in the Player",
+      "story_file": "specs/epics/13-desktop/story-13-21-player-engine-choice.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.22",
+      "epic": 13,
+      "num": "22",
+      "slug": "player-live-mpv",
+      "title": "Live TV plays with libmpv, then JavaFX leaves the Player",
+      "story_file": "specs/epics/13-desktop/story-13-22-player-live-mpv.md",
       "plan_files": []
     },
     {

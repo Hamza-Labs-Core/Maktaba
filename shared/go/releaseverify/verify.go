@@ -172,45 +172,57 @@ func verifySignature(tm root.TrustedMaterial, id Identity, tag string, rawBundle
 		return time.Time{}, none, fail(ErrSignature, BundleFile,
 			"missing (a release published before story 35.1 has no Sigstore bundle: install it by hand)", nil)
 	}
+	certID, err := id.certificateIdentity(tag)
+	if err != nil {
+		return time.Time{}, none, fail(ErrIdentity, BundleFile, "build expected identity", err)
+	}
+	return verifyBundle(tm, []verify.CertificateIdentity{certID}, BundleFile, rawBundle, checksums)
+}
+
+// verifyBundle checks a Sigstore bundle (named file in errors) over artifact against the
+// trusted root: at least one Rekor entry with its inclusion proof, a signed time, and a
+// certificate matching one of ids.
+func verifyBundle(tm root.TrustedMaterial, ids []verify.CertificateIdentity, file string, rawBundle, artifact []byte) (time.Time, certificate.Summary, error) {
+	var none certificate.Summary
+	if len(rawBundle) == 0 {
+		return time.Time{}, none, fail(ErrSignature, file, "missing", nil)
+	}
 	if len(rawBundle) > maxBundle {
-		return time.Time{}, none, fail(ErrSignature, BundleFile, "too large", nil)
+		return time.Time{}, none, fail(ErrSignature, file, "too large", nil)
 	}
 	var pb protobundle.Bundle
 	if err := protojson.Unmarshal(rawBundle, &pb); err != nil {
-		return time.Time{}, none, fail(ErrSignature, BundleFile, "decode", err)
+		return time.Time{}, none, fail(ErrSignature, file, "decode", err)
 	}
 	// Offline verification needs the Rekor inclusion proof in the bundle itself:
 	// refuse a bundle without one before sigstore-go would.
 	entries := pb.GetVerificationMaterial().GetTlogEntries()
 	if len(entries) == 0 {
-		return time.Time{}, none, fail(ErrTlog, BundleFile, "no transparency log entry", nil)
+		return time.Time{}, none, fail(ErrTlog, file, "no transparency log entry", nil)
 	}
 	for _, e := range entries {
 		if e.GetInclusionProof() == nil {
-			return time.Time{}, none, fail(ErrTlog, BundleFile, "transparency log entry without an inclusion proof", nil)
+			return time.Time{}, none, fail(ErrTlog, file, "transparency log entry without an inclusion proof", nil)
 		}
 	}
 	b, err := bundle.NewBundle(&pb)
 	if err != nil {
-		return time.Time{}, none, fail(ErrSignature, BundleFile, "invalid bundle", err)
-	}
-	certID, err := id.certificateIdentity(tag)
-	if err != nil {
-		return time.Time{}, none, fail(ErrIdentity, BundleFile, "build expected identity", err)
+		return time.Time{}, none, fail(ErrSignature, file, "invalid bundle", err)
 	}
 	v, err := verify.NewVerifier(tm,
 		verify.WithTransparencyLog(1),    // ≥1 Rekor entry, inclusion proof checked
 		verify.WithObserverTimestamps(1), // a signed time: Rekor SET or RFC 3161 TSA
 	)
 	if err != nil {
-		return time.Time{}, none, fail(ErrSignature, BundleFile, "verifier", err)
+		return time.Time{}, none, fail(ErrSignature, file, "verifier", err)
 	}
-	res, err := v.Verify(b, verify.NewPolicy(
-		verify.WithArtifact(bytes.NewReader(checksums)),
-		verify.WithCertificateIdentity(certID),
-	))
+	opts := make([]verify.PolicyOption, 0, len(ids))
+	for _, id := range ids {
+		opts = append(opts, verify.WithCertificateIdentity(id))
+	}
+	res, err := v.Verify(b, verify.NewPolicy(verify.WithArtifact(bytes.NewReader(artifact)), opts...))
 	if err != nil {
-		return time.Time{}, none, classify(err)
+		return time.Time{}, none, classify(err, file)
 	}
 	var signedAt time.Time
 	for _, ts := range res.VerifiedTimestamps {
@@ -226,18 +238,18 @@ func verifySignature(tm root.TrustedMaterial, id Identity, tag string, rawBundle
 }
 
 // classify maps sigstore-go's errors onto the failure kinds.
-func classify(err error) error {
+func classify(err error, file string) error {
 	var noID *verify.ErrNoMatchingCertificateIdentity
 	msg := err.Error()
 	switch {
 	case errors.As(err, &noID), strings.HasPrefix(msg, "failed to verify certificate identity"),
 		strings.HasPrefix(msg, "can't verify certificate identities"):
-		return fail(ErrIdentity, BundleFile, "", err)
+		return fail(ErrIdentity, file, "", err)
 	case strings.HasPrefix(msg, "failed to verify log inclusion"),
 		strings.HasPrefix(msg, "failed to verify timestamps"):
-		return fail(ErrTlog, BundleFile, "", err)
+		return fail(ErrTlog, file, "", err)
 	default:
-		return fail(ErrSignature, BundleFile, "", err)
+		return fail(ErrSignature, file, "", err)
 	}
 }
 

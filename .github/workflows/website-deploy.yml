@@ -32,6 +32,11 @@
 # tools/release/website-dispatch.sh, with `release` = the tag, story 60.11): the build reads the
 # latest release for the download page, so the page names it within one deploy.
 #
+# The release feed (update-feed.yml, docs/updates.md "How a home finds a release") is served
+# under /updates/v1/: every deploy puts the newest update-feed artifact of main into the site
+# it deploys (tools/release/website-feed.sh), or carries over the feed live now, so a deploy
+# never drops it. update-feed.yml starts a deploy after each release and each pull (feed_run).
+#
 # The steps (tools/cloudflare/website-deploy.mjs): the token check; record the version serving
 # now; upload the new version (not live) and smoke its preview URL; promote it at 100% and
 # apply the custom domains (`triggers deploy`); smoke the live site, and on failure roll back
@@ -83,6 +88,10 @@ on:
         default: ""
       release:
         description: "The release tag a release run started this deploy for (tools/release/website-dispatch.sh): the build fails when the latest release is older"
+        type: string
+        default: ""
+      feed_run:
+        description: "The update-feed.yml run that started this deploy (its release feed goes live; any deploy serves the newest feed)"
         type: string
         default: ""
   # the 1st of each month, 06:37 UTC: security.txt's Expires rolls forward
@@ -140,6 +149,9 @@ jobs:
     timeout-minutes: 30
     # its rules (required reviewers, if set) apply, as to every Cloudflare deploy
     environment: production
+    permissions:
+      contents: read
+      actions: read # the newest update-feed artifact (tools/release/website-feed.sh)
     defaults:
       run:
         working-directory: web/packages/website
@@ -289,6 +301,19 @@ jobs:
         run: |
           echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts (the artifacts API unreachable, or no job uploaded it)"
           exit 1
+
+      # the release feed under /updates/v1/: the newest update-feed artifact of main, or what
+      # is live now carried over (homes verify its signature either way)
+      - name: The release feed
+        if: steps.gate.outputs.ok == 'true' && !inputs.rollback
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          FEED_RUN: ${{ inputs.feed_run }}
+        run: |
+          if [ -n "${FEED_RUN}" ]; then echo "started by update-feed.yml run ${FEED_RUN}"; fi
+          tools/release/website-feed.sh web/packages/website/dist/updates/v1
 
       # record the live version, stage, smoke the preview, promote, apply the domains, smoke
       # live; on a failed live smoke, roll back to the recorded version and fail

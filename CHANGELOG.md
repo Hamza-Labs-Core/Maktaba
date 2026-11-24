@@ -25,6 +25,16 @@ build fails when the two differ.
   problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
   knows.
 
+- **The Windows and Linux Player tells the home what the machine plays smoothly.** At start it
+  plays a few short clips on its own to learn which codecs the graphics card decodes, how sharp
+  a picture the processor keeps up with for the rest, and how many channels the sound has, and
+  sends that with each video (`device_caps`, with a new `hardware` flag per codec). A slower
+  laptop now gets a smooth 1080p version of a 4K film it would have stuttered through, and a
+  converted film keeps its 5.1 sound as E-AC-3 on 5.1 speakers and comes as stereo to stereo
+  speakers.
+  The results are kept until the graphics card, its driver, the processor or the Player's libmpv
+  change; the sound is checked again after each video. Report a problem lists what was found.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with
@@ -422,6 +432,23 @@ build fails when the two differ.
   second failed probe and Broadcasting shows an outage. It is no longer an expected failure.
 
 ### Fixed
+
+- **Less to write for every change on a home with a machine's copy.** Most of the library's
+  tables on the home moved to PostgreSQL 18 on 2026-11-20 had every change logged with the whole
+  old row (REPLICA IDENTITY FULL), where their primary key is enough. A migration (slot 0238)
+  gives every table with a primary key that key as its identity, one table at a time and without
+  rewriting any; the machines' copies keep following them. Tables without a primary key keep the
+  whole row, which a copy needs.
+
+- **The second listen stores its corrections again on PostgreSQL 18.** From the home's move to
+  PostgreSQL 18 on 2026-11-20, every second-listen job failed when it stored its corrected
+  transcript ("cannot update table transcript_segments"): PostgreSQL 18 refuses an update to a
+  table published for a machine's copy when its replica identity holds a generated column the
+  copy is not sent, and the home's transcript lines were set up that way (REPLICA IDENTITY FULL,
+  with the generated search column). A migration (slot 0237) gives such tables their primary key
+  as their identity, without rewriting them; the copy keeps them. The videos left with Whisper's
+  words since then are heard again by themselves, 100 at a time, and their subtitles, search
+  index and tags follow.
 
 - **A home that can't check for updates now says so.** When two checks in a row fail, the Updates
   page says "Can't check for updates since …" with the reason (GitHub's list is larger than this
@@ -3846,6 +3873,18 @@ build fails when the two differ.
   screenshots on the Apps pages were retaken on test data with men's names only and on the new
   demo library. In English and Arabic.
 
+- **Homes find updates in Maktaba's own signed release feed.** A home no longer reads GitHub's
+  list of every release, which had grown to 10.5 MB and stopped every home's update check on
+  2026-11-23. It reads one small file for its channel and platform from maktaba.tv
+  (`/updates/v1/<channel>/<platform>.json`, about 4 KB as served). The file lists the newest 10
+  releases with only the files that platform installs. It is signed like a release, and every
+  home checks the signature before using any of it. The home's catalog, the re-check before an
+  update, the About page and `maktaba-server update` all read it. GitHub's list is read only when
+  the feed cannot be reached; a feed that fails its signature check stops the check instead.
+  A bad release is now pulled from the feed (`tools/release/pull-release.sh`), and every home
+  marks it withdrawn. Homes on v0.3.153 to v0.3.161 keep reading GitHub, unchanged.
+  `MAKTABA_UPDATE_FEED=off` turns the feed off.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -4504,6 +4543,20 @@ build fails when the two differ.
   migrations still fail part way, nothing is put back if what they changed is additive and the
   release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
   in seconds. Only failing both does the backup go back, as before.
+
+- **A failed update is undone by its own Down scripts, not by putting the whole backup back.**
+  On 2026-11-23 and 2026-11-24 an update's migration (0235's index build, cancelled by its lock
+  timeout) failed part way, and the update put the whole 34 GB library database back from its
+  backup, about three hours down each time, though the migrations' Down scripts undo them in
+  seconds. The database step now undoes the migration that failed part way with its own Down
+  script (`maktaba-api migrate undo-failed`), drops the INVALID indexes it left, and runs the
+  Down scripts of the ones that ran, back to the slot the database was at before the update. It
+  puts the backup back only when those Down scripts fail, or when a migration that ran had
+  deleted data they cannot bring back. That is logged at level=error, and the Updates page says
+  why, in English and Arabic. migration-lint now requires a Down script in every migration, one
+  that works after any part of a NO TRANSACTION migration's Up, and an Up that loses no data or
+  says so. The update rehearsal runs every new migration's Down script after each partial Up on
+  the bundled PostgreSQL.
 
 ## [0.2.0] - 2026-10-19
 

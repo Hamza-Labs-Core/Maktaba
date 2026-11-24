@@ -97,7 +97,7 @@ func Reversible(dir string, fromSchema, toSchema int64) (bool, string) {
 		if strings.TrimSpace(down) == "" {
 			return false, name + " has no Down script"
 		}
-		if what := losesData(up); what != "" {
+		if what := losesData(up); what != "" && !downRestores.Match(b) {
 			return false, name + " " + what
 		}
 		n++
@@ -107,6 +107,11 @@ func Reversible(dir string, fromSchema, toSchema int64) (bool, string) {
 	}
 	return true, fmt.Sprintf("the %d migrations since the release before lose no data: their Down scripts undo them", n)
 }
+
+// downRestores is a migration's word that its Down script gives back what its Up script
+// overwrites or deletes (migration-lint rule 10: a backfill of a column the Down drops, a
+// setting the Down sets back): its Down scripts take an update back with nothing lost.
+var downRestores = regexp.MustCompile(`(?im)^\s*--\s*\+maktaba\s+down-restores:\s*\S`)
 
 // sections are a migration's Up and Down scripts without their comments and goose's
 // directives.
@@ -184,7 +189,7 @@ func (m *Machine) migrateDown(j *Journal, reason string) bool {
 	}
 	schema, safe, why := rv.DownTo(j)
 	if !safe {
-		m.logf("%s's Down scripts cannot undo it: %s", j.Job.Version, why)
+		m.errorf("%s's Down scripts cannot undo it (%s): the whole dump goes back instead", j.Job.Version, why)
 		return false
 	}
 	m.logf("undoing %s's migrations with their Down scripts, back to slot %04d (%s): nothing else in the "+
