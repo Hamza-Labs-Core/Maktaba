@@ -70,9 +70,21 @@ cd "$REPO_ROOT/apps/desktop"
 # at most HDIUTIL_TRIES times in all; any other failure fails at once.
 tries="${HDIUTIL_TRIES:-3}"
 log="$(mktemp)"
-trap 'rm -f "$log"' EXIT
+started="$(mktemp)"
+trap 'rm -f "$log" "$started"' EXIT
+# The window layout tauri skipped (story 13.14): each .dmg this build made gets its background,
+# size and icon places from dmg-layout.sh, which needs no Finder.
+lay_out_dmgs() {
+    local target="${CARGO_TARGET_DIR:-$REPO_ROOT/apps/desktop/src-tauri/target}" dmg n=0
+    while IFS= read -r dmg; do
+        "$SCRIPT_DIR/dmg-layout.sh" "$dmg"
+        n=$((n + 1))
+    done < <(find "$target" -path '*/bundle/dmg/*.dmg' -newer "$started" 2>/dev/null)
+    echo "tauri-build: $n .dmg laid out"
+}
 for ((n = 1; ; n++)); do
     if CI="${CI:-true}" pnpm exec tauri build "$@" 2>&1 | tee "$log"; then
+        lay_out_dmgs
         exit 0
     fi
     if ! grep -q 'hdiutil: create failed - Resource busy' "$log" || [ "$n" -ge "$tries" ]; then

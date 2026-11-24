@@ -54,11 +54,30 @@
       "exceptionDomain": "",
       "files": {
         "Library/LaunchAgents/com.hamzalabs.maktaba.server.plist": "./LaunchAgents/com.hamzalabs.maktaba.server.plist"
+      },
+      "dmg": {
+        "background": "macos/dmg-background.tiff",
+        "windowSize": { "width": 660, "height": 400 },
+        "appPosition": { "x": 170, "y": 196 },
+        "applicationFolderPosition": { "x": 490, "y": 196 }
       }
     },
     "windows": {
+      "nsis": {
+        "template": "windows/installer.nsi",
+        "installerHooks": "windows/installer-ui.nsh",
+        "languages": ["English", "Arabic"],
+        "displayLanguageSelector": false
+      },
       "wix": {
-        "language": ["en-US"]
+        "language": {
+          "en-US": { "localePath": "windows/wix/en-US.wxl" },
+          "ar-SA": { "localePath": "windows/wix/ar-SA.wxl" }
+        },
+        "bannerPath": "windows/wix/banner.bmp",
+        "dialogImagePath": "windows/wix/dialog.bmp",
+        "fragmentPaths": ["windows/wix/maktaba-ui.wxs"],
+        "componentGroupRefs": ["MaktabaUiStyles"]
       }
     },
     "linux": {

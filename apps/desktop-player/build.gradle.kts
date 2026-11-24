@@ -67,6 +67,25 @@ dependencies {
     testImplementation(compose.desktop.uiTestJUnit4)
 }
 
+// Story 13.14: the .msi in Maktaba's look, and its Arabic. compose hands jpackage a resource
+// folder it empties before each run, so the WiX bitmaps, the text styles and the Arabic
+// transform go into the built .msi instead, through Windows Installer's API, before anything
+// signs it: tools/release/msi/theme_msi.py (Python, which windows-latest has; another with
+// -Pmaktaba.python=<program>). CI's Player job and the release legs check it with --check.
+val msiDir = layout.buildDirectory.dir("compose/binaries/main/msi")
+val themeMsi = rootProject.file("../../tools/release/msi/theme_msi.py")
+val python = (findProperty("maktaba.python") as String?) ?: "python"
+tasks.matching { it.name == "packageMsi" }.configureEach {
+    inputs.files(fileTree(rootProject.file("../../tools/release/msi")), fileTree(project.file("msi")))
+        .withPropertyName("msiTheme")
+    doLast {
+        val msis = msiDir.get().asFile.listFiles { f -> f.name.endsWith(".msi") }.orEmpty()
+        check(msis.size == 1) { "want one .msi in ${msiDir.get().asFile}, found ${msis.map { it.name }}" }
+        val proc = ProcessBuilder(python, themeMsi.absolutePath, msis[0].absolutePath).inheritIO().start()
+        check(proc.waitFor() == 0) { "theme_msi.py failed on ${msis[0].name}" }
+    }
+}
+
 // The version the app shows and compares with the update feed's
 val writeBuildInfo = tasks.register("writeBuildInfo") {
     val out = layout.buildDirectory.dir("generated/buildinfo")

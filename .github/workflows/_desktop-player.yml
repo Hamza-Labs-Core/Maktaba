@@ -231,6 +231,9 @@ jobs:
             Windows)
               msi=("$out"/msi/*.msi)
               [ "${#msi[@]}" = 1 ] || { echo "::error::want one .msi"; exit 1; }
+              # story 13.14: Maktaba's bitmaps and text styles, and the Arabic transform
+              # (packageMsi ran theme_msi.py), read back through Windows Installer
+              python ../../tools/release/msi/theme_msi.py --check "${msi[0]}"
               ;;
           esac
 

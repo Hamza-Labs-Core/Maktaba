@@ -35,6 +35,8 @@
 ; was written, so a later install's setup writes it again.
 
 !define MAKTABA_HOOKS_DIR "${__FILEDIR__}"
+; the -setup.exe's art (story 13.14: installer.nsi reads MAKTABA_ART)
+!include "${MAKTABA_HOOKS_DIR}\installer-ui.nsh"
 ; the shell's source the decision reads (test-hooks.sh compiles the hooks with its own)
 !ifndef MAKTABA_SHELL_SRC
   !define MAKTABA_SHELL_SRC "${MAKTABA_HOOKS_DIR}\..\src"

@@ -732,6 +732,10 @@ jobs:
           if ! grep -q '^JAVA_VERSION="25\.' "$release"; then
             echo "::error::the installers' runtime is not jbr.sh's JetBrains Runtime 25 ($release)"; cat "$release" || true; exit 1
           fi
+          if [ "$RUNNER_OS" = Windows ]; then
+            # story 13.14: Maktaba's bitmaps and text styles, and the Arabic transform
+            python ../../tools/release/msi/theme_msi.py --check "$out"/msi/*.msi
+          fi
           if [ "$RUNNER_OS" = Linux ]; then
             # listed once (grep -q on a pipe ends it early, and tar's write then fails)
             files=$(dpkg-deb -c "$out"/deb/*.deb)
