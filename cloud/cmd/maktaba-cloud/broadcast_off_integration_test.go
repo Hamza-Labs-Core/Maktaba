@@ -266,15 +266,22 @@ func sameHeaders(a, b http.Header) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-// What keeps "off" safe: the edge still reads the kill switch's list, and only the edge; the
-// console still changes it, staff only; and the edge's calls know a test publisher and no one else.
+// What keeps "off" safe: the edge still reads the kill switch's whole list, and a test publisher's
+// home its own copy, no one else; the console still changes it, staff only; and the edge's calls
+// know a test publisher and no one else.
 func TestBroadcastOffKeepsTheKillSwitch(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	keyFile := ingestKeyFile(t)
 	e := newEnvCfg(t, nil, func(c *config.Config) {
-		c.Broadcast.KeyPath = ingestKeyFile(t)
+		c.Broadcast.KeyPath = keyFile
 		c.Broadcast.EdgePublicKey = base64.RawURLEncoding.EncodeToString(pub)
 		c.Broadcast.IngestURL = ""
 	})
+	key, err := broadcast.LoadKey(keyFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := map[string]ed25519.PublicKey{key.Kid: key.Priv.Public().(ed25519.PublicKey)}
 	owner := e.registerVerified("kill@example.test")
 	home := claimHome(e, owner, "killhome")
 	setPlan(e, e.userID("kill@example.test"), "pro")
@@ -291,13 +298,15 @@ func TestBroadcastOffKeepsTheKillSwitch(t *testing.T) {
 	}
 	r := ops.mustStatus(ops.do("POST", list, map[string]any{"kind": "home", "ref": home.id, "action": "suspend", "reason": "abuse"}), http.StatusCreated).json(t)
 	id := r["entry"].(map[string]any)["id"].(string)
+	// another home's: in the edge's list, never in this home's copy
+	ops.mustStatus(ops.do("POST", list, map[string]any{"kind": "home", "ref": plain.id, "action": "suspend", "reason": "abuse"}), http.StatusCreated)
 
 	signed := func(method, path string, body []byte) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "https://api.example.test"+path, bytes.NewReader(body))
 		broadcast.SignEdgeRequest(priv, req.Header, method, path, time.Now().UnixMilli(), body)
 		return e.raw("user", req)
 	}
-	if rec := signed("GET", "/v1/broadcast/revocations", nil); rec.Code != http.StatusOK || rec.Header().Get("X-Maktaba-Revocations-Version") != "1" {
+	if rec := signed("GET", "/v1/broadcast/revocations", nil); rec.Code != http.StatusOK || rec.Header().Get("X-Maktaba-Revocations-Version") != "2" {
 		t.Fatalf("the edge's pull while off = %d %s", rec.Code, rec.Body)
 	}
 	if r := home.agent.do("GET", "/v1/broadcast/revocations", nil); r.code != http.StatusNotFound {
@@ -334,7 +343,10 @@ func TestBroadcastOffKeepsTheKillSwitch(t *testing.T) {
 			map[string]any{"plan": "", "test_publisher": on, "reason": "rehearsal"}), http.StatusNoContent)
 	}
 	mark(home.id, true)
-	home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/revocations", nil), http.StatusOK)
+	copied, err := broadcast.VerifyHomeRevocations(keys, string(home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/revocations", nil), http.StatusOK).body))
+	if err != nil || len(copied.Entries) != 1 || copied.Entries[0].Ref != home.id {
+		t.Fatalf("a marked home's copy = %+v, %v, want its own entry only", copied, err)
+	}
 	home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/state", nil), http.StatusOK)
 	home.agent.mustStatus(home.agent.do("GET", "/v1/broadcast/invites", nil), http.StatusOK)
 	owner.mustStatus(owner.do("GET", "/v1/broadcast/agreement", nil), http.StatusOK)
@@ -347,8 +359,23 @@ func TestBroadcastOffKeepsTheKillSwitch(t *testing.T) {
 	if out := usage(plain.id); len(out["taken"].([]any)) != 0 {
 		t.Fatalf("its owner's other home's usage = %v", out)
 	}
-	// each of the marked home's own routes reaches its handler (its answer is JSON, never the gate's
-	// text), and with another home's secret is the gate's
+	// each of the marked home's own routes reaches its handler, which answers as it does with
+	// broadcasting on, and with another home's secret is the gate's
+	answers := map[string]int{
+		"GET /v1/broadcast/revocations":                    http.StatusOK,
+		"GET /v1/broadcast/state":                          http.StatusOK,
+		"GET /v1/broadcast/access":                         http.StatusOK,
+		"GET /v1/broadcast/invites":                        http.StatusOK,
+		"PUT /v1/broadcast/viewer-limits":                  http.StatusNoContent,
+		"POST /v1/broadcast/channels":                      http.StatusBadRequest, // no slug
+		"POST /v1/broadcast/ingest-token":                  http.StatusBadRequest, // no channel
+		"POST /v1/broadcast/invites":                       http.StatusCreated,
+		"DELETE /v1/broadcast/channels/{id}":               http.StatusNotFound, // the handler's own JSON
+		"PUT /v1/broadcast/channels/{id}/access":           http.StatusNotFound,
+		"DELETE /v1/broadcast/invites/{id}":                http.StatusNotFound,
+		"GET /v1/broadcast/invites/{id}/devices":           http.StatusNotFound,
+		"DELETE /v1/broadcast/invites/{id}/devices/{pass}": http.StatusNotFound,
+	}
 	for _, ex := range broadcastgate.Exceptions() {
 		if ex.Who != broadcastgate.Home && ex.Who != broadcastgate.EdgeOrHome {
 			continue
@@ -358,8 +385,10 @@ func TestBroadcastOffKeepsTheKillSwitch(t *testing.T) {
 			req := httptest.NewRequest(ex.Method, "https://api.example.test"+path, strings.NewReader(`{}`))
 			req.SetBasicAuth(home.id, secret)
 			rec := e.raw("user", req)
-			if reached := rec.Body.String() != "404 page not found\n"; reached != want || rec.Code == http.StatusUnauthorized {
-				t.Errorf("a marked home's %s %s: reached %v (%d %s), want %v", ex.Method, path, reached, rec.Code, rec.Body, want)
+			code, known := answers[ex.Method+" "+ex.Path]
+			reached := rec.Body.String() != "404 page not found\n"
+			if reached != want || (want && (!known || rec.Code != code)) || (!want && rec.Code != http.StatusNotFound) {
+				t.Errorf("a marked home's %s %s: reached %v, %d %s, want %v, %d", ex.Method, path, reached, rec.Code, rec.Body, want, code)
 			}
 		}
 	}

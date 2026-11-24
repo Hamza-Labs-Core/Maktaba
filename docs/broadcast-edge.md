@@ -417,8 +417,8 @@ While `broadcast.enabled` is off, every broadcast and moderation path of the clo
 unknown path answers, whoever asks (`cloud/internal/handlers/broadcastgate`, one middleware in
 front of both listeners). Open then, and nothing else: the edge's signed
 `GET /v1/broadcast/revocations`; the kill switch on the console; the console's test-publisher
-grant; and for a test publisher, its home's publish, unpublish, state, ingest-token, revocations
-and access and invite routes, its owner's agreement, and the edge's `/_edge` calls about it (any
+grant; and for a test publisher, its home's publish, unpublish, state, ingest-token, access and
+invite routes and its own copy of the revocation list (it can't publish without one), its owner's agreement, and the edge's `/_edge` calls about it (any
 other publisher is unknown to them: the edge drops its windows). The moderation forms and queue,
 analytics, billing and the owner's access page stay closed even for a test publisher.
 

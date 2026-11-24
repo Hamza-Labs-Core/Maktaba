@@ -10,8 +10,10 @@
 //
 // What stays open, and to whom, is the table in exceptions:
 //
-//   - the edge's signed pull of the revocation list, and the kill switch on the console: both
-//     only ever take access away or undo that;
+//   - the edge's signed pull of the whole revocation list, and the kill switch on the console:
+//     both only ever take access away or undo that. A test publisher's home pulls its own copy
+//     (its own entries and the ones that name no home): it refuses to publish without a fresh
+//     one, and stops when one names it;
 //   - the operator's grant that makes a home a test publisher (POST /v1/admin/servers/{id}/broadcast);
 //   - what a test publisher's rehearsal needs, for that home's own credential, its owner's
 //     acceptance of the agreement, and the edge's signed calls about it.
@@ -95,7 +97,7 @@ func Exceptions() []Exception { return append([]Exception(nil), exceptions...) }
 
 var exceptions = compile([]Exception{
 	// the kill switch
-	{Method: http.MethodGet, Path: "/v1/broadcast/revocations", Who: EdgeOrHome, Why: "the kill switch's signed list"},
+	{Method: http.MethodGet, Path: "/v1/broadcast/revocations", Who: EdgeOrHome, Why: "the kill switch's signed list: whole for the edge, a home's own copy for a test publisher, which can't publish without it"},
 	{Method: http.MethodGet, Path: "/v1/admin/broadcast/revocations", Who: Staff, Why: "the kill switch"},
 	{Method: http.MethodPost, Path: "/v1/admin/broadcast/revocations", Who: Staff, Why: "the kill switch"},
 	{Method: http.MethodPost, Path: "/v1/admin/broadcast/revocations/{id}/lift", Who: Staff, Why: "undo a kill switch entry"},
