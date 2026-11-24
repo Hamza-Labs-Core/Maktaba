@@ -27,6 +27,9 @@ struct MacSidebar: View {
                 }
         }
         .listStyle(.sidebar)
+        // the list's own name and identifier (on the outline, not the Profile row below it)
+        .accessibilityLabel(Text("Sections", tableName: "Shell", comment: "The Mac sidebar's name for VoiceOver: the Player's sections"))
+        .accessibilityIdentifier("player.sidebar")
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let bottom = rows.bottom {
                 row(bottom, arranged: false)
@@ -38,8 +41,6 @@ struct MacSidebar: View {
         .onMoveCommand { direction in
             if let next = rows.next(after: selection, direction) { selection = next }
         }
-        .accessibilityLabel(Text("Sections", tableName: "Shell", comment: "The Mac sidebar's name for VoiceOver: the Player's sections"))
-        .accessibilityIdentifier("player.sidebar")
     }
 
     private func row(_ section: PlayerSection, arranged: Bool) -> some View {

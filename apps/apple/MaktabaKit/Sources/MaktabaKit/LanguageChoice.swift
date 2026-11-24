@@ -22,8 +22,12 @@ public enum LanguageChoice: String, CaseIterable, Identifiable, Sendable {
     /// System Settings writes the same key).
     public static let languagesKey = "AppleLanguages"
     /// The defaults key that turns AppKit's layout right to left from the first window on
-    /// (the traffic lights, the split view, the menus). Set at launch for Arabic only.
+    /// (the split view, the menus). Set at launch for Arabic only.
     public static let directionKey = "AppleTextDirection"
+    /// The defaults key that moves a window's traffic lights to the right: AppKit lays a title
+    /// bar out from the writing direction, not the layout (`windowTitlebarLayoutDirection`).
+    /// Set at launch for Arabic only, with `directionKey`.
+    public static let writingKey = "NSForceRightToLeftWritingDirection"
 
     public var id: String { rawValue }
 
@@ -56,10 +60,12 @@ public enum LanguageChoice: String, CaseIterable, Identifiable, Sendable {
     /// Arabic, and the key removed otherwise (so English, chosen anywhere, never starts
     /// mirrored).
     public static func applyLayout(_ preferred: [String] = Bundle.main.preferredLocalizations, to defaults: UserDefaults) {
-        if isRightToLeft(preferred) {
-            defaults.set(true, forKey: directionKey)
-        } else {
-            defaults.removeObject(forKey: directionKey)
+        for key in [directionKey, writingKey] {
+            if isRightToLeft(preferred) {
+                defaults.set(true, forKey: key)
+            } else {
+                defaults.removeObject(forKey: key)
+            }
         }
     }
 
@@ -82,18 +88,21 @@ public enum LanguageChoice: String, CaseIterable, Identifiable, Sendable {
 public struct LanguageDefaults: Equatable, Sendable {
     public let languages: [String]?
     public let direction: Bool?
+    public let writing: Bool?
 
     /// The values in the app's own domain (`domain`: its persistent values).
     public init(domain: [String: Any]?) {
         languages = domain?[LanguageChoice.languagesKey] as? [String]
         direction = (domain?[LanguageChoice.directionKey] as? NSNumber)?.boolValue
+        writing = (domain?[LanguageChoice.writingKey] as? NSNumber)?.boolValue
     }
 
     /// Writes them back, removing a key that was not set.
     public func restore(in defaults: UserDefaults) {
         if let languages { defaults.set(languages, forKey: LanguageChoice.languagesKey) }
         else { defaults.removeObject(forKey: LanguageChoice.languagesKey) }
-        if let direction { defaults.set(direction, forKey: LanguageChoice.directionKey) }
-        else { defaults.removeObject(forKey: LanguageChoice.directionKey) }
+        for (key, value) in [(LanguageChoice.directionKey, direction), (LanguageChoice.writingKey, writing)] {
+            if let value { defaults.set(value, forKey: key) } else { defaults.removeObject(forKey: key) }
+        }
     }
 }

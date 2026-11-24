@@ -46,8 +46,10 @@ import Testing
         let (d, suite) = try defaults("launch")
         LanguageChoice.applyLayout(["ar"], to: d)
         #expect((own(d, suite)["AppleTextDirection"] as? NSNumber)?.boolValue == true)
+        #expect((own(d, suite)["NSForceRightToLeftWritingDirection"] as? NSNumber)?.boolValue == true, "the traffic lights at the right")
         LanguageChoice.applyLayout(["en"], to: d)
         #expect(own(d, suite)["AppleTextDirection"] == nil, "no right-to-left layout left behind")
+        #expect(own(d, suite)["NSForceRightToLeftWritingDirection"] == nil)
         LanguageChoice.applyLayout([], to: d)
         #expect(own(d, suite)["AppleTextDirection"] == nil)
         #expect(LanguageChoice.isRightToLeft(["ar-JO", "en"]) && !LanguageChoice.isRightToLeft(["en", "ar"]))
@@ -58,9 +60,9 @@ import Testing
         // nothing set: restored to nothing set
         let none = LanguageDefaults(domain: own(d, suite))
         LanguageChoice.arabic.keep(in: d)
-        d.set(true, forKey: "AppleTextDirection")
+        LanguageChoice.applyLayout(["ar"], to: d)
         none.restore(in: d)
-        #expect(own(d, suite)["AppleLanguages"] == nil && own(d, suite)["AppleTextDirection"] == nil)
+        #expect(own(d, suite).isEmpty, "nothing set again: \(own(d, suite))")
         // both set: restored to the same values
         d.set(["ar"], forKey: "AppleLanguages")
         d.set(true, forKey: "AppleTextDirection")

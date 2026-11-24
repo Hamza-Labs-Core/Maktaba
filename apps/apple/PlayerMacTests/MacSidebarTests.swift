@@ -121,7 +121,8 @@ extension PageSnapshots {
             .preferredColorScheme(.dark)
             .frame(width: size.width, height: size.height)
             .background(Color.mktBackground)
-        let (image, text) = try await Self.render(root, size: size)
+        let (image, text) = try await Self.render(root, size: size, quiet: nil)
+        #expect(text.contains(lang == "ar" ? "Outline: الأقسام" : "Outline: Sections"), "VoiceOver's name for the sidebar: \(text)")
         #expect(text.contains(lang == "ar" ? "المكتبات" : "Libraries"), "the sections by name: \(text)")
         try Self.compare("sidebar-\(lang)", image: image, text: text)
     }
@@ -152,8 +153,9 @@ extension PageSnapshots {
         try Self.compare("profile-\(lang)", image: image, text: text)
     }
 
-    /// A view drawn once `home` has had no request for a second (15 s at most), and its words.
-    static func render(_ view: some View, size: CGSize, quiet home: MockHome) async throws -> (NSBitmapImageRep, String) {
+    /// A view drawn once `home` (if any) has had no request for a second (15 s at most), and its
+    /// words, a list's rows among them (`listWords`).
+    static func render(_ view: some View, size: CGSize, quiet home: MockHome?) async throws -> (NSBitmapImageRep, String) {
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -165,7 +167,7 @@ extension PageSnapshots {
         let deadline = Date.now.addingTimeInterval(15)
         var count = -1
         var quietSince = Date.now
-        while Date.now < deadline {
+        while let home, Date.now < deadline {
             try await Task.sleep(for: .milliseconds(100))
             let seen = home.seen
             if seen.count != count {
@@ -180,7 +182,40 @@ extension PageSnapshots {
         window.displayIfNeeded()
         let rep = try #require(hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds))
         hosting.cacheDisplay(in: hosting.bounds, to: rep)
-        return (rep, try await words(of: hosting))
+        return (rep, try await listWords(of: hosting))
+    }
+
+    /// As `words(of:)`, and into a list's rows: a SwiftUI `List` on the Mac is an outline whose
+    /// rows and cells answer only the older attribute calls (`accessibilityAttributeValue`), so
+    /// `collect` stops at the outline. Kept apart from `collect`, so the pages' references stay.
+    static func listWords(of hosting: NSView) async throws -> String {
+        let enhanced = NSAccessibility.Attribute(rawValue: "AXEnhancedUserInterface")
+        NSApp.accessibilitySetValue(true, forAttribute: enhanced)
+        defer { NSApp.accessibilitySetValue(false, forAttribute: enhanced) }
+        try await Task.sleep(for: .milliseconds(300))
+        var lines: [String] = []
+        collectRows(hosting, into: &lines)
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    static func collectRows(_ element: Any, into lines: inout [String]) {
+        guard let o = element as? NSObject else { return }
+        let role = ((ax(o, "accessibilityRole") as? String) ?? (o.accessibilityAttributeValue(.role) as? String))
+            .map { $0.hasPrefix("AX") ? String($0.dropFirst(2)) : $0 } ?? "?"
+        if role == "ScrollBar" { return }
+        var words: [String] = []
+        for key in ["accessibilityLabel", "accessibilityValue", "accessibilityTitle"] {
+            let w: String? = switch ax(o, key) {
+            case let s as String: s
+            case let a as NSAttributedString: a.string
+            case let n as NSNumber: n.stringValue
+            default: nil
+            }
+            if let w, !w.isEmpty, !words.contains(w) { words.append(w) }
+        }
+        if !words.isEmpty { lines.append("\(role): " + words.joined(separator: " | ")) }
+        let children = (ax(o, "accessibilityChildren") as? [Any]) ?? (o.accessibilityAttributeValue(.children) as? [Any]) ?? []
+        for child in children { collectRows(child, into: &lines) }
     }
 
     /// Attaches `name`'s image and words, then compares them with its references, as the
