@@ -417,8 +417,8 @@ export const APPS = [
           },
           {
             p: t(
-              "The layout follows the window: a tab bar on an iPhone and a sidebar on an iPad and the Mac; on Windows and Linux a rail at the start side (the right in Arabic) with **Home**, **Libraries**, **Live TV**, **Search** and **Profile**, each keeping its own pages; on Android a bar at the bottom of a phone, a rail or a drawer on a wider window, the list beside the page on a tablet, and the screen split at the hinge of a half-folded foldable.",
-              "يتبع التصميم النافذة: شريط تبويب على آيفون وشريط جانبي على آيباد والماك؛ وعلى ويندوز ولينكس شريط في جهة البداية (اليمين بالعربية) فيه **الرئيسية** و**المكتبات** و**البث المباشر** و**البحث** و**الملف الشخصي**، ويحتفظ كل قسم بصفحاته؛ وعلى أندرويد شريط أسفل شاشة الهاتف، وشريط أو درج جانبي في النافذة الأعرض، والقائمة بجانب الصفحة على الجهاز اللوحي، والشاشة مقسومة عند مفصل الجهاز القابل للطي حين يكون نصف مطوي."
+              "The layout follows the window: a tab bar on an iPhone and a sidebar on an iPad and the Mac; on Windows and Linux a rail at the start side (the right in Arabic) with **Home**, **Libraries**, **Live TV**, **Search** and **Profile**, each keeping its own pages; on Android a bar at the bottom of a phone, a rail or a drawer on a wider window, the list beside the page on a tablet, and the screen split at the hinge of a half-folded foldable. On Windows and Linux the window has Maktaba's own dark title bar: the menu button (**Account**, **Big screen**, **Language** and **Help**, in the Player's language), the app's name, **Big screen** and **Help**, with the system's own minimize, maximize and close; every question the Player asks, such as signing out, comes in its own dark dialog.",
+              "يتبع التصميم النافذة: شريط تبويب على آيفون وشريط جانبي على آيباد والماك؛ وعلى ويندوز ولينكس شريط في جهة البداية (اليمين بالعربية) فيه **الرئيسية** و**المكتبات** و**البث المباشر** و**البحث** و**الملف الشخصي**، ويحتفظ كل قسم بصفحاته؛ وعلى أندرويد شريط أسفل شاشة الهاتف، وشريط أو درج جانبي في النافذة الأعرض، والقائمة بجانب الصفحة على الجهاز اللوحي، والشاشة مقسومة عند مفصل الجهاز القابل للطي حين يكون نصف مطوي. وعلى ويندوز ولينكس للنافذة شريط عنوان داكن خاص بمكتبة: زر القائمة (**الحساب** و**الشاشة الكبيرة** و**اللغة** و**المساعدة**، بلغة المشغّل)، واسم التطبيق، و**الشاشة الكبيرة** و**المساعدة**، مع أزرار النظام نفسه للتصغير والتكبير والإغلاق؛ وكل سؤال يطرحه المشغّل، كتسجيل الخروج، يأتي في نافذة حوار داكنة خاصة به."
             ),
           },
         ],
@@ -873,8 +873,8 @@ export const APPS = [
               shot(
                 "android-remote-attention",
                 "phone",
-                "The Remote's Needs attention on an Android phone, with the banner of a TV waiting to sign in",
-                "ما يحتاج إلى انتباه في تطبيق الإدارة عن بُعد على هاتف أندرويد، مع شريط تلفاز ينتظر تسجيل الدخول"
+                "The Remote's Needs attention on an Android phone: each kind of problem with its count, the step it stopped at and Retry, and one that settings fix",
+                "ما يحتاج إلى انتباه في تطبيق الإدارة عن بُعد على هاتف أندرويد: كل نوع من المشكلات بعدده، والمرحلة التي توقف عندها، وزر إعادة المحاولة، ومشكلة تُصلحها الإعدادات"
               ),
             ],
           },
@@ -1192,18 +1192,6 @@ export const APPS = [
                 "تسجيل الدخول على أندرويد تي في: الرمز ورمز QR الخاص به، وهاتف وجد التلفاز"
               ),
               shot(
-                "firetv-home",
-                "wide",
-                "Maktaba TV's Home on a Fire TV: Continue watching and the libraries' rows",
-                "الرئيسية في تطبيق التلفاز على فاير تي في: تابع المشاهدة وصفوف المكتبات"
-              ),
-              shot(
-                "firetv-library",
-                "wide",
-                "A library on a Fire TV: its tabs and Recommended",
-                "مكتبة على فاير تي في: تبويباتها والمقترحات"
-              ),
-              shot(
                 "firetv-cloud-code",
                 "wide",
                 "Signing in on a Fire TV: a code from Maktaba Cloud and its QR code, the homes on this network and an address beside it",
@@ -1314,6 +1302,10 @@ export const APPS = [
               t(
                 "Runs the whole server on this computer: the database, the processing pipeline and the streaming. It starts when you sign in, keeps running when the window is closed, and a menu-bar or tray item shows how it is doing.",
                 "يشغّل الخادم كله على هذا الحاسوب: قاعدة البيانات وخط المعالجة والبث. ويبدأ حين تسجّل الدخول إلى حاسوبك، ويستمر في العمل بعد إغلاق النافذة، ويعرض عنصر في شريط القوائم أو في منطقة الإشعارات حالته."
+              ),
+              t(
+                "**Its own window frame**: on Windows and Linux the window's top bar is Maktaba's, with the system's minimize, maximize and close buttons where each system puts them (Windows 11's Snap Layouts open when the pointer rests on maximize; on GNOME the buttons follow the desktop's layout), and a menu button that lists the menu bar's items. On the Mac the traffic lights stay and the bar is drawn under them; the Mac's menu bar is in English or Arabic, as the system is. In Arabic the bar mirrors. Connected to another Maktaba, the window keeps the system's own frame.",
+                "**إطار نافذة خاص به**: على ويندوز ولينكس يكون الشريط العلوي للنافذة شريط «مكتبة»، وفيه أزرار التصغير والتكبير والإغلاق حيث يضعها كل نظام (تُفتح تخطيطات الالتقاط في ويندوز 11 حين يستقر المؤشر على زر التكبير، وفي GNOME تتبع الأزرار ترتيب سطح المكتب)، وزر قائمة يعرض عناصر شريط القوائم. وعلى الماك تبقى أزرار النافذة الثلاثة ويُرسم الشريط تحتها، ويكون شريط قوائم الماك بالعربية أو الإنجليزية بحسب لغة النظام. وفي العربية ينعكس الشريط. وحين يتصل التطبيق بـ«مكتبة» أخرى تحتفظ النافذة بإطار النظام نفسه."
               ),
               t(
                 "Or connects to another Maktaba: the window then shows a home that runs elsewhere, and nothing runs on this computer.",

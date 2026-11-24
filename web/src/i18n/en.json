@@ -8733,5 +8733,11 @@
   "tv.plainHttp": "Connected without encryption on your network",
   "tv.account.connection": "Connection",
   "tv.account.encrypted": "Connected with encryption",
-  "tv.account.switchHome": "Switch home"
+  "tv.account.switchHome": "Switch home",
+  "frame.menu": "Menu",
+  "frame.window": "Window",
+  "frame.minimize": "Minimize",
+  "frame.maximize": "Maximize",
+  "frame.restore": "Restore down",
+  "frame.close": "Close"
 }

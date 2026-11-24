@@ -21,6 +21,8 @@ import "@fontsource/amiri/400.css";
 import "@fontsource/amiri/700.css";
 import "./styles/tokens.css";
 import "./styles/app.css";
+// story 13.10: the desktop app's own window frame
+import "./styles/frame.css";
 import "./styles/library.css";
 import "./styles/browse.css";
 import "./styles/connect.css";

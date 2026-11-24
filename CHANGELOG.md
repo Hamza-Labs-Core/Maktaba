@@ -14,9 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
-- **maktaba.dev's screenshots show no woman or girl.** The Fire TV, big screen, Roku and web
-  search screenshots on the Apps pages were retaken on test data with men's names only and on
-  the new demo library. In English and Arabic.
+- **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
+  bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
+  Language and Help in the Player's language, beside the app's name, Big screen and Help, with
+  the system's own minimize, maximize and close (and Snap Layouts on Windows 11). Every question
+  the Player asks, such as signing out or switching home, comes in one dark dialog style. The
+  installers carry the JetBrains Runtime, which draws the title bar; the Player's colours now come
+  from the design tokens' build, with a new desktop group.
 
 - **One page to get Maktaba: maktaba.tv/download.** The download page now lists every setup
   guide under its download buttons: Synology, TrueNAS, Unraid, QNAP, UGREEN and ASUSTOR, Docker,
@@ -3782,11 +3786,24 @@ build fails when the two differ.
   and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
   search will use.
 
+- **The Maktaba app draws its own window frame.** On Windows and Linux the window's top bar is
+  Maktaba's: the app's header is the title bar (no system bar above it), with the minimize,
+  maximize and close buttons where each system puts them (on GNOME, as the desktop lays them
+  out), and a menu button that lists the menu bar's items. On Windows 11, Snap Layouts open when
+  the pointer rests on maximize. On the Mac the traffic lights stay and the header sits under
+  them, and the Mac's menu bar is in Arabic when the system is. In Arabic the bar mirrors. A page
+  that cannot draw the frame (another Maktaba in client mode, or an older home) keeps the
+  system's. In English and Arabic.
+
 - **New pictures on maktaba.tv.** The screenshots of every app now show a library of
   documentaries and children's animation: NASA's Curiosity rover, the Apollo 11 launch, Saturn's
   rings, Lake Nasser seen from space, the Moon's phases, a deep-sea octopus, Big Buck Bunny and
   the Caminandes llama films. Every title is public domain or Creative Commons, credited, and
   no woman or girl appears in any picture. In English and Arabic.
+
+- **maktaba.dev's screenshots show no woman or girl.** The Fire TV, big screen, Roku and web
+  search screenshots on the Apps pages were retaken on test data with men's names only and on
+  the new demo library. In English and Arabic.
 
 ### Fixed
 

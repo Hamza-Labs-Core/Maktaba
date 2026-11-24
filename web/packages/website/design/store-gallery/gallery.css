@@ -1,0 +1,207 @@
+/*
+ * Store gallery (story 60.14): one shot of a store listing, at the store's exact pixel size.
+ * Sizes are set per shot by make.mjs as --u (the unit every length is a share of) and the
+ * canvas's --w and --h. Dark only; part B's tokens; logical properties only.
+ *
+ * The shot: the ink field with the lamp's brass glow, a caption (headline in Maktaba
+ * Display, one line under it in Maktaba Text) and the app's real screen below it, in a plain
+ * rounded panel with a hairline edge: no device frame (Google Play refuses device imagery;
+ * Apple allows only its own bezels). The screen never mirrors; its language is its own.
+ */
+
+:root {
+  --ink: #0b111c;
+  --hero: #0e1624;
+  --deep: #070b12;
+  --fg: #e8ecf3;
+  --muted: #a9b3c4;
+  --brass: #e3b252;
+  --glow: rgba(227, 178, 82, 0.16);
+  --edge: rgba(233, 236, 243, 0.12);
+  --frame: #06090f;
+}
+
+.shot {
+  position: relative;
+  overflow: hidden;
+  inline-size: var(--w);
+  block-size: var(--h);
+  background: radial-gradient(ellipse 75% 42% at 50% 40%, var(--glow), transparent 72%),
+    linear-gradient(180deg, var(--hero) 0%, var(--ink) 55%, var(--deep) 100%);
+  color: var(--fg);
+  font-family: "Maktaba Text", "Maktaba Text Fallback", system-ui, sans-serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ------------------------------------------------------------------ the caption */
+
+.cap {
+  box-sizing: border-box;
+  inline-size: 100%;
+  padding-block-start: calc(var(--u) * var(--cap-top));
+  padding-inline: calc(var(--w) * 0.08);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cap .h {
+  margin: 0;
+  max-inline-size: calc(var(--w) * var(--measure));
+  font-family: "Maktaba Display", "Maktaba Display Fallback", serif;
+  font-weight: 700;
+  font-size: calc(var(--u) * var(--h-size));
+  line-height: var(--h-lh);
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.cap .sub {
+  margin: calc(var(--u) * 0.022) 0 0;
+  max-inline-size: calc(var(--w) * var(--measure));
+  font-weight: 400;
+  font-size: calc(var(--u) * var(--s-size));
+  line-height: var(--s-lh);
+  color: var(--muted);
+  text-wrap: balance;
+}
+
+.shot:lang(ar) .cap .h {
+  letter-spacing: 0;
+}
+
+/* the wordmark on a gallery's first shot: the icon, then the name in both scripts with a
+   brass rule between (part B's lockup) */
+.wm {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(var(--u) * 0.022);
+  margin-block-end: calc(var(--u) * 0.03);
+  font-family: "Maktaba Display", "Maktaba Display Fallback", serif;
+  font-weight: 700;
+  font-size: calc(var(--u) * 0.042);
+  line-height: 1.2;
+}
+.wm .mk-icon {
+  inline-size: calc(var(--u) * 0.075);
+  block-size: calc(var(--u) * 0.075);
+  border-radius: 22%;
+}
+.wm .rule {
+  inline-size: calc(var(--u) * 0.003);
+  block-size: calc(var(--u) * 0.045);
+  background: var(--brass);
+}
+
+/* ------------------------------------------------------------------ the screen */
+
+.screen {
+  position: relative;
+  flex: none;
+  inline-size: calc(var(--w) * var(--screen-w));
+  margin-block-start: calc(var(--u) * var(--screen-gap));
+  border-radius: calc(var(--w) * var(--screen-w) * var(--radius));
+  overflow: hidden;
+  background: var(--frame);
+  box-shadow:
+    0 0 0 calc(var(--u) * 0.0025) var(--edge),
+    0 calc(var(--u) * 0.03) calc(var(--u) * 0.12) rgba(0, 0, 0, 0.55);
+}
+.screen img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+}
+
+/* a beat whose screen is not captured yet: the panel, labelled (mockups only) */
+.screen.todo {
+  aspect-ratio: var(--ratio);
+  display: grid;
+  place-items: center;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(227, 178, 82, 0.05) 0 calc(var(--u) * 0.02),
+    transparent 0 calc(var(--u) * 0.04)
+  );
+  outline: calc(var(--u) * 0.003) dashed rgba(227, 178, 82, 0.55);
+  outline-offset: calc(var(--u) * -0.012);
+}
+.screen.todo span {
+  max-inline-size: 70%;
+  text-align: center;
+  font-size: calc(var(--u) * 0.03);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ plain, tile, art, feature */
+
+.shot.plain {
+  display: block;
+  background: var(--frame);
+}
+.shot.plain img {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+}
+
+/* the TV tile: the icon and the name, nothing else (TV banner, Fire TV icon, Roku poster,
+   Samsung's logo layer) */
+.shot.tile {
+  justify-content: center;
+  gap: calc(var(--u) * 0.05);
+}
+.shot.tile .mk-icon {
+  inline-size: calc(var(--u) * 0.36);
+  block-size: calc(var(--u) * 0.36);
+  border-radius: 22%;
+}
+.shot.tile .names {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 0.04);
+  font-family: "Maktaba Display", "Maktaba Display Fallback", serif;
+  font-weight: 700;
+  font-size: calc(var(--u) * 0.13);
+  line-height: 1.25;
+}
+.shot.tile .names .rule {
+  inline-size: calc(var(--u) * 0.006);
+  block-size: calc(var(--u) * 0.12);
+  background: var(--brass);
+}
+.shot.tile.bare {
+  background: transparent;
+}
+
+/* brand art: the app's own library hall, no text, subject placed by --art-x */
+.shot.art {
+  display: block;
+  background: var(--ink) url("/web/public/art/library/dark-wide-2.jpg") no-repeat;
+  background-size: var(--art-size, cover);
+  background-position: var(--art-x, 50%) 50%;
+}
+
+/* the feature graphic: the wordmark and the tagline at the inline start, a screen at the end */
+.shot.feature {
+  flex-direction: row;
+  align-items: center;
+}
+.shot.feature .cap {
+  inline-size: 50%;
+  padding-block: 0;
+  padding-inline: calc(var(--w) * 0.065) 0;
+  text-align: start;
+  align-items: flex-start;
+}
+.shot.feature .screen {
+  position: absolute;
+  inset-block-start: 15%;
+  inset-inline-start: 52%;
+  margin: 0;
+}

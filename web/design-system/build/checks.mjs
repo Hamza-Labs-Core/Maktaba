@@ -158,3 +158,38 @@ export function contrastProblems(themes) {
         : `${r.theme}: ${r.text} on ${r.surface} is ${r.ratio.toFixed(2)}:1, under ${AA}:1`
     );
 }
+
+// The desktop group (story 13.9's contrast table): dark only. Text on every desktop surface
+// is AA; a control's edge is 3:1 on every surface it is drawn on (never the chosen fill).
+const DESKTOP_SURFACES = ["window", "chrome", "pane", "subtle", "raised", "hover", "chosen"];
+const DESKTOP_TEXT = ["fg", "muted", "accent-text", "success", "error"];
+
+export function desktopContrastProblems(dark) {
+  const desk = dark.color.desktop;
+  const sem = dark.color.semantic;
+  if (!desk) return [];
+  const problems = [];
+  for (const surface of DESKTOP_SURFACES) {
+    if (!(surface in desk)) {
+      problems.push(`dark: color.desktop.${surface} is missing`);
+      continue;
+    }
+    for (const text of DESKTOP_TEXT) {
+      const ratio = contrast(sem[text], desk[surface]);
+      if (!(ratio >= AA)) {
+        problems.push(
+          `dark: ${text} on desktop.${surface} is ${ratio.toFixed(2)}:1, under ${AA}:1`
+        );
+      }
+    }
+    if (surface !== "chosen") {
+      const ratio = contrast(desk.control, desk[surface]);
+      if (!(ratio >= 3)) {
+        problems.push(
+          `dark: desktop.control on desktop.${surface} is ${ratio.toFixed(2)}:1, under 3:1`
+        );
+      }
+    }
+  }
+  return problems;
+}

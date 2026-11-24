@@ -126,6 +126,7 @@ jobs:
       android_apps: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_apps == 'true' }}
       android_tv: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.android_tv == 'true' }}
       tv_web: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.tv_web == 'true' }}
+      desktop_frame: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_frame == 'true' }}
       cast_receiver: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cast_receiver == 'true' }}
       roku: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.roku == 'true' }}
       desktop_player: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.desktop_player == 'true' }}
@@ -398,6 +399,13 @@ jobs:
     if: needs.changes.outputs.tv_web == 'true'
     uses: ./.github/workflows/_tv-web.yml
 
+  desktop-frame:
+    # Epic 13 (13.10): the desktop app's own window frame, drawn by the web app, against its
+    # visual references in CI's Playwright image (see _desktop-frame.yml)
+    needs: [changes]
+    if: needs.changes.outputs.desktop_frame == 'true'
+    uses: ./.github/workflows/_desktop-frame.yml
+
   cast-receiver:
     # Epic 58 (58.07): Maktaba's Cast receiver at cast.maktaba.tv — Vitest with a fake
     # cast.framework, Playwright with a CAF stub and a mock home (see _cast-receiver.yml)
@@ -660,6 +668,7 @@ jobs:
       - android-apps
       - android-tv
       - tv-web
+      - desktop-frame
       - cast-receiver
       - roku
       - desktop-player

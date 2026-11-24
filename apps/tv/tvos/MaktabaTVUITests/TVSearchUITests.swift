@@ -46,9 +46,17 @@ final class TVSearchUITests: XCTestCase {
         XCTAssertTrue(searches.isEmpty, "typing searches nothing")
         shot("tv-search-suggestions-en")
 
-        // down to the suggestions' row, then along it to the title
-        for _ in 0..<4 where !app.cells.allElementsBoundByIndex.contains(where: \.hasFocus) && !title.hasFocus {
-            remote.press(.down)
+        // down to the suggestions' row, then along it to the title. The row is found by where
+        // the focus is, not by a count of presses: a check of the cells' focus never saw the
+        // row's first suggestion (the plain "se"), so four Downs were always pressed, and on
+        // PR #1561's run 45302179115 they went on past the row to Search for "se" (the screen
+        // recording), where no Right reaches the title
+        let row = title.frame
+        let focused = { self.app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch }
+        for _ in 0..<6 where !title.hasFocus {
+            let at = focused().exists ? focused().frame.midY : -1
+            if at >= row.minY, at <= row.maxY { break }
+            remote.press(at > row.maxY ? .up : .down)
             usleep(400_000)
         }
         // the cell or its button takes the focus

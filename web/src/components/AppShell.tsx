@@ -24,6 +24,7 @@ import { applyServiceWorkerUpdate, type SwUpdateDetail } from "../lib/pwa";
 import { ThemeToggle } from "./ThemeToggle";
 import { LangToggle } from "./LangToggle";
 import { BigScreenButton } from "./BigScreenButton";
+import { FrameStart, WindowControls, useFrameHost } from "./DesktopFrame";
 import { NotificationsBell } from "./NotificationsBell";
 import { updateAvailable, useUpdateStatus } from "../lib/updates";
 import { useSystemStatus } from "../lib/systemStatus";
@@ -203,6 +204,8 @@ export function AppShell() {
   const { user, logout } = useAuth();
   const { t, n } = useI18n();
   const { focusSearchRef } = useShortcuts();
+  // story 13.10: the desktop app's frame, drawn in this header (null elsewhere)
+  const frame = useFrameHost();
   const toast = useToast();
   const nav = useNavigate();
   const [q, setQ] = useState("");
@@ -278,8 +281,18 @@ export function AppShell() {
       <a href="#mkt-main" className="mkt-skip-link">
         {t("nav.skipToContent")}
       </a>
-      <header className="mkt-shell__header" role="banner">
-        <div className="mkt-shell__brand">{t("app.title")}</div>
+      <header
+        className={frame ? "mkt-shell__header mkt-shell__header--frame" : "mkt-shell__header"}
+        role="banner"
+        // story 13.10: in the desktop app the header is the window's title bar. Only the bar
+        // itself and the name drag the window ("" is Tauri's "this element only"): a popover
+        // in the header (the bell's, the menu) never does.
+        data-tauri-drag-region={frame ? "" : undefined}
+      >
+        {frame && <FrameStart />}
+        <div className="mkt-shell__brand" data-tauri-drag-region={frame ? "" : undefined}>
+          {t("app.title")}
+        </div>
         <form className="mkt-shell__search" role="search" onSubmit={onSearch}>
           <input
             ref={searchRef}
@@ -325,6 +338,7 @@ export function AppShell() {
             </button>
           )}
         </div>
+        {frame && <WindowControls />}
       </header>
       <div className="mkt-shell__body">
         <nav className="mkt-shell__nav" aria-label={t("nav.primary")}>

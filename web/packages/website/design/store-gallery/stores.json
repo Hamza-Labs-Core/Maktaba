@@ -1,0 +1,654 @@
+{
+  "$comment": "Story 60.14: every store listing image Maktaba's apps need, per store, with the store's own source. Read by make.mjs (the mockups), tests/store-gallery.test.mjs and, after the style is approved, by the composer that writes the full set (60.14 part 2). Sizes are pixels, width x height. 'style' is how the composer draws the asset: captioned (a caption band over the app's screen, no device frame), plain (the capture itself, unaltered), tile (the icon and the name in both scripts), feature (the feature graphic), art (brand art, no text), icon (the app icon, resized). 'langs' is per-language (en and ar sets) or single (one set for every language, the store allows no other). A number marked 'unconfirmed' comes from an older or unofficial copy of the store's guide, as its note says.",
+  "checked": "2026-11-23",
+  "stores": {
+    "apple": {
+      "name": "Apple App Store (App Store Connect; TestFlight today)",
+      "locales": { "en": "en-US", "ar": "ar-SA" },
+      "rules": [
+        "Screenshots show the app in use, not only title art, a sign-in page or a splash screen; text and image overlays are allowed (App Review Guidelines 2.3.3).",
+        "No prices, no unverifiable claims, nothing above a 4+ rating, no names or imagery of other platforms (2.3.7, 2.3.8, 2.3.10, 2.3.14).",
+        "Device imagery, where used, must be Apple's own bezels, unmodified, current generation, with copy beside the device and not on it (marketing guidelines). The gallery uses no device frame at all.",
+        "1 to 10 screenshots per display size per locale; PNG or JPEG; no alpha channel or transparency.",
+        "When the interface is the same across sizes, the highest required size is enough and App Store Connect scales it down."
+      ],
+      "sources": [
+        "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications",
+        "https://developer.apple.com/help/app-store-connect/reference/app-preview-specifications",
+        "https://developer.apple.com/app-store/review/guidelines/",
+        "https://developer.apple.com/app-store/marketing/guidelines/",
+        "https://developer.apple.com/design/human-interface-guidelines/app-icons",
+        "https://developer.apple.com/design/human-interface-guidelines/top-shelf"
+      ],
+      "assets": {
+        "iphone-6.3": {
+          "label": "iPhone, Dynamic Island (medium display), 6.3\"/6.1\": required",
+          "size": [1206, 2622],
+          "accepts": [
+            [1179, 2556],
+            [1206, 2622]
+          ],
+          "count": [1, 10],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "source": "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications"
+        },
+        "iphone-6.9": {
+          "label": "iPhone, Dynamic Island (large display), 6.9\"/6.7\": optional, shown on the largest phones",
+          "size": [1320, 2868],
+          "accepts": [
+            [1260, 2736],
+            [1290, 2796],
+            [1320, 2868]
+          ],
+          "count": [1, 10],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": false,
+          "source": "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications"
+        },
+        "iphone-duo": {
+          "label": "iPhone Duo (inner display): optional now; required from April 2027 for apps built with the iOS 27.1 SDK or later",
+          "size": [2007, 2853],
+          "accepts": [
+            [2007, 2853],
+            [2853, 2007],
+            [1398, 2034],
+            [2034, 1398]
+          ],
+          "count": [1, 10],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": false,
+          "requiredFrom": "2027-04",
+          "source": "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications"
+        },
+        "ipad-13": {
+          "label": "iPad 13\": required for an app that runs on iPad",
+          "size": [2752, 2064],
+          "accepts": [
+            [2064, 2752],
+            [2752, 2064],
+            [2048, 2732],
+            [2732, 2048]
+          ],
+          "count": [1, 10],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "source": "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications"
+        },
+        "mac": {
+          "label": "Mac, 16:10",
+          "size": [2880, 1800],
+          "accepts": [
+            [1280, 800],
+            [1440, 900],
+            [2560, 1600],
+            [2880, 1800]
+          ],
+          "count": [1, 10],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "source": "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications"
+        },
+        "appletv": {
+          "label": "Apple TV",
+          "size": [3840, 2160],
+          "accepts": [
+            [1920, 1080],
+            [3840, 2160]
+          ],
+          "count": [1, 10],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "source": "https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications"
+        },
+        "preview": {
+          "label": "App preview (video): optional, up to 3 per size and locale, 15-30 s, H.264 or ProRes 422 HQ, at most 30 fps, at most 500 MB; iPhone 886x1920, iPad 1200x1600, Mac and Apple TV 1920x1080 (landscape only)",
+          "optional": true,
+          "source": "https://developer.apple.com/help/app-store-connect/reference/app-preview-specifications"
+        },
+        "icon": {
+          "label": "App Store icon: taken from the build's asset catalog (1024x1024 for iOS, iPadOS and macOS; the layered tvOS icon), not uploaded",
+          "fromBuild": true,
+          "source": "https://developer.apple.com/design/human-interface-guidelines/app-icons"
+        }
+      }
+    },
+    "google": {
+      "name": "Google Play (Play Console; internal testing today)",
+      "locales": { "en": "en-US", "ar": "ar" },
+      "rules": [
+        "Screenshots demonstrate the app's actual experience; the first three put the interface first.",
+        "Taglines take at most 20% of the image and are localized.",
+        "No device imagery, store badges, rankings, awards, prices, testimonials or calls to action ('#1', 'best', 'download now', 'free for a limited time').",
+        "Android TV needs at least one unaltered, high-resolution screenshot of the current version (TV-G4).",
+        "Screenshots: JPEG or 24-bit PNG, no alpha; 320 to 3840 px a side for phones (tablets 1080 to 7680); the long side at most 2.3 times the short side.",
+        "To be eligible for promotion: at least 4 screenshots, at least 1080 px, 9:16 (1080x1920 or more) or 16:9 (1920x1080 or more)."
+      ],
+      "sources": [
+        "https://support.google.com/googleplay/android-developer/answer/9866151",
+        "https://support.google.com/googleplay/android-developer/answer/9898842",
+        "https://developer.android.com/docs/quality-guidelines/tv-app-quality",
+        "https://developer.android.com/distribute/google-play/resources/icon-design-specifications"
+      ],
+      "assets": {
+        "icon": {
+          "label": "App icon",
+          "size": [512, 512],
+          "count": [1, 1],
+          "formats": ["png"],
+          "alpha": true,
+          "maxBytes": 1048576,
+          "note": "32-bit PNG, sRGB, full square: Play rounds the corners and adds the shadow",
+          "source": "https://support.google.com/googleplay/android-developer/answer/9866151"
+        },
+        "feature": {
+          "label": "Feature graphic",
+          "size": [1024, 500],
+          "count": [1, 1],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "note": "key visuals central; no device imagery; text localized",
+          "source": "https://support.google.com/googleplay/android-developer/answer/9866151"
+        },
+        "phone": {
+          "label": "Phone screenshots, 9:16",
+          "size": [1080, 1920],
+          "count": [2, 8],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "maxBytes": 8388608,
+          "source": "https://support.google.com/googleplay/android-developer/answer/9866151"
+        },
+        "tablet-7": {
+          "label": "7-inch tablet screenshots, 9:16",
+          "size": [1080, 1920],
+          "count": [4, 8],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "maxBytes": 8388608,
+          "source": "https://support.google.com/googleplay/android-developer/answer/9866151"
+        },
+        "tablet-10": {
+          "label": "10-inch tablet screenshots, 16:9",
+          "size": [2560, 1440],
+          "count": [4, 8],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "maxBytes": 8388608,
+          "source": "https://support.google.com/googleplay/android-developer/answer/9866151"
+        },
+        "tv-banner": {
+          "label": "Android TV banner",
+          "size": [1280, 720],
+          "count": [1, 1],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "note": "the app's icon on Android TV: it carries the app's name",
+          "source": "https://support.google.com/googleplay/android-developer/answer/9866151"
+        },
+        "tv": {
+          "label": "Android TV screenshots, unaltered, 16:9",
+          "size": [1920, 1080],
+          "count": [4, 8],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "maxBytes": 8388608,
+          "note": "Play requires one; four make the listing eligible for promotion",
+          "source": "https://developer.android.com/docs/quality-guidelines/tv-app-quality"
+        },
+        "video": {
+          "label": "Promo video: optional, a YouTube URL (public or unlisted, no ads)",
+          "optional": true,
+          "source": "https://support.google.com/googleplay/android-developer/answer/9866151"
+        }
+      }
+    },
+    "amazon": {
+      "name": "Amazon Appstore, Fire TV (Fire OS; the same images serve Vega OS)",
+      "locales": { "en": "en-US", "ar": "ar" },
+      "rules": [
+        "Screenshots show only the app itself, as on the TV: no photographs of people using it, no other devices, dummy data for anything personal.",
+        "The Fire TV app icon carries only the logo or key art, no slogan or badge, edge to edge with no border or rounded corners; main subject and title inside 882x448.",
+        "The Fire TV background has no logo or title, no person, controller, TV or room, and keeps its subject on the right (safe area 1214x830).",
+        "Images are localized per language tab, English being the fallback. No file size limit is stated."
+      ],
+      "sources": [
+        "https://developer.amazon.com/docs/app-submission/add-store-listing-information.html",
+        "https://developer.amazon.com/docs/app-submission/distribute-your-app-internationally.html"
+      ],
+      "assets": {
+        "tv-icon": {
+          "label": "Fire TV app icon",
+          "size": [1280, 720],
+          "count": [1, 1],
+          "formats": ["png"],
+          "alpha": false,
+          "required": true,
+          "source": "https://developer.amazon.com/docs/app-submission/add-store-listing-information.html"
+        },
+        "tv": {
+          "label": "Fire TV screenshots",
+          "size": [1920, 1080],
+          "count": [3, 10],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "source": "https://developer.amazon.com/docs/app-submission/add-store-listing-information.html"
+        },
+        "background": {
+          "label": "Fire TV background",
+          "size": [1920, 1080],
+          "count": [1, 1],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "source": "https://developer.amazon.com/docs/app-submission/add-store-listing-information.html"
+        },
+        "small-icon": {
+          "label": "Small icon",
+          "size": [114, 114],
+          "count": [1, 1],
+          "formats": ["png"],
+          "alpha": true,
+          "required": true,
+          "source": "https://developer.amazon.com/docs/app-submission/add-store-listing-information.html"
+        },
+        "large-icon": {
+          "label": "Large icon",
+          "size": [512, 512],
+          "count": [1, 1],
+          "formats": ["png"],
+          "alpha": true,
+          "required": true,
+          "source": "https://developer.amazon.com/docs/app-submission/add-store-listing-information.html"
+        },
+        "promo": {
+          "label": "Promotional image: optional; not a screenshot, carries the app's name, text at least 50 px from the edges",
+          "size": [1024, 500],
+          "count": [0, 1],
+          "formats": ["png", "jpeg"],
+          "optional": true,
+          "source": "https://developer.amazon.com/docs/app-submission/add-store-listing-information.html"
+        }
+      }
+    },
+    "roku": {
+      "name": "Roku Streaming Store (Developer Dashboard)",
+      "locales": { "en": "en", "ar": "ar" },
+      "rules": [
+        "A name, description and poster in each language the channel supports (certification).",
+        "Artwork represents the app's name or identity in broadcast-safe colours and is not transparent (certification 6.4).",
+        "Up to six screenshots, localized per language; no rule on their content is published. No file size limit is stated."
+      ],
+      "sources": [
+        "https://developer.roku.com/dev/docs/channel-publishing-guide",
+        "https://developer.roku.com/dev/docs/graphics",
+        "https://developer.roku.com/dev/docs/certification"
+      ],
+      "assets": {
+        "poster": {
+          "label": "Store poster (safe zone 486x365 at 27,31)",
+          "size": [540, 405],
+          "count": [1, 1],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "source": "https://developer.roku.com/dev/docs/graphics"
+        },
+        "tv": {
+          "label": "Screenshots",
+          "size": [1920, 1080],
+          "count": [0, 6],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "source": "https://developer.roku.com/dev/docs/channel-publishing-guide"
+        }
+      }
+    },
+    "samsung": {
+      "name": "Samsung Smart TV Seller Office (Tizen)",
+      "locales": { "single": "every language" },
+      "rules": [
+        "Icons and screenshots cannot differ per language or country: one set serves every listing (Seller Office FAQ).",
+        "Exactly 4 screenshots; number 3 is not shown on some TV models; with in-app purchases number 4 must show prices (Maktaba sells nothing).",
+        "The detail background is covered by a dark gradient over about 40% of its left side: its subject sits in the right 60%."
+      ],
+      "sources": [
+        "https://developer.samsung.com/tv-seller-office/guides/applications/entering-application-information.html",
+        "https://developer.samsung.com/smarttv/design/app-icons-and-screenshots.html",
+        "https://developer.samsung.com/tv-seller-office/faq/application-registration.html"
+      ],
+      "assets": {
+        "logo": {
+          "label": "1920x1080 icon, logo layer (32-bit PNG with transparency)",
+          "size": [1920, 1080],
+          "count": [1, 1],
+          "formats": ["png"],
+          "alpha": true,
+          "maxBytes": 307200,
+          "required": true,
+          "source": "https://developer.samsung.com/smarttv/design/app-icons-and-screenshots.html"
+        },
+        "logo-background": {
+          "label": "1920x1080 icon, background layer",
+          "size": [1920, 1080],
+          "count": [1, 1],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "maxBytes": 307200,
+          "required": true,
+          "source": "https://developer.samsung.com/smarttv/design/app-icons-and-screenshots.html"
+        },
+        "icon": {
+          "label": "512x423 icon (exists: apps/tv/web/tizen/icon.png)",
+          "size": [512, 423],
+          "count": [1, 1],
+          "formats": ["png"],
+          "maxBytes": 307200,
+          "required": true,
+          "existing": "apps/tv/web/tizen/icon.png",
+          "source": "https://developer.samsung.com/tv-seller-office/guides/applications/entering-application-information.html"
+        },
+        "detail-background": {
+          "label": "Detail page background",
+          "size": [1920, 1080],
+          "count": [1, 1],
+          "formats": ["jpeg"],
+          "alpha": false,
+          "maxBytes": 2097152,
+          "required": true,
+          "source": "https://developer.samsung.com/smarttv/design/app-icons-and-screenshots.html"
+        },
+        "tv": {
+          "label": "Screenshots",
+          "size": [1920, 1080],
+          "count": [4, 4],
+          "formats": ["jpeg"],
+          "alpha": false,
+          "maxBytes": 512000,
+          "required": true,
+          "source": "https://developer.samsung.com/smarttv/design/app-icons-and-screenshots.html"
+        }
+      }
+    },
+    "lg": {
+      "name": "LG Content Store (Seller Lounge, webOS)",
+      "locales": { "single": "every language" },
+      "rules": [
+        "The 400x400 store icon has no transparency or gradient in its background, which matches the app tile colour (official app resources page).",
+        "unconfirmed: 1 primary and 2 to 5 secondary screenshots, 1920x1080 recommended, one set for every language (Seller Lounge User Guide v11.5, 2021; the Seller Lounge itself needs a login). Check at upload time, as docs/stores/lg.md says."
+      ],
+      "sources": [
+        "https://webostv.developer.lge.com/develop/getting-started/app-resources",
+        "https://archive.org/stream/lg-seller-lounge-user-guide-en-v-11.5/LG%20Seller%20Lounge%20User%20Guide_EN_v11.5_djvu.txt"
+      ],
+      "assets": {
+        "icon": {
+          "label": "Store icon",
+          "size": [400, 400],
+          "count": [1, 1],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "required": true,
+          "source": "https://webostv.developer.lge.com/develop/getting-started/app-resources"
+        },
+        "tv": {
+          "label": "Screenshots (unconfirmed)",
+          "size": [1920, 1080],
+          "count": [3, 6],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "maxBytes": 10485760,
+          "unconfirmed": true,
+          "source": "https://archive.org/stream/lg-seller-lounge-user-guide-en-v-11.5/LG%20Seller%20Lounge%20User%20Guide_EN_v11.5_djvu.txt"
+        },
+        "background": {
+          "label": "Launcher background (unconfirmed)",
+          "size": [1920, 1080],
+          "count": [1, 1],
+          "formats": ["png", "jpeg"],
+          "alpha": false,
+          "maxBytes": 10485760,
+          "unconfirmed": true,
+          "source": "https://archive.org/stream/lg-seller-lounge-user-guide-en-v-11.5/LG%20Seller%20Lounge%20User%20Guide_EN_v11.5_djvu.txt"
+        }
+      }
+    },
+    "microsoft": {
+      "name": "Microsoft Store (not listed)",
+      "notListed": "Epic 13 leaves Microsoft Store distribution after v1 and story 25.28 only notes MSIX as feasible: no package is built, so no images are made. When one is: desktop screenshots 1366x768 to 3840x2160, PNG, 1 to 10, captions as text (200 characters), key content in the top two thirds, no added logos or marketing messages; a 300x300 tile icon.",
+      "sources": [
+        "https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/screenshots-and-images"
+      ]
+    },
+    "flathub": {
+      "name": "Flathub (not packaged)",
+      "notListed": "Story 25.29 plans a Flatpak of the server only; none is built. When one is: plain window captures at most 1000x700 (2000x1400 HiDPI), no edits, crops, text or frames, the platform's default theme, captions in the metainfo.",
+      "sources": [
+        "https://docs.flathub.org/docs/for-app-authors/metainfo-guidelines/quality-guidelines"
+      ]
+    },
+    "snap": {
+      "name": "Snap Store (not packaged)",
+      "notListed": "Story 25.29 names a snapcraft.yaml that does not exist. When one does: up to 5 screenshots 480x480 to 3840x2160 (aspect 1:2 to 2:1, 2 MB), a 3:1 banner (1920x640 recommended), a 512x512 icon. Canonical's listing page answers 404; the numbers are from its forum documentation topic.",
+      "sources": ["https://forum.snapcraft.io/t/store-listing-and-branding/16397"]
+    }
+  },
+  "listings": [
+    {
+      "id": "apple-player-iphone",
+      "store": "apple",
+      "app": "player",
+      "bundle": "com.hamzalabs.maktaba.player",
+      "built": ".github/workflows/testflight.yml",
+      "sets": [
+        {
+          "asset": "iphone-6.3",
+          "style": "captioned",
+          "surface": "iphone",
+          "langs": "per-language"
+        },
+        {
+          "asset": "iphone-6.9",
+          "style": "captioned",
+          "surface": "iphone",
+          "langs": "per-language"
+        }
+      ]
+    },
+    {
+      "id": "apple-player-ipad",
+      "store": "apple",
+      "app": "player",
+      "bundle": "com.hamzalabs.maktaba.player.tablet",
+      "built": ".github/workflows/testflight.yml",
+      "sets": [
+        { "asset": "ipad-13", "style": "captioned", "surface": "ipad", "langs": "per-language" }
+      ]
+    },
+    {
+      "id": "apple-player-mac",
+      "store": "apple",
+      "app": "player",
+      "bundle": "com.hamzalabs.maktaba.player.mac",
+      "built": ".github/workflows/testflight.yml",
+      "note": "the Mac App Store; the server app (Maktaba, Tauri) is a direct download with no store listing",
+      "sets": [{ "asset": "mac", "style": "captioned", "surface": "mac", "langs": "per-language" }]
+    },
+    {
+      "id": "apple-remote-iphone",
+      "store": "apple",
+      "app": "remote",
+      "bundle": "com.hamzalabs.maktaba.remote",
+      "built": ".github/workflows/testflight.yml",
+      "sets": [
+        {
+          "asset": "iphone-6.3",
+          "style": "captioned",
+          "surface": "iphone",
+          "langs": "per-language"
+        },
+        {
+          "asset": "iphone-6.9",
+          "style": "captioned",
+          "surface": "iphone",
+          "langs": "per-language"
+        }
+      ]
+    },
+    {
+      "id": "apple-remote-ipad",
+      "store": "apple",
+      "app": "remote",
+      "bundle": "com.hamzalabs.maktaba.remote.tablet",
+      "built": ".github/workflows/testflight.yml",
+      "sets": [
+        { "asset": "ipad-13", "style": "captioned", "surface": "ipad", "langs": "per-language" }
+      ]
+    },
+    {
+      "id": "apple-tv",
+      "store": "apple",
+      "app": "tv",
+      "bundle": "com.hamzalabs.maktaba.tv",
+      "built": ".github/workflows/testflight.yml",
+      "sets": [
+        { "asset": "appletv", "style": "captioned", "surface": "appletv", "langs": "per-language" }
+      ]
+    },
+    {
+      "id": "google-player",
+      "store": "google",
+      "app": "player",
+      "bundle": "com.hamzalabs.maktaba.player",
+      "built": ".github/workflows/play-bundles.yml",
+      "sets": [
+        { "asset": "icon", "style": "icon", "langs": "single" },
+        { "asset": "feature", "style": "feature", "langs": "per-language" },
+        {
+          "asset": "phone",
+          "style": "captioned",
+          "surface": "android-phone",
+          "langs": "per-language"
+        },
+        {
+          "asset": "tablet-7",
+          "style": "captioned",
+          "surface": "android-tablet-7",
+          "langs": "per-language"
+        },
+        {
+          "asset": "tablet-10",
+          "style": "captioned",
+          "surface": "android-tablet",
+          "langs": "per-language"
+        }
+      ]
+    },
+    {
+      "id": "google-remote",
+      "store": "google",
+      "app": "remote",
+      "bundle": "com.hamzalabs.maktaba.remote",
+      "built": ".github/workflows/play-bundles.yml",
+      "sets": [
+        { "asset": "icon", "style": "icon", "langs": "single" },
+        { "asset": "feature", "style": "feature", "langs": "per-language" },
+        {
+          "asset": "phone",
+          "style": "captioned",
+          "surface": "android-phone",
+          "langs": "per-language"
+        },
+        {
+          "asset": "tablet-7",
+          "style": "captioned",
+          "surface": "android-tablet-7",
+          "langs": "per-language"
+        },
+        {
+          "asset": "tablet-10",
+          "style": "captioned",
+          "surface": "android-tablet",
+          "langs": "per-language"
+        }
+      ]
+    },
+    {
+      "id": "google-tv",
+      "store": "google",
+      "app": "tv",
+      "bundle": "com.hamzalabs.maktaba.tv",
+      "built": ".github/workflows/play-bundles.yml",
+      "sets": [
+        { "asset": "icon", "style": "icon", "langs": "single" },
+        { "asset": "feature", "style": "feature", "langs": "per-language" },
+        { "asset": "tv-banner", "style": "tile", "langs": "per-language" },
+        { "asset": "tv", "style": "plain", "surface": "androidtv", "langs": "per-language" }
+      ]
+    },
+    {
+      "id": "amazon-firetv",
+      "store": "amazon",
+      "app": "tv",
+      "bundle": "com.hamzalabs.maktaba.tv (the amazon flavor)",
+      "built": ".github/workflows/tv-release.yml",
+      "doc": "docs/stores/amazon.md",
+      "sets": [
+        { "asset": "tv-icon", "style": "tile", "langs": "per-language" },
+        { "asset": "tv", "style": "plain", "surface": "firetv", "langs": "per-language" },
+        { "asset": "background", "style": "art", "langs": "single" },
+        { "asset": "small-icon", "style": "icon", "langs": "single" },
+        { "asset": "large-icon", "style": "icon", "langs": "single" },
+        { "asset": "promo", "style": "feature", "langs": "per-language" }
+      ]
+    },
+    {
+      "id": "roku",
+      "store": "roku",
+      "app": "tv",
+      "bundle": "the Roku channel (apps/tv/roku)",
+      "built": ".github/workflows/roku-release.yml",
+      "doc": "docs/stores/roku.md",
+      "sets": [
+        { "asset": "poster", "style": "tile", "langs": "per-language" },
+        { "asset": "tv", "style": "plain", "surface": "roku", "langs": "per-language" }
+      ]
+    },
+    {
+      "id": "samsung",
+      "store": "samsung",
+      "app": "tv",
+      "bundle": "the Tizen launcher (apps/tv/web/tizen)",
+      "built": ".github/workflows/tv-web-release.yml",
+      "doc": "docs/stores/samsung.md",
+      "sets": [
+        { "asset": "logo", "style": "tile", "langs": "single" },
+        { "asset": "logo-background", "style": "art", "langs": "single" },
+        { "asset": "detail-background", "style": "art", "langs": "single" },
+        { "asset": "tv", "style": "plain", "surface": "samsung", "langs": "single" }
+      ]
+    },
+    {
+      "id": "lg",
+      "store": "lg",
+      "app": "tv",
+      "bundle": "the webOS launcher (apps/tv/web/webos)",
+      "built": ".github/workflows/tv-web-release.yml",
+      "doc": "docs/stores/lg.md",
+      "sets": [
+        { "asset": "icon", "style": "icon", "langs": "single" },
+        { "asset": "tv", "style": "plain", "surface": "lg", "langs": "single" },
+        { "asset": "background", "style": "art", "langs": "single" }
+      ]
+    }
+  ]
+}

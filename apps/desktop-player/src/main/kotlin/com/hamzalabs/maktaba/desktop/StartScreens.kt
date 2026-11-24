@@ -15,7 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.hamzalabs.maktaba.desktop.shell.MaktabaAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -181,7 +181,7 @@ private fun HomeRow(name: String, address: String, enabled: Boolean, onClick: ()
 private fun RenameDialog(home: Home, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     val t = LocalTexts.current
     var name by remember { mutableStateOf(home.nickname ?: "") }
-    AlertDialog(
+    MaktabaAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(t["picker.renameTitle"]) },
         text = {
@@ -202,7 +202,7 @@ fun ConnectLinkDialog(session: AppSession, link: ConnectLink, probe: HomeProbe =
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var problem by remember { mutableStateOf<String?>(null) }
-    AlertDialog(
+    MaktabaAlertDialog(
         onDismissRequest = { if (!busy) session.dismissLink() },
         title = { Text(t["link.title"]) },
         text = {
