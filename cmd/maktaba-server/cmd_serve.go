@@ -21,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/homemirror"
@@ -546,6 +547,8 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		// what the cluster's machines may reach of it follows the cluster: it listens
 		// beyond this machine only while one may connect (a start again to change that)
 		go pg.WatchReach(ctx, pgbundle.ReachEvery, func() error { return sup.Restart(supervisor.RolePostgres, "") }, os.Stderr)
+		// and no machine's copy stays kept out of it once its schema is settled
+		go pg.WatchCopies(ctx, pgbundle.CopiesEvery, func() bool { return schemaSettled(cfg.StateDir()) }, os.Stderr)
 	}
 	var stopCopy func()
 	if cp != nil {
@@ -587,7 +590,7 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
-	confirmPending(ctx, sup, releaseDir)
+	confirmPending(ctx, sup, releaseDir, apppayload.DatabasePath(cfg.StateDir()))
 	if bundle != "" {
 		go confirmAppPayload(ctx, sup, cfg.StateDir(), bundle)
 		go finishMove(ctx, sup, cfg)

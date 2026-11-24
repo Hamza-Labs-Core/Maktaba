@@ -328,6 +328,50 @@ func TestCopyFollowsARemadeAccess(t *testing.T) {
 	}
 }
 
+// The home pauses the machines' copies for an update's migrations (pgbundle.PauseCopies)
+// while this machine follows and asks for its copy again and again, as it always does: its
+// grant (cluster_node_replica_grant) works and makes its role LOGIN, and it stays out all
+// the same; what changed meanwhile comes once it is let in again, nothing copied anew.
+func TestCopyStaysOutWhileTheHomeMigrates(t *testing.T) {
+	r := newRig(t)
+	r.following("the first copy")
+	r.follows("the first copy", "one")
+	first, _ := r.c.Mark()
+	if n, err := r.home.PauseCopies(r.ctx); err != nil || n == 0 {
+		t.Fatalf("pause: %d sessions ended, %v", n, err)
+	}
+	for range 5 {
+		g, err := r.c.Ask(r.ctx, false)
+		for try := 0; err != nil && strings.Contains(err.Error(), "concurrently updated") && try < 20; try++ {
+			// the manager asks too, at the same time: the same role altered by both
+			g, err = r.c.Ask(r.ctx, false)
+		}
+		if err != nil || !g.SlotExists {
+			t.Fatalf("the machine's grant while paused: %+v %v", g, err)
+		}
+		var login bool
+		if err := r.super.QueryRowContext(r.ctx, `SELECT rolcanlogin FROM pg_roles WHERE rolname = $1`, r.c.Role()).Scan(&login); err != nil || !login {
+			t.Fatalf("the grant did not set LOGIN (%v): this test shows nothing", err)
+		}
+		var sessions int
+		if err := r.super.QueryRowContext(r.ctx, `SELECT count(*) FROM pg_stat_activity WHERE usename = $1`, r.c.Role()).Scan(&sessions); err != nil || sessions != 0 {
+			t.Fatalf("%d sessions of the copy while paused (%v)", sessions, err)
+		}
+		if err := r.c.CopyLogin(r.ctx, ""); kindOf(err) != kindAuth {
+			t.Fatalf("the copy's login while paused: %v", err)
+		}
+		time.Sleep(time.Second)
+	}
+	if err := r.home.ResumeCopies(r.ctx); err != nil {
+		t.Fatal(err)
+	}
+	r.following("after the home's migrations")
+	r.follows("after the home's migrations", "two")
+	if now, _ := r.c.Mark(); now.Subscribed != first.Subscribed {
+		t.Fatalf("the copy was made anew: %v, was %v", now.Subscribed, first.Subscribed)
+	}
+}
+
 func (r *rig) copyPausedNow() bool { return r.m.copyPaused() }
 
 // The home's slot for the copy is lost (the machine was off past the home's cap): the

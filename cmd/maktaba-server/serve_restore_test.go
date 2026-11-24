@@ -441,3 +441,101 @@ func TestRestoreOfAHeldUpdateCarriesTheKeptSchema(t *testing.T) {
 		t.Fatalf("record %+v", rec)
 	}
 }
+
+// A restore that could not finish has a way out: the same backup again, another one, or
+// giving it up; under way (its last try not failed) it is neither replaced nor given up.
+func TestRestoreThatCannotFinishHasAWayOut(t *testing.T) {
+	const first, other = "pre-v0.2.0-to-v0.3.0.dump", "pre-v0.2.1-to-v0.3.0.dump"
+	heldRec := func(rig *restoreRig) apppayload.Database {
+		return apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseHeld, From: "0.2.0", Failed: "0.3.0",
+			Dump: filepath.Join(rig.backups, first), SchemaBefore: 140, Held: "db_held_lossy"}
+	}
+	start := func(t *testing.T, before func(*restoreRig) apppayload.Database) *restoreRig {
+		rig := newRestoreRig(t, map[string]int64{first: 140, other: 140})
+		rig.r.alive = func(context.Context) bool { return true }
+		if err := apppayload.WriteDatabase(rig.r.stateDir, before(rig)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := rig.r.restore(context.Background(), first, "admin", true, false); err != nil {
+			t.Fatal(err)
+		}
+		<-rig.exits
+		return rig
+	}
+	fail := func(t *testing.T, rig *restoreRig) {
+		rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir)
+		rec.RestoreError = "pg_restore: input file is too short"
+		if err := apppayload.WriteDatabase(rig.r.stateDir, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := context.Background()
+
+	// not failed: under way
+	rig := start(t, heldRec)
+	if _, err := rig.r.restore(ctx, other, "admin", true, false); restoreCode(err) != "restore_under_way" {
+		t.Fatalf("another backup while one is put back: %v", err)
+	}
+	if err := rig.r.abandon(ctx, "admin"); restoreCode(err) != "restore_none_failed" {
+		t.Fatalf("given up while it is put back: %v", err)
+	}
+	// failed: another backup, and then the same again, each on what was before the first
+	fail(t, rig)
+	for _, name := range []string{other, first} {
+		if _, err := rig.r.restore(ctx, name, "admin", true, false); err != nil {
+			t.Fatalf("%s after a failure: %v", name, err)
+		}
+		<-rig.exits
+		rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir)
+		if rec.State != apppayload.DatabaseRestoring || filepath.Base(rec.Dump) != name || rec.RestoreError != "" ||
+			rec.Before == nil || rec.Before.State != apppayload.DatabaseHeld || rec.Before.Before != nil || rec.Version != "0.3.0" {
+			t.Fatalf("%s: record %+v", name, rec)
+		}
+		fail(t, rig)
+	}
+	// the database gone: only a restore brings one back
+	rig.r.alive = func(context.Context) bool { return false }
+	if err := rig.r.abandon(ctx, "admin"); restoreCode(err) != "restore_database_gone" {
+		t.Fatalf("given up with no database: %v", err)
+	}
+	rig.r.alive = func(context.Context) bool { return true }
+	ran := len(rig.inst.ran)
+	if err := rig.r.abandon(ctx, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if code := <-rig.exits; code != 75 || len(rig.inst.ran) != ran {
+		t.Fatalf("exit %d, switched to %v: a held update waits under whichever release starts", code, rig.inst.ran[ran:])
+	}
+	if rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir); rec.State != apppayload.DatabaseHeld || rec.Failed != "0.3.0" ||
+		filepath.Base(rec.Dump) != first || rec.SchemaBefore != 140 || rec.RestoreError != "" {
+		t.Fatalf("given up: %+v", rec)
+	}
+
+	// a restore by hand on a home that ran well: the release that ran on it runs again
+	rig = start(t, func(*restoreRig) apppayload.Database {
+		return apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated}
+	})
+	fail(t, rig)
+	rig.inst.running = "0.2.0" // the backup's release started, and stopped on the failure
+	if err := rig.r.abandon(ctx, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	<-rig.exits
+	if n := len(rig.inst.ran); n == 0 || rig.inst.ran[n-1] != "0.3.0" {
+		t.Fatalf("ran %v, want 0.3.0 again", rig.inst.ran)
+	}
+	if rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir); rec.State != apppayload.DatabaseMigrated || rec.Version != "0.3.0" {
+		t.Fatalf("given up: %+v", rec)
+	}
+	// its release no longer kept: refused, nothing changed
+	rig = start(t, func(*restoreRig) apppayload.Database {
+		return apppayload.Database{Version: "0.4.0", State: apppayload.DatabaseMigrated}
+	})
+	fail(t, rig)
+	if err := rig.r.abandon(ctx, "admin"); restoreCode(err) != "restore_no_release" {
+		t.Fatalf("given up for a release not kept: %v", err)
+	}
+	if rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir); rec.State != apppayload.DatabaseRestoring {
+		t.Fatalf("record %+v", rec)
+	}
+}

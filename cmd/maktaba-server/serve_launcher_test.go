@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,5 +160,61 @@ func TestACommandLineSwitchConfirmsItself(t *testing.T) {
 	}
 	if confirmsItself(nil) {
 		t.Error("no marker confirms itself")
+	}
+}
+
+// Confirming a release raises the watermark before the pending marker goes: one that cannot
+// be written leaves the marker, so the release is confirmed again (and the watermark never
+// stays behind); the database's record names its backup once it is confirmed.
+func TestConfirmReleaseRaisesTheWatermarkFirst(t *testing.T) {
+	root := t.TempDir()
+	l := layout.New(root)
+	record := filepath.Join(root, "state", "database.json")
+	if err := os.MkdirAll(filepath.Dir(record), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	pend := func() {
+		t.Helper()
+		if err := os.WriteFile(record, []byte(`{"version":"1.5.0","state":"migrated","dump_unconfirmed":"/b/d.dump"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, layout.PendingFile), []byte(`{"version":"1.5.0","previous":"1.4.0"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pend()
+	// the watermark's place is taken by a folder: it cannot be written
+	blocked := filepath.Join(root, layout.WatermarkFile)
+	if err := os.MkdirAll(filepath.Join(blocked, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := confirmRelease(l, "1.5.0", record); err == nil {
+		t.Fatal("confirmed with no watermark")
+	}
+	if p, _ := l.ReadPending(); p == nil || p.Version != "1.5.0" {
+		t.Fatalf("the marker went before the watermark: %+v", p)
+	}
+	if b, _ := os.ReadFile(record); !strings.Contains(string(b), "dump_unconfirmed") {
+		t.Fatalf("the record was confirmed: %s", b)
+	}
+	if err := os.RemoveAll(blocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := confirmRelease(l, "1.5.0", record); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := l.ReadPending(); p != nil || l.Watermark() != "1.5.0" {
+		t.Fatalf("pending %+v watermark %q", p, l.Watermark())
+	}
+	if b, _ := os.ReadFile(record); !strings.Contains(string(b), `"dump": "/b/d.dump"`) {
+		t.Fatalf("record %s", b)
+	}
+	// a stop between the watermark and the marker: confirmed again at the next start
+	pend()
+	if err := confirmRelease(l, "1.5.0", record); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := l.ReadPending(); p != nil {
+		t.Fatalf("pending %+v", p)
 	}
 }

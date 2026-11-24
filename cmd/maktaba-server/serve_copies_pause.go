@@ -2,36 +2,33 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
-	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // The machines' copies during an update's migrations (pgbundle/copies_pause.go): the
-// database step waits for their table syncs to end, then pauses them (their replication
-// roles may not log in, their walsenders ended) until the migrations are done. Research
-// item 5 (E4, E8): on 2026-11-23 the migrations ended 25 to 28 sessions a try, and the
-// machines reconnected at once; a table sync's walsender ended mid-COPY makes its machine
-// copy that table again, and its snapshot was what the index builds waited on.
+// database step waits for their table syncs to end, then keeps them out (pg_hba.conf, their
+// sessions ended) until the schema is settled. Research item 5 (E4, E8): on 2026-11-23 the
+// migrations ended 25 to 28 sessions a try, and the machines reconnected at once; a table
+// sync's walsender ended mid-COPY makes its machine copy that table again, and its snapshot
+// was what the index builds waited on.
+//
+// The copies come back when the database's record says the schema is settled (schemaSettled):
+// the migrations ran, or failed and were kept or undone, or a restore a person asked for is
+// done. Not while the record says migrating (the next start goes on), restoring, or held (a
+// person has not chosen yet): the marker outlives the server, and each of those starts with
+// the copies kept out. A rollback to a release from before the marker writes pg_hba.conf
+// without it, so nothing stays paused there.
 
 // The bundled Postgres's side (tests replace them).
 var (
-	tableSyncsBundled    = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.TableSyncs(ctx) }
-	replicaLoginsBundled = func(ctx context.Context, b pgbundle.Bundle) ([]string, error) { return b.ReplicaLogins(ctx) }
-	pauseCopiesBundled   = func(ctx context.Context, b pgbundle.Bundle, roles []string) (int, error) {
-		return b.PauseCopies(ctx, roles)
-	}
-	resumeCopiesBundled = func(ctx context.Context, b pgbundle.Bundle, roles []string) error {
-		return b.ResumeCopies(ctx, roles)
-	}
+	tableSyncsBundled   = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.TableSyncs(ctx) }
+	pauseCopiesBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.PauseCopies(ctx) }
+	resumeCopiesBundled = func(ctx context.Context, b pgbundle.Bundle) error { return b.ResumeCopies(ctx) }
+	copiesPausedBundled = func(b pgbundle.Bundle) bool { return b.CopiesPaused() }
 )
 
 // copySyncWait is how long the migrations wait for the machines' table syncs to end
@@ -42,132 +39,103 @@ var (
 	copySyncEvery = 5 * time.Second
 )
 
-// copiesPausedPath is where the paused roles are kept until they log in again (a server
-// stopped during the migrations lets them back in at its next start).
-func copiesPausedPath(stateDir string) string {
-	return filepath.Join(stateDir, "state", "copies-paused.json")
-}
-
-// pauseCopies waits (up to wait) for the machines' table syncs to end, then
-// pauses their copies for the migrations; the returned func lets them log in again. Only
-// the bundled Postgres's copies (an operator's keeps none unless allowed, and its roles
-// are the operator's to change). Best effort: what fails is said, and the migrations go
-// on as before (their lock timeout, and freeMigrations, bound what they wait on).
-func (g *migrationGate) pauseCopies(ctx context.Context, wait time.Duration) func() {
+// pauseCopies waits (wait at most, whatever the server does) for the machines' table syncs
+// to end, then keeps their copies out. Only the bundled Postgres's copies (an operator's
+// keeps none unless allowed, and its pg_hba.conf is the operator's).
+//
+// When they cannot be kept out, that is said at level=error and the migrations run all the
+// same, as on every release before the pause: what they wait on longer than
+// migrationBlockerGrace is ended (freeMigrations), their index builds are plain (they wait
+// on no snapshot), and the lock timeout bounds the rest. An update that could not start for
+// want of the pause would keep a home off its security fixes over a machine's copy, which
+// is made anew at worst.
+func (g *migrationGate) pauseCopies(ctx context.Context, wait time.Duration) {
 	if g.pg == nil {
-		return func() {}
+		return
 	}
 	b := *g.pg
-	start, told := time.Now(), false
-	for {
-		n, err := tableSyncsBundled(ctx, b)
-		if err != nil {
-			fmt.Fprintf(g.log, "[serve] level=warn the machines' table syncs cannot be counted before the migrations: %v\n", err)
-			break
+	if wait > 0 {
+		g.waitTableSyncs(ctx, b, wait)
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	ended, err := pauseCopiesBundled(ctx, b)
+	if err != nil {
+		if ctx.Err() == nil {
+			fmt.Fprintf(g.log, "[serve] level=error the machines' copies could not be paused: they may come back while "+
+				"the schema changes (what the migrations wait on is ended, as before): %v\n", err)
 		}
-		if n == 0 {
-			if told {
+		return
+	}
+	fmt.Fprintf(g.log, "[serve] the machines' copies are paused until the schema is settled (%d of their sessions "+
+		"ended): they go on from where they stopped\n", ended)
+}
+
+func (g *migrationGate) waitTableSyncs(ctx context.Context, b pgbundle.Bundle, wait time.Duration) {
+	wctx, cancel := context.WithTimeout(ctx, wait)
+	defer cancel()
+	start, told := time.Now(), 0
+	for {
+		n, err := tableSyncsBundled(wctx, b)
+		switch {
+		case ctx.Err() != nil:
+			return
+		case wctx.Err() != nil:
+			fmt.Fprintf(g.log, "[serve] level=warn %d of the machines' table syncs still run (%s waited): the copies are "+
+				"paused all the same, and those machines copy those tables again\n", told, wait)
+			return
+		case err != nil:
+			fmt.Fprintf(g.log, "[serve] level=warn the machines' table syncs cannot be counted before the migrations: %v\n", err)
+			return
+		case n == 0:
+			if told > 0 {
 				fmt.Fprintf(g.log, "[serve] the machines' table syncs ended (%s): the migrations go on\n",
 					time.Since(start).Round(time.Second))
 			}
-			break
-		}
-		if time.Since(start) >= wait {
-			fmt.Fprintf(g.log, "[serve] level=warn %d of the machines' table syncs still run (%s waited): the copies are "+
-				"paused all the same, and those machines copy those tables again\n", n, wait)
-			break
-		}
-		if !told {
-			told = true
+			return
+		case told == 0:
 			fmt.Fprintf(g.log, "[serve] %d of the machines' table syncs run (a machine copying the database): the "+
 				"migrations wait for them to end (at most %s)\n", n, wait)
 		}
+		told = n
 		select {
-		case <-ctx.Done():
-			return func() {}
+		case <-wctx.Done():
 		case <-time.After(copySyncEvery):
 		}
 	}
-	roles, err := replicaLoginsBundled(ctx, b)
-	if err != nil {
-		fmt.Fprintf(g.log, "[serve] level=warn the machines' copies cannot be paused for the migrations: %v\n", err)
-		return func() {}
-	}
-	if len(roles) == 0 {
-		return func() {}
-	}
-	// kept first: a stop during the migrations lets them back in at the next start
-	if err := writeCopiesPaused(g.stateDir, roles); err != nil {
-		fmt.Fprintf(g.log, "[serve] level=warn the machines' copies are not paused (their roles cannot be kept in %s): %v\n",
-			copiesPausedPath(g.stateDir), err)
-		return func() {}
-	}
-	ended, err := pauseCopiesBundled(ctx, b, roles)
-	if err != nil {
-		fmt.Fprintf(g.log, "[serve] level=warn the machines' copies could not all be paused for the migrations: %v\n", err)
-	} else {
-		fmt.Fprintf(g.log, "[serve] the machines' copies are paused for the migrations (%s may not log in; %d of "+
-			"their sessions ended): they go on from where they stopped once the migrations are done\n",
-			strings.Join(roles, ", "), ended)
-	}
-	return func() { g.resumeCopies(roles) }
 }
 
-// resumeCopies lets the paused roles log in again (a minute at most: the migrations are
-// over, or the server stops).
-func (g *migrationGate) resumeCopies(roles []string) {
-	if g.pg == nil || len(roles) == 0 {
+// schemaSettled says whether the database's record holds a schema the machines' copies may
+// follow: no migration, restore or held update under way (none recorded: none is). A
+// record that cannot be read, or a state this release does not know, does not.
+func schemaSettled(stateDir string) bool {
+	rec, ok, err := apppayload.ReadDatabase(stateDir)
+	if err != nil {
+		return false
+	}
+	switch rec.State {
+	case apppayload.DatabaseMigrated, apppayload.DatabaseRestored:
+		return true
+	}
+	return !ok
+}
+
+// resumeCopies lets the machines' copies in again when they are paused and the schema is
+// settled (a minute at most).
+func (g *migrationGate) resumeCopies() {
+	if g.pg == nil || !copiesPausedBundled(*g.pg) {
+		return
+	}
+	if !schemaSettled(g.stateDir) {
+		fmt.Fprintf(g.log, "[serve] the machines' copies stay paused: the library database's schema is not settled yet\n")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
-	if err := resumeCopiesBundled(ctx, *g.pg, roles); err != nil {
-		fmt.Fprintf(g.log, "[serve] level=error the machines' copies could not log in again after the migrations "+
-			"(%s): %v; the next start tries again\n", strings.Join(roles, ", "), err)
+	if err := resumeCopiesBundled(ctx, *g.pg); err != nil {
+		fmt.Fprintf(g.log, "[serve] level=error the machines' copies could not be let in again (it is tried again): %v\n", err)
 		return
 	}
-	if err := os.Remove(copiesPausedPath(g.stateDir)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		fmt.Fprintf(g.log, "[serve] level=warn %s cannot be removed: %v\n", copiesPausedPath(g.stateDir), err)
-	}
-	fmt.Fprintf(g.log, "[serve] the machines' copies may log in again (%s)\n", strings.Join(roles, ", "))
-}
-
-// resumeLeftCopies lets back in the copies a step that stopped during its migrations left
-// paused (copiesPausedPath).
-func (g *migrationGate) resumeLeftCopies() {
-	roles, err := readCopiesPaused(g.stateDir)
-	if err != nil {
-		fmt.Fprintf(g.log, "[serve] level=warn %s cannot be read: %v\n", copiesPausedPath(g.stateDir), err)
-		return
-	}
-	if len(roles) > 0 {
-		fmt.Fprintf(g.log, "[serve] the machines' copies were left paused by migrations that did not finish: they may "+
-			"log in again\n")
-		g.resumeCopies(roles)
-	}
-}
-
-func writeCopiesPaused(stateDir string, roles []string) error {
-	b, _ := json.Marshal(map[string]any{"roles": roles, "at": time.Now().UTC()})
-	if err := os.MkdirAll(filepath.Dir(copiesPausedPath(stateDir)), 0o755); err != nil {
-		return err
-	}
-	return layout.WriteFileAtomic(copiesPausedPath(stateDir), append(b, '\n'), 0o600)
-}
-
-func readCopiesPaused(stateDir string) ([]string, error) {
-	b, err := os.ReadFile(copiesPausedPath(stateDir))
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var v struct {
-		Roles []string `json:"roles"`
-	}
-	if err := json.Unmarshal(b, &v); err != nil {
-		return nil, err
-	}
-	return v.Roles, nil
+	fmt.Fprintf(g.log, "[serve] the machines' copies may log in again\n")
 }

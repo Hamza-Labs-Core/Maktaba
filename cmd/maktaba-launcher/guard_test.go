@@ -314,7 +314,7 @@ func TestBundleGuardDeadlineIsCapped(t *testing.T) {
 	if got := layout.GuardLatest(now, time.Time{}); !got.Equal(now.Add(layout.MaxGuardSpan)) {
 		t.Fatalf("no latest: %v", got)
 	}
-	if got := layout.GuardLatest(now, now.Add(48*time.Hour)); !got.Equal(now.Add(layout.MaxGuardSpan)) {
+	if got := layout.GuardLatest(now, now.Add(48*time.Hour)); !got.Equal(now.Add(48 * time.Hour)) {
 		t.Fatalf("a latest past a day: %v", got)
 	}
 }

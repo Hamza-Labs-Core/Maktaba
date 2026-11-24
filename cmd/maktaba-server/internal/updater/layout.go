@@ -260,10 +260,10 @@ func (li *LayoutInstaller) KeepsSchema(j *Journal) (bool, string) {
 
 // DownTo implements SchemaReverter: the staged release's Down scripts above the release
 // before's migrations (schemadown.go).
-func (li *LayoutInstaller) DownTo(j *Journal) (int64, bool, string) {
+func (li *LayoutInstaller) DownTo(j *Journal, before int64, onKept bool) (int64, bool, string) {
 	from := li.fromMigrations(j)
 	if from == "" || j.Staged == "" {
 		return 0, false, "the releases' migrations are not known"
 	}
-	return DownToFrom(from, filepath.Join(j.Staged, install.MigrationsDir))
+	return DownToFrom(from, filepath.Join(j.Staged, install.MigrationsDir), before, onKept)
 }

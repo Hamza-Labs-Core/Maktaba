@@ -113,14 +113,17 @@ func (ri *RuntimeInstaller) Answer(j *Journal) (string, error) {
 	if nerr := ri.nudge.nudge(r, j, ri.now(), after, ri.Open); nerr != nil {
 		ri.nudgeErr = nerr.Error() // the app's last start that failed, said when the run goes on
 	}
-	if q, rerr := r.read(); rerr == nil && q.RunID == j.Job.RunID && !q.At.IsZero() &&
+	if q, rerr := r.read(); rerr == nil && q.RunID == j.Job.RunID && q.State == RequestOrdered && !q.At.IsZero() &&
 		ri.now().Sub(q.At) >= runtimeNoAppAfter {
 		why := "it did not answer"
 		if ri.nudgeErr != "" {
 			why = ri.nudgeErr
 		}
-		if serr := r.set(j, RequestKindRuntime, "", RequestStaged); serr != nil {
+		switch staged, serr := r.stage(j); {
+		case serr != nil:
 			return state, nil // asked again
+		case !staged:
+			return r.answer(j) // the app answered, or the order was withdrawn, meanwhile
 		}
 		if ri.Logf != nil {
 			ri.Logf("the app did not answer the order of %s within %s (%s): nothing is staged for a runtime, "+
@@ -453,10 +456,10 @@ func (ri *RuntimeInstaller) KeepsSchema(j *Journal) (bool, string) {
 
 // DownTo implements SchemaReverter: the staged runtime's Down scripts above the runtime of
 // the release before (schemadown.go).
-func (ri *RuntimeInstaller) DownTo(j *Journal) (int64, bool, string) {
+func (ri *RuntimeInstaller) DownTo(j *Journal, before int64, onKept bool) (int64, bool, string) {
 	if j.FromRef == "" || j.Staged == "" {
 		return 0, false, "the runtimes' migrations are not known"
 	}
 	return DownToFrom(filepath.Join(ri.Runtime.Root, j.FromRef, "migrations"),
-		filepath.Join(ri.Runtime.Root, j.Staged, "migrations"))
+		filepath.Join(ri.Runtime.Root, j.Staged, "migrations"), before, onKept)
 }

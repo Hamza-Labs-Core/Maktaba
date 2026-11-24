@@ -206,7 +206,8 @@ the others go, and it takes its turn once staged, with no click. A run waiting o
 download gives way to a newer release. An app that never stages its order (not running on that
 machine, or its start with the order's link failed, which the run's log now says) ends the order
 `app_no_answer` at the time the run installs by (its window's end), else three hours after the
-order, and never within half an hour of it; nothing changed. The Linux app's runtime order has
+order, and never within half an hour of it; nothing changed. It is the machine's, not the
+release's: it counts no attempt, and the next window tries again. The Linux app's runtime order has
 nothing to stage, so an app that does not answer it within 10 minutes no longer holds the run: it
 goes on, and the server switches its runtime itself at the go. A power cut at any step is
 recovered at the next start from the update's journal (`updates/journal.json`).
@@ -315,7 +316,9 @@ When its migrations ran, the database goes back by their own Down scripts: it st
 left it when every one of them is additive and the previous release runs on a newer schema;
 else their Down scripts undo them, the one that failed part way by its own Down script first
 (`maktaba-api migrate undo-failed`), back to the slot the database was at before the update
-(recorded as `schema_before` when the migrations start).
+(recorded as `schema_before` when the migrations start). They never go below that slot: a
+schema an earlier rollback kept is left as it is, still kept for the previous release, and when
+its slot is not recorded no Down script runs.
 
 A layout install (the `.deb`/`.rpm`, `setup --self-managed`) keeps the release before's
 migrations in `bin/releases/<v>/` and undoes the same way; until 2026-11-24 its rollback
@@ -342,7 +345,32 @@ database (`db_refused_older`) and stops the same way, putting nothing back. A re
 such a release, or its launcher, wrote (`restoring` with no person named) is held too by every
 release since: the dump is not put back. Only an update to a release with this rule is
 protected by it: a release from before it runs its own database step and puts the backup back
-as it always did. The automatic restores of 2026-11-14, 2026-11-23 (v0.3.158) and 2026-11-24
+as it always did.
+
+The first update to such a release is protected too, under the launcher and the release that were
+there before it (a layout install, a container and the Linux app keep their launcher). Their
+guard, and the older release coming back by itself, mark the record `restoring` only when it names
+a backup (`dump`); one that names none they leave alone, as every release with a guard has. So
+until its watch passes, the new release's record keeps its backup's path where only releases
+with this rule read it (`dump_unconfirmed`), and names it once the release is confirmed, or when
+the update is held. Given up on, the older release refuses the database as newer than its own
+(`db_refused_older`) and stops, with nothing put back; its own recovery page and `restore` still
+put the backup back when a person asks. Update rehearsal 21 runs the previous release's real
+launcher and server against it.
+
+**When the switch back fails** (the previous release gone, a pointer that cannot be written), a
+held record stays held: its Down scripts may have run in part, and the failed release never
+migrates and runs on that by itself.
+
+**A restore that cannot finish** (its backup lost or unreadable, no room) changes nothing, and has
+a way out: the next start tries it again; the recovery page and `maktaba-server restore` can put
+the same or another backup back; **Give this restore up** (`maktaba-server restore --abandon
+--confirm`) leaves the database as it was before it (a held update waits again; on a home that
+ran well, the release that ran on it starts again); and a release newer than the one that failed
+goes on from there. While a restore runs, none of these is possible, and one whose database is
+gone is not given up: only a restore brings a database back.
+
+The automatic restores of 2026-11-14, 2026-11-23 (v0.3.158) and 2026-11-24
 (v0.3.157) each kept the library stopped for about three hours. The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
 again**, or **Update now** naming it). A release that rolled back (or whose migrations failed on
@@ -384,19 +412,33 @@ so one that hung with its watch alive was never timed out.
 - **The machines' copies wait, then pause (since 2026-11-24).** An automatic update does not
   start while a machine is copying a table of the home's database (its first copy, or one made
   anew: `machine_copying` on Admin → Updates); **Update now** does not wait. Before the
-  migrations the home waits up to 10 minutes for the table syncs still running, then pauses the
-  machines' copies: each machine's replication role may not log in, and its walsender is ended,
-  so nothing of theirs runs or comes straight back while the schema changes. After the
-  migrations, or the Down scripts that undo them (a rollback's too), they log in again and go on
-  from where they stopped (each one's slot kept the changes, under the home's cap). A home stopped in the middle lets them back in at its
-  next start.
+  migrations the home waits for the table syncs still running, 10 minutes at most whatever the
+  database does, then keeps the machines' copies out until the schema is settled: `pg_hba.conf`
+  rejects their replication roles (`/^maktaba_rep_`; never the app role) and their sessions are
+  ended. It is `pg_hba.conf` and not the roles, since a machine asks for its copy again and again
+  and the home's answer (`cluster_node_replica_grant`) sets `LOGIN` on its role.
+  - They come back when the database's record says the schema is settled: the migrations ran, or
+    failed and were kept or undone, or the restore a person asked for is done. Each goes on from
+    where it stopped (its slot kept the changes, under the home's cap).
+  - They stay out, across restarts, while the record says `migrating` (the next start goes on),
+    `restoring` or `held` (a person has not chosen yet), and when a rollback's Down script failed.
+  - Nothing stays out for good: the pause is a marker in the data directory
+    (`maktaba-copies-paused`) that `pg_hba.conf` is written from. A release from before it writes
+    the file without the rejects at its start, and this one looks every minute whether the copies
+    are still out on a settled schema.
+  - When they cannot be kept out (the file cannot be written, the server does not reload it), that
+    is logged at level=error and the migrations run all the same, as before this rule: what they
+    wait on is ended, and their index builds wait on no snapshot.
+  - Only a table sync that streams now counts. Its slot is permanent: one left by a machine that
+    went away holds nothing up, and goes when its machine is back, or when its WAL is past the
+    home's cap (`rules.cluster.replica_wal_keep_gb`) or lost, which the home looks at on its own.
 - **Index builds are plain while the library is stopped (since 2026-11-24).** The migrations
   run before any role starts, so their `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
   run without `CONCURRENTLY` (`MAKTABA_MIGRATE_OFFLINE=1`, set by the database step and the
   rehearsal on a copy). A plain build takes a lock that only holds writes back, which the
   stopped library makes none of, waits for no older transaction, and rolls back whole: it leaves
   no INVALID index. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
-  left as it is.
+  left as it is. An INVALID index an earlier try left is dropped, and built again, plainly too.
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous
   release runs on them), `db_undone` (their Down scripts undid them), or `db_held` (nothing

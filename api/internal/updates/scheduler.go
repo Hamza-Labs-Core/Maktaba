@@ -105,9 +105,13 @@ func HomeBlockers(db *sql.DB, supervisor string, hc *http.Client) []Blocker {
 // view (SQLite), or a role that cannot read it, is not held.
 type CopyingBlocker struct{ DB *sql.DB }
 
-// tableSyncSlots counts the home's table sync slots (logical replication's initial copy).
+// tableSyncSlots counts the table syncs that stream from the home now (logical
+// replication's initial copy). Not every slot: such a slot is permanent, and one whose
+// machine went away mid-copy stays, inactive, until the home drops it (its WAL past the
+// home's cap, or lost: cluster.Copies' beat) or the machine is back; it holds nothing an
+// update waits on, and must never hold updates back.
 const tableSyncSlots = `SELECT count(*) FROM pg_replication_slots
-    WHERE slot_type = 'logical' AND database = current_database() AND slot_name ~ '^pg_[0-9]+_sync_[0-9]+_[0-9]+$'`
+    WHERE slot_type = 'logical' AND active AND database = current_database() AND slot_name ~ '^pg_[0-9]+_sync_[0-9]+_[0-9]+$'`
 
 // Blocked implements Blocker.
 func (b CopyingBlocker) Blocked(ctx context.Context) (string, error) {

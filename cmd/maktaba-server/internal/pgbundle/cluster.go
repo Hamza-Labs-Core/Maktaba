@@ -278,6 +278,7 @@ func (b Bundle) hbaConf() string {
 	}
 	var s strings.Builder
 	s.WriteString("# Managed by Maktaba (pgbundle): written at every start, edits here are lost.\n")
+	s.WriteString(b.pausedHBA())
 	s.WriteString("# This machine: every role, with its password.\n")
 	s.WriteString("local   all          all                              scram-sha-256\n")
 	s.WriteString("host    all          all              127.0.0.1/32    scram-sha-256\n")

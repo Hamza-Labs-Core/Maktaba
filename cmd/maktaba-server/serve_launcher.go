@@ -154,9 +154,28 @@ func confirmsItself(p *layout.Pending) bool {
 	return p != nil && (p.RunID == "" || p.RunID == cliRunID)
 }
 
+// confirmRelease confirms release ver: the watermark raised first, the pending marker removed
+// next, so a stop in between (or a watermark that cannot be written) leaves the marker for
+// the next start to confirm again. The database's record last, once no launcher's guard may
+// act on it (it then names its backup: layout.ConfirmRecord); best effort.
+func confirmRelease(l layout.Layout, ver, record string) error {
+	if err := l.RaiseWatermark(ver); err != nil {
+		return fmt.Errorf("the watermark: %w", err)
+	}
+	if err := l.Confirm(); err != nil {
+		return err
+	}
+	if _, err := layout.ConfirmRecord(record, ver); err != nil {
+		fmt.Fprintf(os.Stderr, "[serve] the database's record cannot say %s is confirmed: %v\n", ver, err)
+	}
+	return nil
+}
+
 // confirmPending removes the launcher's pending marker (and raises the
 // watermark) once this release has run healthy for confirmAfter.
-func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir string) {
+// record is the home's database record ("" none): its update's backup is named where every
+// release reads it once the release is confirmed (layout.ConfirmRecord).
+func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir, record string) {
 	after := confirmAfter()
 	if releaseDir == "" || after <= 0 {
 		return
@@ -177,13 +196,13 @@ func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir 
 				return
 			}
 			if healthyFor(sup.Snapshot(), after) {
-				if err := l.Confirm(); err != nil {
-					fmt.Fprintf(os.Stderr, "[serve] confirming release %s failed: %v\n", ver, err)
+				if err := confirmRelease(l, ver, record); err != nil {
+					// the marker stays: tried again
+					fmt.Fprintf(os.Stderr, "[serve] confirming release %s failed (trying again): %v\n", ver, err)
+				} else {
+					fmt.Fprintf(os.Stderr, "[serve] release %s confirmed (healthy for %s)\n", ver, after)
 					return
 				}
-				_ = l.RaiseWatermark(ver)
-				fmt.Fprintf(os.Stderr, "[serve] release %s confirmed (healthy for %s)\n", ver, after)
-				return
 			}
 			select {
 			case <-ctx.Done():

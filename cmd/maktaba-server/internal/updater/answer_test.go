@@ -115,3 +115,72 @@ func TestAppNudgeErrorIsSaid(t *testing.T) {
 		t.Fatalf("logged %q", logged)
 	}
 }
+
+// A runtime order that goes on without its app moves only an order still waiting: an answer
+// of the app that came meanwhile (staged, or failed, with its error), and an order withdrawn
+// or replaced, stay as they are, and nothing is written afresh.
+func TestRuntimeOrderKeepsALateAnswer(t *testing.T) {
+	now := time.Date(2026, 11, 24, 3, 0, 0, 0, time.UTC)
+	j := &Journal{Job: Job{RunID: "run-1", Version: "1.5.0"}}
+	for name, c := range map[string]struct {
+		meanwhile func(t *testing.T, r requests)
+		staged    bool
+		state     string // the order's state after ("": none)
+	}{
+		"waiting":   {func(*testing.T, requests) {}, true, RequestStaged},
+		"withdrawn": {func(_ *testing.T, r requests) { r.remove() }, false, ""},
+		"failed": {func(t *testing.T, r requests) {
+			q, _ := r.read()
+			q.State, q.Error = RequestFailed, "needs_admin: no"
+			if err := r.write(q); err != nil {
+				t.Fatal(err)
+			}
+		}, false, RequestFailed},
+		"gone to the go": {func(t *testing.T, r requests) {
+			if err := r.set(j, RequestKindRuntime, "", RequestGo); err != nil {
+				t.Fatal(err)
+			}
+		}, false, RequestGo},
+		"replaced": {func(t *testing.T, r requests) {
+			if err := r.order(&Journal{Job: Job{RunID: "run-2", Version: "1.6.0"}}, RequestKindRuntime, ""); err != nil {
+				t.Fatal(err)
+			}
+		}, false, RequestOrdered},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := requests{dir: t.TempDir(), now: func() time.Time { return now }}
+			if err := r.order(j, RequestKindRuntime, ""); err != nil {
+				t.Fatal(err)
+			}
+			c.meanwhile(t, r)
+			if staged, err := r.stage(j); err != nil || staged != c.staged {
+				t.Fatalf("staged %v %v", staged, err)
+			}
+			q, err := r.read()
+			if c.state == "" {
+				if err == nil {
+					t.Fatalf("a withdrawn order is back: %+v", q)
+				}
+				return
+			}
+			if q.State != c.state || (c.state == RequestFailed && q.Error != "needs_admin: no") ||
+				(name == "replaced" && q.RunID != "run-2") {
+				t.Fatalf("order %+v", q)
+			}
+		})
+	}
+	// and the run hears the late answer, not a staged order
+	ri := &RuntimeInstaller{LauncherRoot: t.TempDir(), Owner: "app", Now: func() time.Time { return now }}
+	if err := ri.Order(j); err != nil {
+		t.Fatal(err)
+	}
+	q, _ := ri.requests().read()
+	q.State, q.Error = RequestFailed, "needs_admin: no"
+	if err := ri.requests().write(q); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(runtimeNoAppAfter + time.Minute)
+	if st, err := ri.Answer(j); err == nil || st == RequestStaged {
+		t.Fatalf("after a late failure: %q %v", st, err)
+	}
+}

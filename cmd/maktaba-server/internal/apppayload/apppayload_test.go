@@ -2,6 +2,7 @@ package apppayload
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -148,5 +149,39 @@ func TestClusterInUseAfterARollback(t *testing.T) {
 	put(filepath.Join("postgres-18", "maktaba-upgraded-from.json"), []byte(`{"major":"16"}`))
 	if got := ClusterMajorIn(root); got != "" {
 		t.Fatalf("an upgrade that did not finish: %q, want 16's", got)
+	}
+}
+
+// An update's record not confirmed is written with its dump withheld from older code, and
+// read with it; confirmed, held, restoring and restored ones name it.
+func TestDatabaseWithholdsAnUnconfirmedDump(t *testing.T) {
+	for state, withheld := range map[string]bool{DatabaseMigrating: true, DatabaseMigrated: true, DatabaseHeld: false,
+		DatabaseRestoring: false, DatabaseRestored: false} {
+		for _, confirmed := range []bool{false, true} {
+			dir := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(dir, "state"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			in := Database{Version: "v0.3.0", State: state, Dump: "/b/d.dump", Confirmed: confirmed,
+				Before: &Database{Version: "v0.3.0", State: DatabaseMigrated, Dump: "/b/e.dump"}}
+			if err := WriteDatabase(dir, in); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(DatabasePath(dir))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var doc map[string]any
+			if err := json.Unmarshal(raw, &doc); err != nil {
+				t.Fatal(err)
+			}
+			if _, named := doc["dump"]; named == (withheld && !confirmed) {
+				t.Errorf("%s confirmed %v: dump named %v\n%s", state, confirmed, named, raw)
+			}
+			got, ok, err := ReadDatabase(dir)
+			if err != nil || !ok || got.Dump != "/b/d.dump" || got.Unconfirmed != "" || got.Before == nil || got.Before.Dump != "/b/e.dump" {
+				t.Errorf("%s confirmed %v: read %+v %v", state, confirmed, got, err)
+			}
+		}
 	}
 }
