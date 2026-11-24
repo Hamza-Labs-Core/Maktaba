@@ -16,6 +16,8 @@ What it proves, each a check in the summary:
   home       a real home (the release's maktaba-server image, on this runner) with a test
              video: set up headlessly, its claim code minted by the account, linked through
              the relay, online in the account's homes
+  licence    the home holds the cloud's licence for its owner's plan (signed with the key its
+             release embeds), so it serves requests that come through the relay
   link       the home's admin linked to the cloud account (the link flow the home's
              Linked accounts page runs, with the cloud web app's step done by API)
   relay-play the home's own sign-in through its relay name, and the video played through the
@@ -418,6 +420,24 @@ def check_link(acct: Account, home: Home) -> str:
     return f"the home's admin linked to the cloud account; the cloud lists it as linked {time.monotonic() - t0:.0f} s later"
 
 
+def check_licence(home: Home) -> str:
+    """The home asks the cloud for its owner's plan licence every minute; until it holds one
+    it trusts, it refuses every request the relay forwards (api/internal/subscriptions)."""
+    t0 = time.monotonic()
+
+    def licensed() -> Any:
+        s, b = home.call("GET", "/api/entitlements")
+        if not (isinstance(b, dict) and (b.get("features") or {}).get("cloud_relay")):
+            return None
+        # and the relay's gate agrees: an unsigned request is asked to sign in, not refused
+        s, _ = http("GET", f"{HOME}/api/videos?limit=1")
+        return b if s == 401 else None
+
+    b = wait("the home holds the cloud's licence (signed with the key its release embeds) and "
+             "serves the relay", licensed, 4 * 60, every=5)
+    return f"tier {b.get('tier')}, remote access on, {time.monotonic() - t0:.0f} s after it came online"
+
+
 def relay_login(home: Home) -> str:
     """The home's own sign-in, through the relay (what an app does with the home's password)."""
     s, b = http("POST", f"{HOME}/api/auth/login", {"username": "e2e-admin", "password": home.password})
@@ -433,8 +453,12 @@ def relay_signin(acct: Account, home: Home) -> str:
     return mask(b["access_token"])
 
 
-def play(token: str, home: Home, full: bool = True) -> tuple[int, float]:
-    s, b = http("POST", f"{HOME}/api/stream/sessions", {"video_id": home.video["id"]}, token)
+def play(token: str, home: Home, until: float = 0) -> tuple[int, float]:
+    """Plays the whole test video and checks its bytes; with until (a monotonic time), stops there."""
+    full = True
+    # a profile that plays the test video as it is (with none, "generic" transcodes it to 720p)
+    s, b = http("POST", f"{HOME}/api/stream/sessions",
+                {"video_id": home.video["id"], "client_profile": "desktop-player"}, token)
     need(s, b, (200, 201), "a stream session through the relay")
     url = b.get("direct_url") or ""
     if b.get("mode") != "direct" or not url:
@@ -447,7 +471,8 @@ def play(token: str, home: Home, full: bool = True) -> tuple[int, float]:
         while chunk := r.read(1 << 20):
             h.update(chunk)
             n += len(chunk)
-            if not full and n >= 4 << 20:
+            if until and time.monotonic() > until:
+                full = False
                 break
     sec = time.monotonic() - t0
     http("DELETE", f"{HOME}/api/stream/sessions/{b.get('session_id')}", token=token)
@@ -494,8 +519,10 @@ def check_restart(home: Home) -> str:
     node("cd /opt/maktaba-relay && docker compose --env-file .env restart maktaba-cloud", timeout=400)
     restarted = time.monotonic() - t0
     wait("the home back through the relay", lambda: http("GET", f"{HOME}/api/system/health", timeout=10)[0] == 200,
-         5 * 60, every=2)
+         2 * 60, every=1)
     back = time.monotonic() - t0
+    if back > 60:
+        raise AssertionError(f"the home answered through the relay {back:.0f} s after its restart began, want within 60 s")
     n, sec = play(relay_login(home), home)
     return f"restart took {restarted:.0f} s; the home answered through the relay {back:.0f} s after it began; played {n / 1e6:.1f} MB"
 
@@ -564,7 +591,7 @@ def check_load(home: Home) -> str:
     def player(i: int) -> None:
         while time.monotonic() < end:
             try:
-                n, _ = play(tokens[i % len(tokens)], home, full=False)
+                n, _ = play(tokens[i % len(tokens)], home, until=end)
                 with lock:
                     total[0] += n
             except Exception as e:  # noqa: BLE001 - a failed stream is counted below
@@ -642,9 +669,10 @@ def main() -> int:
         check("backup", check_backup)
         a = check("account", lambda: check_account(acct))
         h = check("home", lambda: make_home(acct, home), needs=(a,))
-        p = check("relay-play", lambda: check_relay_play(home), needs=(h,))
+        lc = check("licence", lambda: check_licence(home), needs=(h,))
+        p = check("relay-play", lambda: check_relay_play(home), needs=(lc,))
         check("plans", lambda: check_plans(acct, home), needs=(p,))
-        lk = check("link", lambda: check_link(acct, home), needs=(h,))
+        lk = check("link", lambda: check_link(acct, home), needs=(lc,))
         check("cloud-play", lambda: check_cloud_play(acct, home), needs=(lk,))
         if mode == "full":
             check("restart", lambda: check_restart(home), needs=(p,))

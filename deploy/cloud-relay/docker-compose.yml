@@ -72,10 +72,9 @@ services:
     command: ["serve", "--role", "relay", "--config", "/etc/maktaba/cloud/cloud.toml"]
     # the maktaba user (setup.sh writes its ids): the secrets mount is its own, 0700/0600
     user: "${MAKTABA_UID:?run setup.sh}:${MAKTABA_GID:?run setup.sh}"
-    # SIGTERM drains the homes' tunnels for up to relay.shutdown_grace (150 s,
-    # Epic 50 story 50.03) before the relay exits; Docker's default 10 s would
-    # SIGKILL it mid-drain and drop every tunnel.
-    stop_grace_period: 160s
+    # SIGTERM closes the homes' tunnels (cloud.toml: relay.drain is off, there is one relay)
+    # and waits up to relay.shutdown_grace (20 s) for the requests under way.
+    stop_grace_period: 30s
     depends_on:
       postgres:
         condition: service_healthy

@@ -3,15 +3,15 @@
 > The cloud as it runs today: one Hetzner machine per environment, QA and production, each
 > the whole cloud (relay, api, worker, database, web app). It is the smallest real setup for
 > one household. The Phase 1 pair ([`deploy/cloud-ha/`](../deploy/cloud-ha/README.md), Epic 50)
-> stays the design for more: on one node, a reboot or a deploy stops remote play for a minute
-> or two, and the machine's disk is the only copy of the database between backups.
+> stays the design for more: on one node, a reboot or a deploy stops remote play for up to
+> a minute or two, and the machine's disk is the only copy of the database between backups.
 
 ## The machines
 
 | | QA | Production |
 |---|---|---|
 | Host | `QA_HOST` (Hetzner, Helsinki) | `RELAY_HOST` (Hetzner, Helsinki) |
-| Size | 1 vCPU, 2 GB (CX22 class) | 2 vCPU, 4 GB |
+| Size | 1 vCPU, 2 GB | 2 vCPU, 4 GB |
 | Names | `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev`, `staging-app.maktaba.dev` | `relay.maktaba.tv`, `*.relay.maktaba.tv`, `api.maktaba.tv`, `app.maktaba.tv` |
 | Who uses it | the deploy's tests, never people | the household |
 
@@ -65,8 +65,9 @@ CA, which the tests trust).
   (`server.trusted_proxies`, story 50.31's rule, kept).
 - **The web app is Caddy's, not a Worker.** Caddy serves `web/cloud`'s bundle on the app name
   with the Worker's headers, and `/v1/*` to the api on the same origin.
-- **No Floating IP, no standby, no witness.** A restart of the relay drops the tunnels; homes
-  dial back within seconds (the test measures it).
+- **No Floating IP, no standby, no witness.** The relay's drain is off
+  (there is no second relay to move homes to): a restart drops the tunnels, and homes dial back
+  within seconds (the test fails past a minute).
 - **No mail.** The only mail driver writes to the log, which redacts the address and the link's
   code, so no sign-up can confirm its email. The operator confirms an account by hand (below)
   until the cloud sends mail.
@@ -103,6 +104,7 @@ production (no relay restart, no load):
 | backup | the timer is on; a backup taken now restores into a scratch database with the live accounts and homes |
 | account | a new account is refused sign-in until confirmed; the operator tool confirms it and gives it Basic |
 | home | the release's `maktaba-server` image on the runner, set up headlessly with a test video; its claim code minted by the account; online in the account's homes |
+| licence | the home holds the cloud's licence for its owner's plan, signed with the key its release embeds, and serves the relay |
 | link | the home's admin linked to the account (the Linked accounts flow, the web app's step by API), and the cloud lists the home as linked |
 | relay-play | the home's own sign-in through its relay name, and the video played through the relay, its bytes equal to the file |
 | plans | on Free the relay refuses the home (402 `relay_needs_plan`); on Basic it serves it again |
@@ -149,5 +151,16 @@ probe (`cloud-probe.yml`, story 50.10) is built for the pair's witness and stays
 
 ## Sizing
 
-Measured by the QA run's `load` check (1 vCPU, 2 GB): the figures are in the run's
-`sizing.json`, and the pull request that set this up reports them.
+Measured on QA (1 vCPU, 2 GB) on 2026-11-24, by the `load` check's players on one CI runner, each
+reading an 8 Mbit/s file as fast as the relay gives it:
+
+| Players | Relayed | CPU of one vCPU | Memory used, the whole node | Failed streams |
+|---|---|---|---|---|
+| 8 (4 MB a session) | 71 Mbit/s (94 Mbit/s out of the node) | 24 % | 751 MB | 0 |
+| 24 (whole files) | 238 Mbit/s (249 in, 244 out) | 45 % | 748 MB | 0 |
+
+About 19 % of one vCPU per 100 Mbit/s relayed; the runner, not the node, was the limit. The
+smallest server is therefore 1 vCPU and 2 GB: 238 Mbit/s is about 29 such streams at once, with
+half the CPU left. Traffic counts twice, in from the home and out to the player, so one 8 Mbit/s
+stream watched for an hour is 3.6 GB in and 3.6 GB out. Each QA run's `sizing.json` has its own
+figures.
