@@ -106,7 +106,10 @@ install -m 0755 "$SRC_DIR/ops/backup.sh"       "$DEPLOY_DIR/ops/backup.sh"
 # the deploy that can go back, outside the stack it saves (a CI deploy's `begin` installed it)
 install -m 0755 "$SRC_DIR/ops/rollout.sh"      /usr/local/sbin/maktaba-rollout
 # the cloud web app's page until a deploy switches to its own (web/current, ops/rollout.sh)
-if [ ! -e "$DEPLOY_DIR/web/current" ]; then
+if [ ! -e "$DEPLOY_DIR/web/current" ] && [ -s "$DEPLOY_DIR/web/index.html" ]; then
+	# a node from before the web app had versions: its files, right in web/, are served until then
+	ln -s . "$DEPLOY_DIR/web/current"
+elif [ ! -e "$DEPLOY_DIR/web/current" ]; then
 	mkdir -p "$DEPLOY_DIR/web/releases/none"
 	printf '%s\n' '<!doctype html><title>Maktaba Cloud</title>' > "$DEPLOY_DIR/web/releases/none/index.html"
 	ln -s releases/none "$DEPLOY_DIR/web/current"
