@@ -40,6 +40,13 @@ agent: claude-code
 - **Overlap.** #1597 (silent update-check failures) touches the same files. Its session was
   messaged with the exact overlap, and whichever PR lands second merges main in.
 
+- **Merged after #1597.** `Check`'s errors go through #1597's `checkFailed`, so a refused feed
+  counts in the failure streak shown on the Updates page and in System health. It has its own
+  code, `feed_refused`, with en and ar text, not "GitHub could not be reached". #1597's
+  scenario 20 (GitHub's list at its real size) failed on the merged branch: this commit's home
+  had found the release in the feed and never read the list. The fake now serves no feed in
+  that scenario (`withoutFeed`), so the scenario also rehearses the fallback.
+
 ## What we learned
 - **Rollbacks.** A rollback of maktaba.tv serves an older signed feed. Treating "older than the
   last read" as a refusal would stop every home's updates after a site rollback. It falls back to
