@@ -109,7 +109,7 @@ func (r *rehearsal) update(home *appMachine, p payloadSpec, d time.Duration) (ru
 	// a home running this commit's code (not the previous release's, which reads GitHub's
 	// list) finds the release in the release feed, at its real shape (release-feed
 	// generate's code, signed as update-feed.yml)
-	thisCommit := home.selfVersion() == r.kit.cur
+	thisCommit := home.selfVersion() == r.kit.cur && r.gh.servesFeed()
 	reads := r.gh.feedReadCount()
 	id := a.updateNow(p.version)
 	if thisCommit && r.gh.feedReadCount() <= reads {

@@ -149,6 +149,21 @@ func (g *fakeGitHub) withFeed(ss *releaseverifytest.Sigstore) {
 
 func (g *fakeGitHub) feedURL() string { return g.srv.URL + "/updates/v1" }
 
+// withoutFeed stops serving the release feed (every feed file answers 404): a home on this
+// commit's code then reads GitHub's list, as when maktaba.tv cannot be reached.
+func (g *fakeGitHub) withoutFeed() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.feedBy = nil
+}
+
+// servesFeed: the release feed is served.
+func (g *fakeGitHub) servesFeed() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.feedBy != nil
+}
+
 // feedReadCount is how many feed files were served.
 func (g *fakeGitHub) feedReadCount() int {
 	g.mu.Lock()
