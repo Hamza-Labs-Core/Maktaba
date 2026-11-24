@@ -64,7 +64,12 @@ fun MaktabaAlertDialog(
             modifier = Modifier.widthIn(min = 360.dp, max = 560.dp).testTag("maktaba-dialog"),
         ) {
             Column {
-                Column(Modifier.padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 20.dp)) {
+                // the words give way first, as in Material's dialog: a tall body (a report's
+                // contents, big screen on a short window) never pushes the buttons off screen
+                Column(
+                    Modifier.weight(1f, fill = false)
+                        .padding(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 20.dp),
+                ) {
                     title?.let {
                         ProvideTextStyle(
                             MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),

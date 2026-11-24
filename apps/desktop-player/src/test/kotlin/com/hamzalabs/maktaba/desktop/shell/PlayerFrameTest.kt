@@ -19,6 +19,7 @@ import com.hamzalabs.maktaba.desktop.Texts
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeFalse
 import org.junit.Test
 
 /** Story 13.15: the Player's own title bar and its menu (shell/PlayerFrame.kt). */
@@ -26,9 +27,26 @@ import org.junit.Test
 class PlayerFrameTest {
     @Test
     fun theDecoratedFrameNeedsTheJetBrainsRuntimeAndCanBeTurnedOff() {
-        // the tests run on another JDK: the system's frame, with the bar as the page's first row
-        assertFalse(decoratedFrameAvailable(emptyMap()))
         assertFalse(decoratedFrameAvailable(mapOf("MAKTABA_PLAIN_FRAME" to "1")))
+        // on the build's JDK (Temurin in CI) the system's frame, with the bar as the page's
+        // first row; a developer whose Gradle runs on a JetBrains Runtime skips this half
+        val onJbr = System.getProperty("java.vendor").orEmpty().contains("JetBrains")
+        assumeFalse(onJbr)
+        assertFalse(decoratedFrameAvailable(emptyMap()))
+    }
+
+    @Test
+    fun f10OpensTheMenu() = runComposeUiTest {
+        // PlayerWindow sets this state on F10, as F10 opened the menu bar
+        val open = mutableStateOf(false)
+        setContent {
+            val texts = Texts(Lang.En)
+            PlayerTheme(texts, big = false) { FrameBar(texts, FrameMenu(), drawBackground = true, menuOpen = open) }
+        }
+        onNodeWithText("Check for updates").assertDoesNotExist()
+        open.value = true
+        waitForIdle()
+        onNodeWithText("Check for updates").assertExists()
     }
 
     @Test

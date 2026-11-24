@@ -187,7 +187,9 @@ jobs:
           HOME="$home" timeout -k 5 25 xvfb-run -a build/compose/binaries/main/app/maktaba-player/bin/maktaba-player >"$home/out.log" 2>&1 || code=$?
           pkill -f 'maktaba-player/bin/maktaba-player' || true
           cat "$home/out.log"
-          [ "$code" = 124 ] || { echo "::error::the Player ended (exit $code) before 25 s"; exit 1; }
+          # 124: still running at 25 s and stopped; 137: still running, killed when it took
+          # over 5 s to stop
+          [ "$code" = 124 ] || [ "$code" = 137 ] || { echo "::error::the Player ended (exit $code) before 25 s"; exit 1; }
           grep -q 'maktaba-player: frame decorated' "$home/out.log" || { echo "::error::the Player did not start with its own title bar"; exit 1; }
           ! grep -qE '^(Exception|Caused by|java\.lang\.[A-Za-z]*(Error|Exception))' "$home/out.log" || { echo "::error::the Player logged an exception at start"; exit 1; }
 
@@ -206,9 +208,10 @@ jobs:
           out=build/compose/binaries/main
           ls -lR "$out"
           # the runtime the installers carry is the JetBrains Runtime (story 13.15)
+          # (compose's jlink writes no IMPLEMENTOR: the build runs on Java 17, JBR is 21)
           release=$(find build/compose/tmp -path '*runtime/release' | head -n 1)
-          if [ -z "$release" ] || ! grep -q 'JetBrains' "$release"; then
-            echo "::error::the installers' runtime is not the JetBrains Runtime (${release:-no runtime/release})"; exit 1
+          if [ -z "$release" ] || ! grep -q '^JAVA_VERSION="21\.' "$release"; then
+            echo "::error::the installers' runtime is not jbr.sh's JetBrains Runtime 21 (${release:-no runtime/release})"; cat "${release:-/dev/null}"; exit 1
           fi
           case "$RUNNER_OS" in
             Linux)

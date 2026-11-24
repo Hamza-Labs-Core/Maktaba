@@ -15,18 +15,18 @@ package com.hamzalabs.maktaba.desktop.shell
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Check
@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,7 +50,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -64,15 +71,16 @@ import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import com.hamzalabs.maktaba.desktop.Lang
+import com.hamzalabs.maktaba.desktop.PlayerTheme
 import com.hamzalabs.maktaba.desktop.Texts
 import com.hamzalabs.maktaba.desktop.Tokens
+import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
 import org.jetbrains.jewel.intui.standalone.theme.default
 import org.jetbrains.jewel.intui.window.decoratedWindow
 import org.jetbrains.jewel.intui.window.styling.dark
 import org.jetbrains.jewel.intui.window.styling.defaults
-import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.ComponentStyling
 import org.jetbrains.jewel.window.DecoratedWindow
 import org.jetbrains.jewel.window.TitleBar
@@ -147,6 +155,16 @@ fun ApplicationScope.PlayerWindow(
             System.err.println("maktaba-player: frame ${if (it) "decorated" else "plain"}")
         }
     }
+    // F10 opens the menu, as it opened the menu bar on Windows and Linux
+    val menuOpen = remember { mutableStateOf(false) }
+    val keys: (KeyEvent) -> Boolean = { e ->
+        if (e.type == KeyEventType.KeyDown && e.key == Key.F10 && !e.isShiftPressed && !e.isCtrlPressed) {
+            menuOpen.value = true
+            true
+        } else {
+            onPreviewKeyEvent(e)
+        }
+    }
     if (decorated) {
         IntUiTheme(
             theme = JewelTheme.darkThemeDefinition(),
@@ -174,13 +192,19 @@ fun ApplicationScope.PlayerWindow(
                 onCloseRequest = onCloseRequest,
                 state = state,
                 title = title,
-                onPreviewKeyEvent = onPreviewKeyEvent,
+                onPreviewKeyEvent = keys,
             ) {
-                TitleBar(Modifier.testTag("frame-title-bar")) {
-                    // the bar's own row, at the start; the system's buttons keep the end
-                    Box(Modifier.align(Alignment.Start)) { FrameBar(texts, menu, drawBackground = false) }
+                // the title bar's layout stays left to right whatever the system's locale (the
+                // system's buttons keep their side); the page sets its own direction
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    TitleBar(Modifier.testTag("frame-title-bar")) {
+                        // the bar's own row, at the start; the system's buttons keep the end
+                        Box(Modifier.align(Alignment.Start)) {
+                            PlayerTheme(texts, big = false) { FrameBar(texts, menu, drawBackground = false, menuOpen) }
+                        }
+                    }
+                    content()
                 }
-                content()
             }
         }
     } else {
@@ -188,10 +212,10 @@ fun ApplicationScope.PlayerWindow(
             onCloseRequest = onCloseRequest,
             state = state,
             title = title,
-            onPreviewKeyEvent = onPreviewKeyEvent,
+            onPreviewKeyEvent = keys,
         ) {
             Column(Modifier.fillMaxSize()) {
-                FrameBar(texts, menu, drawBackground = true)
+                PlayerTheme(texts, big = false) { FrameBar(texts, menu, drawBackground = true, menuOpen) }
                 Box(Modifier.weight(1f)) { content() }
             }
         }
@@ -203,7 +227,12 @@ fun ApplicationScope.PlayerWindow(
  * bar it sits in the system's direction; as the page's first row it spans the window.
  */
 @Composable
-fun FrameBar(texts: Texts, menu: FrameMenu, drawBackground: Boolean) {
+fun FrameBar(
+    texts: Texts,
+    menu: FrameMenu,
+    drawBackground: Boolean,
+    menuOpen: MutableState<Boolean> = remember { mutableStateOf(false) },
+) {
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Row(
             modifier = (if (drawBackground) Modifier.fillMaxWidth().background(FrameColors.Chrome) else Modifier)
@@ -212,7 +241,7 @@ fun FrameBar(texts: Texts, menu: FrameMenu, drawBackground: Boolean) {
                 .testTag("frame-bar"),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            FrameMenuButton(texts, menu)
+            FrameMenuButton(texts, menu, menuOpen)
             Spacer(Modifier.width(6.dp))
             Icon(
                 painterResource("maktaba-player.png"),
@@ -240,8 +269,8 @@ fun FrameBar(texts: Texts, menu: FrameMenu, drawBackground: Boolean) {
 
 /** The menu: everything the Swing menu bar held, in the Player's language and direction. */
 @Composable
-fun FrameMenuButton(texts: Texts, menu: FrameMenu) {
-    var open by remember { mutableStateOf(false) }
+fun FrameMenuButton(texts: Texts, menu: FrameMenu, openState: MutableState<Boolean>) {
+    var open by openState
     Box {
         IconButton(
             onClick = { open = true },

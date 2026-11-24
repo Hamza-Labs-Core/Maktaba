@@ -726,9 +726,10 @@ jobs:
           ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} "${args[@]}"
           out=build/compose/binaries/main
           # the runtime the installers carry is the JetBrains Runtime (story 13.15)
+          # (compose's jlink writes no IMPLEMENTOR: the build runs on Java 17, JBR is 21)
           release=$(find build/compose/tmp -path '*runtime/release' | head -n 1)
-          if [ -z "$release" ] || ! grep -q 'JetBrains' "$release"; then
-            echo "::error::the installers' runtime is not the JetBrains Runtime (${release:-no runtime/release})"; exit 1
+          if [ -z "$release" ] || ! grep -q '^JAVA_VERSION="21\.' "$release"; then
+            echo "::error::the installers' runtime is not jbr.sh's JetBrains Runtime 21 (${release:-no runtime/release})"; cat "${release:-/dev/null}"; exit 1
           fi
           if [ "$RUNNER_OS" = Linux ]; then
             # listed once (grep -q on a pipe ends it early, and tar's write then fails)
