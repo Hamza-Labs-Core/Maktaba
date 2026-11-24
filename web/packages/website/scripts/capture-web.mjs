@@ -56,7 +56,7 @@ const arg = (name, fallback) => {
 };
 
 /** `{id}` in a table path matches one segment. */
-function matcher(routes) {
+export function matcher(routes) {
   const exact = new Map();
   const patterns = [];
   for (const r of routes) {
@@ -71,7 +71,7 @@ function matcher(routes) {
 }
 
 // what every page asks besides the library: the home's features (all on) and nothing to update
-const EXTRA = [
+export const EXTRA = [
   {
     method: "GET",
     path: "/api/capabilities",
@@ -98,13 +98,13 @@ const EXTRA = [
   { method: "POST", path: "/api/auth/recovery-pass", status: 204 },
 ];
 
-function viewer(body) {
+export function viewer(body) {
   const out = { ...body, is_admin: false };
   if (out.user) out.user = { ...out.user, is_admin: false };
   return out;
 }
 
-async function waitForServer(url, ms) {
+export async function waitForServer(url, ms) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
     try {
