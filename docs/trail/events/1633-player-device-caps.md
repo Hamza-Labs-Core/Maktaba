@@ -17,6 +17,7 @@ The follow-up to 13.18 (#1591): the desktop Player on libmpv sends a `device_cap
 - Found while fixing: `ReportRunner.decoder()` called itself instead of its factory (its parameter was shadowed), a StackOverflowError caught and kept as `probeError`: the probe never ran in the first commit, and no test ran the runner. A test now does.
 - **Measured (CI, the real library, 4-vCPU EPYC 7763 runners, no GPU decoder):** the probe took 1483 ms on Linux and 1278 ms on Windows. Software speeds at 2160p ran from 131 fps (HEVC 10-bit) to 382 fps (VP9), so every codec reported 2160p. No audio device on either runner: the channels left out.
 - The first CI run failed on Windows only: two unit tests of the Linux key used symbolic links and POSIX paths. They run on Unix only since 7f102045b.
+- Merged as 6832e8f18; its spec (#1629, with 13.20 to 13.22) as 2afa96447.
 
 ## What we learned
 - The API re-encodes `device_caps` through its own struct: a new report field needs `api/internal/handlers/streaming/devicecaps.go` too, or it is dropped before the streaming service sees it.
@@ -38,6 +39,5 @@ The follow-up to 13.18 (#1591): the desktop Player on libmpv sends a `device_cap
 - Chaining a `sleep` before a command to wait; use a background command or a monitor.
 
 ## Open
-- **A decision:** the committed clips are too easy to decode, so nearly any CPU reports 2160p and the narrowing rarely fires. Options: realistic clips over 100 KB each, or a correction factor on the measured speed.
-- The spec branch's 13.19 text still says no report gives stereo and a second `hwdec=no` play; to be corrected there.
+- The committed clips are too easy to decode, so nearly any CPU reports 2160p and the narrowing rarely fires; a file then plays as it did before. Realistic clips, a correction factor, or counting dropped frames: #1652.
 - The report has one height per codec (the slower of its 8 and 10-bit clips); a per-bit-depth height, and probing again on battery, are left for later.
