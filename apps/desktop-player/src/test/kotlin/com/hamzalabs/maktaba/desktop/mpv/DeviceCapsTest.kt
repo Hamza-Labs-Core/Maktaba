@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeFalse
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -20,6 +21,9 @@ import java.io.File
  */
 class DeviceCapsTest {
     @get:Rule val tmp = TemporaryFolder()
+
+    /** The Linux key's readers: POSIX paths and symbolic links, which Windows' runner does not make. */
+    private fun unixOnly() = assumeFalse("Linux only", System.getProperty("os.name").startsWith("Windows"))
 
     /** A machine with hardware HEVC and VP9, AV1 in software at 20 fps at 2160p, H.264 and MPEG-2 in software. */
     private val recorded = listOf(
@@ -279,6 +283,7 @@ class DeviceCapsTest {
 
     @Test
     fun vaApiDriversAreInTheLinuxKey() {
+        unixOnly()
         val dri = tmp.newFolder("dri")
         File(dri, "radeonsi_drv_video.so").writeBytes(ByteArray(12))
         File(dri, "radeonsi_dri.so").writeBytes(ByteArray(3))
@@ -290,6 +295,7 @@ class DeviceCapsTest {
 
     @Test
     fun linuxGpusAreReadFromDrm() {
+        unixOnly()
         val sys = tmp.newFolder("sys")
         val drm = File(sys, "class/drm").apply { mkdirs() }
         val dev = File(sys, "devices/pci0000:00/0000:00:02.0").apply { mkdirs() }
