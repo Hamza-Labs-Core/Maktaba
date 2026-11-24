@@ -1,12 +1,11 @@
 ---
 schema: 1
-tag: v0.3.161
-up_to_commit: 1680cbaf6
-built_from: v0.3.160
+tag: v0.3.162
+up_to_commit: 522964659
+built_from: v0.3.161
 ---
 
-# Trail snapshot: v0.3.161
-
+# Trail snapshot: v0.3.162
 
 ## Keep doing
 
@@ -291,6 +290,17 @@ built_from: v0.3.160
 - A web test that mocks the API with the shape the web sends proves nothing about the contract: answer in the server's shape (the saved-search tests do), and round-trip each endpoint the web writes to through the real handler on SQLite and Postgres. (d20261122-search-state-kept)
 - Measure where a slow tool spends its time (`python3 -m cProfile -s tottime`) before changing it, and prove a speed-up gives the same output: run old and new on a good real checkout and on one with planted problems, and diff. (d20261122-trail-check-git-reads)
 
+- Newly published dependency advisories can turn main's CVE gate red without a code change: fix them by upgrading every affected module together and run govulncheck in each gated module, without suppressions. Move all OpenTelemetry modules to one version, including the shared tracing module inherited through a replace. (#1554)
+- Once a documentation site is live, search the whole repository for Markdown links into its HTML source tree; link the live page or a readable document instead. A link checker can validate a manifest entry without proving that the page responds. (#1558)
+- Reproduce calendar-boundary failures by moving the clock, and assert requested waits rather than gaps between process starts on shared runners. (#1560)
+- Inspect every demo picture and stand-in at full size, names and film frames included, before shipping it. Check a content set whole, choose media by content before format or licence, derive artwork from the film's own frames, and fix content at its fixture before re-recording references. (#1565, #1566, #1577, #1580)
+- Generate store-gallery images against each store's measured text and format rules, keep third-party names out of captures, and review every generated image before upload. (#1566, #1579)
+- Write desktop visual references in CI's image, inspect each one, and start the packaged app in CI so runtime and class-loading failures cannot pass unit tests. (#1568, #1583)
+- Wait for test goroutines that write into a temporary directory to return before its cleanup; register their cleanup after `t.TempDir` so it runs first. (#1571)
+- Give scratch servers consecutive probed free ports below the ephemeral range, and read a failed release check's own lines before blaming the change under test. (#1575)
+- Size timing-test inputs so the measured side can outgrow a limit that varies with runner load; a moving multiple alone does not stabilize the comparison. (#1578)
+- Read the live home's logs and journal before reasoning about updater behaviour from code; a published release need not be present in a home's stale catalog. (d20261124-stale-catalog-step-down)
+
 ## Stop doing
 
 - Re-running a failed CI job to green, or skipping a flaky test, instead of finding its cause. (#525, d20261031-standing-rules)
@@ -384,6 +394,13 @@ built_from: v0.3.160
 - Adding feature detail, file lists or version numbers to the root README. (#1549)
 - Treating "Timed out while evaluating UI query" as a slow runner to wait out with longer timeouts. (#1550)
 - Treating `lock_timeout` plus retries as enough for a migration while other machines keep using the database; restoring a whole dump when the failed migrations are additive or lossless. (d20261123-cic-lock-timeout)
+- Linking a household-facing guide to its HTML source, keeping duplicate index pages, or overlooking redirects and bare index URLs when those pages are consolidated. (#1558, #1564)
+- Choosing demo or review media by its licence alone, or assuming an existing screenshot set is safe without inspecting each source. (#1565, #1566, #1580)
+- Picking scratch-server ports randomly inside the operating system's ephemeral range without probing them. (#1575)
+- Using Tauri's `data-tauri-drag-region="deep"` on headers containing popovers; every non-clickable descendant then drags the window. (#1568)
+- Checking a packaged Java runtime's vendor from its `release` file without first checking what the packager writes there. (#1583)
+- Assuming a home's release catalog is current because GitHub has published a newer release. (d20261124-stale-catalog-step-down)
+
 ## What we learned
 
 **Architecture decisions**
@@ -812,6 +829,12 @@ built_from: v0.3.160
 - Help on maktaba.tv (60.12) is generated from the app's own topics and the build refuses a gap in either language; a family declares `paths` it always builds (`withDeclared`) so families order `[HELP, DOWNLOAD, PROBLEMS]`; `.toc` is shared by every contents list. A Help topic changes counts, the manifest and the index's reference images (render with `npm run e2e:update` in CI's image). Two website PRs on one shell conflict: merge in order and rebase the second. (#1223, #1225, #1243)
 
 - The root README (516 lines) had drifted further than the docs it summarised: it still named Tailwind and Vidstack (neither is in `web/`), Go 1.25 (1.26), 54 epics (60), and Linux aarch64 without transcription, and `CONTRIBUTING.md` still wanted Go 1.23; releases had added files it never named (`Maktaba-Core_*.dmg`, the Samsung and LG launcher packages). A summary that repeats details goes stale; one that only links does not. `links.mjs` checks scheme-less `maktaba.tv/...` text against `dist-manifest.json`, so naming a not-yet-live page is safe only while the page is in the manifest (`/install/` is). (#1549)
+- XCTest's `continueAfterFailure = false` can recursively run an async tearDown after a termination failure and deadlock its main thread; enable continuation before ending the app, keep the console stream non-blocking, and bound each test so the shard can continue. (#1561)
+- A CSS shorthand containing an undefined custom property is dropped as a whole without a lint failure. When a page becomes a redirect, remove its source and update smoke, link, sitemap and twin-page checks; the Worker's redirect table takes precedence over assets. (#1564)
+- A custom desktop window frame must be claimed per page load because the shell can display pages it did not ship. Jewel 0.42 uses Java 25 bytecode, so compiling on Java 17 does not prove the packaged Player can start; Compose's jlink output also omits the runtime vendor. (#1568, #1583)
+- Roborazzi's percentage threshold can hide changed content, and local re-recordings can alter unrelated references by a fraction of a percent; compare every output against its committed copy and restore noise. (#1565, #1577)
+- The updater's 8 MiB GitHub release-list cap froze every home's catalog once 30 releases with assets exceeded it. The scheduler continued installing from that stale list and could select a version below a rolled-back one; paginated reads, migration-set blocking and fresh-catalog gating address the failure. (d20261124-stale-catalog-step-down)
+
 ## Open
 
 - A web panel for `plugin_relay` (English and Arabic) is still to build; the data is in health and `/metrics`. The live home stays on 0.3.135 until it updates to a release with #1424; after it updates, confirm the logs role sits near idle and `logs.db` drops under its cap at the next hourly sweep. (#1419, #1424, #1426)
@@ -935,7 +958,7 @@ built_from: v0.3.160
 | #1453 | 2026-11-19 | subscriptions: an expired or downgraded plan keeps working fully for 30 days (story 16.2) |
 | #1471 | 2026-11-19 | docs(wiki): derive epic-status.md's counts from its story rows |
 | #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
-| #1554 | 2026-11-23 | build: otel v1.47.0 and gorilla/websocket's fixed commit, for today's Go advisories |
+| #1582 | 2026-11-24 | fix(devportal): no woman or girl in maktaba.dev's screenshots or the test data behind them |
 
 ## Index
 
@@ -1737,5 +1760,22 @@ built_from: v0.3.160
 | 1548-nas-platform-guides | 2026-11-23 | pr | A full guide for each NAS the code supports, each model routed to its guide, and QNAP's platform written |
 | 1549-short-readme | 2026-11-23 | pr | The root README is short again: 516 lines to 127, its detail moved to the docs that own it |
 | 1550-ci-xcode27-flakes | 2026-11-23 | pr | Main's red CI after Xcode 27: the app's stderr blocked XCTest's queries, a PIN read raced the sheet, Roku's grid wrapped |
+| 1554-otel-websocket-cves | 2026-11-23 | incident | Two Go advisories published on 2026-11-23 turned main's CVE gate red; fixed by upgrading otel and gorilla/websocket |
+| 1556-desktop-design | 2026-11-23 | pr | Story 13.9: the desktop apps' audit and design, mockups in both languages, approved with libmpv for the Player (13.18) |
 | d20261123-cic-lock-timeout | 2026-11-23 | incident | The live home's updates to v0.3.140 and v0.3.158 failed on CREATE INDEX CONCURRENTLY behind a machine's copy; each put the whole dump back |
+| 1558-readme-live-install-links | 2026-11-24 | pr | The README's install guides link to maktaba.tv, not to the guides' HTML source |
+| 1560-main-clock-tests | 2026-11-24 | pr | Two tests that failed main on time: the watch pages after 23:30 UTC, and the 75 restart judged by the wall clock |
+| 1561-ui-test-cap-search-logging | 2026-11-24 | pr | Search changes the screen once the keyboard has hidden; a failure in tearDown no longer hangs XCTest; a hung test is cut at 10 minutes |
+| 1564-download-single-page | 2026-11-24 | pr | One page to get Maktaba: /download/ lists every setup guide, /install/ redirects to it |
+| 1565-demo-library-documentaries | 2026-11-24 | pr | The demo library behind every maktaba.tv screenshot is now documentaries and animal animation, with no woman or girl in any picture |
+| 1566-store-gallery-design | 2026-11-24 | pr | Store gallery images (60.14 part 1): the style, the beats and a size manifest, as mockups for review |
+| 1568-desktop-frame | 2026-11-24 | pr | Story 13.10: the Maktaba app draws its own window frame (title bar, caption buttons, the title bar's menu), with CI's first desktop visual references |
+| 1571-broadcast-ctl-test-cleanup | 2026-11-24 | pr | Broadcast's Ctl tests wait for Run to stop before their temp dir is removed |
+| 1575-app-checks-free-ports | 2026-11-24 | pr | The app checks' scratch Postgres servers take free ports below the ephemeral range |
+| 1577-demo-shots-no-plex-no-old-library | 2026-11-24 | pr | No Plex in the Remote's attention fixture; maktaba.dev drops two old-library Fire TV shots |
+| 1578-plugind-compile-filler | 2026-11-24 | pr | plugind: a compile is not the job's time, with filler that grows until the compile is the longer |
+| 1579-store-gallery-pipeline | 2026-11-24 | pr | Store galleries (60.14 part 2): the composer and the workflow |
+| 1580-review-home-no-women | 2026-11-24 | pr | The store reviewers' home carries the demo library's films, with no woman or girl in any picture |
+| 1583-player-chrome | 2026-11-24 | pr | Story 13.15: the Windows and Linux Player draws its own title bar and dialogs, on a pinned JetBrains Runtime, with colours from the token build |
+| d20261124-stale-catalog-step-down | 2026-11-24 | incident | The live home installed v0.3.157 below its rolled-back v0.3.158 from a catalog frozen by GitHub's 8 MiB release list, and rolled back again |
 
