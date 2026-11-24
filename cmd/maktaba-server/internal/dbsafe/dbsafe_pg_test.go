@@ -727,7 +727,7 @@ func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
 		}
 	}
 	mark := filepath.Join(bin, "wrote")
-	script := "#!/bin/sh\n'" + r.t.bin("pg_restore") + "' --no-owner --no-publications --section=pre-data --file=- \"$DBSAFE_DUMP\"\n" +
+	script := "#!/bin/sh\n[ \"$1\" = -l ] && exec '" + r.t.bin("pg_restore") + "' \"$@\"\n'" + r.t.bin("pg_restore") + "' --no-owner --no-publications --section=pre-data --file=- \"$DBSAFE_DUMP\"\n" +
 		"echo \"SELECT pg_notify('x', 'y');\"\n: > '" + mark + "'\nwhile kill -0 $PPID; do sleep 1; done\n"
 	if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -779,7 +779,7 @@ func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
 
 // A table's rows cut short where pg_restore does not notice (PostgreSQL 18's ends well): its
 // COPY's end is missing, so psql takes what comes next for rows. Nothing of it is committed,
-// nothing waits for ever, and the restore says it failed.
+// nothing waits for ever, and the restore says why it failed.
 func TestRestoreOfRowsCutShortCommitsNothing(t *testing.T) {
 	r := newPGRig(t)
 	if runtime.GOOS == "windows" || !havePSQL(r.t.bin("psql")) {
@@ -793,8 +793,10 @@ func TestRestoreOfRowsCutShortCommitsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte("#!/bin/sh\necho 'CREATE TABLE public.cut (t text);'\n"+
-		"echo 'COPY public.cut (t) FROM stdin;'\necho 'a row'\nprintf 'and half of anot'\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte("#!/bin/sh\ncase \"$*\" in\n"+
+		"*-l*) echo '1; 0 1 TABLE DATA public cut maktaba';;\n"+
+		"*=pre-data*) echo 'CREATE TABLE public.cut (t text);';;\n"+
+		"*=data*) echo 'COPY public.cut (t) FROM stdin;'; echo 'a row'; printf 'and half of anot';;\nesac\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	tg := r.t
@@ -808,7 +810,7 @@ func TestRestoreOfRowsCutShortCommitsNothing(t *testing.T) {
 	defer cancel()
 	var log bytes.Buffer
 	err := tg.Restore(ctx, dump, &log)
-	if err == nil || ctx.Err() != nil || !strings.Contains(err.Error(), "syntax error") {
+	if err == nil || ctx.Err() != nil || !strings.Contains(err.Error(), "cut short") {
 		t.Fatalf("the restore: %v (%v)", err, ctx.Err())
 	}
 	db, err := r.t.open(context.Background(), "")
