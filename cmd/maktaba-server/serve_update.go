@@ -478,8 +478,8 @@ func codedFailure(err error) error {
 // recordFile is updater.Records over the database step's record.
 type recordFile string
 
-func (r recordFile) MarkRestore(version, _, reason string) (bool, error) {
-	return layout.MarkRecordRestoring(string(r), version, reason)
+func (r recordFile) MarkHeld(version, _, reason string) (bool, error) {
+	return layout.MarkRecordHeld(string(r), version, reason)
 }
 func (r recordFile) Migrated(version string) bool { return layout.RecordMigrated(string(r), version) }
 func (r recordFile) NoteNext(running, next, dump string) error {
@@ -529,6 +529,14 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		u.lay = &li.Layout
 	}
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
+	// the app's order: a start of the app that failed, or an app that never answered, is
+	// said in the run's log (research P10: the start's error was dropped)
+	switch in := inst.(type) {
+	case *updater.AppInstaller:
+		in.Logf = m.Warnf
+	case *updater.RuntimeInstaller:
+		in.Logf = m.Warnf
+	}
 	m.TVHandover = u.tvHandover
 	if lightTier(runningTier.Load()) {
 		// story 59.12: the dump under a NAS's memory limit, without speech and transcodes
@@ -539,8 +547,12 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	m.Packs = &updater.Packs{M: newPacksManager(cfg, releaseDir, os.Stderr), Source: src}
 	if home {
 		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
-		m.RestoreBack = u.restoreBack(cfg, releaseDir, pg)
-		m.MigrateDown = u.migrateDown
+		m.MigrateDown = func(ctx context.Context, j *updater.Journal, schema int64) error {
+			// the machines' copies pause for the Down scripts too (no wait for their table
+			// syncs: the home is down until it is back; such a machine copies its table again)
+			g := &migrationGate{stateDir: cfg.StateDir(), version: j.From, pg: pg, log: os.Stderr}
+			return u.migrateDown(ctx, j, schema, g.pauseCopies)
+		}
 		u.r = newRestorer(cfg, homeDatabase(cfg, pg), inst, exit)
 		u.r.run = func() *updater.Journal { return m.Status().Journal }
 		if t := homeDatabase(cfg, pg); t != nil {
@@ -597,40 +609,8 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	return u
 }
 
-// restoreBack is updater.Machine.RestoreBack for this home: its database step's restore
-// (the bundled Postgres, or the plain server's own), run by this release before its
-// rollback switches back, once the roles that use the database are stopped.
-func (u *updates) restoreBack(cfg config.Config, releaseDir string, pg *pgbundle.Bundle) func(context.Context,
-	*updater.Journal, string) error {
-	return func(ctx context.Context, j *updater.Journal, _ string) error {
-		g := &migrationGate{stateDir: cfg.StateDir(), version: j.From, pg: pg, log: os.Stderr,
-			updates: updatesDirOf(cfg, releaseDir), keep: updateKeep(cfg), room: roomOf(cfg)}
-		if pg == nil {
-			g.ext = homeDatabase(cfg, nil)
-		}
-		rec, err := g.record()
-		if err != nil {
-			return err
-		}
-		if rec.State != apppayload.DatabaseRestoring || rec.By != "" ||
-			layout.NormalizeVersion(rec.Failed) != layout.NormalizeVersion(j.Job.Version) {
-			return fmt.Errorf("the database record is %s, not marked for %s's dump to be put back", rec.State, j.Job.Version)
-		}
-		if err := u.stopDatabaseRoles(ctx); err != nil {
-			return err
-		}
-		_, err = restoreBackWith(ctx, g, rec)
-		return err
-	}
-}
-
-// restoreBackWith is the database step's restore (tests replace it).
-var restoreBackWith = func(ctx context.Context, g *migrationGate, rec apppayload.Database) (apppayload.Database, error) {
-	return g.restore(ctx, rec, func(supervisor.Detail) {})
-}
-
 // databaseStopWait is how long the roles that use the database get to stop before a
-// rollback puts the dump back.
+// rollback runs the Down scripts.
 var databaseStopWait = 2 * time.Minute
 
 // stopDatabaseRoles stops every process that uses the database but the TV's (the api, the
@@ -690,8 +670,10 @@ func (u *updates) setAPI(procs []supervisor.Process) {
 // migrateDown runs this release's Down scripts back to schema (updater.Machine.MigrateDown):
 // the api, the pipeline and the streaming role stop first (their writes, and the locks the
 // ALTERs wait for), then `maktaba-api migrate down-to schema` runs with this release's
-// migrations, the ones that made the schema.
-func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema int64) error {
+// migrations, the ones that made the schema. The machines' copies are paused meanwhile
+// (pause, migrationGate.pauseCopies).
+func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema int64,
+	pause func(context.Context, time.Duration) func()) error {
 	u.mu.Lock()
 	api := u.api
 	u.mu.Unlock()
@@ -701,6 +683,7 @@ func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema in
 	if err := u.stopDatabaseRoles(ctx); err != nil {
 		return err
 	}
+	defer pause(ctx, 0)()
 	return runMigrateDownTo(ctx, api, schema, os.Stderr)
 }
 
@@ -1036,7 +1019,7 @@ type selfMachineDB struct {
 }
 
 // haltCodes are database-step details no retry mends: the release cannot run here.
-var haltCodes = map[string]bool{"db_restored": true, "db_kept": true, "db_undone": true, "db_restore_failed": true, "db_ahead": true,
+var haltCodes = map[string]bool{"db_restored": true, "db_held": true, "db_kept": true, "db_undone": true, "db_restore_failed": true, "db_ahead": true,
 	"db_refused_older": true, "db_no_cluster": true, "pg_major": true}
 
 // startingCodes are the start steps at work (detail_codes.json): the database step's

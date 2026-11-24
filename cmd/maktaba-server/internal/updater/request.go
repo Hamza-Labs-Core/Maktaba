@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -222,9 +223,11 @@ type nudger struct {
 	at  time.Time
 }
 
-func (n *nudger) nudge(r requests, j *Journal, now time.Time, after time.Duration, open func(context.Context, string) error) {
+// It returns the error of a start that failed (nil: none tried, or it started): the app
+// is not there to answer, and the order waits for it (research P10: the error was dropped).
+func (n *nudger) nudge(r requests, j *Journal, now time.Time, after time.Duration, open func(context.Context, string) error) error {
 	if open == nil {
-		return
+		return nil
 	}
 	if n.run != j.Job.RunID {
 		n.run, n.at = j.Job.RunID, now
@@ -234,8 +237,11 @@ func (n *nudger) nudge(r requests, j *Journal, now time.Time, after time.Duratio
 	}
 	if now.Sub(n.at) >= after {
 		n.at = now
-		_ = open(context.Background(), AppInstallURL+"?run="+j.Job.RunID)
+		if err := open(context.Background(), AppInstallURL+"?run="+j.Job.RunID); err != nil {
+			return fmt.Errorf("the app could not be started with its order (%s): %w", AppInstallURL, err)
+		}
 	}
+	return nil
 }
 
 // remove withdraws any order (the app forgets what it staged).

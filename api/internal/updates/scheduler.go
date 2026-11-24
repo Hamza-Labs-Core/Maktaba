@@ -24,6 +24,7 @@ const (
 	BlockRecentCrash           = "recent_crash"
 	BlockSupervisorUnreachable = "supervisor_unreachable"
 	BlockSwitchover            = "switchover_open" // a switch of the home (Epic 37) is under way
+	BlockMachineCopying        = "machine_copying" // a machine is copying the home's database (a table sync)
 )
 
 // Waiting reasons (Plan.Waiting): why the target does not install now.
@@ -91,7 +92,30 @@ func (f BlockerFunc) Blocked(ctx context.Context) (string, error) { return f(ctx
 // the home under way, and the home's health (supervisor: its loopback URL; "" is not
 // supervised). No TV change is among them.
 func HomeBlockers(db *sql.DB, supervisor string, hc *http.Client) []Blocker {
-	return []Blocker{SwitchoverBlocker{DB: db}, &HomeHealth{BaseURL: supervisor, HTTP: hc}}
+	return []Blocker{SwitchoverBlocker{DB: db}, CopyingBlocker{DB: db}, &HomeHealth{BaseURL: supervisor, HTTP: hc}}
+}
+
+// CopyingBlocker holds automatic runs while a joined machine copies a table of the home's
+// database (its copy's first sync, or one made anew: a table sync, whose slot on the home
+// is pg_<subscription>_sync_<table>_<system>). The update's migrations would end that
+// copy's walsender (it holds one snapshot for the whole COPY of a table, which an index
+// build waits on) and the machine would copy the table again; on 2026-11-23 such copies
+// were what the migrations waited on (research E4, E8). The run starts once the copies
+// are done; an admin's Update now does not wait. A database with no replication slots
+// view (SQLite), or a role that cannot read it, is not held.
+type CopyingBlocker struct{ DB *sql.DB }
+
+// tableSyncSlots counts the home's table sync slots (logical replication's initial copy).
+const tableSyncSlots = `SELECT count(*) FROM pg_replication_slots
+    WHERE slot_type = 'logical' AND database = current_database() AND slot_name ~ '^pg_[0-9]+_sync_[0-9]+_[0-9]+$'`
+
+// Blocked implements Blocker.
+func (b CopyingBlocker) Blocked(ctx context.Context) (string, error) {
+	var n int
+	if b.DB == nil || b.DB.QueryRowContext(ctx, tableSyncSlots).Scan(&n) != nil || n == 0 {
+		return "", nil
+	}
+	return BlockMachineCopying, nil
 }
 
 // SwitchoverBlocker holds runs while a switch of the home (Epic 37) is under way: both

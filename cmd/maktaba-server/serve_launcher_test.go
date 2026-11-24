@@ -143,3 +143,21 @@ func TestHealthyForIgnoresAnOnDemandProcessNotAskedFor(t *testing.T) {
 		t.Fatal("a runner asked for and still starting counted as healthy")
 	}
 }
+
+// Research P4: `maktaba-server update` on a layout install switched with the run id "cli",
+// which no update run watches and confirmPending never confirmed, so the launcher went
+// back after 15 minutes. Such a switch confirms itself once healthy, as a switch by hand
+// does; an update run's switch is its watch's to confirm.
+func TestACommandLineSwitchConfirmsItself(t *testing.T) {
+	for _, c := range []struct {
+		run  string
+		want bool
+	}{{"", true}, {cliRunID, true}, {"0d6c1f0e-run", false}} {
+		if got := confirmsItself(&layout.Pending{Version: "1.5.0", RunID: c.run}); got != c.want {
+			t.Errorf("run id %q: confirms itself %v, want %v", c.run, got, c.want)
+		}
+	}
+	if confirmsItself(nil) {
+		t.Error("no marker confirms itself")
+	}
+}

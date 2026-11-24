@@ -127,6 +127,43 @@ func TestRecordRestoringMarkAndUnmark(t *testing.T) {
 	}
 }
 
+// A failed update stops and asks (no start puts the dump back by itself): the record is
+// held, its version stays the failed release's so every older release refuses it, and a
+// switch back that fails takes the mark back.
+func TestRecordHeldMarkAndUnmark(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "database.json")
+	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrating","from":"1.4.0","dump":"/b/pre-1.4.0-to-1.5.0.dump","schema_before":230}`), 0o644)
+	if ok, err := MarkRecordHeld(path, "1.4.0", "x"); err != nil || ok {
+		t.Fatalf("another release's record marked: %v %v", ok, err)
+	}
+	if ok, err := MarkRecordHeld(path, "1.5.0", "launcher_pending_timeout"); err != nil || !ok {
+		t.Fatalf("mark: %v %v", ok, err)
+	}
+	rec := readRecord(t, path)
+	if rec["state"] != "held" || rec["failed"] != "1.5.0" || rec["version"] != "1.5.0" ||
+		rec["error"] != "launcher_pending_timeout" || rec["schema_before"] != float64(230) {
+		t.Fatalf("held record %v", rec)
+	}
+	// marked already: a restore mark over it is not written (nothing puts it back by itself)
+	if ok, err := MarkRecordRestoring(path, "1.5.0", "watch"); err != nil || !ok {
+		t.Fatalf("mark again: %v %v", ok, err)
+	}
+	if rec := readRecord(t, path); rec["state"] != "held" {
+		t.Fatalf("a held record was marked restoring: %v", rec)
+	}
+	if ok, err := UnmarkRecordRestoring(path, "1.5.0"); err != nil || !ok {
+		t.Fatalf("unmark: %v %v", ok, err)
+	}
+	if rec := readRecord(t, path); rec["state"] != "migrated" || rec["failed"] != nil {
+		t.Fatalf("unmarked record %v", rec)
+	}
+	// no dump: nothing to hold for (the update added no migration)
+	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrated"}`), 0o644)
+	if ok, err := MarkRecordHeld(path, "1.5.0", "x"); err != nil || ok {
+		t.Fatalf("held without a dump: %v %v", ok, err)
+	}
+}
+
 // A rollback whose Down scripts undid the release's migrations leaves the record the
 // release before's own, migrated, with nothing to put back and nothing kept; a record that
 // is not the failed release's, migrated, stays as it is.
@@ -166,5 +203,49 @@ func TestMarkRecordDown(t *testing.T) {
 	write(`{"version":"v0.3.90","state":"restoring"}`)
 	if ok, _ := MarkRecordDown(path, "0.3.90", "0.3.82", "x"); ok {
 		t.Fatal("a restoring record changed")
+	}
+}
+
+// Research P5: the release being judged may push a guard's deadline, but never past the
+// latest the release that switched set, nor past MaxGuardSpan after the switch.
+func TestGuardDeadlineIsCappedAtItsLatest(t *testing.T) {
+	root := t.TempDir()
+	now := time.Now().UTC()
+	latest := now.Add(3 * time.Hour)
+	if err := WriteGuard(root, Guard{Version: "2.0.0", RunID: "run-1", Since: now, Deadline: now.Add(time.Hour),
+		Latest: latest}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := ExtendGuard(root, "run-1", now.Add(2*time.Hour)); !ok || err != nil {
+		t.Fatalf("within the latest: %v %v", ok, err)
+	}
+	if ok, err := ExtendGuard(root, "run-1", now.Add(50*time.Hour)); !ok || err != nil {
+		t.Fatalf("past the latest: %v %v", ok, err)
+	}
+	if g, _ := ReadGuard(root); !g.Deadline.Equal(latest) {
+		t.Fatalf("deadline %v, want the latest %v", g.Deadline, latest)
+	}
+	if ok, _ := ExtendGuard(root, "run-1", now.Add(60*time.Hour)); ok {
+		t.Fatal("pushed past the latest again")
+	}
+	if ok, _ := ExtendGuard(root, "run-2", now.Add(2*time.Hour)); ok {
+		t.Fatal("another run pushed it")
+	}
+
+	// the pending marker of a layout install: the same cap, and a day without a latest
+	l := New(t.TempDir())
+	mkRelease(t, l, "2.0.0")
+	if err := l.Switch("2.0.0", "run-1", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.GuardPending("2.0.0", now.Add(time.Hour), time.Time{}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := l.ExtendPending("run-1", now.Add(30*24*time.Hour)); !ok || err != nil {
+		t.Fatalf("push: %v %v", ok, err)
+	}
+	p, _ := l.ReadPending()
+	if want := GuardLatest(p.Since, time.Time{}); !p.Deadline.Equal(want) || want.Sub(p.Since) != MaxGuardSpan {
+		t.Fatalf("deadline %v, want %v (a day after the switch)", p.Deadline, want)
 	}
 }

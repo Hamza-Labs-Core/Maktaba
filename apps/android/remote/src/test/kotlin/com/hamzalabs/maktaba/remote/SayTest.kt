@@ -136,10 +136,12 @@ class SayTest {
         )
         assertEquals("something new", en.processDetail(ProcessStatus(role = "pipeline", detailCode = "brand_new", detail = "something new")))
         // a failed update whose database was kept, or undone by its Down scripts (#1538)
-        val versions = buildJsonObject { put("failed", "0.3.158"); put("release", "0.3.153") }
+        val versions = buildJsonObject { put("failed", "0.3.158"); put("release", "0.3.153"); put("dump", "pre-0.3.153-to-0.3.158.dump") }
         for ((code, en1, ar1) in listOf(
             Triple("db_kept", "Nothing had to be put back", "لم يلزم إرجاع شيء"),
             Triple("db_undone", "undone by its own Down scripts", "أُلغيت تغييراته بنصوص التراجع"),
+            // the update stopped and asks: nothing put back by itself, the choices named
+            Triple("db_held", "Nothing was put back by itself", "لم يُرجَع شيء تلقائيًا"),
         )) {
             val st = ProcessStatus(role = "api", detailCode = code, detail = "english from the server", detailParams = versions)
             val e = en.processDetail(st).orEmpty()
@@ -326,5 +328,31 @@ class SayTest {
         val id = WebWords.updateWaiting.getValue("catalog_stale")
         assertTrue(XmlLookup.english.text(id).contains("could not be read for over 12 hours"))
         assertTrue(XmlLookup.arabic.text(id).contains("تعذّرت قراءة قائمة الإصدارات"))
+    }
+
+    // research P10: an update that stopped waiting for a desktop app that never took it
+    @Test
+    fun anAppThatNeverAnswersIsSaid() {
+        val id = WebWords.updateCode.getValue("app_no_answer")
+        assertTrue(XmlLookup.english.text(id).contains("not running on this machine"))
+        assertTrue(XmlLookup.arabic.text(id).contains("لا يعمل على هذا الجهاز"))
+    }
+
+    // research item 5: an automatic update that waits for a machine's copy of the database
+    @Test
+    fun aMachineCopyingIsSaid() {
+        val id = WebWords.blocker.getValue("machine_copying")
+        assertTrue(XmlLookup.english.text(id).contains("copying the home's database"))
+        assertTrue(XmlLookup.arabic.text(id).contains("ينسخ قاعدة بيانات"))
+    }
+
+    // #1605: an update that stopped and asks says why (nothing put back by itself)
+    @Test
+    fun aHeldUpdateSaysWhy() {
+        for (code in listOf("db_down_failed", "db_held_lossy", "db_held_unknown", "db_held_unasked")) {
+            val id = WebWords.updateCode.getValue(code)
+            assertTrue(code, XmlLookup.english.text(id).contains("Nothing was put back by itself"))
+            assertTrue(code, XmlLookup.arabic.text(id).contains("لم يُرجَع شيء تلقائيًا"))
+        }
     }
 }

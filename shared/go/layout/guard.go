@@ -33,6 +33,9 @@ type Guard struct {
 	// Deadline: not confirmed by then, the launcher falls back (zero: its own
 	// pending timeout).
 	Deadline time.Time `json:"deadline,omitzero"`
+	// Latest is how far the deadline may ever be pushed (GuardLatest), set by the release
+	// that switched; zero (a guard from before 2026-11-24): Since plus MaxGuardSpan.
+	Latest time.Time `json:"latest,omitzero"`
 	// PreviousPayload is the kept copy of the app payload that ran before (app
 	// bundle); PreviousRuntime the runtime directory that did (runtime copy).
 	PreviousPayload string `json:"previous_payload,omitempty"`
@@ -158,7 +161,30 @@ func trimSpace(b []byte) []byte {
 // restores the dump before any role runs. It reports whether it marked the record; one
 // that names another release, or no dump, is left alone. Fields it does not know are
 // kept.
+//
+// Nothing in Maktaba marks a record restoring by itself any more (a failed update stops
+// and asks: MarkRecordHeld); this stays for the releases before 2026-11-24 that read it,
+// and for the tests that play them.
 func MarkRecordRestoring(path, failed, reason string) (bool, error) {
+	return markRecordFailed(path, failed, reason, "restoring")
+}
+
+// MarkRecordHeld marks the database's record so that no start puts anything back by
+// itself: the update to failed stopped after its migrations ran (or were running), and a
+// person decides how the database goes on (put the backup taken before them back, or
+// install a release that fixes the update). Its state becomes "held" with failed and
+// reason; version stays failed's, so every release older than failed refuses the
+// database (db_refused_older, the releases before 2026-11-24 included) instead of
+// putting the dump back, and every release since says what happened and the choices
+// (db_held). It reports whether it marked the record; one that names another release,
+// or no dump, is left alone. Fields it does not know are kept.
+func MarkRecordHeld(path, failed, reason string) (bool, error) {
+	return markRecordFailed(path, failed, reason, "held")
+}
+
+// markRecordFailed is MarkRecordRestoring and MarkRecordHeld: state is "restoring" or
+// "held". A record marked either way already is left as it is (marked).
+func markRecordFailed(path, failed, reason, state string) (bool, error) {
 	if path == "" {
 		return false, nil
 	}
@@ -179,12 +205,12 @@ func MarkRecordRestoring(path, failed, reason string) (bool, error) {
 	}
 	switch str("state") {
 	case "migrated", "migrating":
-	case "restoring":
+	case "restoring", "held":
 		return true, nil // marked already
 	default:
 		return false, nil
 	}
-	rec["state"], rec["failed"], rec["error"] = "restoring", str("version"), reason
+	rec["state"], rec["failed"], rec["error"] = state, str("version"), reason
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	out, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -193,21 +219,49 @@ func MarkRecordRestoring(path, failed, reason string) (bool, error) {
 	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
 }
 
+// MaxGuardSpan is the longest a guard or pending marker may wait for its release to
+// confirm when the release that switched set no latest of its own: a day from its
+// switch, longer than any home's database step (research P5: the release being judged
+// pushed the deadline 15 minutes ahead every minute, without limit, so a release that
+// hung with its watch alive was never timed out).
+const MaxGuardSpan = 24 * time.Hour
+
+// GuardLatest is how far a guard's deadline may be pushed: latest when the release that
+// switched set it (never later than MaxGuardSpan past since), else since plus
+// MaxGuardSpan. The launcher never waits past it, whatever the deadline says.
+func GuardLatest(since, latest time.Time) time.Time {
+	ceiling := since.Add(MaxGuardSpan)
+	if since.IsZero() {
+		ceiling = time.Now().Add(MaxGuardSpan)
+	}
+	if latest.IsZero() || latest.After(ceiling) {
+		return ceiling
+	}
+	return latest
+}
+
 // ExtendGuard pushes the guard's deadline to until when the guard is runID's and its
-// deadline is earlier (the new release is busy starting); it reports whether it did.
+// deadline is earlier (the new release is busy starting), never past its latest
+// (GuardLatest); it reports whether it did.
 func ExtendGuard(root, runID string, until time.Time) (bool, error) {
 	g, err := ReadGuard(root)
-	if err != nil || g == nil || runID == "" || g.RunID != runID || !g.Deadline.Before(until) {
+	if err != nil || g == nil || runID == "" || g.RunID != runID {
 		return false, err
+	}
+	if latest := GuardLatest(g.Since, g.Latest); until.After(latest) {
+		until = latest
+	}
+	if !g.Deadline.Before(until) {
+		return false, nil
 	}
 	g.Deadline = until.UTC()
 	return true, WriteGuard(root, *g)
 }
 
-// UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the
-// release before failed: failed (still running) keeps the database its migrations made,
-// so the record says migrated again and no start puts the dump back. It reports whether
-// it changed the record.
+// UnmarkRecordRestoring takes back MarkRecordRestoring or MarkRecordHeld when the switch
+// back to the release before failed: failed (still running) keeps the database its
+// migrations made, so the record says migrated again and no start puts the dump back or
+// stops on it. It reports whether it changed the record.
 func UnmarkRecordRestoring(path, failed string) (bool, error) {
 	if path == "" {
 		return false, nil
@@ -224,7 +278,7 @@ func UnmarkRecordRestoring(path, failed string) (bool, error) {
 		return false, fmt.Errorf("%s: %w", path, err)
 	}
 	str := func(k string) string { s, _ := rec[k].(string); return s }
-	if str("state") != "restoring" || NormalizeVersion(str("failed")) != NormalizeVersion(failed) {
+	if (str("state") != "restoring" && str("state") != "held") || NormalizeVersion(str("failed")) != NormalizeVersion(failed) {
 		return false, nil
 	}
 	rec["state"] = "migrated"

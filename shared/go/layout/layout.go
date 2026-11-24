@@ -219,6 +219,10 @@ type Pending struct {
 	// Deadline (the update orchestrator's): not confirmed by then, the launcher
 	// falls back; zero: its own pending timeout.
 	Deadline time.Time `json:"deadline,omitzero"`
+	// Latest is how far the deadline may ever be pushed (GuardLatest): set by the release
+	// that switched, never moved by the release being judged. Zero (a marker from before
+	// 2026-11-24): Since plus MaxGuardSpan.
+	Latest time.Time `json:"latest,omitzero"`
 	// Record is the database's record the fallback marks for the dump taken
 	// before Version's migrations to be put back (MarkRecordRestoring).
 	Record string `json:"record,omitempty"`
@@ -244,9 +248,10 @@ func (l Layout) ReadPending() (*Pending, error) {
 	return &p, nil
 }
 
-// GuardPending adds the orchestrator's deadline and database record to the pending
-// marker of version (a marker of another version is left alone).
-func (l Layout) GuardPending(version string, deadline time.Time, record string) error {
+// GuardPending adds the orchestrator's deadline, the latest it may be pushed to (zero:
+// Since plus MaxGuardSpan) and the database record to the pending marker of version (a
+// marker of another version is left alone).
+func (l Layout) GuardPending(version string, deadline, latest time.Time, record string) error {
 	p, err := l.ReadPending()
 	if err != nil {
 		return err
@@ -255,6 +260,9 @@ func (l Layout) GuardPending(version string, deadline time.Time, record string) 
 		return fmt.Errorf("no pending marker for %s", version)
 	}
 	p.Deadline, p.Record = deadline.UTC(), record
+	if !latest.IsZero() {
+		p.Latest = latest.UTC()
+	}
 	b, err := json.Marshal(p)
 	if err != nil {
 		return err
@@ -264,11 +272,17 @@ func (l Layout) GuardPending(version string, deadline time.Time, record string) 
 
 // ExtendPending pushes the pending marker's deadline to until when the marker is runID's
 // and its deadline is earlier (the new release is busy starting: its database step dumps
-// and migrates); it reports whether it did.
+// and migrates), never past its latest (GuardLatest); it reports whether it did.
 func (l Layout) ExtendPending(runID string, until time.Time) (bool, error) {
 	p, err := l.ReadPending()
-	if err != nil || p == nil || runID == "" || p.RunID != runID || !p.Deadline.Before(until) {
+	if err != nil || p == nil || runID == "" || p.RunID != runID {
 		return false, err
+	}
+	if latest := GuardLatest(p.Since, p.Latest); until.After(latest) {
+		until = latest
+	}
+	if !p.Deadline.Before(until) {
+		return false, nil
 	}
 	p.Deadline = until.UTC()
 	b, err := json.Marshal(p)

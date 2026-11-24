@@ -25,16 +25,6 @@ build fails when the two differ.
   problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
   knows.
 
-- **The Windows and Linux Player tells the home what the machine plays smoothly.** At start it
-  plays a few short clips on its own to learn which codecs the graphics card decodes, how sharp
-  a picture the processor keeps up with for the rest, and how many channels the sound has, and
-  sends that with each video (`device_caps`, with a new `hardware` flag per codec). A slower
-  laptop now gets a smooth 1080p version of a 4K film it would have stuttered through, and a
-  converted film keeps its 5.1 sound as E-AC-3 on 5.1 speakers and comes as stereo to stereo
-  speakers.
-  The results are kept until the graphics card, its driver, the processor or the Player's libmpv
-  change; the sound is checked again after each video. Report a problem lists what was found.
-
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with
@@ -432,13 +422,6 @@ build fails when the two differ.
   second failed probe and Broadcasting shows an outage. It is no longer an expected failure.
 
 ### Fixed
-
-- **Less to write for every change on a home with a machine's copy.** Most of the library's
-  tables on the home moved to PostgreSQL 18 on 2026-11-20 had every change logged with the whole
-  old row (REPLICA IDENTITY FULL), where their primary key is enough. A migration (slot 0238)
-  gives every table with a primary key that key as its identity, one table at a time and without
-  rewriting any; the machines' copies keep following them. Tables without a primary key keep the
-  whole row, which a copy needs.
 
 - **The second listen stores its corrections again on PostgreSQL 18.** From the home's move to
   PostgreSQL 18 on 2026-11-20, every second-listen job failed when it stored its corrected
@@ -3885,6 +3868,16 @@ build fails when the two differ.
   marks it withdrawn. Homes on v0.3.153 to v0.3.161 keep reading GitHub, unchanged.
   `MAKTABA_UPDATE_FEED=off` turns the feed off.
 
+- **The Windows and Linux Player tells the home what the machine plays smoothly.** At start it
+  plays a few short clips on its own to learn which codecs the graphics card decodes, how sharp
+  a picture the processor keeps up with for the rest, and how many channels the sound has, and
+  sends that with each video (`device_caps`, with a new `hardware` flag per codec). A slower
+  laptop now gets a smooth 1080p version of a 4K film it would have stuttered through, and a
+  converted film keeps its 5.1 sound as E-AC-3 on 5.1 speakers and comes as stereo to stereo
+  speakers.
+  The results are kept until the graphics card, its driver, the processor or the Player's libmpv
+  change; the sound is checked again after each video. Report a problem lists what was found.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -4557,6 +4550,51 @@ build fails when the two differ.
   that works after any part of a NO TRANSACTION migration's Up, and an Up that loses no data or
   says so. The update rehearsal runs every new migration's Down script after each partial Up on
   the bundled PostgreSQL.
+
+- **A failed update never puts the whole backup back by itself: it stops and asks.** Until now,
+  when an update's Down scripts could not take the library database back (they failed, a change
+  had deleted data they cannot bring back, or the way back could not be told), or when the
+  launcher's guard gave up on a new release after its migrations ran, the whole backup taken
+  before the update went back by itself: hours with the library stopped on a large home, and the
+  writes since that backup lost. Now the update stops there and the database stays as it is.
+  The previous release is switched back in and stops on it too, and the start page, the recovery
+  page (`/recovery`) and the Updates page say what happened and the two choices: put back the
+  backup taken before the update (**Restore** on the recovery page, which names it), or install
+  a newer release that fixes the update, which goes on from where it stopped. A restore mark
+  written by an older release or its launcher is held the same way. In English and Arabic.
+
+- **Less to write for every change on a home with a machine's copy.** Most of the library's
+  tables on the home moved to PostgreSQL 18 on 2026-11-20 had every change logged with the whole
+  old row (REPLICA IDENTITY FULL), where their primary key is enough. A migration (slot 0238)
+  gives every table with a primary key that key as its identity, one table at a time and without
+  rewriting any; the machines' copies keep following them. Tables without a primary key keep the
+  whole row, which a copy needs.
+
+- **An update's migrations no longer fight the machines' copies of the home's database.** An
+  automatic update waits while a machine is still making its copy of a table, and the
+  migrations wait up to 10 minutes for such copies, then pause the machines' copies until they
+  are done, so a copy no longer comes straight back or holds an index build up. Since the
+  migrations run with the library stopped, their index builds now run plainly: they wait for no
+  older session and leave no half-built index behind. The machines go on from where they
+  stopped. The Updates page says when an update waits for a machine's copy, in English and
+  Arabic.
+
+- **`maktaba-server update` on a self-managed or package install is no longer undone after 15
+  minutes.** Its switch was never confirmed, so the launcher went back to the previous release
+  once the new one had run for a quarter of an hour. The new release now confirms itself once it
+  has run healthy, as it does after a switch by hand, including a switch made by an older
+  `maktaba-server update`.
+
+- **A release that hangs while it starts after an update is now timed out.** Its own update watch
+  pushed the launcher's deadline on every minute, without limit. The release that switches now
+  writes the latest that deadline may reach, and the launcher never waits longer, nor more than a
+  day after the switch.
+
+- **An update no longer waits forever for a desktop app that is not running.** When the Mac or
+  Windows app never takes the update, the update stops waiting at the end of its window (or after
+  three hours) and says so on the Updates page, in English and Arabic: open Maktaba on that machine,
+  then update again. A failed start of the app is now written in the update's log. The Linux app
+  has nothing to download for its update, so the update goes on without it after 10 minutes.
 
 - **Automatic updates wait while the list of releases cannot be read.** When the home's checks
   for updates have failed for over 12 hours, nothing installs by itself until a check reads the

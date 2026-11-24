@@ -705,6 +705,25 @@ func (m *appMachine) stop() {
 	m.killLeftovers()
 }
 
+// restoreByHand puts the backup named back as a person does on a held update (the
+// recovery page's Restore, or the command line): `maktaba-server restore --backup NAME
+// --confirm`, from the payload that runs, asking the running server.
+func (m *appMachine) restoreByHand(backup string) {
+	t := m.r.t
+	t.Helper()
+	bin := filepath.Join(m.payload, "bin", "maktaba-server")
+	if o := strings.TrimSpace(m.readFile(filepath.Join("updates", "payload-override"))); o != "" {
+		bin = filepath.Join(o, "bin", "maktaba-server") // the kept copy of the release before
+	}
+	cmd := exec.Command(bin, "restore", "--backup", backup, "--confirm")
+	cmd.Dir, cmd.Env = m.home, m.environ()
+	out, err := cmd.CombinedOutput()
+	fmt.Fprintf(m.log, "==== rehearsal: restore --backup %s --confirm ====\n%s\n", backup, out)
+	if err != nil {
+		t.Fatalf("the restore asked by hand: %v\n%s", err, out)
+	}
+}
+
 // killLeftovers ends any process still running from this machine's folders (a server or
 // Postgres a launcher killed hard left behind).
 func (m *appMachine) killLeftovers() {

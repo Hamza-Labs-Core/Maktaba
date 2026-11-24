@@ -163,6 +163,12 @@ func TestLayoutInstaller(t *testing.T) {
 	if cur, _ := l.Current(); cur != "1.5.0" || p == nil || p.Record != record || p.Deadline.Before(time.Now().Add(20*time.Minute)) {
 		t.Fatalf("after the switch: current %q pending %+v", cur, p)
 	}
+	// the latest the release being judged may push its deadline to is set here, by the
+	// release that switches (research P5), beyond the watch's own bound and never a day
+	if want := time.Now().Add(pendingCap(j) + j.Job.WatchBound()); p.Latest.Before(want) ||
+		p.Latest.After(time.Now().Add(layout.MaxGuardSpan)) || p.Latest.Before(p.Deadline) {
+		t.Fatalf("latest %v (deadline %v), want after %v", p.Latest, p.Deadline, want)
+	}
 	if err := li.Revert(ctx, j); err != nil {
 		t.Fatal(err)
 	}
@@ -652,5 +658,41 @@ func TestOrderClockText(t *testing.T) {
 	}
 	if got := clockText(nil, now); got != "" {
 		t.Fatalf("none: %q", got)
+	}
+}
+
+// A layout install (deb/rpm, self-managed) undoes a release's migrations with its Down
+// scripts too: the release before's migrations are in bin/releases/<from>/. Without this
+// its rollback could only put the dump back, and since #1605 it would always stop and ask
+// (the auto-update e2e's 0.9.2).
+func TestLayoutInstallerUndoesWithDownScripts(t *testing.T) {
+	l := layout.New(t.TempDir())
+	write := func(dir, name, body string) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := "-- +goose Up\nCREATE TABLE IF NOT EXISTS a (id int);\n-- +goose Down\nDROP TABLE IF EXISTS a;\n"
+	b := "-- +goose Up\nCREATE TABLE IF NOT EXISTS b (id int);\n-- +goose Down\nDROP TABLE IF EXISTS b;\n"
+	from := filepath.Join(l.ReleaseDir("1.4.0"), install.MigrationsDir)
+	staged := l.ReleaseDir("1.5.0")
+	write(from, "0001_a.sql", a)
+	write(filepath.Join(staged, install.MigrationsDir), "0001_a.sql", a)
+	write(filepath.Join(staged, install.MigrationsDir), "0002_b.sql", b)
+	li := &LayoutInstaller{Layout: l}
+	j := &Journal{Job: Job{Version: "1.5.0"}, From: "1.4.0", Staged: staged}
+	schema, ok, why := li.DownTo(j)
+	if !ok || schema != 1 {
+		t.Fatalf("DownTo = %d %v (%s), want slot 1", schema, ok, why)
+	}
+	if keep, why := li.KeepsSchema(j); keep {
+		t.Fatalf("kept without the release before saying it runs on a newer schema: %s", why)
+	}
+	// the release before's folder gone: not known, nothing decided on a guess
+	if _, ok, _ := li.DownTo(&Journal{Job: Job{Version: "1.5.0"}, From: "1.3.0", Staged: staged}); ok {
+		t.Fatal("Down scripts decided without the release before's migrations")
 	}
 }

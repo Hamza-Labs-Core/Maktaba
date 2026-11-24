@@ -21,7 +21,7 @@ type world struct {
 	staged    map[string]bool
 	calls     []string
 	migrated  bool // the database holds the new release's migrations
-	marked    bool // the record says: put the dump back
+	marked    bool // the record says: held (the update stopped, a person decides)
 	kept      bool // the record says: the schema is kept for the release before
 	down      bool // the record says: the release before's schema, by the Down scripts
 	committed string
@@ -208,7 +208,7 @@ func (f *fakeInst) Answer(j *Journal) (string, error) {
 
 type fakeRecords struct{ w *world }
 
-func (r fakeRecords) MarkRestore(_, _, _ string) (bool, error) {
+func (r fakeRecords) MarkHeld(_, _, _ string) (bool, error) {
 	r.w.mu.Lock()
 	defer r.w.mu.Unlock()
 	if !r.w.migrated {
@@ -549,52 +549,27 @@ func TestRollbackOfAdditiveMigrationsKeepsTheSchema(t *testing.T) {
 	}
 }
 
-// The review of #433: a rollback that puts the dump back does it with the new release's
-// own code, before it switches back (the record marked first, the switch still the new
-// release's), so the release before starts on a finished database. One that fails leaves
-// the record marked, and the switch back goes on (the release before puts it back).
-func TestRollbackPutsTheDumpBackBeforeItsSwitchBack(t *testing.T) {
-	for _, fails := range []bool{false, true} {
-		t.Run(map[bool]string{false: "put back", true: "fails"}[fails], func(t *testing.T) {
-			w := newWorld("1.4.0")
-			r := startRig(t, t.TempDir(), w, healthy)
-			_ = r.m.Prepare(homeJob())
-			r.waitState(StatePrepared)
-			_ = r.m.Apply("run-1")
-			r.waitExit()
-			w.migrated = true
-			r.stop()
-			n := startRig(t, r.dir, w, Verdict{Why: "api /readyz 503"})
-			var called atomic.Int32
-			var markedThen bool
-			var nextThen string
-			n.m.RestoreBack = func(_ context.Context, j *Journal, reason string) error {
-				called.Add(1)
-				w.mu.Lock()
-				markedThen, nextThen = w.marked, w.next
-				w.mu.Unlock()
-				if j.Job.Version != "1.5.0" || j.From != "1.4.0" || reason != "api /readyz 503" {
-					t.Errorf("RestoreBack(%s from %s, %q)", j.Job.Version, j.From, reason)
-				}
-				if fails {
-					return errors.New("pg_restore: disk full")
-				}
-				return nil
-			}
-			n.m.Resume()
-			n.waitExit()
-			n.waitState(StateRollingBack)
-			if called.Load() != 1 || !markedThen || nextThen != "1.5.0" {
-				t.Fatalf("RestoreBack called %d times (record marked %v, the next start %s then)", called.Load(),
-					markedThen, nextThen)
-			}
-			w.mu.Lock()
-			next := w.next
-			w.mu.Unlock()
-			if next != "1.4.0" {
-				t.Fatalf("switched back to %s", next)
-			}
-		})
+// No automatic restore: a rollback whose migrations can be neither kept nor undone by
+// their Down scripts marks the record held and switches back; nothing puts the dump back
+// (the release before stops on the held database and a person decides).
+func TestRollbackHoldsTheDatabaseAndSwitchesBack(t *testing.T) {
+	w := newWorld("1.4.0")
+	r := startRig(t, t.TempDir(), w, healthy)
+	_ = r.m.Prepare(homeJob())
+	r.waitState(StatePrepared)
+	_ = r.m.Apply("run-1")
+	r.waitExit()
+	w.migrated = true
+	r.stop()
+	n := startRig(t, r.dir, w, Verdict{Why: "api /readyz 503"})
+	n.m.Resume()
+	n.waitExit()
+	n.waitState(StateRollingBack)
+	w.mu.Lock()
+	marked, next := w.marked, w.next
+	w.mu.Unlock()
+	if !marked || next != "1.4.0" {
+		t.Fatalf("held %v, switched back to %s", marked, next)
 	}
 }
 
@@ -927,7 +902,8 @@ func TestUnreadableJournalIsSetAside(t *testing.T) {
 
 // The rollback of 0.3.90 (2026-11-07): migrations that cannot be kept but lose no data are
 // undone by their Down scripts, back to the release before's schema, and nothing is put
-// back; Down scripts that fail, or migrations that lose data, put the dump back as before.
+// back; Down scripts that fail, or migrations that lose data, hold the record (a person
+// decides: nothing is put back by itself).
 func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 	for name, c := range map[string]struct {
 		reverts bool
@@ -950,7 +926,6 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 			n := startRig(t, r.dir, w, Verdict{Why: "api /readyz 503"})
 			n.inst.reverts = c.reverts
 			var ran atomic.Int32
-			var restored atomic.Int32
 			n.m.MigrateDown = func(_ context.Context, j *Journal, schema int64) error {
 				ran.Add(1)
 				if schema != 191 || j.Job.Version != "1.5.0" || j.From != "1.4.0" {
@@ -961,7 +936,6 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 				}
 				return nil
 			}
-			n.m.RestoreBack = func(context.Context, *Journal, string) error { restored.Add(1); return nil }
 			n.m.Resume()
 			n.waitExit()
 			n.waitState(StateRollingBack)
@@ -971,8 +945,8 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 			if want := int32(map[bool]int{true: 1}[c.reverts]); ran.Load() != want {
 				t.Fatalf("the Down scripts ran %d times, want %d", ran.Load(), want)
 			}
-			if down != c.down || marked == c.down || (restored.Load() == 1) == c.down {
-				t.Fatalf("record down %v, restore marked %v, dump put back %d times", down, marked, restored.Load())
+			if down != c.down || marked == c.down {
+				t.Fatalf("record down %v, held %v", down, marked)
 			}
 			if next != "1.4.0" {
 				t.Fatalf("switched back to %s", next)

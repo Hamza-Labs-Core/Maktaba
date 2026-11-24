@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -200,5 +201,28 @@ func TestUpdateKeepIsTheBundlesRule(t *testing.T) {
 	cfg.Backups.UpdateKeep = 2
 	if got := updateKeep(cfg); got != 2 || pgbundle.UpdateKeepOf(cfg) != got {
 		t.Errorf("[backups] update_keep: %d, the bundle's %d", got, pgbundle.UpdateKeepOf(cfg))
+	}
+}
+
+// A held update's backup is a person's way back (#1605): it cannot be deleted while the
+// record holds it; once the record moved on, it can.
+func TestAHeldUpdatesBackupIsNotDeleted(t *testing.T) {
+	cfgPath, _, backups := backupsEnv(t)
+	cfg, _, err := config.LoadFrom(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := apppayload.WriteDatabase(cfg.StateDir(), apppayload.Database{Version: "v2", State: apppayload.DatabaseHeld,
+		From: "v1", Failed: "v2", Dump: filepath.Join(backups, "pre-v1-to-v2.dump")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteBackup(cfgPath, "pre-v1-to-v2.dump"); !errors.Is(err, errDumpInUse) {
+		t.Fatalf("deleting a held update's backup = %v, want in use", err)
+	}
+	if err := apppayload.WriteDatabase(cfg.StateDir(), apppayload.Database{Version: "v1", State: apppayload.DatabaseMigrated}); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteBackup(cfgPath, "pre-v1-to-v2.dump"); err != nil {
+		t.Fatalf("once the record moved on: %v", err)
 	}
 }

@@ -303,7 +303,8 @@ import Testing
     /// both languages, with the two releases it names.
     @Test func aFailedUpdateKeptOrUndoneHasWords() {
         for (code, en1, ar1) in [("db_kept", "Nothing had to be put back", "لم يلزم إرجاع شيء"),
-                                 ("db_undone", "undone by its own Down scripts", "أُلغيت تغييراته بنصوص التراجع")] {
+                                 ("db_undone", "undone by its own Down scripts", "أُلغيت تغييراته بنصوص التراجع"),
+                                 ("db_held", "Nothing was put back by itself", "لم يُرجَع شيء تلقائيًا")] {
             let en = words(StatusWords.processDetails, "setup.starting.detail.", code, Locale(identifier: "en"))
             let ar = words(StatusWords.processDetails, "setup.starting.detail.", code, Locale(identifier: "ar"))
             #expect(en.contains(en1) && en.contains("{failed}") && en.contains("{release}"), "\(code): \(en)")
@@ -399,5 +400,24 @@ import Testing
         let ar = words(StatusWords.waiting, "updates.waiting.", "catalog_stale", Locale(identifier: "ar"))
         #expect(en.contains("could not be read for over 12 hours"), "\(en)")
         #expect(ar.contains("تعذّرت قراءة قائمة الإصدارات"), "\(ar)")
+    }
+
+    /// Research P10: an update that stopped waiting for a desktop app that never took it says
+    /// so in both languages.
+    @Test func anAppThatNeverAnswersHasWords() {
+        let en = words(StatusWords.codes, "updates.code.", "app_no_answer", Locale(identifier: "en"))
+        let ar = words(StatusWords.codes, "updates.code.", "app_no_answer", Locale(identifier: "ar"))
+        #expect(en.contains("not running on this machine"), "\(en)")
+        #expect(ar.contains("لا يعمل على هذا الجهاز"), "\(ar)")
+    }
+
+    /// #1605: an update that stopped and asks says why in both languages (nothing put back).
+    @Test func aHeldUpdateSaysWhy() {
+        for code in ["db_down_failed", "db_held_lossy", "db_held_unknown", "db_held_unasked"] {
+            let en = words(StatusWords.codes, "updates.code.", code, Locale(identifier: "en"))
+            let ar = words(StatusWords.codes, "updates.code.", code, Locale(identifier: "ar"))
+            #expect(en.contains("Nothing was put back by itself"), "\(code): \(en)")
+            #expect(ar.contains("لم يُرجَع شيء تلقائيًا"), "\(code): \(ar)")
+        }
     }
 }
