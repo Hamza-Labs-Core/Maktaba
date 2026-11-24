@@ -35,6 +35,10 @@ Story 13.20, stacked on 13.21 (#1639), both after 13.18 (#1591).
 - **ffmpeg has no PGS encoder.** A PGS `.sup` is short to write by hand: PCS, WDS, PDS, ODS (RLE) and END segments. Java2D shapes Arabic for its bitmap.
 - **Java's `Locale` does not name every three-letter code** (`fra` stays `fra`). Map ISO 639-2 to its two letters, plus the bibliographic codes (`fre`, `ger`), before naming a file's track.
 - **`SwingPanel` (JavaFX's surface) cannot run in `runComposeUiTest`** ("LocalInteropContainer not provided"). Test the watch bar, not the whole Watch screen.
+- **A pretend home must serve ranges**: mpv reads a track chosen later by seeking back, and on a stream it cannot seek it draws nothing and says nothing.
+- **mpv's `bgr0` leaves the fourth byte undefined**, 0 where it draws a subtitle, and the frame read it as alpha. Frames are `rgb0` in a pixel format with no alpha.
+- **libass sizes a font by its line** (the Windows ascent and descent, 1.729 of Plex's em), so a size meant as a 22nd of the picture was drawn at a 38th, 13.18's captions too.
+- **Looking at the first reference found the last two**: the numbers passed, the picture was wrong.
 
 ## Keep doing
 - Measuring pixels in real-library tests rather than only comparing references: colour (yellow and green), the line's height ratio, and "the previous track's line is gone".
