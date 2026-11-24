@@ -265,6 +265,82 @@ func TestPrepareRefusesALostSuperuserPassword(t *testing.T) {
 	}
 }
 
+// A private start (the 16 to 18 upgrade's recovery and grants, Prepare, an offline restore, a
+// moved cluster's check) that meets the shared memory of a killed postmaster is started again
+// until it is free, shmWait at most; a server that exits for another reason is not.
+func TestPrivateStartWaitsOutTheSharedMemory(t *testing.T) {
+	const shmFatal = `echo 'FATAL:  pre-existing shared memory block is still in use' >&2; exit 1`
+	set := func(t *testing.T, limit time.Duration, postgres string) (Bundle, string) {
+		b, logDir := fakeBundle(t)
+		prevWait, prevEvery := shmWait, shmRetryEvery
+		t.Cleanup(func() { shmWait, shmRetryEvery = prevWait, prevEvery })
+		shmWait, shmRetryEvery = limit, 20*time.Millisecond
+		if err := os.WriteFile(b.Bin("postgres"), []byte("#!/bin/sh\necho start >> \"$FAKE_LOG/starts\"\n"+postgres), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return b, filepath.Join(logDir, "starts")
+	}
+	t.Run("free at the third start", func(t *testing.T) {
+		b, starts := set(t, time.Minute, `[ "$(wc -l < "$FAKE_LOG/starts")" -ge 3 ] || { `+shmFatal+`; }
+`+strings.TrimPrefix(fakes["postgres"], "#!/bin/sh\n"))
+		ran := 0
+		if err := b.WithServer(context.Background(), io.Discard, func() error { ran++; return nil }); err != nil || ran != 1 {
+			t.Fatalf("%v, ran %d times", err, ran)
+		}
+		if n := lines(t, starts); n != 3 {
+			t.Fatalf("%d starts, want 3", n)
+		}
+	})
+	t.Run("never free", func(t *testing.T) {
+		b, starts := set(t, 200*time.Millisecond, shmFatal)
+		err := b.WithServer(context.Background(), io.Discard, func() error { return nil })
+		if !errors.Is(err, errShmInUse) || !strings.Contains(err.Error(), "exited while starting") {
+			t.Fatalf("%v", err)
+		}
+		if n := lines(t, starts); n < 2 || n > 12 {
+			t.Fatalf("%d starts in 200 ms", n)
+		}
+	})
+	t.Run("stopped meanwhile", func(t *testing.T) {
+		b, _ := set(t, time.Minute, shmFatal)
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		if err := b.WithServer(ctx, io.Discard, func() error { return nil }); err == nil {
+			t.Fatal("no error")
+		}
+	})
+	t.Run("another reason", func(t *testing.T) {
+		b, starts := set(t, time.Minute, "echo 'FATAL:  could not create any TCP/IP sockets' >&2\nexit 1\n")
+		if err := b.WithServer(context.Background(), io.Discard, func() error { return nil }); err == nil || errors.Is(err, errShmInUse) {
+			t.Fatalf("%v", err)
+		}
+		if n := lines(t, starts); n != 1 {
+			t.Fatalf("%d starts", n)
+		}
+	})
+	t.Run("a lock of another program's PID", func(t *testing.T) {
+		b, _ := fakeBundle(t)
+		prev := lookProcess
+		t.Cleanup(func() { lookProcess = prev })
+		lookProcess = func(int) (string, bool) { return "Finder", true } // a power cut, and the PID given again
+		lock := filepath.Join(b.Data, "postmaster.pid")
+		if err := os.MkdirAll(b.Data, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(lock, []byte("4242\n"+b.Data+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.WithServer(context.Background(), io.Discard, func() error {
+			if _, err := os.Stat(lock); err == nil {
+				t.Error("the lock was not cleared before the start")
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
 func TestPrepareFailsWhenPostgresExits(t *testing.T) {
 	b, _ := fakeBundle(t)
 	if err := os.WriteFile(b.Bin("postgres"), []byte("#!/bin/sh\necho 'LOG:  starting'\n"+
