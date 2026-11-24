@@ -17,10 +17,17 @@ The Player and the Remote are each **one universal app** for iPhone and iPad (Ap
 4.3(a): no second bundle ID for the same app). The iPad-only apps they replace, Maktaba Player
 for iPad (`com.hamzalabs.maktaba.player.tablet`) and Maktaba Remote iPad
 (`com.hamzalabs.maktaba.remote.tablet`), get no new builds. In App Store Connect their records
-stay as they are, never submitted for review; an iPad tester installs Maktaba Player and
-Maktaba Remote instead and signs in again (the old apps' sessions stay with them). Their App
-IDs can be removed once no tester has a build of them (a build expires 90 days after its
-upload).
+stay as they are, never submitted for review. Their App IDs can be removed once no tester has a
+build of them (a build expires 90 days after its upload).
+
+On an iPad with one of the old apps:
+
+1. Install Maktaba Player or Maktaba Remote from TestFlight, add the home and sign in again.
+   **Nothing carries over:** the old app's saved homes and their names, its sign-in, its theme
+   and its playback settings stay with it, since one app can't read another's data. There is no
+   migration. What the home keeps (progress, lists, profiles) is there after signing in.
+2. **Delete the old app.** Both answer `maktaba://` links, and until the old one is gone iOS may
+   open a link in it.
 
 Each app is its own job (`fail-fast: false`): if one upload fails, for example because its
 App Store Connect record doesn't exist yet, the other apps still upload.
