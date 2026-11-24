@@ -102,7 +102,8 @@ export const PAGE_HELP: ReadonlyArray<readonly [path: string, ref: HelpRef]> = [
   ["/admin/live-tv", { topic: "live-tv-admin" }],
   ["/admin/live-tv/changes", { topic: "tv-changes" }],
   ["/admin/live-tv/changes/:id", { topic: "tv-changes", anchor: "change-page" }],
-  ["/admin/broadcast-access", { topic: "broadcast-access" }],
+  // broadcasting is off (2026-11-24): the page is not found, and its help topic is gone
+  ["/admin/broadcast-access", { topic: "live-tv-admin" }],
   ["/admin/analytics", { topic: "analytics" }],
   ["/admin/audit", { topic: "audit-log" }],
   ["/admin/health", { topic: "system-health" }],
@@ -135,6 +136,13 @@ export function pageHelp(pathname: string): HelpRef | null {
  * Rules sections whose help lives in the rules topic under their own
  * anchor (codeAnchor(key)). Each field links to its section's entry.
  */
+/**
+ * The rules sections about broadcasting: the Rules page shows them only while the licence
+ * carries the broadcast flag, and the rules topic has no entry for them while broadcasting is
+ * off (2026-11-24).
+ */
+export const BROADCAST_RULE_SECTIONS: ReadonlySet<string> = new Set(["broadcast"]);
+
 export function ruleHelp(sectionKey: string): HelpRef {
   return { topic: "rules", anchor: codeAnchor(sectionKey) };
 }

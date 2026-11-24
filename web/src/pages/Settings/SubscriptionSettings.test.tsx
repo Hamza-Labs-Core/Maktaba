@@ -94,6 +94,8 @@ describe("Settings → Subscription (test-cases/subscription.md)", () => {
     );
     expect(screen.getByText(/not linked to Maktaba Cloud/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Remove license" })).toBeNull();
+    // broadcasting is off (2026-11-24): not listed at all when the licence lacks it
+    expect(screen.queryByText(/Sharing channels with people outside your home/)).toBeNull();
   });
 
   it("SUB-02: a cloud plan license shows its holder, renewal, unlimited users and the cloud link", async () => {

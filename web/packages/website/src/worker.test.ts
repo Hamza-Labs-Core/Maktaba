@@ -92,6 +92,19 @@ describe("redirects (T01, T04)", () => {
     expect(env.seen).toEqual(["/install/synology/", "/404", "/ar/install/nas/", "/ar/404"]);
   });
 
+  it("the Broadcast access help topic is gone while broadcasting is off: its address opens the help index", async () => {
+    for (const [from, to] of [
+      ["/help/broadcast-access", "/help/"],
+      ["/help/broadcast-access/", "/help/"],
+      ["/ar/help/broadcast-access", "/ar/help/"],
+      ["/ar/help/broadcast-access/", "/ar/help/"],
+    ]) {
+      const res = await get(`https://maktaba.tv${from}`);
+      expect(res.status, from).toBe(301);
+      expect(res.headers.get("Location"), from).toBe(to);
+    }
+  });
+
   it("serves every redirect of src/redirects.json, the table the link check reads", async () => {
     const sources = Object.keys(REDIRECTS);
     expect(sources.length).toBeGreaterThan(0);
