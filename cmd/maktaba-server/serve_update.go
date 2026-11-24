@@ -529,6 +529,14 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 		u.lay = &li.Layout
 	}
 	m := &updater.Machine{Dir: dir, Installer: inst, Exit: exit, Log: os.Stderr}
+	// the app's order: a start of the app that failed, or an app that never answered, is
+	// said in the run's log (research P10: the start's error was dropped)
+	switch in := inst.(type) {
+	case *updater.AppInstaller:
+		in.Logf = m.Warnf
+	case *updater.RuntimeInstaller:
+		in.Logf = m.Warnf
+	}
 	m.TVHandover = u.tvHandover
 	if lightTier(runningTier.Load()) {
 		// story 59.12: the dump under a NAS's memory limit, without speech and transcodes

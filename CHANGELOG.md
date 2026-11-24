@@ -412,6 +412,23 @@ build fails when the two differ.
 
 ### Fixed
 
+- **`maktaba-server update` on a self-managed or package install is no longer undone after 15
+  minutes.** Its switch was never confirmed, so the launcher went back to the previous release
+  once the new one had run for a quarter of an hour. The new release now confirms itself once it
+  has run healthy, as it does after a switch by hand, including a switch made by an older
+  `maktaba-server update`.
+
+- **A release that hangs while it starts after an update is now timed out.** Its own update watch
+  pushed the launcher's deadline on every minute, without limit. The release that switches now
+  writes the latest that deadline may reach, and the launcher never waits longer, nor more than a
+  day after the switch.
+
+- **An update no longer waits forever for a desktop app that is not running.** When the Mac or
+  Windows app never takes the update, the update stops waiting at the end of its window (or after
+  three hours) and says so on the Updates page, in English and Arabic: open Maktaba on that machine,
+  then update again. A failed start of the app is now written in the update's log. The Linux app
+  has nothing to download for its update, so the update goes on without it after 10 minutes.
+
 - **A home whose update rolled back no longer installs an older release instead, and it sees new
   releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
   the 8 MiB a home reads, so every check for updates failed and homes stopped learning of new

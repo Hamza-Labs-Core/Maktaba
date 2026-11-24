@@ -163,6 +163,12 @@ func TestLayoutInstaller(t *testing.T) {
 	if cur, _ := l.Current(); cur != "1.5.0" || p == nil || p.Record != record || p.Deadline.Before(time.Now().Add(20*time.Minute)) {
 		t.Fatalf("after the switch: current %q pending %+v", cur, p)
 	}
+	// the latest the release being judged may push its deadline to is set here, by the
+	// release that switches (research P5), beyond the watch's own bound and never a day
+	if want := time.Now().Add(pendingCap(j) + j.Job.WatchBound()); p.Latest.Before(want) ||
+		p.Latest.After(time.Now().Add(layout.MaxGuardSpan)) || p.Latest.Before(p.Deadline) {
+		t.Fatalf("latest %v (deadline %v), want after %v", p.Latest, p.Deadline, want)
+	}
 	if err := li.Revert(ctx, j); err != nil {
 		t.Fatal(err)
 	}

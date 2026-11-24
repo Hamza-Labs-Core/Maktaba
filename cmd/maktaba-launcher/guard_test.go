@@ -214,7 +214,7 @@ func TestLayoutRollbackMarksTheRecord(t *testing.T) {
 	}
 	record := filepath.Join(l.Root, "database.json")
 	writeRecord(t, record, "2.0.0", "1.0.0")
-	if err := l.GuardPending("2.0.0", time.Now().Add(time.Hour), record); err != nil {
+	if err := l.GuardPending("2.0.0", time.Now().Add(time.Hour), time.Time{}, record); err != nil {
 		t.Fatal(err)
 	}
 	startLauncher(t, testConfig(l.Root))
@@ -237,11 +237,83 @@ func TestPendingDeadlineExtendsTheTimeout(t *testing.T) {
 	if d := ln.deadline("2.0.0"); !d.Equal(now.Add(time.Minute)) {
 		t.Fatalf("no deadline set: %v", d)
 	}
-	if err := l.GuardPending("2.0.0", now.Add(time.Hour), ""); err != nil {
+	if err := l.GuardPending("2.0.0", now.Add(time.Hour), time.Time{}, ""); err != nil {
 		t.Fatal(err)
 	}
 	if d := ln.deadline("2.0.0"); d.Sub(now) < 59*time.Minute {
 		t.Fatalf("deadline %v", d)
+	}
+}
+
+// Research P5: the release being judged pushes the deadline every minute while it starts,
+// and nothing capped it. The launcher never waits past the latest the release that
+// switched set, whatever the deadline file says, and a marker with no latest (from before
+// 2026-11-24) waits at most layout.MaxGuardSpan from its switch. The release's own push
+// (ExtendPending) stops at the latest too.
+func TestPendingDeadlineIsCapped(t *testing.T) {
+	t.Parallel()
+	l := installed(t, map[string]string{"1.0.0": "run", "2.0.0": "run"}, "1.0.0")
+	if err := l.Switch("2.0.0", "run-1", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	ln := &launcher{cfg: Config{Root: l.Root, PendingTimeout: time.Minute}, l: l, firstStart: now}
+	latest := now.Add(3 * time.Hour)
+	if err := l.GuardPending("2.0.0", now.Add(time.Hour), latest, ""); err != nil {
+		t.Fatal(err)
+	}
+	// the release pushes far past its latest: stopped there
+	if ok, err := l.ExtendPending("run-1", now.Add(30*time.Hour)); !ok || err != nil {
+		t.Fatalf("push: %v %v", ok, err)
+	}
+	if p, _ := l.ReadPending(); p == nil || !p.Deadline.Equal(latest.UTC()) {
+		t.Fatalf("pushed to %+v, want the latest %v", p, latest)
+	}
+	if ok, _ := l.ExtendPending("run-1", now.Add(40*time.Hour)); ok {
+		t.Fatal("pushed past the latest again")
+	}
+	// a deadline written past the latest by other means: the launcher keeps to the latest
+	p, _ := l.ReadPending()
+	p.Deadline = now.Add(30 * time.Hour).UTC()
+	b, _ := json.Marshal(p)
+	if err := layout.WriteFileAtomic(filepath.Join(l.Root, layout.PendingFile), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if d := ln.deadline("2.0.0"); !d.Equal(latest.UTC()) {
+		t.Fatalf("deadline %v, want the latest %v", d, latest)
+	}
+	// no latest (a marker from before): a day from the switch at most
+	p.Latest = time.Time{}
+	b, _ = json.Marshal(p)
+	if err := layout.WriteFileAtomic(filepath.Join(l.Root, layout.PendingFile), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if d := ln.deadline("2.0.0"); !d.Equal(p.Since.Add(layout.MaxGuardSpan)) {
+		t.Fatalf("deadline %v, want %v", d, p.Since.Add(layout.MaxGuardSpan))
+	}
+}
+
+// The app bundle's guard: the same cap, on ExtendGuard and on the launcher.
+func TestBundleGuardDeadlineIsCapped(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	now := time.Now().UTC()
+	latest := now.Add(2 * time.Hour)
+	if err := layout.WriteGuard(root, layout.Guard{Version: "2.0.0", RunID: "run-1", Since: now,
+		Deadline: now.Add(time.Hour), Latest: latest}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := layout.ExtendGuard(root, "run-1", now.Add(10*time.Hour)); !ok || err != nil {
+		t.Fatalf("push: %v %v", ok, err)
+	}
+	if g, _ := layout.ReadGuard(root); g == nil || !g.Deadline.Equal(latest) {
+		t.Fatalf("pushed to %+v, want %v", g, latest)
+	}
+	if got := layout.GuardLatest(now, time.Time{}); !got.Equal(now.Add(layout.MaxGuardSpan)) {
+		t.Fatalf("no latest: %v", got)
+	}
+	if got := layout.GuardLatest(now, now.Add(48*time.Hour)); !got.Equal(now.Add(layout.MaxGuardSpan)) {
+		t.Fatalf("a latest past a day: %v", got)
 	}
 }
 

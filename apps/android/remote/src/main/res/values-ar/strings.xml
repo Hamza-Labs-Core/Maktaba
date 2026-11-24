@@ -136,6 +136,7 @@
     <string name="w_updates_code_no_app_update">لا يتضمن الإصدار تحديثاً لتطبيق سطح المكتب لهذا الجهاز</string>
     <string name="w_updates_code_app_install_failed">تعذّر على تطبيق سطح المكتب تثبيت التحديث</string>
     <string name="w_updates_code_app_order_gone">سُحب طلب التثبيت من تطبيق سطح المكتب أو استُبدل</string>
+    <string name="w_updates_code_app_no_answer">لم يأخذ تطبيق سطح المكتب التحديث في الوقت المحدد: فهو لا يعمل على هذا الجهاز، أو تعذّر تشغيله</string>
     <string name="w_updates_code_app_request_failed">تعذّر الوصول إلى تطبيق سطح المكتب</string>
     <string name="w_updates_code_app_not_started">تعذّر تشغيل تطبيق سطح المكتب</string>
     <string name="w_updates_code_app_did_not_install">لم يثبّت تطبيق سطح المكتب التحديث في الوقت المحدد</string>

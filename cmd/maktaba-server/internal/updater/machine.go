@@ -214,6 +214,9 @@ type Machine struct {
 	// Now and CheckEvery are test seams (time.Now, 5 s).
 	Now        func() time.Time
 	CheckEvery time.Duration
+	// AnswerCheckEvery is how often (wall time) an order's wait looks whether the app is
+	// past answerBy (0: a minute; negative: at every check, a test seam).
+	AnswerCheckEvery time.Duration
 	// MaxStarts is how many starts of the new release a watch tolerates (3).
 	MaxStarts int
 	// OnChange is called after every change of the journal (a node's machine agent
@@ -287,6 +290,9 @@ func (m *Machine) maxStarts() int {
 }
 
 func (m *Machine) logf(format string, args ...any) { m.leveledf("", format, args...) }
+
+// Warnf writes a warning to the server's log and the run's log (an installer's note).
+func (m *Machine) Warnf(format string, args ...any) { m.warnf(format, args...) }
 
 // errorf and warnf are logf for a failure: the server log's line names its level first
 // ("[update] level=error …", what the logs page reads a plain line's level from); the
@@ -935,9 +941,50 @@ func (m *Machine) SetInstallBy(runID string, at time.Time) {
 	})
 }
 
+// appAnswerLimit is how long an order waits for the app to stage it when the run
+// names no time to install by (an Update now): the app is started with the order's link
+// every NudgeAfter meanwhile. appAnswerAtLeast is the least it waits.
+const (
+	appAnswerLimit   = 3 * time.Hour
+	appAnswerAtLeast = 30 * time.Minute
+)
+
+// answerCheckEvery is how often (wall time) await looks at answerBy: a minute
+// (AnswerCheckEvery; negative: at every check).
+func (m *Machine) answerCheckEvery() time.Duration {
+	switch {
+	case m.AnswerCheckEvery < 0:
+		return 0
+	case m.AnswerCheckEvery == 0:
+		return time.Minute
+	}
+	return m.AnswerCheckEvery
+}
+
+// answerBy is when an order the app has not staged is given up (research P10:
+// an app that is not running, or whose start failed, left the run waiting forever): the
+// time the run installs by (its window's end), else appAnswerLimit after the order;
+// never sooner than appAnswerAtLeast after it.
+func answerBy(j *Journal) time.Time {
+	var since time.Time
+	for _, s := range j.Steps {
+		if s.Step == StepOrder {
+			since = s.StartedAt
+		}
+	}
+	by := since.Add(appAnswerLimit)
+	if j.InstallBy != nil {
+		by = *j.InstallBy
+	}
+	if least := since.Add(appAnswerAtLeast); by.Before(least) {
+		by = least
+	}
+	return by
+}
+
 // await orders the release from the app and follows its answer until the app staged it
 // (app_staged: the home's go switches; no click on this machine) or it fails (nothing
-// changed).
+// changed), or the app never answered by answerBy (app_no_answer).
 func (m *Machine) await(ctx context.Context, runID string) {
 	a := m.orderer()
 	j := m.Status().Journal
@@ -949,6 +996,7 @@ func (m *Machine) await(ctx context.Context, runID string) {
 		return
 	}
 	m.logf("ordered %s from the app: it stages it, then installs it at the home's go", j.Job.Version)
+	var lastLooked time.Time // when answerBy was last looked at (wall time)
 	t := time.NewTicker(m.checkEvery())
 	defer t.Stop()
 	for {
@@ -960,6 +1008,15 @@ func (m *Machine) await(ctx context.Context, runID string) {
 		if err != nil {
 			m.orderFailed(runID, err)
 			return
+		}
+		if state == RequestOrdered && time.Since(lastLooked) >= m.answerCheckEvery() {
+			lastLooked = time.Now()
+			if m.now().After(answerBy(cur)) {
+				m.orderFailed(runID, Fail("app_no_answer", "the app did not stage the order of %s by %s: it is not "+
+					"running on this machine, or could not be started (the update waits for the next try)",
+					cur.Job.Version, answerBy(cur).Format(time.RFC3339)))
+				return
+			}
 		}
 		switch {
 		case state == RequestStaged:

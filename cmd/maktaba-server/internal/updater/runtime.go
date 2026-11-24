@@ -41,6 +41,9 @@ type RuntimeInstaller struct {
 	// image puts its payload on the volume's runtime and runs the launcher; "" none). It
 	// updates exactly as a headless install does; only its kind says so.
 	Container string
+	// Logf writes to the run's log (nil: nothing).
+	Logf     func(format string, a ...any)
+	nudgeErr string
 	// Open starts the Linux app with the order's deep link when it does not answer
 	// within NudgeAfter (90 s); tests replace it.
 	Open       func(ctx context.Context, url string) error
@@ -89,17 +92,44 @@ func (ri *RuntimeInstaller) Order(j *Journal) error {
 	return ri.requests().order(j, RequestKindRuntime, "")
 }
 
-// Answer implements Orderer (the app started when it does not answer).
+// runtimeNoAppAfter is how long a runtime order waits for the Linux app to answer before
+// the run goes on without it: the app has nothing to stage (the server holds the runtime
+// and switches it itself at the go), so its answer only tells the person; an app that is
+// not running left the home never updating (research P10).
+const runtimeNoAppAfter = 10 * time.Minute
+
+// Answer implements Orderer (the app started when it does not answer). An order the app
+// has not answered within runtimeNoAppAfter of its writing is staged all the same.
 func (ri *RuntimeInstaller) Answer(j *Journal) (string, error) {
-	state, err := ri.requests().answer(j)
-	if err == nil && state == RequestOrdered {
-		after := ri.NudgeAfter
-		if after <= 0 {
-			after = 90 * time.Second
-		}
-		ri.nudge.nudge(ri.requests(), j, ri.now(), after, ri.Open)
+	r := ri.requests()
+	state, err := r.answer(j)
+	if err != nil || state != RequestOrdered {
+		return state, err
 	}
-	return state, err
+	after := ri.NudgeAfter
+	if after <= 0 {
+		after = 90 * time.Second
+	}
+	if nerr := ri.nudge.nudge(r, j, ri.now(), after, ri.Open); nerr != nil {
+		ri.nudgeErr = nerr.Error() // the app's last start that failed, said when the run goes on
+	}
+	if q, rerr := r.read(); rerr == nil && q.RunID == j.Job.RunID && !q.At.IsZero() &&
+		ri.now().Sub(q.At) >= runtimeNoAppAfter {
+		why := "it did not answer"
+		if ri.nudgeErr != "" {
+			why = ri.nudgeErr
+		}
+		if serr := r.set(j, RequestKindRuntime, "", RequestStaged); serr != nil {
+			return state, nil // asked again
+		}
+		if ri.Logf != nil {
+			ri.Logf("the app did not answer the order of %s within %s (%s): nothing is staged for a runtime, "+
+				"so the run goes on and the server switches its runtime itself at the go", j.Job.Version,
+				runtimeNoAppAfter, why)
+		}
+		return RequestStaged, nil
+	}
+	return state, nil
 }
 
 func (ri *RuntimeInstaller) now() time.Time {
@@ -337,7 +367,7 @@ func (ri *RuntimeInstaller) Switch(ctx context.Context, j *Journal) error {
 	}
 	if err := layout.WriteGuard(ri.LauncherRoot, layout.Guard{Version: layout.NormalizeVersion(j.Job.Version),
 		RunID: j.Job.RunID, Since: ri.now().UTC(), Deadline: guardDeadline(ri.now(), j).UTC(),
-		PreviousRuntime: j.FromRef, Record: ri.Record}); err != nil {
+		Latest: guardLatest(ri.now(), j).UTC(), PreviousRuntime: j.FromRef, Record: ri.Record}); err != nil {
 		backOn()
 		return Fail("switch_failed", "%v", err)
 	}

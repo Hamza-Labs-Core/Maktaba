@@ -151,6 +151,7 @@ internal object WebWords {
         "no_app_update" to R.string.w_updates_code_no_app_update,
         "app_install_failed" to R.string.w_updates_code_app_install_failed,
         "app_order_gone" to R.string.w_updates_code_app_order_gone,
+        "app_no_answer" to R.string.w_updates_code_app_no_answer,
         "app_request_failed" to R.string.w_updates_code_app_request_failed,
         "app_not_started" to R.string.w_updates_code_app_not_started,
         "app_did_not_install" to R.string.w_updates_code_app_did_not_install,

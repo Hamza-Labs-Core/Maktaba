@@ -142,6 +142,18 @@ func healthyFor(snap supervisor.Snapshot, d time.Duration) bool {
 	return n > 0
 }
 
+// cliRunID is the run id `maktaba-server update` gave its switch before 2026-11-24: no
+// update run's watch owns it.
+const cliRunID = "cli"
+
+// confirmsItself reports whether the release a pending marker names confirms itself
+// once healthy (confirmPending): a switch no update run watches, by hand (no run id) or
+// by `maktaba-server update` (cliRunID, from a release before 2026-11-24, whose switch
+// was otherwise never confirmed and went back after the launcher's 15 minutes).
+func confirmsItself(p *layout.Pending) bool {
+	return p != nil && (p.RunID == "" || p.RunID == cliRunID)
+}
+
 // confirmPending removes the launcher's pending marker (and raises the
 // watermark) once this release has run healthy for confirmAfter.
 func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir string) {
@@ -159,7 +171,7 @@ func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir 
 			if err != nil || p == nil || p.Version != ver {
 				return // nothing to confirm (or another version is pending)
 			}
-			if p.RunID != "" {
+			if !confirmsItself(p) {
 				// an update run's switch: its watch confirms it (or rolls it back), not a
 				// few healthy minutes here
 				return

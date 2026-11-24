@@ -303,19 +303,27 @@ func (ln *launcher) isPending(ver string) bool {
 
 // deadline is when a pending release that has not confirmed is given up: the
 // update orchestrator's deadline when it set one (its database step and watch take
-// their time), else the first start plus PendingTimeout.
+// their time), else the first start plus PendingTimeout. Never later than the guard's
+// latest (layout.GuardLatest: the release that switched set it, or a day from the
+// switch): the release being judged pushes the deadline while it starts, and a release
+// that hung with that push alive was never timed out (research P5).
 func (ln *launcher) deadline(ver string) time.Time {
 	d := ln.firstStart.Add(ln.cfg.PendingTimeout)
-	var set time.Time
+	var set, since, latest time.Time
 	if ln.cfg.Bundle != "" {
 		if g := ln.bundleGuard(); g != nil {
-			set = g.Deadline
+			set, since, latest = g.Deadline, g.Since, g.Latest
 		}
 	} else if p, err := ln.l.ReadPending(); err == nil && p != nil && p.Version == ver {
-		set = p.Deadline
+		set, since, latest = p.Deadline, p.Since, p.Latest
 	}
 	if !set.IsZero() && set.After(d) {
-		return set
+		d = set
+	}
+	if !set.IsZero() {
+		if hard := layout.GuardLatest(since, latest); d.After(hard) {
+			return hard
+		}
 	}
 	return d
 }

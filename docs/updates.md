@@ -103,8 +103,13 @@ cluster stays where it is until stable passes it.
 
 A desktop app's machine is ordered as soon as it is prepared; its app downloads the release while
 the others go, and it takes its turn once staged, with no click. A run waiting only for apps to
-download gives way to a newer release. A power cut at any step is recovered at
-the next start from the update's journal (`updates/journal.json`).
+download gives way to a newer release. An app that never stages its order (not running on that
+machine, or its start with the order's link failed, which the run's log now says) ends the order
+`app_no_answer` at the time the run installs by (its window's end), else three hours after the
+order, and never within half an hour of it; nothing changed. The Linux app's runtime order has
+nothing to stage, so an app that does not answer it within 10 minutes no longer holds the run: it
+goes on, and the server switches its runtime itself at the go. A power cut at any step is
+recovered at the next start from the update's journal (`updates/journal.json`).
 
 ## What happens to TV
 
@@ -222,7 +227,12 @@ through the releases in between, which have none of the fixes made after the fai
 2026-11-24 a home chose v0.3.157 after v0.3.158 had rolled back, and rolled back again). The
 Updates page says which release holds the others back; **Update now** naming a release installs
 it all the same. On a machine, the launcher's guard does the same when the
-new release does not confirm in time (15 minutes) or stops three times in ten minutes.
+new release does not confirm in time (15 minutes) or stops three times in ten minutes. While the
+new release's database step and watch run, its watch keeps that deadline ahead; since 2026-11-24
+never past the latest the release that switched wrote in the guard (`latest`: the watch's own
+longest wait, its start steps' cap and its bound, plus 45 minutes), and never more than a day after
+the switch for a guard with none. Before, the release being judged could push it without limit,
+so one that hung with its watch alive was never timed out.
 
 ### The database during an update
 
@@ -385,7 +395,11 @@ release that cannot start back under the guard, and finds the home as it was.
 `maktaba-server update` reads the same feed and verifies with the same code (`--check`,
 `--version vX.Y.Z`, `--rollback`): on a layout install it switches `current` (the launcher runs the
 new release at the service's restart); in the Linux runtime copy it installs a new runtime; a
-plain binary is replaced in place, the previous one kept as `<binary>.bak`.
+plain binary is replaced in place, the previous one kept as `<binary>.bak`. A layout switch from
+the command line is no update run's, so the new release confirms itself once it has run healthy
+for a few minutes, as a switch by hand does. Before 2026-11-24 the command named its switch `cli`,
+which nothing confirmed, and the launcher went back after 15 minutes; a release since confirms
+such a switch too.
 
 ## Package repositories and the Homebrew tap
 

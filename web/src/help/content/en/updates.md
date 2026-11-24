@@ -178,7 +178,7 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 
 ### The desktop app could not install the update {#code-desktop-app}
 
-- **What it means:** The Maktaba app on that machine could not replace itself: its folder needs an administrator, macOS blocks it, the download failed, or the app did not come back on the new version.
+- **What it means:** The Maktaba app on that machine could not replace itself: its folder needs an administrator, macOS blocks it, the download failed, or the app did not come back on the new version. Or the app never took the update: it was not running on that machine and could not be started, so the update stopped waiting for it at the end of its window (or after three hours).
 - **Does Maktaba fix it itself?** It keeps the version that runs, and tries again later when that can help.
 - **What you can do:** Follow the fix shown under the reason: it names the setting or the command. An app built on the machine itself cannot update: install the release by hand once.
 
