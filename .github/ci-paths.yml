@@ -975,6 +975,9 @@ roku:
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Resources/Art/maktaba-logo.png'
   # the code screen's QR is held to the web app's encoder (58.12)
   - 'web/src/lib/qr.ts'
+  # the store gallery's screens (60.14): the demo library, and the subtitle lines its player shows
+  - 'tests/fixtures/demo-library/**'
+  - 'apps/apple/UITests/Fixtures/Stream/demo-subs-*.vtt'
 
 # Maktaba's Cast receiver at cast.maktaba.tv (Epic 58 story 58.07): its package (the receiver,
 # the loader, the Worker, the tests) and its checks (_cast-receiver.yml); the release workflow

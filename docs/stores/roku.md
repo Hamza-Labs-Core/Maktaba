@@ -48,9 +48,10 @@ repository or in CI holds them.
   الإنجليزية.
 - **Long description:** what the channel does (sign in to a Maktaba home by a code, browse its
   libraries, play with subtitles and Up next), that it needs a Maktaba home, and that it holds no
-  catalog of its own. Screenshots: the channel's screen tests' references
-  (`apps/tv/roku/tests/screens/`, dark, test data), taken again on the keyed Roku at 1920×1080
-  for the dashboard.
+  catalog of its own. Screenshots: the store gallery's Roku set (story 60.14), composed from
+  the channel's screens on the demo library (`apps/tv/roku/tests/screenshots/demo/`, dark,
+  1920×1080, English and Arabic); brs-engine draws no video picture, so the player is taken
+  again on the keyed Roku.
 - **Languages:** English, Arabic. **Countries:** every country Roku offers public channels in.
 
 ## Certification

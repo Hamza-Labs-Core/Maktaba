@@ -125,8 +125,13 @@ function readBody(req) {
   });
 }
 
-/** Starts the home; log(line) gets each request. */
-export function startHome(log, tls) {
+/**
+ * Starts the home; log(line) gets each request. `demo` (tests/demo/demohome.mjs) answers in
+ * place of the test data: `demo.open(req, res, p, url)` before the bearer check (art and the
+ * sidecar subtitles, which a Roku fetches without a header), `demo.answer(req, res, p, url,
+ * body)` after it; each returns true when it answered. `demo.name` is the home's name.
+ */
+export function startHome(log, tls, demo = null) {
   const state = { access: new Set(), refresh: new Set(), expired: new Set(), n: 0, grant: "G1", deviceCode: "dc1", clientHeaders: new Set(), restricted: false, requests: [] };
   // story 58.14: the late video is the viewer's to see once not restricted, or once approved
   const lateShown = () => !state.restricted || state.requests.some((r) => r.subject_id === LATE && r.status === "approved");
@@ -159,7 +164,7 @@ export function startHome(log, tls) {
     const body = req.method === "POST" || req.method === "PUT" ? await readBody(req) : {};
     if (p === "/api/discovery/home") {
       const port = server.address().port;
-      return json(res, 200, { id: HOME_ID, name: "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`, ...(secure ? [`https://localhost:${secure.address().port}`] : [])], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
+      return json(res, 200, { id: HOME_ID, name: demo?.name ?? "Test home", version: "0.3.150", urls: [`http://127.0.0.1:${port}`, ...(secure ? [`https://localhost:${secure.address().port}`] : [])], sign_in: { password: true, code: true }, api_level: 1, api_level_oldest: 1, client_floor: {} });
     }
     if (p === "/api/pairing/device" && req.method === "POST") return json(res, 201, { code: "HKMN-4567", device_code: state.deviceCode, expires_at: new Date(Date.now() + 6e5).toISOString(), verify_path: "/pair?code=HKMN-4567", verify_url: `http://127.0.0.1:${server.address().port}/pair?code=HKMN-4567`, interval: 1 });
     if (p === "/api/pairing/device/token" && req.method === "POST") {
@@ -176,6 +181,7 @@ export function startHome(log, tls) {
       const t = mint();
       return json(res, 200, { ...t, token_type: "Bearer", expires_in: 900, user: { id: "u-viewer", username: "viewer", is_admin: false } });
     }
+    if (demo && (await demo.open(req, res, p, url))) return;
     if (p.startsWith("/api/videos/") && p.endsWith("/poster")) {
       res.writeHead(200, { "Content-Type": "image/png" });
       return res.end(poster(p.split("/")[3]));
@@ -203,6 +209,7 @@ export function startHome(log, tls) {
       state.access.delete(auth);
       return json(res, 401, { type: "unauthorized" });
     }
+    if (demo && (await demo.answer(req, res, p, url, body))) return;
     if (p === "/api/auth/me") return json(res, 200, { id: "u-viewer", username: "viewer", is_admin: false, home_name: "Test home" });
     if (p === "/api/me/parental") return json(res, 200, state.restricted ? { restricted: true, max_tier: 9, allow_only: false, version: 1 } : { restricted: false });
     if (p === "/api/me/parental/requests" && req.method === "POST") {
@@ -422,7 +429,8 @@ export function startHome(log, tls) {
  * channel must never contact either: state.trapConnections counts every TCP connection to them.
  */
 export async function startCloud(log, homeHttpsPort) {
-  const state = { polls: 0, delivered: false, created: 0, trapConnections: 0 };
+  // hold: every poll answers pending (the code screen's screenshot); homeName: the approval's
+  const state = { polls: 0, delivered: false, created: 0, trapConnections: 0, hold: false, homeName: "Test home" };
   const relay = `https://localhost:${homeHttpsPort}`;
   const lanTrap = createServer((req, res) => {
     log(`trap ${req.method} ${new URL(req.url, "http://x").pathname}`);
@@ -450,10 +458,10 @@ export async function startCloud(log, homeHttpsPort) {
       await readBody(req);
       if (state.delivered) return json(res, 410, { error: "expired_token" });
       state.polls++;
-      if (state.polls < 3) return json(res, 202, { status: "pending", interval: 1 });
+      if (state.polls < 3 || state.hold) return json(res, 202, { status: "pending", interval: 1 });
       state.delivered = true;
       return json(res, 200, {
-        status: "approved", home_id: CLOUD_HOME_ID, home_name: "Test home", grant: "G1",
+        status: "approved", home_id: CLOUD_HOME_ID, home_name: state.homeName, grant: "G1",
         connections: [
           { kind: "local_ip", url: "https://127.0.0.1:8443", tls_name: "127-0-0-1.h1test.direct.example" },
           { kind: "local", url: `http://127.0.0.1:${lanTrap.address().port}` },

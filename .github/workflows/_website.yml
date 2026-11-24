@@ -22,7 +22,7 @@ on:
         type: boolean
         default: true
       shots:
-        description: capture the web app's product screenshots on the demo library (story 60.09) and upload them as product-shots-web; ci.yml only, so the deploy never waits on them
+        description: capture the web app's product screenshots on the demo library (story 60.09) and upload them as product-shots-web, and the TV web UI's for the Samsung and LG store gallery (story 60.14) as store-shots-tvweb; ci.yml only, so the deploy never waits on them
         type: boolean
         default: false
       release:
@@ -215,11 +215,14 @@ jobs:
   # demo library (tests/fixtures/demo-library), with the clock pinned. The images go up as
   # product-shots-web; `npm run shots -- --from-run <run id>` makes the site's images from
   # them. In the Playwright image, so the fonts are the same on every run.
+  # Story 60.14: the TV web UI the Samsung and LG launchers open (/tv/, and the launcher's own
+  # code screen), on the same library at 1920×1080, uploaded as store-shots-tvweb under the
+  # names the store gallery reads (store-gallery.yml downloads a run's *-shots-*).
   shots:
     name: product shots (web)
     if: inputs.shots
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     container:
       image: mcr.microsoft.com/playwright:v1.64.1-noble
       options: --ipc=host --init
@@ -259,6 +262,22 @@ jobs:
           path: |
             web/packages/website/shots-capture/web/*.png
             web/packages/website/shots-capture/web/web-capture.log
+          if-no-files-found: error
+          retention-days: 30
+
+      # after the web app's, whether or not those passed: the two sets fail on their own
+      - name: Capture the TV web UI on the demo library (Samsung and LG)
+        if: ${{ !cancelled() }}
+        run: timeout 900 node scripts/capture-tvweb.mjs --out shots-capture/tvweb
+
+      - name: Upload the Samsung and LG store shots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: store-shots-tvweb
+          path: |
+            web/packages/website/shots-capture/tvweb/*.png
+            web/packages/website/shots-capture/tvweb/tvweb-capture.log
           if-no-files-found: error
           retention-days: 30
 
