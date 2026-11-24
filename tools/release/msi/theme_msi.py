@@ -309,6 +309,54 @@ class Msi:
             self.close(si)
 
 
+def extract_storage(package: Path, name: str, dest: Path) -> None:
+    """Copy the substorage NAME of PACKAGE (an embedded transform) into the file DEST. Windows
+    Installer reads a _Storages row's Data only as a whole storage (MsiRecordReadStream answers
+    ERROR_INVALID_DATA), so this goes through OLE structured storage (ole32), as msidb -x does:
+    the root storage, the substorage, CopyTo a new docfile, with the substorage's class (a
+    transform's CLSID, which MsiDatabaseApplyTransform checks)."""
+    import ctypes
+    from ctypes import HRESULT, POINTER, WINFUNCTYPE, byref, c_ulong, c_void_p, c_wchar_p, wintypes
+
+    ole32 = ctypes.OleDLL("ole32")
+    STGM_READ, STGM_READWRITE, STGM_CREATE = 0x0, 0x2, 0x1000
+    STGM_SHARE_DENY_WRITE, STGM_SHARE_EXCLUSIVE = 0x20, 0x10
+
+    class STATSTG(ctypes.Structure):
+        _fields_ = [
+            ("pwcsName", c_void_p), ("type", wintypes.DWORD), ("cbSize", ctypes.c_ulonglong),
+            ("mtime", ctypes.c_ulonglong), ("ctime", ctypes.c_ulonglong), ("atime", ctypes.c_ulonglong),
+            ("grfMode", wintypes.DWORD), ("grfLocksSupported", wintypes.DWORD),
+            ("clsid", ctypes.c_byte * 16), ("grfStateBits", wintypes.DWORD), ("reserved", wintypes.DWORD),
+        ]
+
+    def method(ptr, index, restype, *argtypes):
+        vtbl = ctypes.cast(ptr, POINTER(POINTER(c_void_p))).contents
+        return WINFUNCTYPE(restype, c_void_p, *argtypes)(vtbl[index])
+
+    def release(ptr):
+        if ptr:
+            method(ptr, 2, c_ulong)(ptr)
+
+    ole32.CoInitialize(None)
+    root, sub, out = c_void_p(), c_void_p(), c_void_p()
+    try:
+        ole32.StgOpenStorage(c_wchar_p(str(package)), None, STGM_READ | STGM_SHARE_DENY_WRITE, None, 0, byref(root))
+        # IStorage::OpenStorage (6), CopyTo (7), Commit (9), SetClass (15), Stat (17)
+        method(root, 6, HRESULT, c_wchar_p, c_void_p, wintypes.DWORD, c_void_p, wintypes.DWORD, POINTER(c_void_p))(
+            root, name, None, STGM_READ | STGM_SHARE_EXCLUSIVE, None, 0, byref(sub))
+        ole32.StgCreateDocfile(c_wchar_p(str(dest)), STGM_CREATE | STGM_READWRITE | STGM_SHARE_EXCLUSIVE, 0, byref(out))
+        method(sub, 7, HRESULT, wintypes.DWORD, c_void_p, c_void_p, c_void_p)(sub, 0, None, None, out)
+        stat = STATSTG()
+        method(sub, 17, HRESULT, POINTER(STATSTG), wintypes.DWORD)(sub, byref(stat), 1)  # STATFLAG_NONAME
+        method(out, 15, HRESULT, c_void_p)(out, ctypes.addressof(stat.clsid))
+        method(out, 9, HRESULT, wintypes.DWORD)(out, 0)
+    finally:
+        release(out)
+        release(sub)
+        release(root)
+
+
 MSIDBOPEN_READONLY = 0
 MSIDBOPEN_TRANSACT = 1
 PID_TEMPLATE = 7
@@ -433,7 +481,7 @@ def theme(path: Path) -> None:
 def check(path: Path) -> list[str]:
     """What is not themed in PATH, also with its Arabic transform applied."""
     msi = Msi()
-    problems = []
+    problems: list[str] = []
     storages: set[str] = set()
     with tempfile.TemporaryDirectory() as t:
         tmp = Path(t)
@@ -458,11 +506,7 @@ def check(path: Path) -> list[str]:
         if STORAGE in storages:
             # the transform, applied to a copy, gives the Arabic dialogs
             mst = tmp / "ar.mst"
-            db = msi.open(path, MSIDBOPEN_READONLY)
-            try:
-                mst.write_bytes(msi.stream_bytes(db, "_Storages", "Name", STORAGE))
-            finally:
-                msi.close(db)
+            extract_storage(path, STORAGE, mst)
             copy = tmp / "ar.msi"
             shutil.copy(path, copy)
             db = msi.open(copy, MSIDBOPEN_TRANSACT)

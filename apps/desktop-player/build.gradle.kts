@@ -81,7 +81,9 @@ tasks.matching { it.name == "packageMsi" }.configureEach {
     doLast {
         val msis = msiDir.get().asFile.listFiles { f -> f.name.endsWith(".msi") }.orEmpty()
         check(msis.size == 1) { "want one .msi in ${msiDir.get().asFile}, found ${msis.map { it.name }}" }
-        val proc = ProcessBuilder(python, themeMsi.absolutePath, msis[0].absolutePath).inheritIO().start()
+        // its words into the build's log (a daemon's own stdout reaches no console)
+        val proc = ProcessBuilder(python, themeMsi.absolutePath, msis[0].absolutePath).redirectErrorStream(true).start()
+        proc.inputStream.bufferedReader().forEachLine { println(it) }
         check(proc.waitFor() == 0) { "theme_msi.py failed on ${msis[0].name}" }
     }
 }
