@@ -31,6 +31,9 @@ networks:
     ipam:
       config:
         - subnet: 172.30.77.0/24
+          # Docker hands out addresses from the upper half only, so the fixed ones (api .10,
+          # Caddy .2) are never taken by a container that started first
+          ip_range: 172.30.77.128/25
 
 services:
   postgres:
