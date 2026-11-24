@@ -4,7 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.asComposeImageBitmap
 import com.hamzalabs.maktaba.desktop.AudioOption
 import com.hamzalabs.maktaba.desktop.Players
 import com.hamzalabs.maktaba.desktop.Video
@@ -15,7 +15,6 @@ import com.sun.jna.ptr.PointerByReference
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ColorType
-import org.jetbrains.skia.Image
 import org.jetbrains.skia.ImageInfo
 import java.io.File
 import java.util.concurrent.Executors
@@ -60,6 +59,10 @@ class MpvVideo internal constructor(
     var frame by mutableStateOf<ImageBitmap?>(null)
         private set
 
+    /** The picture has started (mpv's first playback-restart): a failure after it is not the file's. */
+    @Volatile override var started = false
+        private set
+
     /** The hardware decoder mpv uses now ("no": software), once the picture has started. */
     @Volatile var hwdec: String? = null
         private set
@@ -89,7 +92,8 @@ class MpvVideo internal constructor(
             opt("terminal", "no")
             opt("input-default-bindings", "no")
             opt("osc", "no")
-            opt("keep-open", "no")
+            // the end stays on screen, so a seek back after it plays again; eof-reached says it ended
+            opt("keep-open", "yes")
             // the Player's own subtitles are drawn as captions; a file's own stay off
             opt("sid", "no")
             opt("sub-auto", "no")
@@ -123,6 +127,7 @@ class MpvVideo internal constructor(
             lib.mpv_render_context_set_update_callback(r, onUpdate, null)
             lib.mpv_observe_property(c, 1, "time-pos", MpvConst.FORMAT_DOUBLE)
             lib.mpv_observe_property(c, 2, "pause", MpvConst.FORMAT_FLAG)
+            lib.mpv_observe_property(c, 3, "eof-reached", MpvConst.FORMAT_FLAG)
             ctx = c
             render = r
             loop = Thread({ read(c) }, "mpv-events").apply {
@@ -138,9 +143,16 @@ class MpvVideo internal constructor(
         }
     }
 
-    /** Draws a frame each time mpv has one, into [back], then shows it. */
+    /**
+     * Draws a frame each time mpv has one, or the screen's size changed, straight into one of
+     * three bitmaps in turn, and shows it as it is (no copy): the one being drawn into was shown
+     * two frames ago, which Compose has drawn over since.
+     */
     private fun draw(r: Pointer) {
-        var back: Bitmap? = null
+        val pool = arrayOfNulls<Bitmap>(3)
+        val addr = LongArray(3)
+        var next = 0
+        var drawn = 0 to 0
         val sizeArg = Memory(8)
         val stride = Memory(8)
         val format = Memory(5).apply { setString(0, "bgr0") }
@@ -148,15 +160,17 @@ class MpvVideo internal constructor(
             wake.tryAcquire(250, TimeUnit.MILLISECONDS)
             if (closed) break
             val flags = lib.mpv_render_context_update(r)
-            if (flags and MpvConst.RENDER_UPDATE_FRAME == 0L) continue
             val (w, h) = size
             if (w <= 0 || h <= 0) continue
-            val b = back?.takeIf { it.width == w && it.height == h } ?: Bitmap().also {
-                back?.close()
+            if (flags and MpvConst.RENDER_UPDATE_FRAME == 0L && drawn == (w to h)) continue
+            val b = pool[next]?.takeIf { it.width == w && it.height == h } ?: Bitmap().also {
+                // a size's bitmaps are left to the collector: the screen may still show one
                 it.allocPixels(ImageInfo(w, h, ColorType.BGRA_8888, ColorAlphaType.OPAQUE))
-                back = it
+                pool[next] = it
+                addr[next] = it.peekPixels()?.use { px -> px.addr } ?: 0L
             }
-            val pixels = b.peekPixels() ?: continue
+            val at = addr[next]
+            if (at == 0L) continue
             sizeArg.setInt(0, w)
             sizeArg.setInt(4, h)
             stride.setLong(0, b.rowBytes.toLong())
@@ -164,14 +178,14 @@ class MpvVideo internal constructor(
                 MpvConst.RENDER_PARAM_SW_SIZE to sizeArg,
                 MpvConst.RENDER_PARAM_SW_FORMAT to format,
                 MpvConst.RENDER_PARAM_SW_STRIDE to stride,
-                MpvConst.RENDER_PARAM_SW_POINTER to Pointer(pixels.addr),
+                MpvConst.RENDER_PARAM_SW_POINTER to Pointer(at),
             )
             if (lib.mpv_render_context_render(r, p) < 0) continue
             b.notifyPixelsChanged()
-            // a copy for Compose: the next frame is drawn into the same memory
-            frame = Image.makeFromBitmap(b).toComposeImageBitmap()
+            drawn = w to h
+            frame = b.asComposeImageBitmap()
+            next = (next + 1) % pool.size
         }
-        back?.close()
     }
 
     private fun read(c: Pointer) {
@@ -180,21 +194,22 @@ class MpvVideo internal constructor(
             when (ev.getInt(0)) {
                 MpvConst.EVENT_SHUTDOWN -> return
                 MpvConst.EVENT_FILE_LOADED -> loaded(c)
-                MpvConst.EVENT_PLAYBACK_RESTART -> if (hwdec == null) hwdec = string(c, "hwdec-current")
+                MpvConst.EVENT_PLAYBACK_RESTART -> {
+                    started = true
+                    if (hwdec == null) hwdec = string(c, "hwdec-current")?.also { Engine.hwdec = it }
+                }
                 MpvConst.EVENT_PROPERTY_CHANGE -> {
                     val p = ev.getPointer(16) ?: continue
                     val data = p.getPointer(16) ?: continue
                     when (p.getPointer(0)?.getString(0)) {
                         "time-pos" -> if (p.getInt(8) == MpvConst.FORMAT_DOUBLE) events.position((data.getDouble(0) * 1000).toLong())
                         "pause" -> if (p.getInt(8) == MpvConst.FORMAT_FLAG) events.playing(data.getInt(0) == 0)
+                        "eof-reached" -> if (p.getInt(8) == MpvConst.FORMAT_FLAG && data.getInt(0) != 0) events.ended()
                     }
                 }
                 MpvConst.EVENT_END_FILE -> {
                     val d = ev.getPointer(16) ?: continue
-                    when (d.getInt(0)) {
-                        MpvConst.END_EOF -> events.ended()
-                        MpvConst.END_ERROR -> events.failed(lib.mpv_error_string(d.getInt(4)))
-                    }
+                    if (d.getInt(0) == MpvConst.END_ERROR) events.failed(lib.mpv_error_string(d.getInt(4)))
                 }
             }
         }
@@ -217,6 +232,8 @@ class MpvVideo internal constructor(
             ids += id
         }
         audioIds = ids
+        // the track chosen before this player (a reopen keeps it)
+        events.audioIndex.takeIf { it > 0 }?.let { ids.getOrNull(it) }?.let { lib.mpv_set_property_string(c, "aid", it) }
         events.ready(duration, audio)
     }
 
@@ -231,7 +248,11 @@ class MpvVideo internal constructor(
 
     private fun onMpv(block: (Pointer) -> Unit) {
         if (closed) return
-        ops.execute { ctx?.let { if (!closed) block(it) } }
+        try {
+            ops.execute { ctx?.let { if (!closed) block(it) } }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            // stopped meanwhile
+        }
     }
 
     override fun toggle() = onMpv { lib.mpv_command(it, arrayOf("cycle", "pause", null)) }
@@ -269,27 +290,36 @@ class MpvVideo internal constructor(
         lib.mpv_command(c, arrayOf("osd-overlay", "1", "ass-events", captionAss(text, rtl, scale), "0", "720", "0", "no", null))
     }
 
+    /**
+     * Stops it, on its own thread: the caller (the UI's) never waits. mpv is set up on [ops],
+     * so its end waits for that, then for the frames and the events to stop, without a limit,
+     * before the renderer and then the handle are freed (render.h's order).
+     */
     override fun dispose() {
-        val c: Pointer?
-        val r: Pointer?
-        synchronized(lock) {
-            if (closed) return
-            closed = true
-            c = ctx
-            r = render
-            ctx = null
-            render = null
-        }
-        ops.shutdown()
-        ops.awaitTermination(2, TimeUnit.SECONDS)
-        wake.release()
-        drawer?.join(5_000)
-        // the renderer goes before the handle (render.h)
-        if (r != null) lib.mpv_render_context_free(r)
-        if (c != null) {
-            lib.mpv_command(c, arrayOf("quit", null))
-            loop?.join(5_000)
-            lib.mpv_terminate_destroy(c)
+        if (closed) return
+        closed = true
+        Thread({
+            ops.shutdown()
+            ops.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS)
+            val c: Pointer?
+            val r: Pointer?
+            synchronized(lock) {
+                c = ctx
+                r = render
+                ctx = null
+                render = null
+            }
+            wake.release()
+            drawer?.join()
+            if (r != null) lib.mpv_render_context_free(r)
+            if (c != null) {
+                lib.mpv_command(c, arrayOf("quit", null))
+                loop?.join()
+                lib.mpv_terminate_destroy(c)
+            }
+        }, "mpv-end").apply {
+            isDaemon = true
+            start()
         }
     }
 

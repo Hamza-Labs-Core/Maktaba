@@ -101,7 +101,9 @@ fun VideoSurface(video: Video?, modifier: Modifier = Modifier, caption: String? 
         VideoSurface((video as? FxVideo)?.media, modifier, caption, captionScale)
         return
     }
-    mpv.caption(caption, caption?.let(::isRtlText) == true, captionScale)
+    androidx.compose.runtime.LaunchedEffect(mpv, caption, captionScale) {
+        mpv.caption(caption, caption?.let(::isRtlText) == true, captionScale)
+    }
     val frame = mpv.frame
     androidx.compose.foundation.Canvas(
         modifier

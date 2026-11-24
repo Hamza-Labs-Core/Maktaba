@@ -36,6 +36,7 @@ class PlaybackMpvTest {
 
     private class FakeMpv(val events: VideoEvents) : Video {
         val selected: MutableList<Int> = Collections.synchronizedList(mutableListOf())
+        @Volatile override var started = false
         override fun toggle() {}
         override fun pause() {}
         override fun seek(ms: Long) {}
@@ -116,6 +117,17 @@ class PlaybackMpvTest {
     }
 
     @Test
+    fun aFailureAfterThePictureStartedIsNotTheFiles() {
+        home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv"]}""")
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("playing") { playback.player != null }
+        made.single().started = true
+        made.single().events.failed("the relay dropped")
+        Thread.sleep(300)
+        assertEquals("no transcode for a file that played", 1, opened.get())
+    }
+
+    @Test
     fun aDirectFilesAudioTrackIsSwitchedInThePlayer() {
         home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv"]}""")
         onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
@@ -127,5 +139,7 @@ class PlaybackMpvTest {
         until("switched") { playback.audio == tracks[1] }
         assertEquals(listOf(1), made.single().selected)
         assertEquals("no new session for a track", 1, opened.get())
+        // the next player of this video (a renewal, a quality change) plays the same track
+        assertEquals(1, made.single().events.audioIndex)
     }
 }

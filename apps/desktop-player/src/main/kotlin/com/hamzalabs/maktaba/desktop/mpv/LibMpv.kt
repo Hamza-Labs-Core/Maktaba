@@ -68,6 +68,9 @@ internal object MpvConst {
     const val END_EOF = 0
     const val END_ERROR = 4
 
+    /** dlopen's RTLD_LAZY alone (Linux): local symbols, as RTLD_LOCAL is 0. */
+    const val RTLD_LAZY_FLAG = 1
+
     /** The client API's major this binding is written against (mpv 0.35 and later: 2). */
     const val API_MAJOR = 2L
 }
@@ -100,7 +103,9 @@ sealed interface MpvLoad {
             val file = File(dir, fileName())
             if (!file.isFile) return Missing("${file.name} is not in ${file.parent}")
             return try {
-                val lib = Native.load(file.absolutePath, LibMpv::class.java)
+                // RTLD_LOCAL (no RTLD_GLOBAL): FFmpeg's symbols inside libmpv stay out of the
+                // process's namespace, where JavaFX's media plugin finds the system's FFmpeg
+                val lib = Native.load(file.absolutePath, LibMpv::class.java, mapOf(Library.OPTION_OPEN_FLAGS to MpvConst.RTLD_LAZY_FLAG))
                 val major = lib.mpv_client_api_version().toLong() ushr 16
                 if (major != MpvConst.API_MAJOR) Missing("libmpv's client API is $major, the Player's ${MpvConst.API_MAJOR}")
                 else Loaded(lib, file)

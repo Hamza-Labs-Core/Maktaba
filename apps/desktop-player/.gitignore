@@ -4,4 +4,4 @@ build/
 *.iml
 .kotlin/
 # libmpv/build.sh's output, put there by CI (story 13.18)
-resources/
+/resources/

@@ -109,9 +109,14 @@ mpvconf=(--prefix="$prefix" --libdir=lib --buildtype=release --default-library=s
   -Ddrm=disabled -Dvaapi=disabled -Dcuda-hwaccel=disabled -Dcuda-interop=disabled
   -Dsdl2-audio=disabled -Dsdl2-video=disabled -Dopenal=disabled)
 if [ "$os" = linux ]; then
-  mpvconf+=(-Dalsa=enabled -Dpulse=enabled)
+  # FFmpeg's, dav1d's and libplacebo's symbols stay inside libmpv: exported, they would meet
+  # another FFmpeg in the same process (JavaFX's media plugin links the system's)
+  mpvconf+=(-Dalsa=enabled -Dpulse=enabled "-Dc_link_args=-Wl,--exclude-libs,ALL")
 else
-  mpvconf+=(-Dwasapi=enabled -Dd3d11=disabled -Ddirect3d=disabled)
+  # D3D11VA decoding (copied back) without mpv's D3D11 output: mpv 0.42 then leaves
+  # HAVE_DXGI_DEBUG_D3D11 undefined and defines a GUID MSYS2's headers already define
+  mpvconf+=(-Dwasapi=enabled -Dd3d11=disabled -Ddirect3d=disabled -Dd3d-hwaccel=enabled
+    "-Dc_args=-DHAVE_DXGI_DEBUG_D3D11=1")
 fi
 meson setup "$work/b/mpv" "$m" "${mpvconf[@]}"
 grep -qE '#define HAVE_GPL 0' "$work/b/mpv/config.h" || { echo "::error::mpv is configured GPL" >&2; exit 1; }
@@ -130,6 +135,12 @@ if [ "$os" = linux ]; then
     echo "::error::libmpv.so.2 needs a library that should be inside it" >&2
     exit 1
   fi
+  # and exports only mpv's API, none of what is inside it
+  leaked="$(nm -D --defined-only "$out/libmpv.so.2" | awk '{print $3}' | grep -E '^(av|avcodec|avformat|swr|sws|dav1d|pl)_' || true)"
+  if [ -n "$leaked" ]; then
+    echo "::error::libmpv.so.2 exports what is inside it: $(head -c 400 <<<"$leaked")" >&2
+    exit 1
+  fi
   note ""
   note "needs (the system's): $(readelf -d "$out/libmpv.so.2" | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p' | tr '\n' ' ')"
   cp "$root/THIRD_PARTY_NOTICES" "$out/licences/" 2>/dev/null || true
@@ -141,9 +152,12 @@ else
     cp "$path" "$out/"
     owner="$(pacman -Qqo "$path")"
     lic="$(pacman -Qi "$owner" | sed -n 's/^Licenses *: //p')"
-    case "$lic" in
-      *GPL*) case "$lic" in *LGPL*|*"GPL-2.0-or-later WITH"*|*"FTL"*) ;; *) echo "::error::$(basename "$path") ($owner) is $lic" >&2; exit 1 ;; esac ;;
-    esac
+    # a GPL licence (not LGPL) is refused unless the package offers another (" OR ") or carries
+    # a linking exception (" WITH ")
+    if grep -qE '(^|[^L])GPL' <<<"$lic" && ! grep -qE ' OR | WITH ' <<<"$lic"; then
+      echo "::error::$(basename "$path") ($owner) is $lic" >&2
+      exit 1
+    fi
     note "$(basename "$path"): MSYS2 $owner ($lic)"
     for f in /ucrt64/share/licenses/"${owner#mingw-w64-ucrt-x86_64-}"/*; do
       [ -f "$f" ] && cp "$f" "$out/licences/${owner#mingw-w64-ucrt-x86_64-}-$(basename "$f").txt"

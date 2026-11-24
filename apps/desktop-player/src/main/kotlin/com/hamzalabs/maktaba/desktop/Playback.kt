@@ -99,12 +99,17 @@ interface Video {
 
     /** The caption to draw over the picture, for a player that draws it itself (libmpv's). */
     fun caption(text: String?, rtl: Boolean, scale: Float) {}
+
+    /** Its picture has started: a failure after it is not the file's (true when the player cannot tell). */
+    val started: Boolean get() = true
 }
 
 /** What a [Video] tells its [Playback], from any thread. */
 interface VideoEvents {
     val volume: Float
     val muted: Boolean
+    /** A direct file's audio track to play (in [ready]'s order), for a player that switches in place. */
+    val audioIndex: Int get() = 0
     /** Ready: its length (null: not known) and, for a file, its audio tracks in order. */
     fun ready(durationMs: Long?, audio: List<AudioOption>)
     fun position(ms: Long)
@@ -287,6 +292,8 @@ class Playback(
     private var forced = false
     /** Whether this home knows [players]' profile (null: not asked yet; story 13.18). */
     private var homeKnowsProfile: Boolean? = null
+    /** Where the stream last opened was to start (a forced transcode starts there too). */
+    private var openedFromMs = 0L
     private var renewAt = Long.MAX_VALUE
     private var openedAt = 0L
     @Volatile private var failed: String? = null
@@ -571,13 +578,14 @@ class Playback(
     private suspend fun profileForHome(): String {
         val want = players.profile
         if (want == STREAM_PROFILE) return want
+        // a home that could not answer is asked again at the next open; only an answer is kept
         val knows = homeKnowsProfile ?: try {
-            want in client.streamCapabilities().clientProfiles
+            (want in client.streamCapabilities().clientProfiles).also { homeKnowsProfile = it }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             false
-        }.also { homeKnowsProfile = it }
+        }
         return if (knows) want else STREAM_PROFILE
     }
 
@@ -589,6 +597,7 @@ class Playback(
         val old = session
         try {
             val profile = profileForHome()
+            openedFromMs = fromMs
             val s = withContext(NonCancellable) {
                 client.openStream(
                     r.videoId, (fromMs / 1000).toInt(), profile, maxBitrateKbps = kbps,
@@ -658,6 +667,8 @@ class Playback(
     private val events = object : VideoEvents {
         override val volume: Float get() = this@Playback.volume
         override val muted: Boolean get() = this@Playback.muted
+        // a direct file's track chosen in the player itself (libmpv) is kept by its next player
+        override val audioIndex: Int get() = if (hls || audioTrack != null) 0 else audio?.index ?: 0
 
         override fun ready(durationMs: Long?, audio: List<AudioOption>) = onReady(durationMs, audio)
 
@@ -675,11 +686,18 @@ class Playback(
         }
 
         override fun failed(why: String) {
-            // story 13.18: a file that does not play as it is opens once more as a transcode
-            if (direct && !forced && players.profile != STREAM_PROFILE) {
+            // story 13.18: a file that does not open or decode as it is (its picture never
+            // started) opens once more as a transcode, from where it was to start; a failure
+            // after it started is the watch loop's, as any player's
+            if (direct && !forced && player?.started == false && players.profile != STREAM_PROFILE) {
                 forced = true
-                val at = positionMs
-                video?.launch { open(fromMs = at) } ?: run { failed = why }
+                val at = positionMs.takeIf { it > 0 } ?: openedFromMs
+                val scope = video ?: run { failed = why; return }
+                scope.launch {
+                    val before = session
+                    open(fromMs = at)
+                    if (session == before) failed = why
+                }
                 return
             }
             failed = why

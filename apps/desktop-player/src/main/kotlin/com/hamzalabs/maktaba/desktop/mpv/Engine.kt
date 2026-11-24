@@ -21,6 +21,9 @@ object Engine {
 
     val fallbackReason: String? get() = (load as? MpvLoad.Missing)?.reason
 
+    /** The hardware decoder libmpv used for the last video ("no": software), for the problem report. */
+    @Volatile var hwdec: String? = null
+
     /**
      * Why a packaged Player plays with JavaFX, to say once at start (null: libmpv plays, or a
      * development run, which has no libmpv to miss, or JavaFX chosen on purpose).
@@ -42,7 +45,7 @@ object Engine {
 
     /** A line for the problem report's log: the engine, and why JavaFX when it is. */
     fun describe(): String = when (val l = load) {
-        is MpvLoad.Loaded -> "playback: libmpv (${l.path.name})"
+        is MpvLoad.Loaded -> "playback: libmpv (${l.path.name}), hardware decoder: ${hwdec ?: "not used yet"}"
         is MpvLoad.Missing -> "playback: JavaFX (${l.reason})"
     }
 
@@ -51,7 +54,11 @@ object Engine {
      * can read; null when it cannot be written (mpv then uses the system's sans-serif).
      */
     private fun captionFonts(): File? = runCatching {
-        val dir = File(System.getProperty("java.io.tmpdir"), "maktaba-player-fonts").apply { mkdirs() }
+        // this user's own folder (a shared temporary one could be another user's, fonts planted)
+        val base = System.getenv("LOCALAPPDATA")?.let(::File)
+            ?: System.getenv("XDG_CACHE_HOME")?.let(::File)
+            ?: File(System.getProperty("user.home"), ".cache")
+        val dir = File(base, "maktaba-player/fonts").apply { mkdirs() }
         for (name in listOf("ibm_plex_sans_arabic_regular.ttf", "ibm_plex_sans_arabic_semibold.ttf")) {
             val out = File(dir, name)
             if (out.isFile && out.length() > 0) continue
