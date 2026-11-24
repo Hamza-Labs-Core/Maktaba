@@ -3670,6 +3670,7 @@
   "updates.checkFailed.http_error": "أجاب GitHub بخطأ",
   "updates.checkFailed.decode": "تعذّرت قراءة جواب GitHub",
   "updates.checkFailed.unreachable": "تعذّر الوصول إلى GitHub",
+  "updates.checkFailed.feed_refused": "لم يجتز موجز إصدارات مكتبة فحص توقيعه أو محتواه، فلم يُستعمل",
   "updates.settings.page": "إصدار كل جهاز، وكل تحديث خطوةً بخطوة: صفحة التحديثات",
   "updates.plan.none": "لا تحديث مخطط: لديك أحدث إصدار.",
   "updates.plan.at": "يُثبَّت الإصدار {version} في {at}.",

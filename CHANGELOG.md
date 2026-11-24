@@ -423,6 +423,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The second listen stores its corrections again on PostgreSQL 18.** From the home's move to
+  PostgreSQL 18 on 2026-11-20, every second-listen job failed when it stored its corrected
+  transcript ("cannot update table transcript_segments"): PostgreSQL 18 refuses an update to a
+  table published for a machine's copy when its replica identity holds a generated column the
+  copy is not sent, and the home's transcript lines were set up that way (REPLICA IDENTITY FULL,
+  with the generated search column). A migration (slot 0237) gives such tables their primary key
+  as their identity, without rewriting them; the copy keeps them. The videos left with Whisper's
+  words since then are heard again by themselves, 100 at a time, and their subtitles, search
+  index and tags follow.
+
 - **A home that can't check for updates now says so.** When two checks in a row fail, the Updates
   page says "Can't check for updates since …" with the reason (GitHub's list is larger than this
   version reads, GitHub asked to wait, GitHub answered with an error or could not be reached) and
@@ -3845,6 +3855,18 @@ build fails when the two differ.
 - **maktaba.dev's screenshots show no woman or girl.** The big screen, Roku and web search
   screenshots on the Apps pages were retaken on test data with men's names only and on the new
   demo library. In English and Arabic.
+
+- **Homes find updates in Maktaba's own signed release feed.** A home no longer reads GitHub's
+  list of every release, which had grown to 10.5 MB and stopped every home's update check on
+  2026-11-23. It reads one small file for its channel and platform from maktaba.tv
+  (`/updates/v1/<channel>/<platform>.json`, about 4 KB as served). The file lists the newest 10
+  releases with only the files that platform installs. It is signed like a release, and every
+  home checks the signature before using any of it. The home's catalog, the re-check before an
+  update, the About page and `maktaba-server update` all read it. GitHub's list is read only when
+  the feed cannot be reached; a feed that fails its signature check stops the check instead.
+  A bad release is now pulled from the feed (`tools/release/pull-release.sh`), and every home
+  marks it withdrawn. Homes on v0.3.153 to v0.3.161 keep reading GitHub, unchanged.
+  `MAKTABA_UPDATE_FEED=off` turns the feed off.
 
 ### Fixed
 

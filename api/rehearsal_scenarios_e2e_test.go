@@ -106,7 +106,15 @@ func (r *rehearsal) update(home *appMachine, p payloadSpec, d time.Duration) (ru
 	states := home.watchStates()
 	a := home.signIn()
 	mon := home.watchDowntime()
+	// a home running this commit's code (not the previous release's, which reads GitHub's
+	// list) finds the release in the release feed, at its real shape (release-feed
+	// generate's code, signed as update-feed.yml)
+	thisCommit := home.selfVersion() == r.kit.cur && r.gh.servesFeed()
+	reads := r.gh.feedReadCount()
 	id := a.updateNow(p.version)
+	if thisCommit && r.gh.feedReadCount() <= reads {
+		r.t.Errorf("this commit's home found %s without reading the release feed", p.version)
+	}
 	run := a.follow(id, d)
 	states.end()
 	r.logf("the record went %v; the journal %v", states.recordStates(), states.journalStates())
@@ -310,6 +318,7 @@ func TestUpdateRehearsal01NormalUpdate(t *testing.T) {
 	home.waitServing(k.cur, 3*time.Minute)
 	r.budget(mon, "a normal update (previous release -> this commit, with migrations)", 2*time.Minute)
 	home.assertServing(k.cur)
+	r.checksTheReleaseFeed(home)
 	r.countsUnchanged(before, seedCounts(t, db))
 	r.noRestore(home, states)
 	rec, _ := home.record()
@@ -1109,4 +1118,39 @@ func (m *appMachine) assertNodeServing(version string) {
 		t.Errorf("%s is paused: %s", m.name, tail(string(raw), 600))
 	}
 	m.r.logf("%s serves %s, not paused", m.name, version)
+}
+
+// checksTheReleaseFeed: a home on this commit's code checks for releases in the release feed
+// the fake serves at its real shape (release-feed generate's code, signed as update-feed.yml
+// on main), not in GitHub's list, and the check succeeds with this commit's release in the
+// catalog.
+func (r *rehearsal) checksTheReleaseFeed(home *appMachine) {
+	t := r.t
+	t.Helper()
+	reads := r.gh.feedReadCount()
+	a := home.signIn()
+	resp, body := a.b.do("POST", home.webURL()+"/api/cluster/updates/check", map[string]any{}, a.csrf)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("this commit's update check: %d %s", resp.StatusCode, body)
+		return
+	}
+	if r.gh.feedReadCount() <= reads {
+		t.Errorf("this commit's home checked for releases without reading the release feed")
+	}
+	code, raw := a.get("/api/cluster/updates")
+	var o struct {
+		LastCheckError string `json:"last_check_error"`
+		Catalog        []struct {
+			Version string `json:"version"`
+		} `json:"catalog"`
+	}
+	_ = json.Unmarshal(raw, &o)
+	found := false
+	for _, c := range o.Catalog {
+		found = found || c.Version == r.kit.cur
+	}
+	if code != http.StatusOK || o.LastCheckError != "" || !found {
+		t.Errorf("after a check through the release feed: %d, error %q, %s in the catalog: %v", code, o.LastCheckError, r.kit.cur, found)
+	}
+	r.logf("this commit's home checked through the release feed (%d feed files read)", r.gh.feedReadCount()-reads)
 }

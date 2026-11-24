@@ -386,6 +386,9 @@ func newRehearsal(t *testing.T) *rehearsal {
 	r.trust = filepath.Join(work, "trusted_root.json")
 	_ = os.WriteFile(r.trust, trustJSON, 0o644)
 	r.gh = newFakeGitHub(t)
+	// the release feed, as maktaba.tv serves it: this commit's homes read it (the previous
+	// release's read GitHub's list, as every home before the feed does)
+	r.gh.withFeed(r.ss)
 	// the pipeline: the e2e's wheel in a venv of this machine's Python (it answers its
 	// probes; the transcription and the TV's staging jobs never run)
 	py := pipelinePython(t)
@@ -634,6 +637,7 @@ func (m *appMachine) environ() []string {
 		"MAKTABA_PYTHON="+r.python, "MAKTABA_PIPELINE_PYTHON="+r.buildPython,
 		"MAKTABA_DISCOVERY_MDNS=0", "MAKTABA_HSTS=0", "MAKTABA_HEALTH_WARM=0s",
 		"MAKTABA_E2E_TRUSTED_ROOT="+r.trust, "MAKTABA_E2E_GITHUB_API="+r.gh.srv.URL,
+		"MAKTABA_E2E_UPDATE_FEED="+r.gh.feedURL(),
 		// a short watch, as the update e2e has: healthy 30 s commits, 90 s unhealthy rolls back
 		"MAKTABA_UPDATE_WATCH_SECONDS=30", "MAKTABA_UPDATE_NODE_WATCH_SECONDS=15", "MAKTABA_UPDATE_HEALTH_SECONDS=90",
 		"MAKTABA_UPDATE_INTERVAL_SEC=0", "MAKTABA_UPDATE_DISABLE=", "MAKTABA_MIGRATIONS_DIR=",
