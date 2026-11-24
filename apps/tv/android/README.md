@@ -40,7 +40,9 @@ typed with the remote, or a QR code a phone opens, with the 4-character code bot
 while the TV long-polls for the phone's pass. Then the channels with now and next, and the player,
 where up and down (and the channel keys) change the channel (`ui/screens/GuestScreens.kt`, on the
 phone apps' `core/guest`; passes sealed with a Keystore key). `TvGuestJourneyTest` plays a channel
-by short code on the Android TV emulator in CI.
+by short code on the Android TV emulator in CI. Off in this build (`GuestBroadcast` in the phone
+apps' core): home broadcasting is off for now, so neither the picker nor Account shows the entry;
+the tests turn it on with `GuestBroadcast.override`.
 
 **Parental controls (Epic 57).** The home enforces every rule; the TV says what it answered, as
 the phone Player does (`apps/android/README.md`, "Parental controls"). For a restricted account:

@@ -27,6 +27,10 @@ system tray, file drag-and-drop, auto-update, mDNS server discovery.
 | 13.8 | [Auto-update](story-13-08-auto-update.md) | spec |
 | 13.9 | [Design: Maktaba's own look on the desktop, as reviewed mockups](story-13-09-desktop-design.md) | design: approved 2026-11-24 |
 | 13.18 | [The Player plays with libmpv: direct play, reported to the home](story-13-18-player-libmpv.md) | spec |
+| 13.19 | [The desktop Player reports what it plays (`device_caps`)](story-13-19-player-device-caps.md) | spec |
+| 13.20 | [Subtitles through mpv: a file's own tracks, size and colour](story-13-20-player-mpv-subtitles.md) | spec |
+| 13.21 | [The video engine as a setting in the Player](story-13-21-player-engine-choice.md) | spec |
+| 13.22 | [Live TV plays with libmpv, then JavaFX leaves the Player](story-13-22-player-live-mpv.md) | spec |
 
 ---
 

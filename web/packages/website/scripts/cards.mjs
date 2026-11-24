@@ -238,8 +238,8 @@ export const CARD_SUB = {
     ar: "الرسائل ومعانيها",
   },
   "/legal/": {
-    en: "Privacy, terms and copyright",
-    ar: "الخصوصية وشروط الاستخدام وحقوق النشر",
+    en: "Privacy and terms",
+    ar: "الخصوصية وشروط الاستخدام",
   },
   // the help index and every topic (story 60.12)
   "/help/": {

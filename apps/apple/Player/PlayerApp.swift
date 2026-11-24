@@ -103,13 +103,15 @@ struct PlayerApp: App {
         .onOpenURL { url in
             if let route = VideoLink.route(url) {
                 link = route
-            } else if let invite = GuestInput.invite(in: url) {
+            } else if GuestBroadcast.enabled, let invite = GuestInput.invite(in: url) {
+                // while broadcasting is off (`GuestBroadcast`) an invite link opens nothing
                 arrived(invite)
             }
         }
         // the home picker's Watch a broadcast: a guest needs no home and no account, and the
-        // entry shows only once the parental limit is known and is none (fails closed)
-        .environment(\.watchBroadcast, session.guestGate.allowed ? { guest = GuestLaunch(invite: nil) } : nil)
+        // entry shows only once the parental limit is known and is none (fails closed), and
+        // never while the build has broadcasting off (`GuestBroadcast`)
+        .environment(\.watchBroadcast, session.showsWatchBroadcast ? { guest = GuestLaunch(invite: nil) } : nil)
         // the gate moved: a held invite opens or goes; under a limit an open guest space closes
         .onChange(of: session.guestGate) { _, gate in gateMoved(gate) }
         .alert(Text(verbatim: GuestWords.message("guest.watchBroadcast")),

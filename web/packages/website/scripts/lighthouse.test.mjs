@@ -37,7 +37,7 @@ test("the hand-made pages: their paths, the 404 at /404 (status 200, which Light
     // a TV's QR page (58.03): it forwards only with a code, so it is measured as it stands
     "/tv/",
     "/ar/tv/",
-    ...["privacy", "terms", "copyright"].flatMap((n) => [`/legal/${n}/`, `/ar/legal/${n}/`]),
+    ...["privacy", "terms"].flatMap((n) => [`/legal/${n}/`, `/ar/legal/${n}/`]),
     // the problem index (60.06), a family's own page
     "/problems/",
     "/ar/problems/",
