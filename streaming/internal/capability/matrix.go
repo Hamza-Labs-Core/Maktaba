@@ -53,6 +53,14 @@ type Profile struct {
 	VideoHeights   map[string]int
 	VideoBitDepths map[string]int
 	VideoFPS       map[string]int
+	// VideoHardware is a report's word on whether each codec is decoded in
+	// hardware (story 13.19; absent: not said). No decision reads it; a
+	// verdict's Reason names it.
+	VideoHardware map[string]bool
+	// AudioByReport: a transcode keeps up to the report's audio channels
+	// (story 13.19, desktop-mpv; TranscodeAudio). Without it a transcode's
+	// audio is the encoder's AAC, as it always was.
+	AudioByReport bool
 }
 
 // Source is what a probe row looks like to the matrix. We keep it
@@ -102,8 +110,14 @@ type Verdict struct {
 	// session goes by DASH whatever was asked); "" otherwise.
 	Format string
 	// AudioCodec is what a remux encodes the audio to ("eac3", "aac"); "": the
-	// source's audio is copied.
+	// source's audio is copied. For an AudioByReport profile's transcode
+	// (story 13.19) it is the transcode's audio (TranscodeAudio; "": the
+	// encoder's default AAC, as for every other profile).
 	AudioCodec string
+	// ReportHeightCap is the tallest H.264 picture the device's report says it
+	// decodes (an AudioByReport profile's transcode, story 13.19; 0: none): the
+	// transcode's ladder stops there.
+	ReportHeightCap int
 	// StripDV: a remux drops the Dolby Vision RPU (and a profile 7 enhancement
 	// layer), sending the base layer (HDR10, HLG or SDR) alone.
 	StripDV bool
@@ -196,17 +210,27 @@ func (r *Registry) Decide(profile *Profile, src Source, ov Override) Verdict {
 	// transcode of what it cannot decode. Without a report these are unset.
 	vcodec := canonVideo(src.VideoCodec)
 	if h := profile.heightFor(vcodec); h > 0 && src.Height > h {
+		reason := "source height exceeds profile"
+		if how := decodedBy(profile, vcodec); how != "" {
+			// story 13.19: the session's detail and the Player's problem report say why
+			reason = "source height exceeds the device's: " + codecName(vcodec) + " decoded in " + how +
+				" up to " + strconv.Itoa(h) + "p"
+		}
 		return Verdict{
 			Mode:           ModeTranscode,
-			Reason:         "source height exceeds profile",
+			Reason:         reason,
 			BitrateCapKbps: effectiveBitrate(profile, ov),
 			HeightCap:      effectiveHeight(profile, ov),
 		}
 	}
 	if d := profile.VideoBitDepths[vcodec]; d > 0 && src.BitDepth > d {
+		reason := "source bit depth exceeds the device's " + strconv.Itoa(d) + "-bit " + vcodec
+		if how := decodedBy(profile, vcodec); how != "" {
+			reason += " (decoded in " + how + ")"
+		}
 		return Verdict{
 			Mode:           ModeTranscode,
-			Reason:         "source bit depth exceeds the device's " + strconv.Itoa(d) + "-bit " + vcodec,
+			Reason:         reason,
 			BitrateCapKbps: effectiveBitrate(profile, ov),
 			HeightCap:      effectiveHeight(profile, ov),
 		}
@@ -263,6 +287,30 @@ func (r *Registry) Decide(profile *Profile, src Source, ov Override) Verdict {
 		return Verdict{Mode: ModeRemux, Reason: "container not in profile, codecs OK"}
 	}
 	return Verdict{Mode: ModeDirect, Reason: "all in profile"}
+}
+
+// decodedBy is how a report says the device decodes codec ("hardware",
+// "software"; "" when it does not say).
+func decodedBy(p *Profile, codec string) string {
+	hw, ok := p.VideoHardware[codec]
+	switch {
+	case !ok:
+		return ""
+	case hw:
+		return "hardware"
+	}
+	return "software"
+}
+
+// codecName is a video codec as a person reads it ("AV1", "HEVC", "MPEG-2").
+func codecName(codec string) string {
+	switch codec {
+	case "h264":
+		return "H.264"
+	case "mpeg2video":
+		return "MPEG-2"
+	}
+	return strings.ToUpper(codec)
 }
 
 func effectiveBitrate(p *Profile, ov Override) int {
@@ -355,6 +403,10 @@ func defaultProfiles() []*Profile {
 			MaxBitrateKbps:   80000,
 			MaxAudioChannels: 8,
 			SupportsHLS:      true,
+			// story 13.19: the Player's report (device_caps: what decodes in hardware,
+			// the height software decodes smoothly, the audio device's channels)
+			// narrows it per codec, and a transcode keeps the device's channels
+			AudioByReport: true,
 		},
 		{
 			Name:       "browser-chrome",
