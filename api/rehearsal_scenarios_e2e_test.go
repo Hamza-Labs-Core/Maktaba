@@ -491,7 +491,8 @@ func TestUpdateRehearsal03bRollbackDownScripts(t *testing.T) {
 func layoutVersion(v string) string { return strings.TrimPrefix(v, "v") }
 
 // =====================================================================================
-// 04 A rollback after a destructive migration puts the dump back, whole.
+// 04 A rollback after a destructive migration stops and asks; the dump a person puts back is
+//    whole.
 // =====================================================================================
 
 func TestUpdateRehearsal04RollbackDestructive(t *testing.T) {
@@ -516,9 +517,9 @@ func TestUpdateRehearsal05RestoreUnderLogins(t *testing.T) {
 // 06 The restore killed part way.
 // =====================================================================================
 
-// kill -9 of the server (and its pg_restore) while the dump is put back: the library
-// database in place must be untouched, and the site must come back by itself (the next
-// start finishes or redoes the restore), with nothing done by hand.
+// kill -9 of the server (and its pg_restore) while the dump a person asked for is put back:
+// the library database in place must be untouched, and the site must come back by itself
+// (the next start finishes or redoes the restore), with nothing more done by hand.
 func TestUpdateRehearsal06RestoreKilled(t *testing.T) {
 	r := newRehearsal(t)
 	r.destructiveRollback(destructiveOptions{kill: true})
@@ -540,15 +541,42 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 	if o.logins {
 		logins = home.machineLogins(seed.Machines, db)
 	}
+	// the update, as r.update starts it; its run is not followed to its end: once it stops
+	// and asks, the API (which says how a run ended) is down until a person chooses
+	p := k.nextDestructiveFailing()
+	r.publish(p.version, home.offer(p))
+	states := home.watchStates()
+	owner := home.signIn()
+	mon := home.watchDowntime()
+	runID := owner.updateNow(p.version)
+	// no automatic restore: the update stops and asks. The record is held (the failed
+	// release's version), the release before runs again and stops on it (db_held, or
+	// db_refused_older for a release from before the held record), and nothing is put back
+	// until a person chooses
+	var held dbRecord
+	waitFor(t, "the home stopped on the held database", 15*time.Minute, func() bool {
+		held, _ = home.record()
+		switchedBack := strings.TrimSpace(home.readFile(filepath.Join("updates", "payload-override"))) != ""
+		return held.State == "held" && switchedBack && strings.Contains(home.log.String(), "cannot start:")
+	})
+	if home.ready() {
+		t.Error("the API serves on a held database")
+	}
+	for _, s := range states.recordStates() {
+		if s == "restoring" || s == "restored" {
+			t.Errorf("a restore ran by itself: the database's record went %v", states.recordStates())
+			break
+		}
+	}
+	states.end()
+	r.logf("held: %+v (the record went %v; the journal %v); a person puts the backup back", held,
+		states.recordStates(), states.journalStates())
 	var killed chan string
 	if o.kill {
 		killed = make(chan string, 1)
 		go func() { killed <- home.killDuringRestore(40 * time.Minute) }()
 	}
-	run, mon, states := r.update(home, k.nextDestructiveFailing(), 40*time.Minute)
-	if run.State != "rolled_back" {
-		t.Errorf("the update to %s ended %s, want rolled_back: %s", k.next, run.State, run.Error)
-	}
+	home.restoreByHand(filepath.Base(held.Dump))
 	if o.kill {
 		select {
 		case what := <-killed:
@@ -560,7 +588,7 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 			t.Fatal("no restore was seen to kill")
 		}
 	}
-	// the site comes back by itself, on the previous release, with the dump put back
+	// the site comes back, on the previous release, with the dump put back
 	// (the record says restored once the dump is back, then migrated once the previous
 	// release's database step checked it; a release from before 2026-10-28 goes from
 	// restoring to migrated): whether the dump came back whole, the fingerprint says
@@ -573,7 +601,7 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 	if o.kill {
 		budget = 20 * time.Minute
 	}
-	r.budget(mon, "a rollback that puts the dump back", budget)
+	r.budget(mon, "a rollback that stops and asks, then the restore asked by hand", budget)
 	if logins != nil {
 		logins.end(r)
 	}
@@ -594,7 +622,16 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 	if rehearsalTableExists(t, db, "rehearsal_probe") {
 		t.Error("the failed release's migrations are still there after the restore (rehearsal_probe)")
 	}
-	r.logf("the record went %v", states.recordStates())
+	// the run, as the API says it now: never committed (its row is the one the backup held,
+	// or the one the release before settled)
+	if code, body := home.signIn().get("/api/cluster/updates/runs/" + runID); code == 200 {
+		var run runView
+		_ = json.Unmarshal(body, &run)
+		r.logf("the run %s reads %s after the restore", runID, run.State)
+		if run.State == "done" {
+			t.Errorf("the update to %s reads done", k.next)
+		}
+	}
 }
 
 // machineLogins are fake joined machines logging in to the home's database again and
@@ -789,12 +826,14 @@ func TestUpdateRehearsal07HaltRecovers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	gone := filepath.Join(home.root, "backups", "pre-"+k.cur+"-to-0.0.1.dump")
-	writeRec(map[string]any{"version": "0.0.1", "state": "restoring", "from": k.cur, "dump": gone, "failed": "0.0.1",
+	gone := filepath.Join(home.root, "backups", "pre-"+k.cur+"-to-9.9.9.dump")
+	// a release newer than this one failed (a release newer than the one that failed would go
+	// on from a held update by itself: #1605); the mark no person asked for is held
+	writeRec(map[string]any{"version": "9.9.9", "state": "restoring", "from": k.cur, "dump": gone, "failed": "9.9.9",
 		"error": "the rehearsal's failed update"})
 	home.start()
 	waitFor(t, "the roles halted by the database step", 5*time.Minute, func() bool {
-		return strings.Contains(home.log.String(), "cannot start: the update to 0.0.1")
+		return strings.Contains(home.log.String(), "cannot start: the update to 9.9.9")
 	})
 	time.Sleep(10 * time.Second)
 	if home.ready() {

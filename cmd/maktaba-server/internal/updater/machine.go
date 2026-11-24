@@ -151,13 +151,14 @@ type Health interface {
 }
 
 // Records is the home's database record (state/database.json, the database step of
-// serve_appbundle.go): a rollback after the new release's migrations ran marks the dump
-// taken before them to be put back by the next start, before any role runs.
+// serve_appbundle.go): a rollback after the new release's migrations ran, when neither
+// keeping its schema nor its Down scripts take the database back, marks the record held:
+// nothing is put back by itself, and a person decides (db_held).
 type Records interface {
-	// MarkRestore marks the record restoring when it says version's migrations ran over
-	// from's database with a dump; it reports whether it did.
-	MarkRestore(version, from, reason string) (bool, error)
-	// Unmark undoes MarkRestore (the switch back failed: version stays, and its database).
+	// MarkHeld marks the record held when it says version's migrations ran over from's
+	// database with a dump; it reports whether it did.
+	MarkHeld(version, from, reason string) (bool, error)
+	// Unmark undoes MarkHeld (the switch back failed: version stays, and its database).
 	Unmark(version string) error
 	// Migrated reports whether the database holds version's migrations.
 	Migrated(version string) bool
@@ -243,17 +244,9 @@ type Machine struct {
 	// TV moves the home's TV to the new release's streaming binary before the commit
 	// (story 35.6, tv.go); nil: no TV slots here (a node, a SQLite home), nothing to move.
 	TV TVSwapper
-	// RestoreBack puts the dump taken before the new release's migrations back with this
-	// release's own code before its rollback switches back (the record is marked restoring
-	// first): the database's roles stopped, the dump put back whole and checked, the record
-	// restored for the release before, which then starts on a finished database. The
-	// release before's own restore (code from before 2026-10-28: no lockout, its grants in
-	// parallel, nothing checked) is what failed on 2026-10-28. An error leaves the record
-	// restoring, and the release before puts it back at its start, as before (nil: always so).
-	RestoreBack func(ctx context.Context, j *Journal, reason string) error
 	// MigrateDown runs the new release's Down scripts back to schema (the release before's
 	// newest migration) with the database's other users stopped (schemadown.go): a rollback
-	// whose migrations lose no data undoes only them. nil: the dump goes back, as before.
+	// whose migrations lose no data undoes only them. nil: the record is held (MarkHeld).
 	MigrateDown func(ctx context.Context, j *Journal, schema int64) error
 	// Packs fetches the new release's packs before the switch, and prunes those of
 	// releases no longer kept (story 51.18, packs.go); nil: no packs step.
@@ -1213,9 +1206,10 @@ func (m *Machine) undoSwitch(after string) {
 }
 
 // cameBackOld records a run whose new release did not stay running: the launcher's
-// guard (or the app) brought back the previous one, and the record was marked for the
-// dump to be put back where the migrations ran (by the launcher, or here when it could
-// not: the database step runs after this). The switch is undone too (the guard, the
+// guard (or the app) brought back the previous one, and the record was marked held where
+// the migrations ran (by the launcher, or here when it could not: the database step runs
+// after this), so the previous release stops on it and a person decides; nothing is put
+// back by itself. The switch is undone too (the guard, the
 // order, the override): nothing is left that would take the new release for one being
 // tried, should it come later (the app's install finishing after all).
 func (m *Machine) cameBackOld(running, why string) {
@@ -1224,11 +1218,12 @@ func (m *Machine) cameBackOld(running, why string) {
 	}
 	j := m.Status().Journal
 	if m.Records != nil && j.Job.Home {
-		if marked, err := m.Records.MarkRestore(j.Job.Version, j.From, why); err != nil {
-			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
+		if marked, err := m.Records.MarkHeld(j.Job.Version, j.From, why); err != nil {
+			m.errorf("cannot mark the database record held: %v", err)
 		} else if marked {
-			m.errorf("the whole dump taken before %s's migrations goes back: %s came back on its own (%s), and its "+
-				"start puts the dump back", j.Job.Version, orNone(j.From), why)
+			m.errorf("the update to %s stopped after its migrations ran: %s came back on its own (%s) and stops on "+
+				"the database as they left it; nothing is put back by itself, a person decides (db_held)",
+				j.Job.Version, orNone(j.From), why)
 		}
 	}
 	_ = m.mutate(func(j *Journal) {
@@ -1497,11 +1492,12 @@ func (m *Machine) replaceLauncher() {
 }
 
 // rollback switches back to the release that ran before and restarts on it at once:
-// nothing is dumped first. Where the new release's migrations ran, the record is marked
-// for the dump taken before them to be put back by that start, before any role runs,
-// unless every one of them is rollback-safe and the release before runs on such a schema:
-// then the database stays as it is (keepSchema). A release that added no migration left
-// the database as the one before knows it.
+// nothing is dumped first. Where the new release's migrations ran, the database stays as
+// they left it when every one of them is rollback-safe and the release before runs on
+// such a schema (keepSchema), else their Down scripts undo them (migrateDown); when
+// neither does, the record is marked held: nothing is put back by itself, the release
+// before stops on it and a person decides (db_held). A release that added no migration
+// left the database as the one before knows it.
 func (m *Machine) rollback(reason string) {
 	j := m.Status().Journal
 	if j.FromRef == "" && j.From == "" {
@@ -1537,24 +1533,15 @@ func (m *Machine) rollback(reason string) {
 	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
 	if migrated && !m.keepSchema(j, reason) && !m.migrateDown(j, reason) {
-		// not the way back (the Down scripts are): said loudly, the Updates page shows it
-		m.errorf("neither keeping %s's schema nor its Down scripts take the database back: the whole dump taken "+
-			"before its migrations goes back", j.Job.Version)
-		marked, err := m.Records.MarkRestore(j.Job.Version, j.From, reason)
-		if err != nil {
-			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
-		}
-		if marked && m.RestoreBack != nil {
-			// this release puts it back now, with its own code (review of #433)
-			m.logf("putting the database back as it was before %s's migrations, before switching back to %s",
-				j.Job.Version, orNone(j.From))
-			if err := m.RestoreBack(m.ctx(), j, reason); err != nil {
-				m.errorf("this release could not put the database back (%v): %s puts it back at its start", err,
-					orNone(j.From))
-			} else {
-				m.logf("the database is back as it was before %s's migrations: %s starts on it", j.Job.Version,
-					orNone(j.From))
-			}
+		// no automatic restore: the update stops and a person decides (put the backup
+		// taken before the migrations back, or install a release that fixes this). The
+		// release before refuses the held database and stops; the Updates page and the
+		// start's detail say what happened and the choices (db_held).
+		m.errorf("neither keeping %s's schema nor its Down scripts take the database back: the update stops "+
+			"and waits for a person (nothing is put back by itself; %s stops on the database as it is)",
+			j.Job.Version, orNone(j.From))
+		if _, err := m.Records.MarkHeld(j.Job.Version, j.From, reason); err != nil {
+			m.errorf("cannot mark the database record held: %v", err)
 		}
 	}
 	// stopped before the switch back: a push after it would write back the guard the
@@ -1584,7 +1571,8 @@ func (m *Machine) rollback(reason string) {
 // keepSchema marks the database's record kept for the release before when the rollback
 // may leave the database as the new release's migrations made it (schemakeep.go): every
 // one of them rollback-safe, and the release before runs on such a schema. It reports
-// whether it did; otherwise the dump goes back (MarkRestore), as before.
+// whether it did; otherwise its Down scripts are tried (migrateDown), then the record is
+// held (MarkHeld).
 func (m *Machine) keepSchema(j *Journal, reason string) bool {
 	k, ok := m.Installer.(SchemaKeeper)
 	kr, ok2 := m.Records.(KeptRecords)
@@ -1598,7 +1586,7 @@ func (m *Machine) keepSchema(j *Journal, reason string) bool {
 	}
 	marked, err := kr.MarkKept(j.Job.Version, j.From, reason)
 	if err != nil {
-		m.errorf("cannot mark the database record kept for %s (the dump goes back instead): %v", j.From, err)
+		m.errorf("cannot mark the database record kept for %s (its Down scripts are tried, else it is held): %v", j.From, err)
 		return false
 	}
 	if marked {

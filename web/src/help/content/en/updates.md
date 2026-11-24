@@ -163,8 +163,8 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 ### The library database could not be updated {#code-database}
 
 - **What it means:** The step that saves the library database and brings it up to date for the new version failed, or the changes failed when tried on a copy first, or the new version needs another database version than this machine has.
-- **Does Maktaba fix it itself?** In most cases: nothing was changed, or the update's own Down scripts undid its database changes and the previous version runs on the database as it knows it. That version is not installed again by itself. The whole backup taken before the update is put back only when those Down scripts fail, or when a change had already deleted data they cannot bring back. The reason then says so, and the logs say why.
-- **What you can do:** Read the reason and **See the logs**. When it says the database could not be put back, or the version is older than the database, [put a backup back](/help/updates#restore-backup).
+- **Does Maktaba fix it itself?** In most cases: nothing was changed, or the update's own Down scripts undid its database changes and the previous version runs on the database as it knows it. That version is not installed again by itself. Maktaba never puts the whole backup back by itself: when those Down scripts fail, or a change had already deleted data they cannot bring back, Maktaba stops, says why, and waits for you.
+- **What you can do:** Read the reason and **See the logs**. When Maktaba stopped and waits for you, choose one: put back the backup taken before the update on the [recovery page](/help/recovery) (**Restore a backup**: the changes made since that backup are lost), or install a newer release that fixes the update (it goes on from where the update stopped). When the version is older than the database, [put a backup back](/help/updates#restore-backup).
 
 ### The TV during an update {#code-tv}
 

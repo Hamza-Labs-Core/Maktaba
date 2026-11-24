@@ -127,6 +127,43 @@ func TestRecordRestoringMarkAndUnmark(t *testing.T) {
 	}
 }
 
+// A failed update stops and asks (no start puts the dump back by itself): the record is
+// held, its version stays the failed release's so every older release refuses it, and a
+// switch back that fails takes the mark back.
+func TestRecordHeldMarkAndUnmark(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "database.json")
+	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrating","from":"1.4.0","dump":"/b/pre-1.4.0-to-1.5.0.dump","schema_before":230}`), 0o644)
+	if ok, err := MarkRecordHeld(path, "1.4.0", "x"); err != nil || ok {
+		t.Fatalf("another release's record marked: %v %v", ok, err)
+	}
+	if ok, err := MarkRecordHeld(path, "1.5.0", "launcher_pending_timeout"); err != nil || !ok {
+		t.Fatalf("mark: %v %v", ok, err)
+	}
+	rec := readRecord(t, path)
+	if rec["state"] != "held" || rec["failed"] != "1.5.0" || rec["version"] != "1.5.0" ||
+		rec["error"] != "launcher_pending_timeout" || rec["schema_before"] != float64(230) {
+		t.Fatalf("held record %v", rec)
+	}
+	// marked already: a restore mark over it is not written (nothing puts it back by itself)
+	if ok, err := MarkRecordRestoring(path, "1.5.0", "watch"); err != nil || !ok {
+		t.Fatalf("mark again: %v %v", ok, err)
+	}
+	if rec := readRecord(t, path); rec["state"] != "held" {
+		t.Fatalf("a held record was marked restoring: %v", rec)
+	}
+	if ok, err := UnmarkRecordRestoring(path, "1.5.0"); err != nil || !ok {
+		t.Fatalf("unmark: %v %v", ok, err)
+	}
+	if rec := readRecord(t, path); rec["state"] != "migrated" || rec["failed"] != nil {
+		t.Fatalf("unmarked record %v", rec)
+	}
+	// no dump: nothing to hold for (the update added no migration)
+	_ = os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrated"}`), 0o644)
+	if ok, err := MarkRecordHeld(path, "1.5.0", "x"); err != nil || ok {
+		t.Fatalf("held without a dump: %v %v", ok, err)
+	}
+}
+
 // A rollback whose Down scripts undid the release's migrations leaves the record the
 // release before's own, migrated, with nothing to put back and nothing kept; a record that
 // is not the failed release's, migrated, stays as it is.

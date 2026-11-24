@@ -146,12 +146,12 @@ type Database struct {
 	// migrations started (migrating; 0: not known): the slot a failed update's Down
 	// scripts go back to (updater.FailedBack), whichever release ran on it.
 	SchemaBefore int64 `json:"schema_before,omitempty"`
-	// Restore is why a failed update's dump goes back instead of its Down scripts
-	// (restoring; the update attempt's code: db_down_failed, db_restored_lossy,
-	// db_restored_unknown). "": its migrations failed and nothing else was tried (a
-	// release from before 2026-11-24).
-	Restore string    `json:"restore,omitempty"`
-	At      time.Time `json:"at"`
+	// Held is why a failed update stopped instead of going back by itself (held: the
+	// update attempt's code; no release puts a dump back by itself since 2026-11-24: db_down_failed, db_held_lossy, db_held_unknown, or
+	// db_held_unasked for a restore mark no person asked for). "": marked held by a
+	// rollback (the launcher's guard, the update's watch), whose reason is Error.
+	Held string    `json:"held,omitempty"`
+	At   time.Time `json:"at"`
 }
 
 // Ran is the release that last started on the database: Release, else Version.
@@ -172,6 +172,13 @@ const (
 	DatabaseRestoring = "restoring"
 	// DatabaseRestored: the database is as it was before the failed update.
 	DatabaseRestored = "restored"
+	// DatabaseHeld: Failed's migrations failed, or Failed was rolled back after they ran,
+	// and neither keeping its schema nor its Down scripts took the database back. Nothing
+	// is put back by itself: every start stops on it (db_held; a release older than
+	// Version, the releases before this state included, refuses it: db_refused_older)
+	// until a person chooses: put Dump back (`maktaba-server restore`, a restore asked:
+	// restoring, By), or install a release newer than Failed, which goes on from it.
+	DatabaseHeld = "held"
 )
 
 // DatabasePath is the database's record: the record of the cluster this install runs on

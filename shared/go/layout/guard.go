@@ -161,7 +161,30 @@ func trimSpace(b []byte) []byte {
 // restores the dump before any role runs. It reports whether it marked the record; one
 // that names another release, or no dump, is left alone. Fields it does not know are
 // kept.
+//
+// Nothing in Maktaba marks a record restoring by itself any more (a failed update stops
+// and asks: MarkRecordHeld); this stays for the releases before 2026-11-24 that read it,
+// and for the tests that play them.
 func MarkRecordRestoring(path, failed, reason string) (bool, error) {
+	return markRecordFailed(path, failed, reason, "restoring")
+}
+
+// MarkRecordHeld marks the database's record so that no start puts anything back by
+// itself: the update to failed stopped after its migrations ran (or were running), and a
+// person decides how the database goes on (put the backup taken before them back, or
+// install a release that fixes the update). Its state becomes "held" with failed and
+// reason; version stays failed's, so every release older than failed refuses the
+// database (db_refused_older, the releases before 2026-11-24 included) instead of
+// putting the dump back, and every release since says what happened and the choices
+// (db_held). It reports whether it marked the record; one that names another release,
+// or no dump, is left alone. Fields it does not know are kept.
+func MarkRecordHeld(path, failed, reason string) (bool, error) {
+	return markRecordFailed(path, failed, reason, "held")
+}
+
+// markRecordFailed is MarkRecordRestoring and MarkRecordHeld: state is "restoring" or
+// "held". A record marked either way already is left as it is (marked).
+func markRecordFailed(path, failed, reason, state string) (bool, error) {
 	if path == "" {
 		return false, nil
 	}
@@ -182,12 +205,12 @@ func MarkRecordRestoring(path, failed, reason string) (bool, error) {
 	}
 	switch str("state") {
 	case "migrated", "migrating":
-	case "restoring":
+	case "restoring", "held":
 		return true, nil // marked already
 	default:
 		return false, nil
 	}
-	rec["state"], rec["failed"], rec["error"] = "restoring", str("version"), reason
+	rec["state"], rec["failed"], rec["error"] = state, str("version"), reason
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	out, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -235,10 +258,10 @@ func ExtendGuard(root, runID string, until time.Time) (bool, error) {
 	return true, WriteGuard(root, *g)
 }
 
-// UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the
-// release before failed: failed (still running) keeps the database its migrations made,
-// so the record says migrated again and no start puts the dump back. It reports whether
-// it changed the record.
+// UnmarkRecordRestoring takes back MarkRecordRestoring or MarkRecordHeld when the switch
+// back to the release before failed: failed (still running) keeps the database its
+// migrations made, so the record says migrated again and no start puts the dump back or
+// stops on it. It reports whether it changed the record.
 func UnmarkRecordRestoring(path, failed string) (bool, error) {
 	if path == "" {
 		return false, nil
@@ -255,7 +278,7 @@ func UnmarkRecordRestoring(path, failed string) (bool, error) {
 		return false, fmt.Errorf("%s: %w", path, err)
 	}
 	str := func(k string) string { s, _ := rec[k].(string); return s }
-	if str("state") != "restoring" || NormalizeVersion(str("failed")) != NormalizeVersion(failed) {
+	if (str("state") != "restoring" && str("state") != "held") || NormalizeVersion(str("failed")) != NormalizeVersion(failed) {
 		return false, nil
 	}
 	rec["state"] = "migrated"
