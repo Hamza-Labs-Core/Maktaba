@@ -1,0 +1,49 @@
+---
+schema: 1
+kind: pr
+pr: 1556
+title: "Story 13.9: the desktop apps' audit and design, mockups in both languages, approved with libmpv for the Player (13.18)"
+date: 2026-11-23
+session: e17bc07f-84d4-4215-9722-3af0a39bc002
+agent: claude-code
+---
+
+## What happened
+The design gate for the desktop apps opened as #1556. It is design only, and no app changes until the owner approves. It holds story 13.9 in Epic 13 and `docs/design/desktop/`.
+
+The audit:
+- **Tauri server app:** the stock parts are the OS title bar above the web app's own header, a native menu bar whose titles are English literals (`src/lib.rs`), the system message box for errors (`src/shell.rs:386`), a plain tray menu, and unbranded NSIS, WiX, dmg, AppImage, deb and rpm installers.
+- **Compose Player:** the OS frame, a Swing `JMenuBar`, Material's default dialogs and jpackage's stock `.msi`. Its colours are copied by hand rather than generated from the tokens.
+- **SwiftUI Mac Player:** the sidebar's selection is grey, and in Arabic the sidebar and window controls stay on the left (CI run 45267535780, `product-shots-mac`).
+
+The design adds:
+- 18 HTML mockups on the real tokens and fonts, which render to 39 PNGs.
+- A proposed `desktop` token group with its contrast table.
+
+The owner approved the design on 2026-11-24 with D1–D5, recorded in the story and the README in a second commit. D4 also moves the Player's video from JavaFX to libmpv through JNA, and story 13.18 was written for it: direct play reported as `desktop-mpv` with `device_caps` (as #1521 did on Android), libmpv and FFmpeg bundled per OS in an LGPL build, the update and rollback path, and a time-to-first-frame test. Kotlin stayed over Rust, Java or .NET to keep `:client` shared with Android.
+- The approach for each app, with effort and risk.
+- The quality bar, eight proposed build stories (13.10–13.17), and five decisions for the owner (D1–D5).
+
+Demo media in mockups and references shows no women or girls. A third commit replaced every such image, title and synopsis in the mockups with drawn documentary and history stand-ins (`docs/design/desktop/mockups/art/make_art.py`) and the demo library's animal-only animations, cropped the audit sheets to captures with no demo art, and wrote the rule into the README and story 13.9 for every build story's references.
+
+## What we learned
+- No capture of any desktop frame, menu, tray, dialog or installer exists, either in the repository or in any CI artifact. Only the Compose Player's content, the web app and the Mac Player are captured. An audit of the stock look therefore has to rest on the code.
+- With Pillow, a 256-colour palette (website `quantize.py`) shifts small saturated areas. The brass and macOS's traffic lights came out wrong. Desktop renders at 1× stay under 1 MB in full colour (0.8 MB at most), so the palette step was dropped.
+- In an LTR run, Arabic-Indic digits around a "/" reorder: "٦:٢٠ / ١٤:٤٨" displays reversed. Each number needs its own isolate. Version numbers stay in Latin digits, as `lang.rs` substitutes them.
+- A mockup kit that sets copy with `textContent` silently prints `<bdi>` as text. The kit now refuses markup in `data-t`.
+
+## Keep doing
+- One HTML source holding both languages (`?lang=ar`), rendered at each window's real size. Render checks run in the same script: missing copy keys, failed requests, sideways overflow, contrast pairs, and logical CSS properties only.
+- Verify each audit claim against a file and line before it goes into the sheet. A first draft said "white title bar on Windows 10", which the code cannot show.
+
+- Run `trail check` from agent-trail v0.2.1: CLAUDE.md's v0.2.0 is the version d20261122 measured at minutes per run, and here it was still running after five minutes; v0.2.1 took seconds.
+
+- Check every mockup and reference PNG by eye for its demo media before pushing, not only its layout; build the contact sheets from the rendered PNGs.
+
+## Stop doing
+- Quoting a CI or reference image without saying where it came from (run id, artifact, path).
+
+## Open
+- Build stories 13.10–13.18, each its own pull request, in the order the story gives: 13.10, 13.12, 13.11, 13.15, 13.18, 13.13, 13.14, 13.16, with 13.17 (the desktop visual references in CI) beside the first.
+- The replacement demo library (another session's work): once it lands, the build stories' references use it, and these mockups' stand-ins can move to it.
+- 13.18 starts with a spike: draw mpv's frames as an OpenGL texture under Compose, or in a native child window. The choice is recorded in that pull request.
