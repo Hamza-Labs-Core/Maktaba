@@ -802,12 +802,14 @@ func TestUpdateRehearsal07HaltRecovers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	gone := filepath.Join(home.root, "backups", "pre-"+k.cur+"-to-0.0.1.dump")
-	writeRec(map[string]any{"version": "0.0.1", "state": "restoring", "from": k.cur, "dump": gone, "failed": "0.0.1",
+	gone := filepath.Join(home.root, "backups", "pre-"+k.cur+"-to-9.9.9.dump")
+	// a release newer than this one failed (a release newer than the one that failed would go
+	// on from a held update by itself: #1605); the mark no person asked for is held
+	writeRec(map[string]any{"version": "9.9.9", "state": "restoring", "from": k.cur, "dump": gone, "failed": "9.9.9",
 		"error": "the rehearsal's failed update"})
 	home.start()
 	waitFor(t, "the roles halted by the database step", 5*time.Minute, func() bool {
-		return strings.Contains(home.log.String(), "cannot start: the update to 0.0.1")
+		return strings.Contains(home.log.String(), "cannot start: the update to 9.9.9")
 	})
 	time.Sleep(10 * time.Second)
 	if home.ready() {

@@ -212,6 +212,10 @@ else their Down scripts undo them, the one that failed part way by its own Down 
 (`maktaba-api migrate undo-failed`), back to the slot the database was at before the update
 (recorded as `schema_before` when the migrations start).
 
+A layout install (the `.deb`/`.rpm`, `setup --self-managed`) keeps the release before's
+migrations in `bin/releases/<v>/` and undoes the same way; until 2026-11-24 its rollback
+could only put the backup back.
+
 **No backup is ever put back by itself.** When those Down scripts fail (`db_down_failed`), when
 a migration that ran deleted or overwrote data its Down script cannot give back
 (`db_held_lossy`: migration-lint refuses such a migration unless it says so), when the way back

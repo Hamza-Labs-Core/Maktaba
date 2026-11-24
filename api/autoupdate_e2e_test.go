@@ -13,8 +13,10 @@ package main
 //     the database dumped and migrated by the new release's start, watched, committed),
 //     then on the node (prepared over the cluster channel, applied, watched, committed);
 //   - a 0.9.2 whose API cannot run on the schema it migrated is rolled back on the home
-//     alone: the previous release runs again, the dump taken before 0.9.2's migration is
-//     put back, the version is blocked, and the node is never asked.
+//     alone: its migration is undone by its own Down script (since 2026-11-24 nothing puts
+//     the dump back by itself, and a layout install undoes with Down scripts too), the
+//     previous release runs again, the node's copy goes on from where it was, the version
+//     is blocked, and the node is never asked.
 //
 // Opt-in (it builds twelve binaries and runs two Postgres-backed machines):
 // MAKTABA_E2E_UPDATE=1 and MAKTABA_TEST_PG_BIN (a Postgres 16 install: initdb, postgres,
@@ -586,10 +588,24 @@ listen = "loopback"`, filepath.ToSlash(pgBin), hPG))
 	var probe, nextTable sql.NullString
 	_ = adb.QueryRowContext(ctx, `SELECT to_regclass('e2e_probe')::text, to_regclass('e2e_next')::text`).Scan(&probe, &nextTable)
 	if probe.Valid || !nextTable.Valid {
-		t.Fatalf("the dump taken before 0.9.2's migration was not put back: e2e_probe %v, e2e_next %v", probe, nextTable)
+		t.Fatalf("0.9.2's migration was not undone: e2e_probe %v, e2e_next %v", probe, nextTable)
 	}
-	// the dump put back took the node's slot with it: its copy is made anew from it
-	copyFollows("the node's copy made anew from the database put back", int64(nextRev), beforeRollback)
+	if err := adb.QueryRowContext(ctx, `SELECT max(version_id) FROM goose_db_version WHERE is_applied`).Scan(&applied); err != nil || applied != int64(nextRev) {
+		t.Fatalf("the home's schema is at %d (%v) after the rollback, want %d", applied, err, nextRev)
+	}
+	// undone by its Down script, not a restore: nothing was put back and the node's copy
+	// keeps its slot, going on from where it was
+	if recs, _ := filepath.Glob(filepath.Join(homeDir, "data", "state", "database*.json")); len(recs) > 0 {
+		raw, _ := os.ReadFile(recs[0])
+		if strings.Contains(string(raw), `"restoring"`) || strings.Contains(string(raw), `"restored"`) ||
+			strings.Contains(string(raw), `"held"`) {
+			t.Fatalf("the database's record after the rollback: %s", raw)
+		}
+	}
+	if c := copyFollows("the node's copy following the home after the rollback", int64(nextRev), time.Time{}); c.Subscribed != nil &&
+		c.Subscribed.After(beforeRollback) {
+		t.Errorf("the node's copy was made anew (subscribed %v): nothing was put back, its slot should have held", c.Subscribed)
+	}
 	resp, body := admin.do("GET", homeWeb+"/api/cluster/updates", nil, nil)
 	if resp.StatusCode == 200 && !strings.Contains(string(body), `"blocked_reason":"rolled_back"`) {
 		t.Fatalf("0.9.2 is not blocked: %s", tail(string(body), 2000))
