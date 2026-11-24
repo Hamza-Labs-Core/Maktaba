@@ -6,7 +6,7 @@ title: "Before migrating: wait out the machines' table syncs, pause their copies
 date: 2026-11-24
 session: 1d933885-c614-466d-9dec-f738a7b6a527
 agent: claude-code
-prs: [1538, 1601]
+prs: [1538, 1598, 1601]
 ---
 
 ## What happened
@@ -15,7 +15,9 @@ Research item 5 (E3, E4, E8):
 - **The database step:**
   1. waits up to 10 minutes for the table syncs to end;
   2. pauses the machines' copies, setting `NOLOGIN` on each `maktaba_rep_*` member of `maktaba_replicas` and ending its sessions;
-  3. lets them back in after the migrations, failed or not.
+  3. lets them back in after the migrations, or after the Down scripts that undo them.
+
+  With #1598 on main, the pause also covers its Down scripts: the undo of failed migrations (same pause) and a rollback's (`updates.migrateDown`, with no wait for a table sync).
 
   The roles are first written to `state/copies-paused.json`, so a server stopped mid-migration lets them back in at its next start.
 - **Offline migrations:** with the library stopped, `maktaba-api migrate up` (`MAKTABA_MIGRATE_OFFLINE=1`) drops `CONCURRENTLY` from the top-level `CREATE`/`DROP INDEX` statements of each Up section. Function bodies, `DO` blocks, strings and Down sections are left as they are. The rehearsal on a copy sets the variable too.
@@ -32,6 +34,7 @@ Research item 5 (E3, E4, E8):
   - A real-Postgres test (opt-in `MAKTABA_TEST_PG_BIN`) checks it. The Mac app's bundled Postgres 16 binaries serve for that locally, with a temp data directory: the live home is not touched.
 - **A plain `CREATE INDEX` takes `SHARE`.** That does not conflict with the `ACCESS SHARE` a copy's snapshot holds, so the build no longer waits on old snapshots at all.
 - **The guard sweep already treats table sync slots made with pgoutput as Maktaba's,** so a rehearsal can make one by hand without the home dropping it.
+- **A pause around one call ends with that call.** The pause was first inside `migrationGate.migrate`, so the copies logged back in just before #1598's Down scripts ran. It now belongs to the whole step.
 
 ## Keep doing
 - Run the e2e that brings a real home up for any change that alters roles or logins. A stubbed gate test passes with any role list.
