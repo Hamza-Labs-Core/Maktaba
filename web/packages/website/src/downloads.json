@@ -1,5 +1,5 @@
 {
-  "$comment": "The download page's platforms (story 60.11), in the order the page lists them; scripts/download.mjs reads it with the latest stable release. Each pattern is a regular expression over an asset's name, with {v} standing for the release's version (never a typed version). primary: the button's file, the first pattern with an asset (a later one is the fallback when an earlier leg failed); other: the other formats, each a copy key and a pattern, missing ones left out; requires: patterns every one of which must match for a card with no primary file (NAS and Docker links to its chooser); name: the card's title for a platform the copy does not name yet (the phone and TV apps); needs: the requirements line, the same words as copy/download.<lang>.md's <id>.needs; guide: the install guide or help topic, linked only once the site has built it; verify: terminal (the sha256 and a shasum command for the platform's shell) or cosign (the signed checksums.txt). appStore, testFlightPublic, googlePlay and playTestingPublic: a public store listing or testing link (owner action A6); a card with no asset and no listing is not shown. packages: the apt, dnf and Homebrew rows, shown only when the build has MAKTABA_PACKAGES_URL or HOMEBREW_TAP_REPO (owner action A7).",
+  "$comment": "The download page's platforms (story 60.11), in the order the page lists them; scripts/download.mjs reads it with the latest stable release. Each pattern is a regular expression over an asset's name, with {v} standing for the release's version (never a typed version). primary: the button's file, the first pattern with an asset (a later one is the fallback when an earlier leg failed); other: the other formats, each a copy key and a pattern, missing ones left out; requires: patterns every one of which must match for a card with no primary file (NAS and Docker's button goes to its guides on this page, href #nas-guides); name: the card's title for a platform the copy does not name yet (the phone and TV apps); needs: the requirements line, the same words as copy/download.<lang>.md's <id>.needs; guide: the install guide or help topic, linked only once the site has built it (a #anchor: this page's guides section, scripts/download.mjs GUIDES); verify: terminal (the sha256 and a shasum command for the platform's shell) or cosign (the signed checksums.txt). appStore, testFlightPublic, googlePlay and playTestingPublic: a public store listing or testing link (owner action A6); a card with no asset and no listing is not shown. packages: the apt, dnf and Homebrew rows, shown only when the build has MAKTABA_PACKAGES_URL or HOMEBREW_TAP_REPO (owner action A7).",
   "stores": {
     "$comment": "The store links' words, for a card shown by its listing alone (A6). They live here, not in copy/download.*.md, since no page names an app before it is publicly installable (Q5; design/tests/mockups.test.mjs). The store's official badge (each store's badge rules, self-hosted as SVG in static/badges/) replaces the words with the first listing.",
     "appStore": { "en": "Download on the App Store", "ar": "التنزيل من App Store" },
@@ -68,7 +68,7 @@
     {
       "id": "nas",
       "icon": "box",
-      "href": "/install/nas/",
+      "href": "#nas-guides",
       "requires": ["^maktaba-docker-compose\\.yml$"],
       "other": [
         { "key": "nas.other.compose", "pattern": "^maktaba-docker-compose\\.yml$" },
@@ -106,7 +106,7 @@
         "en": "For a machine you look after yourself: the server alone, kept up to date by its package manager",
         "ar": "لجهاز تديرونه بأنفسكم: الخادم وحده، ويحدّثه مدير الحزم"
       },
-      "guide": "/install/",
+      "guide": "#guides",
       "verify": "cosign"
     },
     {

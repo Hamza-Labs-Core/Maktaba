@@ -14,14 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
-- **The Maktaba app draws its own window frame.** On Windows and Linux the window's top bar is
-  Maktaba's: the app's header is the title bar (no system bar above it), with the minimize,
-  maximize and close buttons where each system puts them (on GNOME, as the desktop lays them
-  out), and a menu button that lists the menu bar's items. On Windows 11, Snap Layouts open when
-  the pointer rests on maximize. On the Mac the traffic lights stay and the header sits under
-  them, and the Mac's menu bar is in Arabic when the system is. In Arabic the bar mirrors. A page
-  that cannot draw the frame (another Maktaba in client mode, or an older home) keeps the
-  system's. In English and Arabic.
+- **One page to get Maktaba: maktaba.tv/download.** The download page now lists every setup
+  guide under its download buttons: Synology, TrueNAS, Unraid, QNAP, UGREEN and ASUSTOR, Docker,
+  after setup and troubleshooting, each with one line on what it covers. The NAS card's button
+  goes straight to the NAS guides. maktaba.tv/install now opens the download page, every guide
+  keeps its own address (maktaba.tv/install/synology and the others), and each guide's "All NAS
+  guides" link goes back to it. The site's menu has Download, Help and Messages. In English and
+  Arabic.
 
 - **A full guide for each NAS on maktaba.tv/install.** QNAP, UGREEN and a new ASUSTOR page each
   walk through the same steps as the TrueNAS and Unraid guides: what to check first, the user and
@@ -3778,6 +3777,15 @@ build fails when the two differ.
   for a copy, or the upgrade fails, the home keeps running on PostgreSQL 16, says why in its log,
   and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
   search will use.
+
+- **The Maktaba app draws its own window frame.** On Windows and Linux the window's top bar is
+  Maktaba's: the app's header is the title bar (no system bar above it), with the minimize,
+  maximize and close buttons where each system puts them (on GNOME, as the desktop lays them
+  out), and a menu button that lists the menu bar's items. On Windows 11, Snap Layouts open when
+  the pointer rests on maximize. On the Mac the traffic lights stay and the header sits under
+  them, and the Mac's menu bar is in Arabic when the system is. In Arabic the bar mirrors. A page
+  that cannot draw the frame (another Maktaba in client mode, or an older home) keeps the
+  system's. In English and Arabic.
 
 ### Fixed
 

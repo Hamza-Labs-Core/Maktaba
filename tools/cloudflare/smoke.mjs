@@ -57,7 +57,10 @@ const WEBSITE_PAGES = [
   },
   { host: WEBSITE, path: "/ar/", status: 200, marker: ['<html lang="ar" dir="rtl">', HOME, SITE] },
   { host: WEBSITE, path: "/install/docker/", status: 200, marker: '<main id="app">' },
-  { host: WEBSITE, path: "/install/", status: 200, marker: ['href="/install/nas/"', SITE] },
+  // the download page lists every install guide (60.05, 60.11); the guides' old index redirects there
+  { host: WEBSITE, path: "/download/", status: 200, marker: ['id="nas-guides"', 'href="/install/synology/"', SITE] },
+  { host: WEBSITE, path: "/install/", status: 301, headers: { location: /^\/download\/$/ } },
+  { host: WEBSITE, path: "/ar/install/", status: 301, headers: { location: /^\/ar\/download\/$/ } },
   { host: WEBSITE, path: "/legal/privacy/", status: 200, marker: ['data-legal="privacy"', 'data-policy="CurrentPolicy"', SITE] },
   { host: WEBSITE, path: "/problems/not-found/", status: 200, marker: ['data-problem="not-found"', "https://maktaba.tv/problems/not-found", SITE] },
   { host: WEBSITE, path: "/ar/problems/not-found/", status: 200, marker: ['<html lang="ar" dir="rtl">', 'data-problem="not-found"', SITE] },

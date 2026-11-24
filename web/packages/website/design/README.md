@@ -495,6 +495,14 @@ Anatomy, states, sizes, RTL, and accessible name and role. All use logical prope
   the digest (`.hash`, LTR, wraps anywhere) and the command (part A's code block, LTR).
 - **The need block** (`.need`): "What do I need?", the home computer and the three kinds of
   screen, each with its icon and one line; a link to the install guides.
+- **Guide group and tile** (`.guide-group`, `.guide-tile`; proposed 2026-11-24, when the
+  install chooser became the download page's guides section, built with no mockup of its own):
+  a group is headed like a download card (the 44 px icon ring and an `h3`) and lists its guides
+  as tiles: each tile one `a` (the guide's name in the link colour, underlined, one muted line
+  under it, the onward arrow at the inline end, mirrored in RTL) on `site.surface.section`
+  with a `line.rule` edge that turns `accent.mark` on hover, part A's focus ring. The NAS group
+  spans the frame, its tiles one column under 768, two at 768, three from 1024; the Docker and
+  after-setup groups sit side by side from 768. Name: the link's text, the name then the line.
 - **Feature block** (`.feature`): an icon ring (48 px), an `h3`, two sentences, one link
   "How … works" with the onward arrow. Six in a grid: one column, two at 768, three at 1280.
 - **Device frame** (`figure.device`): the frame, the screenshot (`img`, real alt text,

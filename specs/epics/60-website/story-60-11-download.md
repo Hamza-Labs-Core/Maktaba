@@ -125,3 +125,14 @@ story, so the link check passes.
 | `web/packages/website/static/badges/` | store badges (en, ar) |
 | `.github/workflows/release.yml` | dispatch the site's deploy after a stable release |
 | `tools/release/releasenotes/notes.md.tmpl`, `notes_test.go` | the download line |
+
+## As built: the one page for getting Maktaba (2026-11-24)
+
+`/download/` is now the only page for getting Maktaba: under the device cards it lists every
+setup guide (story 60.05's chooser, folded in; `/install/` redirects here with a 301). See
+[60.05, "As built: one page, Download"](story-60-05-install-guides.md#as-built-one-page-download-2026-11-24).
+The section is new to part B's layouts: a group per kind of machine headed like a card (the icon
+ring and its name), its guides as tiles (a link: the guide's name, one line and the onward arrow,
+the edge brass on hover), the NAS group across the frame and the other two side by side from
+768 px (`src/download.css`). The NAS and Docker card's button goes to `#nas-guides`, its "How to
+install" to the model table (`/install/nas/`); "What do I need?" links `#guides`.

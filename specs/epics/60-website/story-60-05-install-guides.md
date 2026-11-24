@@ -102,3 +102,25 @@ fastest way to turn 45 dead links into working ones, and to let a household actu
 | `web/packages/website/src/pages/install/index.html` (+ `ar/`) | the chooser |
 | `tools/release/releasenotes/notes.md.tmpl`, `notes_test.go` | full links |
 | `web/packages/install/README.md` | Hosting: this site |
+
+## As built: one page, Download (2026-11-24)
+
+The site had two pages for getting Maktaba: the guides' chooser at `/install/` and the download
+page (60.11). They are one page now, `/download/`:
+
+- The download page lists every guide under its cards, in a section of its own ("Set it up,
+  step by step", `#guides`): the six NAS guides (`#nas-guides`, with "Find your NAS", the model
+  table at `/install/nas/`), Docker (`#docker-guide`), and after setup and troubleshooting
+  (`#after-guides`). The words are the chooser's, in `copy/download.<lang>.md` (`guides.*`); the
+  list is `GUIDES` in `scripts/download.mjs`, each guide linked once built. The NAS card's button
+  goes to `#nas-guides`.
+- `/install/`, `/install`, `/ar/install/` and `/ar/install` answer 301 to `/download/` and
+  `/ar/download/` (the Worker, `src/redirects.json`, as `/docs`). The chooser's sources
+  (`src/pages/install/index.html`, `ar/`) are gone, and so is its sitemap entry and social card.
+- Every `/install/<guide>/` address is unchanged. Each guide's "All NAS guides" link goes to
+  `/download/#nas-guides` (`/ar/download/#nas-guides`), and a guide's nav item is Download.
+- The nav and footer have no Install entry: Download, Help, Messages. The home page's "Install
+  guides" button and the "runs on your own computer" feature go to the download page's guides;
+  the 404 pages link Download.
+- The deploy's smoke checks `/download/` (the guides on it) and the two redirects
+  (`tools/cloudflare/smoke.mjs`).

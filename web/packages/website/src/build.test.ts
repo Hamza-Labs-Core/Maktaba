@@ -134,12 +134,12 @@ describe("the built site (dist/)", () => {
       }
     }
     // part A's pages and the 404 send Help to the help pages, not to troubleshooting
-    for (const rel of ["install/index.html", "legal/privacy/index.html", "404.html"])
+    for (const rel of ["legal/privacy/index.html", "404.html"])
       expect(read(rel), rel).toContain('href="/help/"');
     expect(read("ar/404.html")).toContain('href="/ar/help/"');
   });
 
-  it("Phase 3: the problem pages, their index, the legal pages, the chooser and the 404 are in part B's shell", () => {
+  it("Phase 3: the problem pages, their index, the legal pages and the 404 are in part B's shell", () => {
     const moved = [
       "problems/index.html",
       "problems/invalid-query/index.html",
@@ -147,13 +147,11 @@ describe("the built site (dist/)", () => {
       "legal/privacy/index.html",
       "legal/terms/index.html",
       "legal/copyright/index.html",
-      "install/index.html",
       "404.html",
     ];
     const current: Record<string, string | null> = {
       problems: "/problems/",
       legal: null,
-      install: "/install/",
       "404.html": null,
     };
     for (const en of moved)
@@ -184,7 +182,6 @@ describe("the built site (dist/)", () => {
     for (const p of [
       "/",
       "/download/",
-      "/install/",
       "/problems/",
       "/problems/invalid-query/",
       "/legal/terms/",
@@ -294,7 +291,7 @@ describe("the built site (dist/)", () => {
     expect(fs.existsSync(path.join(DIST, "install/assets"))).toBe(true);
   });
 
-  it("60.05 T01: the ten guides and the chooser in both languages, the install assets", () => {
+  it("60.05 T01: the ten guides in both languages, every one on the download page, the install assets", () => {
     const guides = [
       "nas",
       "docker",
@@ -315,7 +312,10 @@ describe("the built site (dist/)", () => {
         .sort();
     expect(dirs("install")).toEqual([...guides].sort());
     expect(dirs("ar/install")).toEqual([...guides].sort());
-    for (const f of ["install/index.html", "ar/install/index.html"]) {
+    // the guides' index is the download page (60.05, 60.11): /install/ redirects there (the Worker)
+    for (const f of ["install/index.html", "ar/install/index.html"])
+      expect(fs.existsSync(path.join(DIST, f)), f).toBe(false);
+    for (const f of ["download/index.html", "ar/download/index.html"]) {
       const html = read(f);
       const prefix = f.startsWith("ar/") ? "/ar" : "";
       for (const g of guides)
@@ -444,7 +444,7 @@ describe("the built site (dist/)", () => {
         }
         // an in-page link (the skip link's #main): links.mjs --dist checks fragments
         if (href.startsWith("#")) continue;
-        const rel = href.replace(/^\//, "");
+        const rel = href.replace(/#.*$/, "").replace(/^\//, "");
         const file = rel === "" || rel.endsWith("/") ? `${rel}index.html` : rel;
         expect(fs.existsSync(path.join(DIST, file)), `${f}: ${href}`).toBe(true);
       }

@@ -18,8 +18,8 @@ access without opening the home to the internet.
 
 Every release is on the [Releases page](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest),
 signed with keyless cosign (Sigstore); its notes say how to verify each file. Each install
-below updates itself from the signed releases. The step-by-step guides for households are at
-[maktaba.tv/install](https://maktaba.tv/install/).
+below updates itself from the signed releases. Every download and the step-by-step guides for households are at
+[maktaba.tv/download](https://maktaba.tv/download/).
 
 How much machine you need depends on the size of the library:
 [docs/hardware.md](docs/hardware.md) has the tiers, measured on a live home.
