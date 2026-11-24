@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="960x640">
+<title>Server setup: welcome</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .addr { margin-block-start: 12px; display: flex; gap: 8px; }
+  .addr .field { flex: 1; }
+  .choice .grow { flex: 1; }
+  .radio { margin-block-start: 10px; }
+</style>
+</head>
+<body>
+<div class="win win11">
+  <header class="titlebar mica">
+    <div class="app"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="wtitle"></span></div>
+    <div class="grow"></div>
+    <div data-caption></div>
+  </header>
+  <div class="wizard">
+    <aside class="brand">
+      <div class="wordmark"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="c.server"></span></div>
+      <ol class="steps">
+        <li class="now"><span class="n" data-t="n1"></span><span data-t="s1"></span></li>
+        <li><span class="n" data-t="n2"></span><span data-t="s2"></span></li>
+        <li><span class="n" data-t="n3"></span><span data-t="s3"></span></li>
+        <li><span class="n" data-t="n4"></span><span data-t="s4"></span></li>
+        <li><span class="n" data-t="n5"></span><span data-t="s5"></span></li>
+      </ol>
+      <div data-arch></div>
+    </aside>
+    <section class="wpage">
+      <div class="wbody">
+        <h1 class="display" data-t="h1"></h1>
+        <p class="lead" data-th="intro"></p>
+        <div style="margin-block-start: 26px">
+          <div class="choice on">
+            <span class="ci"><i data-i="server"></i></span>
+            <div class="grow"><div class="ct" data-th="here"></div><div class="cn" data-t="hereNote"></div><span class="badge brass" style="margin-block-start: 8px" data-t="rec"></span></div>
+            <span class="radio on"></span>
+          </div>
+          <div class="choice">
+            <span class="ci"><i data-i="wifi"></i></span>
+            <div class="grow"><div class="ct" data-t="remote"></div><div class="cn" data-t="remoteNote"></div>
+              <div class="addr"><div class="field"><i data-i="globe" class="s16"></i><span data-t="remoteUrl"></span></div></div></div>
+            <span class="radio"></span>
+          </div>
+        </div>
+      </div>
+      <div class="wfoot">
+        <span class="seg"><span class="ltrword" data-t="en"></span><span data-t="ar"></span></span>
+        <span class="grow"></span>
+        <span class="btn lg primary focus"><span data-th="go"></span><i data-i="onward" class="s16 dir"></i></span>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>
+const pc = '<bdi dir="ltr">Haddad-PC</bdi>';
+MK.applyKit({
+  en: {
+    title: "Server setup: welcome", wtitle: "Set up Maktaba",
+    s1: "Welcome", s2: "What will run", s3: "Your admin account", s4: "Your library folders", s5: "Getting Maktaba ready",
+    h1: "Welcome to Maktaba",
+    intro: `Maktaba can run your library on ${pc}, or connect to a Maktaba that already runs on another machine.`,
+    here: `Run Maktaba on ${pc}`,
+    hereNote: "Maktaba keeps the library here, transcribes and streams. It starts when you sign in, even with this window closed.",
+    rec: "Recommended for the first computer",
+    remote: "Connect to another Maktaba", remoteNote: "This computer watches and manages a home that runs elsewhere.",
+    remoteUrl: "Its address, for example http://192.168.1.20:8080",
+    en: "English", ar: "العربية", go: `Set up ${pc}`,
+  },
+  ar: {
+    title: "إعداد الخادم: مرحبًا", wtitle: "إعداد مكتبة",
+    s1: "مرحبًا", s2: "ما الذي سيعمل", s3: "حساب المدير", s4: "مجلدات مكتبتك", s5: "تجهيز مكتبة",
+    h1: "مرحبًا بك في مكتبة",
+    intro: `يمكن لمكتبة أن تشغّل مكتبتك على ${pc}، أو أن تتصل بمكتبة تعمل على جهاز آخر.`,
+    here: `شغّل مكتبة على ${pc}`,
+    hereNote: "تحفظ مكتبة المكتبة هنا وتفرّغ المحاضرات وتبثّها. تبدأ عند تسجيل الدخول حتى لو كانت هذه النافذة مغلقة.",
+    rec: "موصى به لأول حاسوب",
+    remote: "الاتصال بمكتبة أخرى", remoteNote: "يشاهد هذا الحاسوب جهازًا رئيسيًا يعمل في مكان آخر ويديره.",
+    remoteUrl: "عنوانها، مثل http://192.168.1.20:8080",
+    en: "English", ar: "العربية", go: `إعداد ${pc}`,
+  },
+});
+</script>
+</body>
+</html>

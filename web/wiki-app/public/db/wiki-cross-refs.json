@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 60,
-    "stories": 744,
+    "stories": 746,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -2047,6 +2047,24 @@
       "plan_files": [
         "specs/epics/13-desktop/plan-13-08-auto-update.md"
       ]
+    },
+    {
+      "id": "13.09",
+      "epic": 13,
+      "num": "09",
+      "slug": "desktop-design",
+      "title": "Design: Maktaba's own look on the desktop, as reviewed mockups",
+      "story_file": "specs/epics/13-desktop/story-13-09-desktop-design.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.18",
+      "epic": 13,
+      "num": "18",
+      "slug": "player-libmpv",
+      "title": "The Player plays with libmpv: direct play, reported to the home",
+      "story_file": "specs/epics/13-desktop/story-13-18-player-libmpv.md",
+      "plan_files": []
     },
     {
       "id": "14.01",

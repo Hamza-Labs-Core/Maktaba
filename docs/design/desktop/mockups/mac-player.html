@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1200x780">
+<title>Player for Mac: Home</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  /* macOS keeps its own window: the traffic lights, the translucent sidebar, the unified
+     toolbar. What changes is what the app draws: brass selection, the display face, the
+     side the sidebar sits on in Arabic. */
+  .win.mac { flex-direction: row; background: var(--dk-window); }
+  .mside { flex: none; inline-size: 232px; display: flex; flex-direction: column; padding: 12px 10px; background: rgba(22,30,46,.92); border-inline-end: 1px solid rgba(255,255,255,.06); }
+  .mside .traffic { padding-block: 4px 18px; padding-inline: 8px; }
+  .mside .grp { padding: 14px 10px 4px; color: var(--dk-muted); font-size: 11px; font-weight: 600; }
+  .mside a { position: relative; display: flex; align-items: center; gap: 10px; min-block-size: 32px; padding-inline: 10px; border-radius: 8px; color: var(--dk-fg); }
+  .mside a .i { color: var(--dk-brass); inline-size: 18px; block-size: 18px; }
+  .mside a.on { background: var(--dk-chosen); font-weight: 600; }
+  .mside a .end { margin-inline-start: auto; color: var(--dk-muted); font-size: 12px; }
+  .mmain { flex: 1; display: flex; flex-direction: column; min-inline-size: 0; }
+  .tool { display: flex; align-items: center; gap: 12px; block-size: 52px; padding-inline: 20px; border-block-end: 1px solid rgba(255,255,255,.06); }
+  .tool h1 { font-size: 17px; font-weight: 600; }
+  .tool .grow { flex: 1; }
+  .tool .field { inline-size: 260px; block-size: 30px; }
+  .hero { position: relative; block-size: 300px; margin: 18px 24px 0; border-radius: 14px; overflow: hidden; }
+  .hero img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 50% 30%; }
+  .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(0deg, rgba(11,17,28,.95) 0%, rgba(11,17,28,.35) 55%, rgba(11,17,28,0) 100%); }
+  .hero .in { position: absolute; z-index: 1; inset-inline-start: 28px; inset-block-end: 24px; }
+  .hero .kick { color: var(--dk-brass); font-weight: 600; font-size: var(--dk-t-small); }
+  .hero h2 { font-size: 44px; line-height: 52px; }
+  :root[dir="rtl"] .hero h2 { font-size: 48px; line-height: 70px; }
+  .hero .acts { display: flex; gap: 10px; margin-block-start: 12px; }
+  .sec { padding-inline: 24px; }
+  .shelf .card { inline-size: 222px; }
+</style>
+</head>
+<body>
+<div class="win mac">
+  <aside class="mside">
+    <div data-traffic></div>
+    <a class="on"><i data-i="home"></i><span data-t="nav.home"></span></a>
+    <a><i data-i="library"></i><span data-t="nav.libraries"></span></a>
+    <a><i data-i="live"></i><span data-t="nav.live"></span></a>
+    <a><i data-i="search"></i><span data-t="nav.search"></span></a>
+    <div class="grp" data-t="pinned"></div>
+    <a><i data-i="pin"></i><span data-t="films"></span><span class="end num" data-t="six"></span></a>
+    <a><i data-i="pin"></i><span data-t="shorts"></span><span class="end num" data-t="four"></span></a>
+    <span style="flex:1"></span>
+    <a><i data-i="profile"></i><span data-t="nav.profile"></span></a>
+  </aside>
+  <section class="mmain">
+    <div class="tool"><h1 data-t="nav.home"></h1><span class="grow"></span><div class="field"><i data-i="search" class="s16"></i><span data-t="nav.search"></span></div><div class="acct"><span class="av" data-t="c.initial"></span><span data-t="c.home"></span></div></div>
+    <div class="hero">
+      <img src="art/aurora.jpg" alt="">
+      <div class="in"><div class="kick" data-t="kick"></div><h2 class="display" data-t="name"></h2>
+        <div class="acts"><span class="btn primary"><i data-i="play" class="s16"></i><span data-t="play"></span></span><span class="btn" data-t="more"></span></div></div>
+    </div>
+    <div class="sec">
+      <div class="h-section"><h2 class="display" style="font-size: 22px" data-t="cw"></h2><a data-t="all"></a></div>
+      <div class="shelf">
+        <div class="card"><div class="art"><img src="art/saturn.jpg" alt=""><span class="prog"><i style="inline-size: 49%"></i></span></div><div class="t" data-t="v1"></div><div class="m" data-t="m1"></div></div>
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/llamigos-backdrop.jpg" alt=""><span class="prog"><i style="inline-size: 47%"></i></span></div><div class="t" data-t="v2"></div><div class="m" data-t="m2"></div></div>
+        <div class="card"><div class="art"><img src="../../../../tests/fixtures/demo-library/art/big-buck-bunny-backdrop.jpg" alt=""></div><div class="t" data-t="v3"></div><div class="m" data-t="m3"></div></div>
+        <div class="card"><div class="art"><img src="art/reef.jpg" alt=""></div><div class="t" data-t="v4"></div><div class="m" data-t="m4"></div></div>
+      </div>
+    </div>
+  </section>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Player for Mac: Home", pinned: "Pinned", films: "Documentaries", shorts: "Shorts", six: "6", four: "4",
+    kick: "Picked for you", name: "The Northern Lights", play: "Play", more: "More options",
+    cw: "Continue Watching", all: "See all",
+    v1: "Journey to Saturn", m1: "26:40 left", v2: "Caminandes: Llamigos", m2: "1:20 left", v3: "Big Buck Bunny", m3: "Watch again", v4: "Life on the Reef", m4: "New",
+  },
+  ar: {
+    title: "المشغّل للماك: الرئيسية", pinned: "المثبّتة", films: "وثائقيات", shorts: "أفلام قصيرة", six: "٦", four: "٤",
+    kick: "مقترح لك", name: "الشفق القطبي", play: "تشغيل", more: "خيارات أخرى",
+    cw: "تابع المشاهدة", all: "عرض الكل",
+    v1: "رحلة إلى زحل", m1: "بقي ٢٦:٤٠", v2: "كاميناندس: صديقا اللاما", m2: "بقي ١:٢٠", v3: "الأرنب الكبير", m3: "شاهده مجددًا", v4: "الحياة في الشعاب المرجانية", m4: "جديد",
+  },
+});
+</script>
+</body>
+</html>
