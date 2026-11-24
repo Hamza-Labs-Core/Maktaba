@@ -205,7 +205,7 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 			t.Fatalf("%s: Down to %d, %v (%s), want 3", name, slot, ok, why)
 		}
 		u := &updates{api: apiCmd("v0.3.1")}
-		must(u.migrateDown(ctx, &c.j, slot))
+		must(u.migrateDown(ctx, &c.j, slot, gate("v0.3.1")))
 		if ok, err := recordFile(apppayload.DatabasePath(stateDir)).MarkDown("v0.3.1", "v0.1.0", "watch_timeout"); !ok || err != nil {
 			t.Fatalf("%s: MarkDown %v %v", name, ok, err)
 		}
@@ -217,7 +217,7 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 	// same, and the record still names C
 	must(start("v0.3.2"))
 	u := &updates{api: apiCmd("v0.3.2")}
-	if err := u.migrateDown(ctx, nil, 3); err == nil {
+	if err := u.migrateDown(ctx, nil, 3, gate("v0.3.2")); err == nil {
 		t.Fatal("a Down script that failed is said to have worked")
 	}
 	if n := one(`SELECT (SELECT count(*) FROM b_t) + (SELECT count(*) FROM a_t WHERE b_c = 7)`); n != 3 {
