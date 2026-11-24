@@ -14,6 +14,15 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Maktaba app draws its own window frame.** On Windows and Linux the window's top bar is
+  Maktaba's: the app's header is the title bar (no system bar above it), with the minimize,
+  maximize and close buttons where each system puts them (on GNOME, as the desktop lays them
+  out), and a menu button that lists the menu bar's items. On Windows 11, Snap Layouts open when
+  the pointer rests on maximize. On the Mac the traffic lights stay and the header sits under
+  them, and the Mac's menu bar is in Arabic when the system is. In Arabic the bar mirrors. A page
+  that cannot draw the frame (another Maktaba in client mode, or an older home) keeps the
+  system's. In English and Arabic.
+
 - **A full guide for each NAS on maktaba.tv/install.** QNAP, UGREEN and a new ASUSTOR page each
   walk through the same steps as the TrueNAS and Unraid guides: what to check first, the user and
   its uid:gid, the folders and their permissions, the install in the NAS's own app, the setup and

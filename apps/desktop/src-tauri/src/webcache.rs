@@ -183,7 +183,14 @@ pub fn open_main(
     } else {
         app.manage(Gate::open());
     }
-    let window = WebviewWindowBuilder::from_config(app, &config)?.build()?;
+    // story 13.10: each page has CLAIM_WAIT to draw Maktaba's frame, or gets the system's back
+    let window = WebviewWindowBuilder::from_config(app, &config)?
+        .on_page_load(|w, load| {
+            if load.event() == tauri::webview::PageLoadEvent::Started {
+                crate::frame::on_page_load(&w);
+            }
+        })
+        .build()?;
     keep_on_screen(&window, &config);
     if !start.clear {
         return Ok(());

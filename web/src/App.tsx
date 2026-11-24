@@ -9,6 +9,7 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { AppShell, MoreMenu } from "./components/AppShell";
 import { DesktopBridge } from "./components/DesktopBridge";
+import { DesktopFrame } from "./components/DesktopFrame";
 import { DesktopGate } from "./components/DesktopGate";
 import { NodeGuard } from "./components/NodeGuard";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
@@ -110,6 +111,9 @@ export function App() {
       <RouteErrorBoundary resetKey="app">
         <ThemeSync>
           <ToastProvider>
+            {/* Epic 13 story 13.10: the desktop app's own window frame (a title bar for the
+                pages without the app's header; the header draws it otherwise) */}
+            <DesktopFrame />
             {/* Epic 36: Maktaba.app's first-run setup / server starting screens */}
             <DesktopGate>
               {/* Epic 35: a paused node shows the paused page instead of the app */}

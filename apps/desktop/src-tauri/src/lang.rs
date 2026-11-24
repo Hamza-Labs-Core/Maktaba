@@ -399,6 +399,138 @@ pub static AR: Words = Words {
     list_sep: "، ",
 };
 
+/// The window's menu bar, in the system's language (story 13.10): its menus and items on
+/// the Mac, and the title bar's menu on Windows and Linux, which lists the same items
+/// (frame.rs). The custom items' ids are the web app's contract (lib.rs `build_menu`); only
+/// their words are here.
+pub struct MenuWords {
+    pub app: &'static str,
+    pub about: &'static str,
+    pub settings: &'static str,
+    pub switch_server: &'static str,
+    pub quit: &'static str,
+    pub file: &'static str,
+    pub new_window: &'static str,
+    pub new_private: &'static str,
+    pub close_window: &'static str,
+    pub edit: &'static str,
+    pub undo: &'static str,
+    pub redo: &'static str,
+    pub cut: &'static str,
+    pub copy: &'static str,
+    pub paste: &'static str,
+    pub select_all: &'static str,
+    pub view: &'static str,
+    pub find: &'static str,
+    pub full_screen: &'static str,
+    pub big_screen: &'static str,
+    pub leave_big_screen: &'static str,
+    pub start_big_screen: &'static str,
+    pub library: &'static str,
+    pub scan_library: &'static str,
+    /// `{n}`: the slot, 1 to 9, in the language's digits
+    pub library_slot: &'static str,
+    pub window: &'static str,
+    pub minimize: &'static str,
+    pub zoom: &'static str,
+    pub help: &'static str,
+    pub documentation: &'static str,
+    pub report_problem: &'static str,
+}
+
+pub static MENU_EN: MenuWords = MenuWords {
+    app: "Maktaba",
+    about: "About Maktaba",
+    settings: "Settings…",
+    switch_server: "Switch Server…",
+    quit: "Quit Maktaba",
+    file: "File",
+    new_window: "New Window",
+    new_private: "New Private Window",
+    close_window: "Close Window",
+    edit: "Edit",
+    undo: "Undo",
+    redo: "Redo",
+    cut: "Cut",
+    copy: "Copy",
+    paste: "Paste",
+    select_all: "Select All",
+    view: "View",
+    find: "Find / Search…",
+    full_screen: "Enter Full Screen",
+    big_screen: "Big Screen",
+    leave_big_screen: "Leave Big Screen",
+    start_big_screen: "Start in Big Screen",
+    library: "Library",
+    scan_library: "Scan Library",
+    library_slot: "Library {n}",
+    window: "Window",
+    minimize: "Minimize",
+    zoom: "Zoom",
+    help: "Help",
+    documentation: "Documentation",
+    report_problem: "Report a Problem…",
+};
+
+pub static MENU_AR: MenuWords = MenuWords {
+    app: "مكتبة",
+    about: "حول مكتبة",
+    settings: "الإعدادات…",
+    switch_server: "تبديل الخادم…",
+    quit: "إنهاء مكتبة",
+    file: "ملف",
+    new_window: "نافذة جديدة",
+    new_private: "نافذة خاصة جديدة",
+    close_window: "إغلاق النافذة",
+    edit: "تحرير",
+    undo: "تراجع",
+    redo: "إعادة",
+    cut: "قص",
+    copy: "نسخ",
+    paste: "لصق",
+    select_all: "تحديد الكل",
+    view: "عرض",
+    find: "بحث…",
+    full_screen: "ملء الشاشة",
+    big_screen: "الشاشة الكبيرة",
+    leave_big_screen: "الخروج من الشاشة الكبيرة",
+    start_big_screen: "البدء بالشاشة الكبيرة",
+    library: "المكتبة",
+    scan_library: "فحص المكتبة",
+    library_slot: "المكتبة {n}",
+    window: "نافذة",
+    minimize: "تصغير",
+    zoom: "تكبير",
+    help: "مساعدة",
+    documentation: "دليل الاستخدام",
+    report_problem: "الإبلاغ عن مشكلة…",
+};
+
+impl Lang {
+    /// The menu bar's words (MenuWords).
+    pub fn menu(self) -> &'static MenuWords {
+        match self {
+            Lang::En => &MENU_EN,
+            Lang::Ar => &MENU_AR,
+        }
+    }
+
+    /// `n` in the language's digits: Arabic-Indic in Arabic, as the apps write numbers.
+    pub fn digits(self, n: u32) -> String {
+        let s = n.to_string();
+        match self {
+            Lang::En => s,
+            Lang::Ar => s
+                .chars()
+                .map(|c| {
+                    c.to_digit(10)
+                        .map_or(c, |d| char::from_u32(0x0660 + d).unwrap_or(c))
+                })
+                .collect(),
+        }
+    }
+}
+
 /// Why an update failed, in `lang`: the reason of each code of attempts.rs (update-
 /// attempts.md), plain words for the menu, the notification and the dialog.
 pub fn update_reason(lang: Lang, code: &str) -> &'static str {
@@ -518,6 +650,60 @@ pub fn fill(template: &str, vars: &[(&str, &str)]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every menu word of a table, by name.
+    fn menu_lines(w: &MenuWords) -> Vec<(&'static str, &'static str)> {
+        vec![
+            ("app", w.app),
+            ("about", w.about),
+            ("settings", w.settings),
+            ("switch_server", w.switch_server),
+            ("quit", w.quit),
+            ("file", w.file),
+            ("new_window", w.new_window),
+            ("new_private", w.new_private),
+            ("close_window", w.close_window),
+            ("edit", w.edit),
+            ("undo", w.undo),
+            ("redo", w.redo),
+            ("cut", w.cut),
+            ("copy", w.copy),
+            ("paste", w.paste),
+            ("select_all", w.select_all),
+            ("view", w.view),
+            ("find", w.find),
+            ("full_screen", w.full_screen),
+            ("big_screen", w.big_screen),
+            ("leave_big_screen", w.leave_big_screen),
+            ("start_big_screen", w.start_big_screen),
+            ("library", w.library),
+            ("scan_library", w.scan_library),
+            ("library_slot", w.library_slot),
+            ("window", w.window),
+            ("minimize", w.minimize),
+            ("zoom", w.zoom),
+            ("help", w.help),
+            ("documentation", w.documentation),
+            ("report_problem", w.report_problem),
+        ]
+    }
+
+    #[test]
+    fn every_menu_word_is_in_both_languages() {
+        for ((name, en), (_, ar)) in menu_lines(&MENU_EN).into_iter().zip(menu_lines(&MENU_AR)) {
+            assert!(!en.trim().is_empty(), "{name}: no English");
+            assert!(!ar.trim().is_empty(), "{name}: no Arabic");
+            assert_ne!(en, ar, "{name}: the Arabic is the English");
+            assert_eq!(en.contains("{n}"), ar.contains("{n}"), "{name}: the slot");
+        }
+    }
+
+    #[test]
+    fn digits_follow_the_language() {
+        assert_eq!(Lang::En.digits(7), "7");
+        assert_eq!(Lang::Ar.digits(7), "٧");
+        assert_eq!(Lang::Ar.digits(10), "١٠");
+    }
 
     /// Every line of a table, by name, with the `{names}` it fills.
     fn lines(w: &Words) -> Vec<(&'static str, Option<&'static str>)> {
