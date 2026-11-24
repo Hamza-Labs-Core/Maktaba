@@ -107,7 +107,10 @@ mpvconf=(--prefix="$prefix" --libdir=lib --buildtype=release --default-library=s
   -Dvapoursynth=disabled -Dlcms2=disabled -Djpeg=disabled -Dmanpage-build=disabled
   -Dhtml-build=disabled -Dvulkan=disabled -Dgl=disabled -Dx11=disabled -Dwayland=disabled
   -Ddrm=disabled -Dvaapi=disabled -Dcuda-hwaccel=disabled -Dcuda-interop=disabled
-  -Dsdl2-audio=disabled -Dsdl2-video=disabled -Dopenal=disabled)
+  -Dsdl2-audio=disabled -Dsdl2-video=disabled -Dopenal=disabled
+  # mpv 0.42's curl stream backend (on whenever curl is found): the Player streams through
+  # FFmpeg's HTTP from its own local proxy, and curl would bring TLS, SSH and IDN with it
+  -Dlibcurl=disabled)
 if [ "$os" = linux ]; then
   # FFmpeg's, dav1d's and libplacebo's symbols stay inside libmpv: exported, they would meet
   # another FFmpeg in the same process (JavaFX's media plugin links the system's)
