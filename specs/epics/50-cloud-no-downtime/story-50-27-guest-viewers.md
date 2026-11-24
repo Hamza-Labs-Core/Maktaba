@@ -1,11 +1,13 @@
-# Story 50.27 — Guest viewers: the watch pages and the Maktaba apps
+# Story 50.27 — Guest viewers: invited friends on the watch pages and the Maktaba apps
 
 > Epic 50 · Phase B · Depends on: 50.26, Epic 34.5 (site UI), Epic 34.6 (channel switching) ·
 > Needed by: the broadcasting gate
 
 ## Why
 
-Guests watch on the web or on a TV. Epic 34 already has a site UI and `@maktaba/tvplayer` (on
+Guests are friends a publisher invited (README §14: broadcasting is by invitation only). A
+guest may have no Maktaba account; the invite is what lets them in. Guests watch on the web or
+on a TV. Epic 34 already has a site UI and `@maktaba/tvplayer` (on
 main since PR #87) for one home's public site. This story makes the UI multi-tenant on
 `watch.maktaba.tv`, and adds **Watch a broadcast** to every Maktaba Player and TV app. Every
 string ships in English and Arabic together.
@@ -16,13 +18,16 @@ string ships in English and Arabic together.
 
 | Page | What |
 |---|---|
-| `/<lang>/<publisher>` | The publisher's channel grid: the channels the guest's pass or the open session allows, with now and next |
+| `/<lang>/<publisher>` | The publisher's channel grid: the channels the guest's pass allows, with now and next |
 | `/<lang>/<publisher>/<channel>` | Player, now and next, today's guide, attribution for CC items (50.23), the Report button (50.24) |
 | `/<lang>/<publisher>/guide` | The EPG grid for the publisher's channels |
 | `/i/<invite>` | Redeem an invite (50.26), then go to the channel or the grid |
-| `/pair` | Type a TV short code on a phone (§2) |
+| `/pair` | Pair a TV from a phone by redeeming an invite on it (§2) |
 | `/<lang>/legal/*` | Copyright (50.24), terms, privacy |
 
+- **Only with a guest pass.** Every page but `/i/<invite>`, `/pair` and the legal pages needs
+  a guest pass (50.26 §2). Without one it shows the `broadcast.invite.required` page, with no
+  channel, guide or publisher detail, and the pages are never indexed.
 - **Language:** Arabic (RTL) by default, and English. The `/ar/` and `/en/` prefixes decide;
   otherwise `Accept-Language` (Epic 34 R5.3).
 - **Player:** `@maktaba/tvplayer`, with a resolver over `/api/v1/play` and neighbour tokens (Epic
@@ -46,17 +51,19 @@ string ships in English and Arabic together.
 
 | App | Entry | How the guest gets in |
 |---|---|---|
-| Apple TV (tvOS) | Home → **Watch a broadcast** | type the publisher's handle and the invite's short code (`MK-` and four letters or digits; a code belongs to one publisher, so it is typed with the handle) with the remote, or show a QR code that opens `watch.maktaba.tv/pair?tv=<nonce>` on a phone, where the guest taps an invite or opens the channel; the TV receives the pass over a long-poll (`/api/v1/pair/<nonce>`, 10 min) |
+| Apple TV (tvOS) | Home → **Watch a broadcast** | type the publisher's handle and the invite's short code (`MK-` and four letters or digits; a code belongs to one publisher, so it is typed with the handle) with the remote, or show a QR code that opens `watch.maktaba.tv/pair?tv=<nonce>` on a phone, where the guest picks an invite they hold or opens a new invite link; the TV receives a pass for that invite over a long-poll (`/api/v1/pair/<nonce>`, 10 min) |
 | iOS, iPadOS | open an invite link (universal link) or scan a QR code; the menu → Watch a broadcast | the pass goes in the keychain |
 | Android, Android TV | the same (app links, QR code, short code); Android TV uses the code and phone pairing flow | the pass goes in the keystore |
-| Desktop player, web app | open the link | cookie or local store |
+| Desktop player, web app | open the invite link | cookie or local store |
 
-- The guest flow needs **no Maktaba or home account**. It is a separate space in the app: the
-  guest sees only that publisher's channels and guide, and none of the app's home features.
+- The guest flow needs **no Maktaba or home account**, only an invite. It is a separate space
+  in the app: the guest sees only that publisher's channels and guide, and none of the app's
+  home features. Nothing in the app finds or lists a broadcast the guest wasn't invited to.
 - Several publishers can be saved. **Saved broadcasts** lists them, with a "Remove" button.
 - **Native players** play the HLS from `live.maktaba.tv` with the token in the path, so no
   headers are needed. They heartbeat through the play API.
-- The Report button is in the player's menu on every app.
+- The Report button is in the player's menu on every app. Whether it stays, or becomes *Leave
+  channel*, is the open decision `broadcast-invite-only-copyright` (README §14.10).
 - Every string ships in English and Arabic (Apple `Localizable.xcstrings`, Android `values`
   and `values-ar`, the web `en.json` and `ar.json`).
 
@@ -87,6 +94,9 @@ an EN/AR string and a "try again" action where it helps.
 - **Given** a publisher page,
   **when** it renders,
   **then** it contains no link to any other publisher.
+- **Given** a browser with no guest pass,
+  **when** it opens a publisher's grid or a channel page,
+  **then** it sees the `broadcast.invite.required` page, with no channel or guide shown.
 
 ## Test cases
 
@@ -98,7 +108,7 @@ an EN/AR string and a "try again" action where it helps.
 | T04 | unit (Kotlin, Robolectric, logging=stdout) | guest pass store, the pairing poll | the same | the same |
 | T05 | UI test (CI only, a throwaway tvOS simulator) | the app | type a short code; the QR pairing with a fake phone call | plays |
 | T06 | UI test (CI only, Android TV emulator) | the app | short code | plays |
-| T07 | unit | no-directory rule | render publisher pages | no foreign-publisher link |
+| T07 | unit | no-directory and invite-only rules | render publisher pages with and without a pass | no foreign-publisher link; without a pass, only the invite-required page |
 | T08 | Arabic | every new key in every app | strings check | present |
 
 ## Edge cases

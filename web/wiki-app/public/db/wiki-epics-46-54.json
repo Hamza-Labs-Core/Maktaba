@@ -2638,7 +2638,7 @@
       "title": "Takedown, reports and repeat infringers",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.24 — Takedown, reports and repeat infringers\n\n> Epic 50 · Phase B · Depends on: 50.12 (incident handling), 50.23, 50.25 · Needed by: the\n> broadcasting gate\n\n> **Not legal advice. Confirm with a lawyer before launch** (README §14.9).\n\n## Why\n\nMaktaba Cloud is an **infrastructure and hosting provider**: it carries publishers' streams and\ncharges for infrastructure, not content (README §14.6). Hosting safe harbours (US DMCA § 512(c);\nthe EU DSA's hosting rules) protect a host that has certain things in place:\n\n- a designated agent;\n- notice and takedown;\n- a repeat-infringer policy;\n-",
+      "content": "# Story 50.24 — Takedown, reports and repeat infringers\n\n> Epic 50 · Phase B · Depends on: 50.12 (incident handling), 50.23, 50.25 · Needed by: the\n> broadcasting gate\n\n> **Not legal advice. Confirm with a lawyer before launch** (README §14.9).\n\n> **Invite-only (2026-11-24).** This story was written when channels could be open to anyone.\n> Broadcasting is now invitation only (README §14), so how much of it stays is an open decision,\n> `broadcast-invite-only-copyright` (README §14.10). Its recommended answer keeps the designated\n> agent, notice and takedown, counter-notices and strikes, and rep",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2687,10 +2687,10 @@
     {
       "id": "story-50.26",
       "type": "story",
-      "title": "Viewer access: invite and open; limits and tokens",
+      "title": "Viewer access by invitation; limits and tokens",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.26 — Viewer access: invite and open; limits and tokens\n\n> Epic 50 · Phase B · Depends on: 50.20, 50.21 · Needed by: 50.27, 50.29\n\n## Why\n\nViewers aren't users of the home and **never pay** (decided 2026-11-03). Access is one of\ntwo modes:\n\n- `invite` (the default): the publisher decides who;\n- `open`: anyone with the link.\n\nBoth modes need the same protections against scraping and cost abuse that Epic 34 specced for its\nsite (34.4, 34.9): short-lived tokens refreshed by a heartbeat, concurrency limits, and per-IP\nlimits.\n\n## Description\n\n### 1. Invite\n\n- The publisher creates **invi",
+      "content": "# Story 50.26 — Viewer access by invitation; limits and tokens\n\n> Epic 50 · Phase B · Depends on: 50.20, 50.21 · Needed by: 50.27, 50.29, 50.36\n\n## Why\n\nViewers aren't users of the home and **never pay** (decided 2026-11-03). Broadcasting exists\nso people can subscribe to friends' channels, so **access is by invitation only** (decided\n2026-11-24, replacing the earlier choice of `invite` or `open`): the publisher decides who, and\nnobody else can see the channel. There are no open links, no public watch pages and no\ndirectory. The `open` mode this story first specified, and that was built, is re",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2713,10 +2713,10 @@
     {
       "id": "story-50.27",
       "type": "story",
-      "title": "Guest viewers: the watch pages and the Maktaba apps",
+      "title": "Guest viewers: invited friends on the watch pages and the Maktaba apps",
       "epic": "50-cloud-no-downtime",
       "phase": 5,
-      "content": "# Story 50.27 — Guest viewers: the watch pages and the Maktaba apps\n\n> Epic 50 · Phase B · Depends on: 50.26, Epic 34.5 (site UI), Epic 34.6 (channel switching) ·\n> Needed by: the broadcasting gate\n\n## Why\n\nGuests watch on the web or on a TV. Epic 34 already has a site UI and `@maktaba/tvplayer` (on\nmain since PR #87) for one home's public site. This story makes the UI multi-tenant on\n`watch.maktaba.tv`, and adds **Watch a broadcast** to every Maktaba Player and TV app. Every\nstring ships in English and Arabic together.\n\n## Description\n\n### 1. The watch pages (`watch.maktaba.tv`)\n\n| Page | Wha",
+      "content": "# Story 50.27 — Guest viewers: invited friends on the watch pages and the Maktaba apps\n\n> Epic 50 · Phase B · Depends on: 50.26, Epic 34.5 (site UI), Epic 34.6 (channel switching) ·\n> Needed by: the broadcasting gate\n\n## Why\n\nGuests are friends a publisher invited (README §14: broadcasting is by invitation only). A\nguest may have no Maktaba account; the invite is what lets them in. Guests watch on the web or\non a TV. Epic 34 already has a site UI and `@maktaba/tvplayer` (on\nmain since PR #87) for one home's public site. This story makes the UI multi-tenant on\n`watch.maktaba.tv`, and adds **Wat",
       "tags": [
         "story",
         "50-cloud-no-downtime",
@@ -2962,6 +2962,32 @@
       "db_tables": [],
       "metadata": {
         "slug": "remote-access-capability"
+      }
+    },
+    {
+      "id": "story-50.36",
+      "type": "story",
+      "title": "Invite-only broadcasting: close the open links",
+      "epic": "50-cloud-no-downtime",
+      "phase": 5,
+      "content": "# Story 50.36 — Invite-only broadcasting: close the open links\n\n> Epic 50 · Phase B · Depends on: 50.26, 50.27 · Needed by: the broadcasting gate\n\n## Why\n\nBroadcasting exists so people can subscribe to friends' channels, so access is by invitation\nonly (README §14, decided 2026-11-24). A channel is visible only to the people its publisher\ninvited: no open links, no public watch pages, no directory.\n\n50.26 and 50.27 first specified a second mode, `open` (anyone with the link, after a Turnstile\ncheck in a browser or an app attestation in an app), and it was built. This story removes it from\never",
+      "tags": [
+        "story",
+        "50-cloud-no-downtime",
+        "phase-5"
+      ],
+      "related": [
+        "epic-50-cloud-no-downtime"
+      ],
+      "files": {
+        "story": "specs/epics/50-cloud-no-downtime/story-50-36-close-open-links.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "close-open-links"
       }
     },
     {

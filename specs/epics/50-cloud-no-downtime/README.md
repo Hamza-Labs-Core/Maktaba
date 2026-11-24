@@ -9,8 +9,9 @@
 > **Research:** [research.md](research.md): the code as it is, Plex, Jellyfin,
 > Emby, Tailscale, Cloudflare Tunnel, Hetzner prices, all with sources.
 > **Wiki:** [epic-50-cloud-no-downtime.md](../../../docs/wiki/epics/epic-50-cloud-no-downtime.md).
-> **Home broadcasting** (publishing a home's TV channels to people outside it, the Broadcaster
-> tier): §14, research in [research-broadcasting.md](research-broadcasting.md), stories 50.20–50.29.
+> **Home broadcasting** (publishing a home's TV channels to friends outside it, by invitation
+> only, the Broadcaster tier): §14, research in [research-broadcasting.md](research-broadcasting.md),
+> stories 50.20–50.29 and 50.36.
 > **Cloudflare in front** (the user portal and the operator console on `admin.maktaba.tv`
 > behind the Cloudflare proxy, the origin only through a Tunnel, staff sign-in with MFA): §15,
 > stories 50.30–50.34.
@@ -93,13 +94,14 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | F11 | **Plans the relay enforces.** Free: no relay. Basic: relay capped at ~3 Mbps (the home transcodes down to it), 2 relayed streams, 500 GB a month soft fair use. Pro: full quality within an allowance and N streams, optional pay-as-you-go up to a user-set cap, paid extra streams, then Basic's capped quality. A paid plan never cuts relayed play off. Metered, billed through usage-based items at a payment provider TBD. | 50.19 |
 | F12 | **Home broadcasting: the Broadcaster tier** (§14.4). Pro gains guest sharing (1 invite-only channel on demand, 5 viewers, 50 viewer-hours); Broadcaster, an add-on to Pro, gives 3 channels, 100 concurrent viewers, 5,000 viewer-hours, up to 1080p, then optional pay-as-you-go viewer-hours with a cap, then the lowest rung, then new viewers wait. A viewer already playing is never stopped by a limit. Billed through the same payment provider (TBD). | 50.20 |
 | F13 | **The broadcast edge.** The home pushes each segment of each rendition once to Maktaba's Cloudflare edge (Worker, Durable Object, R2). Viewers never reach the home or the Hetzner relay. Segments are cached under token-free keys, so the home's upload doesn't depend on the number of viewers. Stream is a switchable fallback. | 50.21 |
-| F14 | **The home publishes channels**, with the ladder at home (top rung `copy`), an uplink check (≤ 50 % of the measured uplink), encoder-slot accounting against `max_active_channels`, always-on for open channels and on demand for invite-only ones, and an offline slate. | 50.22 |
+| F14 | **The home publishes channels**, with the ladder at home (top rung `copy`), an uplink check (≤ 50 % of the measured uplink), encoder-slot accounting against `max_active_channels`, always-on for Broadcaster channels and on demand for Pro guest sharing, and an offline slate. | 50.22 |
 | F15 | **Only publishable items air** (a safety feature on the publisher's home): own recordings, Creative Commons (CC BY detected at YouTube intake) and sources with a recorded permission and proof link; the scheduler skips the rest while a channel is published; optional geo rules. Maktaba Cloud does no curation: channel building, scheduling and intake stay on the home. | 50.23 |
-| F16 | **What hosting status requires** (Maktaba charges for infrastructure, not content): a designated agent, notice and takedown (EN/AR form, counter-notice), a repeat-infringer policy (3 strikes in 12 months), acting on actual knowledge, publisher terms that put rights on the publisher; a Report button on every watch surface and a moderation queue for service admins. | 50.24 |
+| F16 | **What hosting status requires** (Maktaba charges for infrastructure, not content): a designated agent, notice and takedown (EN/AR form, counter-notice), a repeat-infringer policy (3 strikes in 12 months), acting on actual knowledge, publisher terms that put rights on the publisher; a Report button on every watch surface and a moderation queue for service admins. How much of this invite-only broadcasting still needs is an open decision (§14.10, `broadcast-invite-only-copyright`). | 50.24 |
 | F17 | **Kill switch.** Per channel, publisher, home or global, through a signed broadcast revocation list (the Epic 54 pattern) that the edge and homes honour within 60 s, plus a break-glass switch. | 50.25 |
-| F18 | **Viewer access, free for viewers:** `invite` (default) or `open` (Turnstile, verified publishers) only; 10-minute heartbeat tokens, concurrency and per-IP limits. | 50.26 |
-| F19 | **Guest viewers** on `watch.maktaba.tv` and in every Maktaba Player and TV app (link, QR or short code), in English and Arabic. | 50.27 |
-| F20 | **Viewer analytics for the publisher** through Epic 53 (no personal data, small counts folded), and a canary broadcast probed from outside. | 50.28 |
+| F18 | **Viewer access by invitation only, free for viewers:** nobody watches a channel without an invite from its publisher; no open links, no public watch pages, no directory. 10-minute heartbeat tokens, concurrency and per-IP limits. | 50.26 |
+| F19 | **Guest viewers** are invited friends who need no Maktaba account. They redeem an invite on `watch.maktaba.tv` or in every Maktaba Player and TV app (the invite link, a QR code of it, or its short code), in English and Arabic. | 50.27 |
+| F20 | **Viewer analytics for the publisher** through Epic 53 (no personal data, small counts folded), and a canary broadcast probed from outside networks with an invite of its own. | 50.28 |
+| F21 | **Close the open links already built:** the `open` access mode, its Turnstile and app-attestation sessions, and every page or route that serves a channel without an invite are removed from the code. | 50.36 |
 
 ### 4.2 Non-functional: the numbers
 
@@ -119,7 +121,7 @@ From [research.md](research.md) §1, with the code checked on 2026-11-03:
 | **Cost** | §5 ceilings | §5 ceilings | Monthly in the admin revenue page (25.21). |
 | **Security** | §4.4 | §4.4 | Review per story. |
 | **Observability** | §4.5 | §4.5 | 50.10. |
-| **Broadcast playback availability (SLO)** | **99.9 %** a month for channels whose home is up (a target, no credit) | same | The canary broadcast (50.28): an outside viewer probe plays it every 60 s from two networks; a minute counts as down when both fail. |
+| **Broadcast playback availability (SLO)** | **99.9 %** a month for channels whose home is up (a target, no credit) | same | The canary broadcast (50.28): a probe holding the canary invite's guest pass plays it every 60 s from two outside networks; a minute counts as down when both fail. |
 | **Broadcast: upload from the home per channel** | **1×** each rendition, whatever the number of viewers | same | Fan-out load test (50.29): 1 home, 1,000 simulated viewers, home bytes out = segments × rungs. |
 | **Broadcast glass-to-glass latency** | p95 **≤ 20 s** (≈ 12 s typical, 4 s segments) | same | Timestamp burned into the canary pattern (50.28). |
 | **Broadcast startup / channel switch** | start p75 ≤ 3 s; warm switch p75 < 2 s; on-demand cold start ≤ 15 s (tuning card < 100 ms) | same | Player telemetry (50.28), rehearsal (50.29). |
@@ -427,8 +429,8 @@ paid), and Pro is uncapped within its allowance (§13 decision 4).
 | 50.23 | [Publishable sources: permissions, Creative Commons, own recordings; geo](story-50-23-publishable-sources.md) | B | 50.22, Epic 34.1 |
 | 50.24 | [Takedown, reports and repeat infringers](story-50-24-takedown-reports.md) | B | 50.12, 50.23, 50.25 |
 | 50.25 | [Kill switch and the signed broadcast revocation list](story-50-25-kill-switch.md) | B | 50.21, 50.22 |
-| 50.26 | [Viewer access, limits and tokens](story-50-26-viewer-access.md) | B | 50.20, 50.21 |
-| 50.27 | [Guest viewers: the watch pages and the apps](story-50-27-guest-viewers.md) | B | 50.26, Epic 34.5, 34.6 |
+| 50.26 | [Viewer access by invitation, limits and tokens](story-50-26-viewer-access.md) | B | 50.20, 50.21 |
+| 50.27 | [Guest viewers: invited friends on the watch pages and the apps](story-50-27-guest-viewers.md) | B | 50.26, Epic 34.5, 34.6 |
 | 50.28 | [Viewer analytics and broadcast monitoring](story-50-28-analytics-monitoring.md) | B | 50.10, 50.21, 53.17 |
 | 50.29 | [The broadcast rehearsal and fan-out load test](story-50-29-broadcast-rehearsal.md) | B | 50.06, 50.21, 50.22, 50.25 |
 | 50.30 | [Cloudflare in front: TLS, WAF, rate limits and bot protection](story-50-30-cloudflare-edge-rules.md) | 1 | 50.01, 50.34 |
@@ -437,6 +439,7 @@ paid), and Pro is uncapped within its allowance (§13 decision 4).
 | 50.33 | [Staff sign-in for the operator console](story-50-33-staff-auth.md) | 1 | 50.32 |
 | 50.34 | [Cloudflare deploys from CI](story-50-34-cloudflare-deploys.md) | 1 | 50.01 |
 | 50.35 | [Remote access is on when any remote path is on](story-50-35-remote-access-capability.md) | 1b | Epic 51 (51.09, 51.19) |
+| 50.36 | [Invite-only broadcasting: close the open links](story-50-36-close-open-links.md) | B | 50.26, 50.27 |
 
 Phase **B** (home broadcasting, §14) comes after Phase 1's launch gate and doesn't depend on
 Phase 2.
@@ -492,6 +495,7 @@ graph LR
   S20 --> S26[50.26 viewer access]
   S21 --> S26
   S26 --> S27[50.27 guest viewers]
+  S27 --> S36[50.36 close open links]
   E34_5[Epic 34.5/34.6 site UI, tvplayer] --> S27
   S21 --> S28[50.28 analytics, monitoring]
   S10 --> S28
@@ -616,15 +620,21 @@ The answers to the open questions, applied to the stories above.
 
 > **Status:** spec (2026-11-03). Decisions of 2026-11-03:
 >
-> - **Viewers never pay.** Access is **open or by invite link** only.
+> - **Viewers never pay.**
 > - The publisher pays Maktaba for the Broadcaster tier (payment provider TBD, never Stripe).
 > - **Maktaba charges for infrastructure, not content:** Maktaba Cloud is an infrastructure and
 >   hosting provider (§14.6).
 >
+> Decision of 2026-11-24, which replaces the 2026-11-03 choice of open or invite access:
+>
+> - **Access is by invitation only.** Broadcasting exists so people can subscribe to friends'
+>   channels. A channel is visible only to the people its publisher invited: no open links, no
+>   public watch pages, no directory. The `open` mode already built is removed by 50.36.
+>
 > The questions still open are in §14.10.
 > **Research:** [research-broadcasting.md](research-broadcasting.md) (Plex, Jellyfin, Emby,
 > Owncast, PeerTube, Twitch, YouTube, Cloudflare Stream, Mux, Bunny, R2, LL-HLS, cost per
-> viewer-hour, rights; all with sources). **Stories:** 50.20–50.29.
+> viewer-hour, rights; all with sources). **Stories:** 50.20–50.29, 50.36.
 
 ### 14.1 Why, and what it is
 
@@ -632,10 +642,12 @@ Requirement: a way to stream TV from home servers to other people, as a tier of 
 entertainment or home streamer tier), and what it requires.
 
 **Home broadcasting** lets a Maktaba home owner (the **publisher**) publish chosen live TV
-channels to **viewers who aren't users of their home**, through Maktaba Cloud. These are Maktaba
-TV's 24/7 channels built from the library, with the burned-in watermark and the guide. Viewers
-watch on a web page (`watch.maktaba.tv/<publisher>/<channel>`) or in the Maktaba Player and TV
-apps as **guests**, with no account on the home. **Viewers never pay.**
+channels to **friends they invite**, who aren't users of their home, through Maktaba Cloud.
+These are Maktaba TV's 24/7 channels built from the library, with the burned-in watermark and the
+guide. An invited viewer redeems the invite once, then watches on a web page
+(`watch.maktaba.tv/<publisher>/<channel>`) or in the Maktaba Player and TV apps as a **guest**,
+with no account on the home and no Maktaba account. Without an invite's guest pass these pages
+and their API serve nothing: no player, no guide, no channel list. **Viewers never pay.**
 
 **Maktaba Cloud carries the stream; the publisher makes the channel.** Everything that decides
 what airs runs on the **publisher's own home server**, under the publisher's control: channel
@@ -645,7 +657,7 @@ publisher airs. This split is a design rule for every story below.
 
 | | Remote play (Epic 25, this epic) | Epic 34 public site | **Home broadcasting (§14)** |
 |---|---|---|---|
-| Who watches | the home's own users | anyone the owner allows | anyone with the link (open) or an invite |
+| Who watches | the home's own users | anyone the owner allows | only the people the publisher invited |
 | Whose cloud | Maktaba Cloud (relay) | **the owner's own Cloudflare account** | **Maktaba Cloud** (Maktaba's Cloudflare account) |
 | Publishers | — | one (the account owner) | **many** (any Pro home owner) |
 | Video path | relay tunnel to the home | RTMPS push to the owner's Stream inputs | **segments pushed to R2**, served by Maktaba's Worker |
@@ -667,7 +679,7 @@ broadcasting.
 
 - viewer payments, paid passes or payouts to publishers (decided 2026-11-03);
 - VOD, catch-up or DVR (segments are deleted after 10 minutes);
-- a public directory or search of broadcasts (unlisted only, §14.6);
+- open links, public watch pages, and a directory or search of broadcasts (invitation only, §14.7);
 - chat, comments and ads;
 - P2P delivery and LL-HLS;
 - custom domains per publisher (later, not specced: Cloudflare for SaaS would carry them, with
@@ -741,11 +753,13 @@ broadcasting.
    Creative Commons items, and sources whose speaker or channel allows sharing. Only those can
    air while the channel is published.
 2. Mark more sources publishable if they qualify: record the permission and a proof link (50.23).
-3. Choose the access (`invite` by default, or `open`), the ladder (checked against the measured
-   uplink and the encoder slots) and, optionally, countries.
-4. Publish. Within 30 s the channel is on `watch.maktaba.tv/<publisher>/<channel>` with its guide.
-   The publisher shares a link, a QR code or a short code (`MK-7Q4F`) for TV apps.
-5. Watch live viewers, viewer-hours and countries on the Broadcast page (50.28). Notices and
+3. Choose the ladder (checked against the measured uplink and the encoder slots) and,
+   optionally, countries. There is no access choice: every channel is invitation only.
+4. Publish. Within 30 s the channel is live on `watch.maktaba.tv/<publisher>/<channel>` with its
+   guide, for invited guests only.
+5. Invite friends: create an invite and send its link, a QR code of it, or its short code
+   (`MK-7Q4F`) for TV apps. Each invite has an expiry and a device limit, and can be revoked.
+6. Watch live viewers, viewer-hours and countries on the Broadcast page (50.28). Notices and
    reports about the publisher's channels arrive there too (50.24).
 
 ### 14.4 Plans: the Broadcaster tier
@@ -769,7 +783,7 @@ depends on a programme, a source or a genre.
 | | Free | Basic | **Pro: guest sharing** | **Broadcaster** (add-on to Pro) |
 |---|---|---|---|---|
 | Published channels | — | — | **1**, invite-only, on demand | **3**; extra channels are a paid add-on |
-| Access | — | — | `invite` | `invite` or `open` (Turnstile; verified publisher) |
+| Access | — | — | `invite` | `invite` (invitation only on every plan) |
 | Concurrent viewers (all channels) | — | — | **5** | **100**; extra blocks of 100 are a paid add-on |
 | Viewer-hours a month | — | — | **50** | **5,000** |
 | Past the allowance | — | — | new guests wait (`broadcast.full`) | optional **pay-as-you-go viewer-hours** (off by default, with a monthly cap the user sets), then **lowest rung only** up to 2× the allowance (fair use), then new viewers wait |
@@ -848,7 +862,8 @@ depends on a programme, a source or a genre.
   - A published channel takes one `tv_output.max_active_channels` slot **permanently**. Each lower
     rung takes `broadcast.rung_slot_weight` of a slot (default 0.5, measured in 50.22). Epic 34's
     `reserve_slots` (2) stay free for LAN and Plex.
-  - Invite-only channels on demand hold their slot only while a guest watches.
+  - Pro guest-sharing channels run on demand and hold their slot only while a guest watches;
+    Broadcaster channels are always-on.
   - `docs/hardware.md` isn't on main yet; 50.22 links it when it lands.
 - **Always connected:**
   - the cloud link, for ingest tokens and the revocation list;
@@ -885,9 +900,8 @@ has certain things in place. They are **what that status requires**, and each is
 - **The cloud only carries finished segments, the guide the home publishes, and the access
   settings.** The only content-related acts Maktaba takes are the ones hosting status requires:
   takedown, kill switch and acting on knowledge.
-- **No directory in the first version.** Channels are unlisted (link, QR code, short code). If a
-  directory comes later, it **lists only what publishers choose to list**, in a neutral order
-  (for example alphabetical or newest), with no picks, rankings or recommendations by Maktaba.
+- **No directory.** A channel is reachable only through an invite from its publisher (§14.7), so
+  there is nothing to list, rank or recommend.
 
 **A common question:** can public YouTube videos be re-broadcast when no money is charged?
 The short answer:
@@ -939,6 +953,12 @@ own (reason 3).
 - The cloud receives only the confirmation's date and version, for the takedown record. The marks,
   the proof links and the schedule stay on the home.
 
+**Invite-only and this section.** The takedown, the Report button, the designated agent and the
+copyright page below were written when channels could be open to anyone. With invitation-only
+access, how much of them stays (they are mostly built) is an open decision
+(`broadcast-invite-only-copyright`, §14.10). The kill switch (50.25) stays either way: it also
+covers incidents, lapsed plans and abuse.
+
 **Takedown (50.24).** It is cheap, and hosting status requires it:
 
 - A copyright page at `maktaba.tv/legal/copyright` (English and Arabic) with a notice form and
@@ -972,15 +992,16 @@ in English and Arabic and shown when publishing.
   - you are responsible for having the rights to what you air;
   - we act on notices and on actual knowledge, and can take channels off air;
   - the repeat-infringer policy applies.
-- **Before `open` access:** the publisher must be verified (a paid plan in good standing, a
-  confirmed email, and 7 days since the first publish).
 
 ### 14.7 Viewers
 
-- **Access (50.26). Viewers never pay; there are two modes only:**
-  - `invite` (the default): signed invite links with an expiry, a use count and optional named
-    guests. A guest pass is kept in a cookie or in the app's keychain.
-  - `open`: anyone with the link, after one Turnstile check per session.
+- **Access (50.26). Viewers never pay, and access is by invitation only:**
+  - The publisher creates signed invites with an expiry, a use count and optional named guests.
+    Redeeming one gives that device a guest pass, kept in a cookie or in the app's keychain.
+  - An invite's short code and QR code are only other ways to redeem the same invite.
+  - Without a valid guest pass, nothing plays and nothing about the channel is shown. There is
+    no `open` mode, no Turnstile or app-attestation session for viewers, and no indexing.
+  - A guest may be a friend with no Maktaba account; being invited is what lets them in.
 - **Limits:**
   - concurrent viewers per publisher (the plan's) and per channel (the publisher's setting);
   - 3 sessions per IP (a salted hash, kept ≤ 24 h);
@@ -991,7 +1012,7 @@ in English and Arabic and shown when publishing.
     (RTL) by default and English, the guide, `@maktaba/tvplayer` channel switching, attribution
     for CC items, and the Report button.
   - The **Maktaba Player and TV apps** (Apple, Android, Android TV, web) gain **Watch a
-    broadcast**: open a link, scan a QR code, or type the short code on a TV.
+    broadcast**: open an invite link, scan its QR code, or type its short code on a TV.
   - The guest sees only that publisher's channels and guide, and needs no account. Every string
     ships in English and Arabic.
 - **Viewer analytics for the publisher (50.28), via Epic 53:**
@@ -1024,16 +1045,17 @@ in English and Arabic and shown when publishing.
 - **Monitoring (50.28):**
   - The canary home (50.10) publishes a **canary broadcast**: the `canary` publisher,
     invite-only, a test pattern.
-  - An outside viewer probe plays it every 60 s from two networks and measures glass-to-glass
-    latency from a timestamp burned into the pattern.
+  - A probe on two outside networks, holding the canary invite's guest pass, plays it every
+    60 s and measures glass-to-glass latency from a timestamp burned into the pattern.
   - It pages on two failures in a row, as 50.10 does.
 - **SLOs:** targets, not promises (no credit, decision 1). They are the *Broadcast …* rows in
   §4.2's table.
 
 ### 14.9 To confirm with a lawyer before launch
 
-This isn't legal advice. These are the points to take to a lawyer once, before `open`
-broadcasting, so the defaults above can be confirmed or adjusted (research §6.4):
+This isn't legal advice. These are the points to take to a lawyer once, before broadcasting
+opens, so the defaults above can be confirmed or adjusted (research §6.4). Each point is now
+asked for invitation-only channels:
 
 1. **Hosting status:** that §14.6's list (designated agent, notice and takedown, repeat-infringer
    policy, acting on actual knowledge, publisher terms) is what's needed for Maktaba Cloud to be
@@ -1049,14 +1071,15 @@ broadcasting, so the defaults above can be confirmed or adjusted (research §6.4
 4. **Where Maktaba is established,** and whether that brings duties beyond the notice form (for
    example a contact point, or an EU representative).
 5. **The short Broadcaster agreement** (rights on the publisher, our infrastructure role), the
-   viewer terms, and the privacy notice (Cloudflare as processor, Turnstile, analytics).
+   viewer terms, and the privacy notice (Cloudflare as processor, analytics).
 
 ### 14.10 Open questions for the owner (with the recommended default)
 
 Decided on 2026-11-03:
 
 - Viewers never pay.
-- Access is open or by invite only.
+- Access is by invitation only (decided 2026-11-24; it replaces the 2026-11-03 choice of open or
+  invite).
 - Only publishable items air on published channels (a safety feature on the publisher's home).
 - Maktaba charges for infrastructure, not content, and is a hosting provider. The publisher holds
   the rights responsibility, and Maktaba does no content curation.
@@ -1077,10 +1100,9 @@ Decided on 2026-11-03:
    HLS from R2 through Workers fits its terms at our volume; Stream is the switchable fallback.
 9. **Ladder at home or cloud ABR?** **Default: at home**; Stream per publisher later if uplinks
    need it.
-10. **Default access.** **Default: `invite`**; `open` for verified publishers.
-11. **A public directory of broadcasts?** **Default: not in the first version** (unlisted only).
-    If one comes later, it lists only the channels publishers choose to list, in a neutral order,
-    with no picks, rankings or recommendations by Maktaba.
+10. **Default access.** **Decided 2026-11-24: invitation only;** there is no `open` mode.
+11. **A public directory of broadcasts?** **Decided 2026-11-24: no;** channels are reachable only
+    through an invite.
 12. **Which sources count as publishable?** **Default: the owner's own recordings, CC BY items
     detected at YouTube intake, and sources with a recorded permission and proof link.** Nothing
     else airs on a published channel.
@@ -1091,7 +1113,10 @@ Decided on 2026-11-03:
     keeps no shared list. (A shared list of known-permissive sources across publishers could
     come later.)
 15. **Designated agent.** **Default: register with the US Copyright Office** under the legal
-    entity's name before open broadcasting.
+    entity's name before broadcasting opens. With invitation-only access, whether the agent, the
+    notice form and the viewer Report button stay is the open decision
+    `broadcast-invite-only-copyright`; its recommended answer keeps the agent, notice and
+    takedown, and the strikes, and replaces the viewer Report button with *Leave channel*.
 16. **Repeat-infringer threshold.** **Default: 3 valid strikes in 12 months; strikes expire after
     12 months.**
 17. **Takedown targets.** **Default: ≤ 24 h from a valid notice; ≤ 1 h for urgent illegal
@@ -1116,10 +1141,11 @@ All in **Phase B** (broadcasting), after Phase 1's launch gate; it doesn't depen
 | 50.23 | [Publishable sources: permissions, Creative Commons, own recordings; geo](story-50-23-publishable-sources.md) | B | 50.22, Epic 34.1 |
 | 50.24 | [Takedown, reports and repeat infringers](story-50-24-takedown-reports.md) | B | 50.12, 50.23, 50.25 |
 | 50.25 | [Kill switch and the signed broadcast revocation list](story-50-25-kill-switch.md) | B | 50.21, 50.22 |
-| 50.26 | [Viewer access: invite and open; limits and tokens](story-50-26-viewer-access.md) | B | 50.20, 50.21 |
-| 50.27 | [Guest viewers: the watch pages and the Maktaba apps](story-50-27-guest-viewers.md) | B | 50.26, Epic 34.5, 34.6 |
+| 50.26 | [Viewer access by invitation; limits and tokens](story-50-26-viewer-access.md) | B | 50.20, 50.21 |
+| 50.27 | [Guest viewers: invited friends on the watch pages and the Maktaba apps](story-50-27-guest-viewers.md) | B | 50.26, Epic 34.5, 34.6 |
 | 50.28 | [Viewer analytics and broadcast monitoring](story-50-28-analytics-monitoring.md) | B | 50.10, 50.21, 53.17 |
 | 50.29 | [The broadcast rehearsal and fan-out load test in CI](story-50-29-broadcast-rehearsal.md) | B | 50.06, 50.21, 50.22, 50.25 |
+| 50.36 | [Invite-only broadcasting: close the open links](story-50-36-close-open-links.md) | B | 50.26, 50.27 |
 
 Work that can start at once: **50.21** (after 50.01) and **50.20** (after 50.19). Then 50.22,
 50.25 and 50.26 can run in parallel.
@@ -1127,17 +1153,19 @@ Work that can start at once: **50.21** (after 50.01) and **50.20** (after 50.19)
 **The broadcasting gate.** Broadcasting is switched on only when all of these hold:
 
 1. Epic 50's own launch gate (§11) has passed.
-2. 50.20–50.29 are merged, and their CI rehearsals pass on the deployed sha.
+2. 50.20–50.29 and 50.36 are merged, and their CI rehearsals pass on the deployed sha.
 3. Cloudflare has confirmed the delivery path in writing (question 8), or `broadcast.delivery`
    is `stream`.
 4. The designated agent is registered, and the copyright page, the Broadcaster agreement and the
-   repeat-infringer policy are live in English and Arabic.
+   repeat-infringer policy are live in English and Arabic. (The Broadcaster agreement stays;
+   the rest of this item waits on the decision `broadcast-invite-only-copyright`.)
 5. The lawyer's review in §14.9 is done.
 6. The Broadcaster catalog has no `TBD` left.
 7. The canary broadcast has met the §4.2 broadcast SLOs for 14 days.
 
 Until then `broadcast.enabled = false`, except for test publishers an admin grants on staging.
-`invite` can open before `open`: `broadcast.open_access.enabled` also needs items 4 and 5.
+There is no separate gate for open access: `broadcast.open_access.enabled` is removed by 50.36,
+and every channel is invitation only.
 
 ## 15. Cloudflare in front: the user portal and the operator console
 

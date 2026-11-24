@@ -19,8 +19,9 @@ of viewers**. This story adds those scenarios to 50.06's cloud rehearsal harness
   CI only.
 - **The edge:** `web/packages/broadcast-edge` in **Miniflare** with local R2, DOs and a fake
   Analytics Engine. No live Cloudflare call.
-- **The cloud:** 50.06's compose stack (API, worker, Postgres). Payment is the fake provider;
-  Turnstile and app attestation are fakes.
+- **The cloud:** 50.06's compose stack (API, worker, Postgres). Payment is the fake provider.
+  Viewers get in only by redeeming invites (README §14); there is no Turnstile or app
+  attestation for viewers.
 - **Viewers:** a Go load generator (`tools/broadcast-viewers/`) that simulates N HLS players. Each
   plays, heartbeats, fetches playlists every target duration and fetches each new segment. It
   can simulate several "locations" (separate cache namespaces in Miniflare) to model edge
@@ -39,7 +40,7 @@ Each scenario is listed as an expected failure until its story turns it on (50.0
 | `broadcast-home-offline-24h` | 50.21 | stop the home; fast clock to 24 h | slate, then `off_air` at 24 h |
 | `broadcast-plans` | 50.20 | drive a publisher through `full`, `lowest`, `wait`; add pay-as-you-go | modes in order; no playing session stopped |
 | `broadcast-publishable` | 50.23 | mixed sources; publish; withdraw one source | the guide holds only publishable items; slate on withdrawal; replaced at top-up |
-| `broadcast-access` | 50.26 | invite uses, short codes, Turnstile, limits | as 50.26's criteria |
+| `broadcast-access` | 50.26, 50.36 | invite uses, short codes, limits; every channel route and page with no guest pass | as 50.26's and 50.36's criteria: nothing plays or shows without an invite |
 | `broadcast-kill` | 50.25 | 200 viewers; `off_air`; lift; cloud API down + break-glass | stop ≤ 60 s on both paths; live again after the lift |
 | `broadcast-takedown` | 50.24 | notice → takedown (airing now) → counter → restore; 3 strikes | the timings and states in 50.24 |
 | `broadcast-hetzner-down` | 14.8 | stop the cloud stack for 15 minutes mid-broadcast, in real time (the edge refuses a home clock more than 60 s off its own, so a fast clock can't run under a live home) | channels keep playing; metering arrives exact afterwards |

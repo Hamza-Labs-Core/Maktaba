@@ -4,7 +4,7 @@
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 > **Change a story's row (and its "What is left" entry), then run `python3 docs/wiki/db/epic_status.py`; never edit the counts by hand.** CI fails on stale counts (`--check`).
 
-**Not every epic is done.** Of 774 stories across all 60 epics, 714 are done, 40 are partial, 11 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 12 stories of fifteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 775 stories across all 60 epics, 714 are done, 40 are partial, 12 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 12 stories of fifteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -73,7 +73,7 @@
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
 | 49 Search | 12 | 2 | 1 | 0 | **Partial** |
-| 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
+| 50 Cloud with no downtime | 35 | 0 | 1 | 0 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
 | 53 Logs, errors and reports | 18 | 0 | 0 | 0 | Done (open issue #1064) |
@@ -84,7 +84,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **714** | **40** | **11** | **9** | **Not all done** |
+| **Total** | **714** | **40** | **12** | **9** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -98,6 +98,7 @@
 - **34.10 Deployment pipeline** — manual `wrangler.toml` exists, but no release artifact pipeline or home-driven deploy/promote/rollback implementation.
 - **43.6 Measured on the home Mac** — PR #319 explicitly excludes the 13.9M-row p50/p95, disk and recall measurement; no later merged measurement was found.
 - **49.13 Remove the stopgap** — the Epic 49 document path does not exist, so its removal is not started either.
+- **50.36 Close the open links** — broadcasting became invite-only (2026-11-24); the `open` access mode, its Turnstile and app-attestation sessions, and the watch pages that render without a pass are still in the code.
 - **54.47–54.51, Epic 54 Phase 5:** plugin updates, preinstalled plugins and migration, offline homes, release variants and variant updates. Each spec says "Not built". (54.45 and 54.46 are partial, below.)
 
 ### Partial
@@ -1075,7 +1076,7 @@ Stories are the fifteen numbered rows in `specs/epics/49-search/README.md` §6 (
 
 ### Epic 50 — Cloud with no downtime
 
-All 35 stories have current implementation and test evidence. This is a code/history verdict, **not** evidence that two production nodes, paid billing, Cloudflare rules, or the availability SLOs are operating successfully.
+35 of its 36 stories have current implementation and test evidence; 50.36 (closing the open links, after broadcasting became invite-only on 2026-11-24) is not started. This is a code/history verdict, **not** evidence that two production nodes, paid billing, Cloudflare rules, or the availability SLOs are operating successfully.
 
 | Story | Status | Evidence (merged PRs; current code/tests) |
 |---|---|---|
@@ -1114,6 +1115,7 @@ All 35 stories have current implementation and test evidence. This is a code/his
 | 50.33 Staff auth | Done | #1027, #1067; `cloud/internal/handlers/staff/staff.go`; `cloud/cmd/maktaba-cloud/staff_integration_test.go`, `staff_passkey_integration_test.go` |
 | 50.34 Cloudflare deploys | Done | #867; `tools/cloudflare/cf.mjs`; `token-check.test.mjs`, `smoke.test.mjs`; CI workflow |
 | 50.35 Remote-access capability | Done | #825; `shared/components/catalog.go`; `api/internal/components/features_test.go`; `handlers/components/capabilities_test.go` |
+| 50.36 Close open links | **Not started** | Spec only. The `open` access mode built by 50.26 and 50.27 is still on main: `web/packages/broadcast-edge/src/access.ts` (`openChannels`), `src/site/routes.ts` (`lineup` with no pass), `cloud/internal/billing/broadcast_catalog.go` (`AccessOpen`), `cloud/migrations/00500017_broadcast_plans.sql`. |
 
 ### Epic 51 — Configurable components
 
