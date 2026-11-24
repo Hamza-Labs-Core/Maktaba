@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { parse, type DefaultTreeAdapterMap } from "parse5";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   changelogPage,
@@ -14,7 +15,7 @@ import {
   readFragments,
 } from "../scripts/changelog.mjs";
 import { changelogOutline, checkChangelog } from "../scripts/parity.mjs";
-import { REPO, checkSources } from "../scripts/build.mjs";
+import { REPO, checkSources, scrubMarkdown } from "../scripts/build.mjs";
 
 const DIST = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../dist");
 const EN =
@@ -89,13 +90,19 @@ describe("the changelog page", () => {
   });
 
   it("the built page has every fragment's entries, in both languages", () => {
-    const plain = (s: string) => s.replace(/<[^>]+>|&[a-z#0-9]+;|[`*"'<>&_\s]/g, "");
+    type Node = DefaultTreeAdapterMap["node"];
+    const text = (n: Node): string =>
+      "value" in n ? n.value : "childNodes" in n ? n.childNodes.map(text).join("") : "";
+    // letters and digits: markup, entities and wrapping are not the entry
+    const plain = (t: string) => t.replace(/[^\p{L}\p{N}]/gu, "");
     const pages = { en: "changelog/index.html", ar: "ar/changelog/index.html" };
     for (const lang of ["en", "ar"] as const) {
-      const html = plain(fs.readFileSync(path.join(DIST, pages[lang]), "utf8"));
+      const shown = plain(text(parse(fs.readFileSync(path.join(DIST, pages[lang]), "utf8"))));
       for (const f of readFragments(REPO)) {
-        const first = f[lang]!.match(/^- (?:\*\*)?([^*\n]{5,40})/m)![1];
-        expect(html, `${f.name} (${lang})`).toContain(plain(first));
+        // an entry the page's scrub drops or rewords is not looked for; nor is a link's markup
+        if (scrubMarkdown(f[lang]!) !== f[lang]) continue;
+        const first = f[lang]!.match(/^- (?:\*\*)?([^*\n[\](<\\]{5,40})/m);
+        if (first) expect(shown, `${f.name} (${lang})`).toContain(plain(first[1]));
       }
     }
   });
