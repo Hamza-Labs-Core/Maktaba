@@ -21,7 +21,7 @@
     "phase": 17,
     "plan": 372,
     "review": 15,
-    "story": 746
+    "story": 747
   },
   "parts": [
     "wiki-epics-01-09.json",
@@ -2346,6 +2346,7 @@
         "story-35.14",
         "story-35.15",
         "story-35.16",
+        "story-35.17",
         "plan-35.01-release-manifest-verification",
         "plan-35.02-layout-launcher",
         "plan-35.03-policy-discovery-scheduling",
@@ -2367,7 +2368,7 @@
         "readme": "specs/epics/35-cluster-full-nodes-and-updates/README.md"
       },
       "metadata": {
-        "story_count": 16,
+        "story_count": 17,
         "plan_count": 16,
         "mockup_count": 0
       },
