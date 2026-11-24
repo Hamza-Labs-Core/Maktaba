@@ -63,7 +63,7 @@ check() {
 	mkdir "$dir/keys"
 	tar -xzf "$OUT/keys-$ts.tar.gz" -C "$dir/keys"
 	(cd "$dir/keys" && sha256sum --quiet --strict -c "$OUT/keys-$ts.sha256") || die "check: the keys differ from those recorded with them"
-	(cd "$dir/keys" && find . -type f | wc -l) | grep -qx "$(wc -l <"$OUT/keys-$ts.sha256" | tr -d ' ')" || die "check: the keys archive has other files than those recorded"
+	[ "$(find "$dir/keys" -type f | wc -l | tr -d ' ')" = "$(wc -l <"$OUT/keys-$ts.sha256" | tr -d ' ')" ] || die "check: the keys archive has other files than those recorded"
 	local k v
 	for k in POSTGRES_PASSWORD MAKTABA_CLOUD_DB_URL MAKTABA_CLOUD_TOKEN_SECRET MAKTABA_CLOUD_STAFF_TOKEN_SECRET MAKTABA_CLOUD_STAFF_SECRET_KEY RELAY_DOMAIN; do
 		v="$(env_in "$dir/keys/.env" "$k")"
@@ -73,8 +73,8 @@ check() {
 	[ "$(wc -c <"$dir/keys/secrets/log.key" | tr -d ' ')" = 32 ] || die "check: the saved log key is not 32 bytes"
 	# the saved password opens the database, over the network (as the cloud's roles do)
 	# shellcheck disable=SC2016  # expands in the container
-	env_in "$dir/keys/.env" POSTGRES_PASSWORD | pg sh -c 'IFS= read -r PGPASSWORD && export PGPASSWORD && psql -X -q -A -t -h "$(hostname -i | cut -d" " -f1)" -U "$0" -d "$1" -c "SELECT 1"' "$PGU" "$PGD" | grep -qx 1 ||
-		die "check: the saved database password does not open the database"
+	v="$(env_in "$dir/keys/.env" POSTGRES_PASSWORD | pg sh -c 'IFS= read -r PGPASSWORD && export PGPASSWORD && psql -X -q -A -t -h "$(hostname -i | cut -d" " -f1)" -U "$0" -d "$1" -c "SELECT 1"' "$PGU" "$PGD")" || v=""
+	[ "$v" = 1 ] || die "check: the saved database password does not open the database"
 	echo "backup check: $(basename "$newest") restored, $(wc -l <"$dir/counts" | tr -d ' ') tables and $rows rows equal to those dumped; keys-$ts restored, $(wc -l <"$OUT/keys-$ts.sha256" | tr -d ' ') files whole"
 }
 
