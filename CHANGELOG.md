@@ -3884,7 +3884,8 @@ build fails when the two differ.
   gone from the app's help and from maktaba.tv, in English and Arabic; its old address opens the
   help index. The web app's Rules page has no Broadcasting section, the Components page has no
   broadcasting row and Subscription does not list it, unless the home's licence includes
-  broadcasting.
+  broadcasting. The broadcast edge takes no uploads while broadcasting is off, with a valid token
+  included; only the list of revoked access still reaches it.
 
 ### Fixed
 
