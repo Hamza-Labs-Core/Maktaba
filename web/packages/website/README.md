@@ -9,6 +9,8 @@ shape as maktaba.dev. It has no backend, no KV and no secrets. Every request goe
 Worker, which:
 
 - redirects `www.maktaba.tv` and plain http to `https://maktaba.tv`;
+- redirects `/install/` to `/download/` and `/ar/install/` to `/ar/download/` (the guides'
+  index is the download page, 60.05 and 60.11; each guide keeps its `/install/<guide>/`);
 - redirects `/docs` to `/help/` and `/ar/docs` to `/ar/help/` (story 60.12): the table is
   `src/redirects.json`, which the link check reads too (a link to `/docs` passes when the page it
   redirects to exists), and where a help topic whose id changes keeps its old path;
@@ -24,11 +26,11 @@ Worker, which:
 | Path                            | What                                              | From                                                                  |
 | ------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------- |
 | `/`, `/ar/`                     | the home page (60.10)                             | `scripts/home.mjs`, `copy/home.*.md`, `static/shots`                  |
-| `/install/`, `/ar/install/`     | the install chooser (60.05)                       | `src/pages/install/index.html` (+ `ar/`)                              |
+| `/install/`, `/ar/install/`     | a 301 to `/download/`, which lists every guide    | `src/redirects.json`                                                  |
 | `/install/…`, `/ar/install/…`   | Epic 59's install guides                          | `web/packages/install` (`pnpm -C web build:install`)                  |
 | `/legal/…`, `/ar/legal/…`       | privacy, terms, copyright (60.07)                 | `copy/legal/`, `scripts/legal.mjs`                                    |
 | `/problems/…`, `/ar/problems/…` | a page per problem type, and the index (60.06)    | `shared/api/problems.json`, `scripts/problems.mjs`                    |
-| `/download/`, `/ar/download/`   | every device's file of the latest release (60.11) | the GitHub Releases API, `src/downloads.json`, `scripts/download.mjs` |
+| `/download/`, `/ar/download/`   | every device's file and every setup guide (60.11) | the GitHub Releases API, `src/downloads.json`, `scripts/download.mjs` |
 | `/help/…`, `/ar/help/…`         | the app's help topics, and the index (60.12)      | `web/src/help/` (topics and content), `scripts/help.mjs`              |
 | `/404.html`, `/ar/404.html`     | the 404 page                                      | `src/pages/404.html`, `src/pages/ar/404.html`                         |
 | `/schema/log-line.json`         | the log schema, at its `$id`                      | `shared/log/schema/line.schema.json`                                  |
@@ -56,10 +58,10 @@ script, `src/home.ts`, runs in the head: it names the visitor's system on `<html
 reads "Download for Mac" from its first frame) and adds it to each `/download/` link
 (`/download/#mac`). Every page the site builds is now in part B's shell, but the install guides
 (`inShell`, part A's until their own part B layout): with Epic 60's Phase 3 the problem pages and
-their index, the legal pages, the install chooser and the 404 moved onto it, and the help pages
+their index, the legal pages and the 404 moved onto it, and the help pages
 are built in it (60.12), in the layouts of
-the approved `problem-p3`, `problems-p3` and `legal-p3` mockups (the chooser and the 404, which
-have no part B mockup, keep part A's layout in part B's shell; `design/review-phase-3.md`). Each
+the approved `problem-p3`, `problems-p3` and `legal-p3` mockups (the 404, which
+has no part B mockup, keeps part A's layout in part B's shell; `design/review-phase-3.md`). Each
 has part B's social card (`cards.mjs`, `cardSub`). The legal page's contents list marks the
 section in view with CSS alone (`scroll-target-group`, `src/part-b.css`).
 
@@ -78,7 +80,9 @@ passes its own), and `src/downloads.json`, one entry per platform: the patterns 
 matched by (`{v}`, the release's version), the requirements line, the guide, and the public store
 listings (A6). For every file the release's signed `checksums.txt` lists, the API's digest must
 equal it, or the build fails naming the file; a platform with no file and no listing has no card;
-the server packages' card shows only with `MAKTABA_PACKAGES_URL` or `HOMEBREW_TAP_REPO` (A7). When
+the server packages' card shows only with `MAKTABA_PACKAGES_URL` or `HOMEBREW_TAP_REPO` (A7). Under the cards it lists every setup guide (`GUIDES`: the NAS guides
+at `#nas-guides`, Docker, after setup and troubleshooting), each once built: the site's one page
+for getting Maktaba, where `/install/` redirects. When
 the API cannot be read the build fails: a deploy never ships an empty download page. The page
 names its release (`<meta name="maktaba-release">`). The visitor's platform comes first before
 the first paint (`src/download-platform.ts` marks `<html data-platform>`, `src/download.css`

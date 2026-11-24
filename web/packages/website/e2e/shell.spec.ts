@@ -15,13 +15,13 @@ test.describe("the language hint (§6.5)", () => {
       page,
       context,
     }) => {
-      await page.goto("/install/");
+      await page.goto("/legal/terms/");
       await settle(page);
       const hint = page.locator(".lang-hint");
       await expect(hint).toBeVisible();
       await expect(hint).toHaveAttribute("lang", "ar");
       await expect(hint).toHaveAttribute("dir", "rtl");
-      await expect(hint.locator("a")).toHaveAttribute("href", "/ar/install/");
+      await expect(hint.locator("a")).toHaveAttribute("href", "/ar/legal/terms/");
       await hint.locator("button").click();
       await expect(hint).toHaveCount(0);
       expect(await page.evaluate(() => localStorage.getItem("maktaba.langHint"))).toBe("dismissed");

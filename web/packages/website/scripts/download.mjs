@@ -384,6 +384,78 @@ sha256sum --ignore-missing -c checksums.txt`;
 
 const fileLink = (a, inner) => `<a href="${esc(a.url)}">${inner}</a>`;
 
+/** A link on this page (`#nas-guides`) as it is, else the site path in the page's language. */
+const here = (lang, href) => (href.startsWith("#") ? href : inLang(lang, href));
+/** Whether a link is there to follow: an anchor in this page's guides section when that group
+ * is drawn (guideGroups), a site path once it is built. */
+const linkable = (lang, href, resolves) =>
+  href.startsWith("#")
+    ? guideGroups(resolves, lang).some((g) => href === "#guides" || href === `#${g.id}`)
+    : resolves(inLang(lang, href));
+
+// ---- the setup guides (story 60.05's chooser, folded into this page) ---------------------------
+
+/**
+ * The step-by-step guides, by group, in the page's order: every NAS guide, Docker, and what comes
+ * once it runs. Each guide is Epic 59's page under /install/<guide>/ (web/packages/install), and
+ * its words are copy/download.<lang>.md's guides.<guide> and guides.<guide>.line. The NAS card's
+ * button goes to #nas-guides; /install/ and /ar/install/ redirect here (src/redirects.json).
+ */
+export const GUIDES = [
+  {
+    id: "nas-guides",
+    icon: "box",
+    guides: ["synology", "truenas", "unraid", "qnap", "ugreen", "asustor"],
+    find: "/install/nas/",
+  },
+  { id: "docker-guide", icon: "terminal", guides: ["docker"] },
+  { id: "after-guides", icon: "check", guides: ["after-setup", "troubleshooting"] },
+];
+
+/** The groups with the guides the site has built (`resolves`), each { id, icon, guides, find };
+ * a group with none is left out. */
+export function guideGroups(resolves, lang = "en") {
+  return GUIDES.map((g) => ({
+    ...g,
+    guides: g.guides.filter((n) => resolves(inLang(lang, `/install/${n}/`))),
+    find: g.find && resolves(inLang(lang, g.find)) ? g.find : null,
+  })).filter((g) => g.guides.length);
+}
+
+/** The guides section: a head, then each group's tiles (a link each: the guide's name and one
+ * line), the NAS group with "Find your NAS" (the model table, /install/nas/). */
+export function renderGuides(lang, resolves, c) {
+  const t = (key) => word(c, key, lang);
+  const groups = guideGroups(resolves, lang);
+  if (!groups.length) return "";
+  const group = (g) => {
+    const tiles = g.guides
+      .map(
+        (n) =>
+          `<li><a class="guide-tile" href="${inLang(lang, `/install/${n}/`)}"><span class="tile-text"><span class="tile-name">${t(`guides.${n}`)}</span><span class="tile-line">${t(`guides.${n}.line`)}</span></span>${ICONS.onward}</a></li>`
+      )
+      .join("");
+    const find = g.find
+      ? `<p class="guide-find">${t(`guides.${g.id}.unsure`)} <a class="onward" href="${inLang(lang, g.find)}">${t(`guides.${g.id}.find`)}${ICONS.onward}</a></p>`
+      : "";
+    return `<section class="guide-group" id="${g.id}" aria-labelledby="${g.id}-title">
+        <div class="group-head"><span class="ring">${P[g.icon]}</span><h3 id="${g.id}-title">${t(`guides.${g.id}`)}</h3></div>
+        <ul class="guide-list">${tiles}</ul>${find ? `\n        ${find}` : ""}
+      </section>`;
+  };
+  return `<section class="band flush-start guides" id="guides" aria-labelledby="guides-title">
+  <div class="frame">
+    <div class="section-head">
+      <h2 class="display-2" id="guides-title">${t("guides.h2")}</h2>
+      <p>${t("guides.lead")}</p>
+    </div>
+    <div class="guide-groups">
+      ${groups.map(group).join("\n      ")}
+    </div>
+  </div>
+</section>`;
+}
+
 /** One card. Every value the release sets sits in an element marked data-release (its key), so
  * the visual references can draw the fixture's numbers in place of the live release's. */
 function card(k, data, { c, lang, resolves }) {
@@ -395,7 +467,7 @@ function card(k, data, { c, lang, resolves }) {
   if (k.primary)
     action = `<a class="button" href="${esc(k.primary.url)}" download="${esc(k.primary.name)}" aria-describedby="${k.id}-size">${P.download}${t(`${k.id}.primary`)}</a>`;
   else if (k.href)
-    action = `<a class="button" href="${inLang(lang, k.href)}">${t(`${k.id}.primary`)}${ICONS.onward}</a>`;
+    action = `<a class="button" href="${here(lang, k.href)}">${t(`${k.id}.primary`)}${ICONS.onward}</a>`;
   const listings = k.listings.length
     ? `<ul class="stores">${k.listings
         .map(
@@ -413,8 +485,8 @@ function card(k, data, { c, lang, resolves }) {
         .join("")}</ul>`
     : "";
   const guide =
-    k.guide && resolves(inLang(lang, k.guide))
-      ? `<a class="onward" href="${inLang(lang, k.guide)}">${t("guide")}${ICONS.onward}</a>`
+    k.guide && linkable(lang, k.guide, resolves)
+      ? `<a class="onward" href="${here(lang, k.guide)}">${t("guide")}${ICONS.onward}</a>`
       : "";
   const badge = k.ua ? `<span class="badge">${P.check}${t("mine")}</span>` : "";
   const main = `<div class="card-main">
@@ -517,6 +589,7 @@ export function renderBody(data, ks, { lang, resolves = () => false, manifest })
     .filter((k) => k.ua)
     .map((k) => `<span data-for="${k.id}">${t(k.id === "mac" ? "note" : `note.${k.id}`)}</span>`)
     .join("");
+  const guides = renderGuides(lang, resolves, c);
   const other = lang === "ar" ? "en" : "ar";
   const pair = [lang, other]
     .map(
@@ -540,14 +613,14 @@ export function renderBody(data, ks, { lang, resolves = () => false, manifest })
     <p class="all-files"><a href="${esc(data.url)}">${t("all")}${ICONS.out}</a></p>
   </div>
 </section>
-<section class="band flush-start" aria-labelledby="need-title">
+${guides}<section class="band flush-start" aria-labelledby="need-title">
   <div class="frame">
     <div class="need">
       <div>
         <h2 class="display-2" id="need-title">${t("need.h2")}</h2>
         <p>${t("need.p1")}</p>
         <p>${t("need.p2")}</p>
-        <a class="onward" href="${inLang(lang, "/install/")}">${t("need.link")}${ICONS.onward}</a>
+        ${guides ? `<a class="onward" href="#guides">${t("need.link")}${ICONS.onward}</a>` : ""}
       </div>
       <ul class="diagram" aria-hidden="true">
         <li class="node home"><span class="ring">${P.server}</span>${t("need.home")}</li>

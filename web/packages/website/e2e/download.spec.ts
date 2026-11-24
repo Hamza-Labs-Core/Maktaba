@@ -173,3 +173,30 @@ test.describe("without JavaScript", () => {
     await expect(page.locator(".cards .badge:visible")).toHaveCount(0);
   });
 });
+
+// Story 60.05's chooser, folded into this page: /install/ redirects here, the NAS card's button
+// goes to the NAS guides, and every guide is a link the keyboard reaches, in each language.
+for (const lang of ["en", "ar"] as const) {
+  const pre = lang === "ar" ? "/ar" : "";
+
+  test(`60.05: ${pre}/install/ opens the download page, its guides one link each (${lang})`, async ({
+    page,
+  }) => {
+    await page.goto(`${pre}/install/`);
+    await settle(page);
+    expect(new URL(page.url()).pathname).toBe(`${pre}/download/`);
+    const tiles = page.locator("#guides .guide-tile");
+    await expect(tiles).toHaveCount(9);
+    for (const href of await tiles.evaluateAll((as) => as.map((a) => a.getAttribute("href"))))
+      expect(href).toMatch(new RegExp(`^${pre}/install/[a-z-]+/$`));
+    await expect(page.locator(`#nas-guides a[href="${pre}/install/nas/"]`)).toHaveCount(1);
+    // the NAS card's button scrolls to the NAS guides
+    await page.locator('#nas a.button[href="#nas-guides"]').click();
+    await expect(page.locator("#nas-guides")).toBeInViewport();
+    // the keyboard goes from the button into the guides, in order
+    await page.locator("#nas-guides .guide-tile").first().focus();
+    await expect(page.locator("#nas-guides .guide-tile").first()).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#nas-guides .guide-tile").nth(1)).toBeFocused();
+  });
+}
