@@ -120,7 +120,7 @@ struct HomeStatusView: View {
                     LabeledContent("Needs attention", value: model.attentionCount, format: .number)
                     let paused = q.rows.filter(\.info.paused)
                     if !paused.isEmpty {
-                        LabeledContent("Paused stages", value: paused.map(\.info.label).formatted(.list(type: .and)))
+                        LabeledContent("Paused stages", value: paused.map { $0.info.title() }.formatted(.list(type: .and)))
                     }
                     if let cpu = q.health?.cpu?.pct {
                         LabeledContent("CPU", value: (cpu / 100).formatted(.percent.precision(.fractionLength(0))))

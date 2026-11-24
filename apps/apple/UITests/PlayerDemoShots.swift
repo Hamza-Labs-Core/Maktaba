@@ -37,27 +37,21 @@ final class PlayerDemoShots: PlayerUITestCase {
     }
 
     /// Curiosity playing with the Arabic subtitles on (in both languages: the Arabic line is what
-    /// the page shows off), the controls gone so the line reads clear of them: on the iPhone in
-    /// landscape, on the iPad upright (its sidebar floats over a landscape player).
+    /// the page shows off), the controls gone so the line reads clear of them; upright on both
+    /// (the store's iPhone shots are portrait, and on the iPad the sidebar floats over a
+    /// landscape player): the picture across the screen's width, the line on it.
     func testPlayer() throws {
-        defer { XCUIDevice.shared.orientation = .portrait }
         for language in ["en", "ar"] {
             try demo(language)
             // the stream as long as the film (the demo's `duration_sec`): the player seeks to 7:00
             // in it (`Playback.load`); the cue lasts the whole film
             if let seconds = home.demoVideo("v-curiosity")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
-            // signed in upright (in landscape the keyboard covers the sign-in's choices), turned
-            // once the player is open
             XCUIDevice.shared.orientation = .portrait
             launchSignedIn(language, section: "home", open: "watch/v-curiosity@420", controlsStay: false,
                            extra: ["-playback.subtitles_on", "YES", "-playback.subtitle_language", "ar"])
             let surface = element("player.surface")
             XCTAssertTrue(surface.waitForExistence(timeout: 30), "the player")
-            // on the iPhone (on the iPad its sidebar floats over a landscape player)
-            if !isPad {
-                XCUIDevice.shared.orientation = .landscapeLeft
-                XCTAssertTrue(waitUntil(timeout: 10) { surface.frame.width > surface.frame.height }, "the player in landscape")
-            }
+            XCTAssertTrue(waitUntil(timeout: 10) { surface.frame.height > surface.frame.width }, "the player upright: \(surface.frame)")
             XCTAssertTrue(waitUntil(timeout: 30) { self.state["playing"] == "true" && self.state["subtitle"] == "ar" },
                           "playing with the Arabic subtitles: \(state)")
             // a frame of the picture and the cue drawn: the position moves past where it opened
@@ -76,9 +70,9 @@ final class PlayerDemoShots: PlayerUITestCase {
             // the line drawn: the test stream starts its timestamps again every 4 s (two segments
             // in turn), and the player can drop the line there, so the shot waits for its white
             // letters (where the player puts it: on the iPad in English, under the picture); the
-            // iPad's top edge left out, where a status bar's clock is white too
+            // top edge left out, where a status bar's clock is white too
             let screen = app.frame
-            let area = isPad ? CGRect(x: 0, y: 40, width: screen.width, height: screen.height - 40) : nil
+            let area = CGRect(x: 0, y: 60, width: screen.width, height: screen.height - 60)
             var shot = XCUIScreen.main.screenshot()
             let end = Date().addingTimeInterval(30)
             while brightPixels(shot, in: area) < 500, Date() < end {

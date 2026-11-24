@@ -122,7 +122,8 @@ final class ConnectUITests: XCTestCase {
         try XCTSkipUnless(queue.waitForExistence(timeout: 10), "the Remote's queue (the Player has none)")
         queue.tap()
         XCTAssertTrue(app.staticTexts["Choose a stage"].waitForExistence(timeout: 10), "nothing chosen yet")
-        let probe = app.staticTexts["Probe"].firstMatch
+        // the stage's title is the app's words for its id ("probe": Length, the web's)
+        let probe = app.staticTexts["Length"].firstMatch
         XCTAssertTrue(probe.waitForExistence(timeout: 10))
         probe.tap()
         XCTAssertTrue(app.staticTexts["Waiting"].waitForExistence(timeout: 10), "the stage's page")

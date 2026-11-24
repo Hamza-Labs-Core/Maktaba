@@ -412,6 +412,12 @@ build fails when the two differ.
 
 ### Fixed
 
+- **Maktaba Remote on iPhone and iPad says the queue's stages, steps and causes in Arabic.** In
+  the Arabic Remote the queue showed what the home sends in English: stage names (Transcribe,
+  Length), the stage ids under each Needs attention group (`probe`, `transcribe`), a running
+  job's step and its state. The Remote now says each stage, step, job state and cause in its
+  own words, in English and Arabic, the web's wording; a code it does not know keeps what the
+  home sent. The plugin causes have their words too.
 - **On Roku, Down at the end of a library's loaded titles no longer jumps back to the first
   title.** The Library tab's grid loads 36 titles at a time; pressing Down on its last row while
   the next titles were still loading took focus round to the first title. Focus now stays on the

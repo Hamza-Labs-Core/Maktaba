@@ -86,8 +86,9 @@ struct QueueView: View {
 
     static let runningShown = 20
 
+    /// A stage's title in the app's language (the home sends its id and an English label).
     private func label(_ stage: String) -> String {
-        model.queue?.stages.first { $0.stage == stage }?.label ?? stage
+        StageWords.title(stage, label: model.queue?.stages.first { $0.stage == stage }?.label)
     }
 
     private func decorated(_ list: some View) -> some View {
@@ -146,9 +147,10 @@ struct RunningJobRow: View {
         if let secs = job.runningFor(now: now) {
             parts.append(runningText(secs))
         } else {
-            parts.append(job.state == "claimed" ? String(localized: "starting") : job.state.replacingOccurrences(of: "_", with: " "))
+            parts.append(job.stateWords())
         }
-        if let step = job.progressStep, !step.isEmpty { parts.append(step.replacingOccurrences(of: "_", with: " ")) }
+        // the step in the app's words (the home sends its code: "convert", a stage's id)
+        if let step = job.stepWords() { parts.append(step) }
         if job.attempts > 1, job.maxAttempts > 0 { parts.append(String(localized: "attempt \(job.attempts) of \(job.maxAttempts)")) }
         return parts.joined(separator: " · ")
     }
@@ -161,7 +163,7 @@ struct StageRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(row.info.label).font(.headline)
+                Text(verbatim: row.info.title()).font(.headline)
                 HStack(spacing: 12) {
                     Counter(text: Text("\(row.waiting) waiting"), systemImage: "hourglass")
                     Counter(text: Text("\(row.running) running"), systemImage: "gearshape.2")
@@ -302,7 +304,7 @@ struct StageView: View {
             }
         }
         .maktabaSurface()
-        .navigationTitle(row?.info.label ?? stage)
+        .navigationTitle(row?.info.title() ?? StageWords.title(stage))
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif

@@ -36,18 +36,24 @@ final class RemoteDemoShotsUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
     }
 
+    /// The Queue: the jobs running now on the demo's titles, and the stages with their counts.
+    /// On the iPad (landscape) Transcribe is chosen, so its page fills the pane beside the list.
+    /// The stages, steps and states are the home's codes and English labels, as a home sends
+    /// them: the app says them in its own words (`StageWords`), in English and in Arabic.
     func testQueue() throws {
         for (language, locale) in Self.languages {
             let home = try start(language)
-            if language == "ar" {
-                // the stages' names are the home's words (MockHome's are English): in Arabic here
-                home.stub("GET", "/api/queues", body: """
-                {"paused_all":false,"issues_count":0,"stages":[
-                  {"stage":"probe","label":"الفحص","lane":"a","lane_order":1,"hidden":false,"enabled":true,"paused":false},
-                  {"stage":"transcribe","label":"التفريغ النصي","lane":"a","lane_order":2,"hidden":false,"enabled":true,"paused":false}],
-                 "queues":[{"stage":"probe","counts":{"pending":3,"ready":1,"running":1,"failed_open":0,"done_24h":12},"rate_per_min":0,"no_worker":false}]}
-                """)
-            }
+            home.stub("GET", "/api/queues", body: """
+            {"paused_all":false,"issues_count":0,"stages":[
+              {"stage":"probe","label":"Length","lane":"a","lane_order":1,"hidden":false,"enabled":true,"paused":false},
+              {"stage":"transcribe","label":"Transcribe","lane":"a","lane_order":2,"hidden":false,"enabled":true,"paused":false},
+              {"stage":"index","label":"Search index","lane":"a","lane_order":3,"hidden":false,"enabled":true,"paused":false}],
+             "queues":[
+              {"stage":"probe","counts":{"pending":3,"ready":1,"running":1,"failed_open":0,"done_24h":12},"rate_per_min":0,"no_worker":false},
+              {"stage":"transcribe","counts":{"pending":14,"ready":2,"running":1,"failed_open":0,"done_24h":38},
+               "rate_per_min":0.4,"eta_sec":5400,"no_worker":false},
+              {"stage":"index","counts":{"pending":5,"ready":0,"running":1,"failed_open":0,"done_24h":41},"rate_per_min":0.6,"no_worker":false}]}
+            """)
             signIn(language, locale: locale, home: home)
 
             openTab(language == "ar" ? "الطابور" : "Queue")
@@ -57,6 +63,18 @@ final class RemoteDemoShotsUITests: XCTestCase {
                           "a running job on \(title); the home saw \(home.seen)")
             // its rows' counts in
             XCTAssertTrue(wait { home.seen.contains("GET /api/queues") && home.seen.contains("GET /api/queues/running") })
+            if isPad {
+                // Transcribe chosen: its page beside the list, its failures read
+                let stage = app.staticTexts[language == "ar" ? "التفريغ" : "Transcribe"].firstMatch
+                XCTAssertTrue(stage.waitForExistence(timeout: 10), "the Transcribe stage in the list")
+                stage.tap()
+                XCTAssertTrue(wait(timeout: 15) { home.seen.contains("GET /api/queues/transcribe/failures") },
+                              "Transcribe's page; the home saw \(home.seen)")
+                let none = NSPredicate(format: "label == %@", language == "ar" ? "لا إخفاقات" : "No failures")
+                XCTAssertTrue(app.descendants(matching: .any).matching(none).firstMatch.waitForExistence(timeout: 10),
+                              "its failures read")
+            }
+            waitForQuiet(home)
             let shot = XCUIScreen.main.screenshot()
             attach(shot, "remote")
             attach(shot, "remote-queue")
@@ -179,8 +197,8 @@ final class RemoteDemoShotsUITests: XCTestCase {
         }
         home.stub("GET", "/api/issues", body: """
         {"groups":[
-          \(group("probe", "nas_timeout", 2, "retry", "v-lake-nasser")),
-          \(group("transcode", "ffmpeg_decode", 1, "retry", "v-ghost-octopus")),
+          \(group("probe", "file_missing", 2, "retry", "v-lake-nasser")),
+          \(group("extract", "ffmpeg_decode", 1, "retry", "v-ghost-octopus")),
           \(group("transcribe", "disk_full", 3, "open_settings", nil))]}
         """)
     }

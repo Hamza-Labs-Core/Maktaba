@@ -65,6 +65,10 @@ struct PlayerApp: App {
         // chose Profile)
         NSWindow.allowsAutomaticWindowTabbing = false
         #endif
+        #if os(macOS) && DEBUG
+        // the product screenshots' window size (`-maktaba-window-size`, story 60.14)
+        MacWindowSize.applyFromLaunchArguments()
+        #endif
     }
 
     var body: some Scene {
