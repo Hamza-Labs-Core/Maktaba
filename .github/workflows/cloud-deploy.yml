@@ -167,8 +167,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
         with:
-          ref: ${{ needs.resolve.outputs.sha }}
+          fetch-depth: 0
           persist-credentials: false
+      # the web app is built from the release's own source, so it matches the api it calls: a
+      # published release's commit, which must be on main (the release session tags main only)
+      - name: The release's source (a commit on main)
+        env:
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git merge-base --is-ancestor "$SHA" origin/main || { echo "::error::$SHA is not on main"; exit 1; }
+          git worktree add --detach "$RUNNER_TEMP/release" "$SHA"
       - uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
         with:
           version: 9.15.4
@@ -178,7 +187,7 @@ jobs:
           node-version-file: web/.nvmrc
           package-manager-cache: false
       - name: Build the cloud web app (the release's source)
-        working-directory: web
+        working-directory: ${{ runner.temp }}/release/web
         run: |
           pnpm install --frozen-lockfile
           pnpm build:cloud

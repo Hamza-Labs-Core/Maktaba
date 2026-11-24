@@ -129,6 +129,7 @@ def wait(what: str, probe: Callable[[], Any], seconds: float, every: float = 5) 
 # --- HTTP ---------------------------------------------------------------------------------
 
 CTX = ssl.create_default_context(cafile=CA_FILE) if CA_FILE else ssl.create_default_context()
+CTX.minimum_version = ssl.TLSVersion.TLSv1_2
 
 
 def http(method: str, url: str, body: Any = None, token: str = "", raw: bool = False,
