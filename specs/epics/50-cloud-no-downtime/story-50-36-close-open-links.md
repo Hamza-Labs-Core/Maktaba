@@ -100,7 +100,8 @@ state, not access, and stays.
   `broadcastAccess.open*`, `verify*`, `perIP*`) and `web/cloud/src/i18n/{en,ar}.json`
   (`broadcast.access.open*`, `broadcast.openNeedsVerification`, `broadcast.verify.*`,
   `broadcast.limits.perIP*`).
-- Help: `web/src/help/content/{en,ar}/broadcast-access.md`.
+- Help: none. The Broadcast access topic was removed while broadcasting is off; the topic that
+  comes back with broadcasting is written invite-only.
 
 **Apps**
 
@@ -167,7 +168,8 @@ watch and live answer 404 to everything. The rest of this story still stands.
 4. **Home API.** Accept `invite` only (`badAccess` otherwise); drop `openIsAlwaysOn`.
 5. **Web.** Remove the access choice from the home's Broadcast panel, the open option and its
    verification and per-network fields from both Broadcast access pages, and their strings in
-   English and Arabic. The help page says channels are invite-only.
+   English and Arabic. The help topic that comes back with broadcasting says channels are
+   invite-only.
 6. **Apps.** Remove the `open` pass kind and the `verify` state; on start, delete any saved
    `open` pass (it no longer works).
 7. **Rehearsal.** Rewrite the `broadcast-access` scenario as invite only, adding a viewer with no

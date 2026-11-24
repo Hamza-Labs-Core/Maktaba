@@ -160,6 +160,37 @@ func TestMarkRecordDown(t *testing.T) {
 	if !RecordMigrated(path, "0.3.82") {
 		t.Fatal("the release before's record is not migrated")
 	}
+	// a newer schema kept for the release before, before the update: kept for it again
+	write(`{"version":"v0.3.90","state":"migrated","from":"v0.3.82","dump_kept_for":"0.3.82","schema_before":183}`)
+	if slot, kept, err := RecordSchemaBefore(path, "0.3.90"); err != nil || slot != 183 || !kept {
+		t.Fatalf("before 0.3.90: %d %v %v", slot, kept, err)
+	}
+	if slot, kept, err := RecordSchemaBefore(path, "0.3.89"); err != nil || slot != 0 || kept {
+		t.Fatalf("another release's record: %d %v %v", slot, kept, err)
+	}
+	if ok, err := MarkRecordDown(path, "0.3.90", "0.3.82", "watch_timeout"); !ok || err != nil {
+		t.Fatalf("ok %v, err %v", ok, err)
+	}
+	b, _ = os.ReadFile(path)
+	rec = nil
+	if err := json.Unmarshal(b, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["kept_for"] != "0.3.82" || rec["kept_reason"] == nil || rec["dump_kept_for"] != nil || rec["schema_before"] != nil {
+		t.Fatalf("record: %s", b)
+	}
+	if _, _, err := RecordSchemaBefore(filepath.Join(t.TempDir(), "none.json"), "0.3.90"); err != nil {
+		t.Fatalf("no record: %v", err)
+	}
+	write(`{`)
+	if _, _, err := RecordSchemaBefore(path, "0.3.90"); err == nil {
+		t.Fatal("a record that cannot be read says nothing was kept")
+	}
+	write(`{"version":"v0.3.90","state":"migrated","kept_for":"0.3.82"}`)
+	if slot, kept, _ := RecordSchemaBefore(path, "0.3.90"); slot != 0 || !kept {
+		t.Fatalf("a kept schema 0.3.90 ran no migration on: %d %v", slot, kept)
+	}
+	write(`{"version":"v0.3.82","state":"migrated"}`)
 	if ok, _ := MarkRecordDown(path, "0.3.90", "0.3.82", "again"); ok {
 		t.Fatal("a record that is no longer the failed release's changed")
 	}

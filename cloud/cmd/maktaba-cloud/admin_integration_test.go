@@ -49,7 +49,7 @@ func concrete(route, id string) string {
 // except that a sensitive route is 401 reauth_required until a fresh MFA check (T07). Every
 // refusal of a presented credential is audited, and every request served is admin.request.
 func TestAdminRoutesRequireServiceAdmin(t *testing.T) {
-	e := newEnv(t)
+	e := newEnvCfg(t, nil, broadcastOn(t, nil))
 	e.registerVerified("victim@example.test")
 	victimID := e.userID("victim@example.test")
 	customer := e.registerVerified("user@example.test")

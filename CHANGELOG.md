@@ -1224,6 +1224,13 @@ build fails when the two differ.
   is refused, and the owner is
   alerted.
 
+- **Broadcasting answers nothing while it is off.** Maktaba Cloud's broadcast and moderation routes
+  (publishing, invites, upload tokens, viewer analytics, broadcast billing, notices and reports)
+  answer as a page that doesn't exist while broadcasting is off, whoever asks; the kill switch, the
+  broadcast edge's copy of its list, and the homes Maktaba marks for its own tests still work. A
+  home refuses its viewer-access API (`/api/broadcast/access`) unless its licence includes
+  broadcasting, whatever the web app shows.
+
 ### Added
 
 - **Search in the web app, on the big screen and on Samsung and LG TVs has an AI mode tab that
@@ -3897,6 +3904,13 @@ build fails when the two differ.
   plugin directory's report form has no Copyright reason. maktaba.dev no longer describes
   watching a broadcast. In English and Arabic.
 
+- **No help or setting about broadcasting while it is off.** The Broadcast access help topic is
+  gone from the app's help and from maktaba.tv, in English and Arabic; its old address opens the
+  help index. The web app's Rules page has no Broadcasting section, the Components page has no
+  broadcasting row and Subscription does not list it, unless the home's licence includes
+  broadcasting. The broadcast edge takes no uploads while broadcasting is off, with a valid token
+  included; only the list of revoked access still reaches it.
+
 - **The Mac Player's sidebar in brass, and on the right in Arabic.** The Player for Mac marks
   the section you are in with a brass fill and brass symbols instead of the system's grey, with
   Profile at the bottom of the sidebar. Drag a section to reorder it or hide it from its menu;
@@ -4579,6 +4593,27 @@ build fails when the two differ.
   that works after any part of a NO TRANSACTION migration's Up, and an Up that loses no data or
   says so. The update rehearsal runs every new migration's Down script after each partial Up on
   the bundled PostgreSQL.
+
+- **A rollback never undoes the migrations kept by an earlier one.** When a rolled back update had
+  left the library database on its newer schema (kept, since its changes were additive), and the
+  next update was rolled back with its Down scripts, they went back to the previous release's own
+  newest migration, so they also undid the ones kept before and dropped what they held. The Down
+  scripts now stop at the slot the database was at before the update (`schema_before`), and that
+  schema stays kept for the previous release, which otherwise refused to start on it (`db_ahead`).
+  When that slot is not recorded, no Down script runs.
+
+- **A home linked to Maktaba Cloud after its owner chose a plan gets remote play through the
+  relay at once.** A newly linked home started on the Free plan whatever its owner's plan was, so
+  the relay refused it ("remote play through the relay needs a Basic or Pro plan") until the plan
+  was changed again. It now takes its owner's plan and extra streams when it is linked.
+
+- **Suspending a Maktaba Cloud account ends its homes' remote connections at once.** A home that
+  was already connected stayed reachable through the relay, and one that lost its connection
+  could connect again with its own secret. Reinstating the account lets its homes back.
+
+- **Linking a home to Maktaba Cloud can be tried again when the answer was lost.** The code was
+  spent and the home had no credentials, so linking needed a new code and another name. The same
+  home now uses the same code again, for as long as the code lasts.
 
 ## [0.2.0] - 2026-10-19
 

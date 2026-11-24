@@ -141,20 +141,34 @@ jobs:
   # (test-without-building), each its own job: a shard no longer spends ten minutes building
   # the same app. The tests are split by how long each took on CI (tools/apple/ui-shard.py,
   # tools/apple/ui-durations.json), so the shards end together.
-  player-ui-build:
+  #
+  # No Mac runner is held waiting for another job (tools/ci/tests/test_no_held_runners.py): a
+  # shard `needs:` its device's build and is queued once the app is there. It used to start
+  # beside the build, its simulator settling meanwhile, and ask the API for the app for up to
+  # 30 minutes; with many pull requests queued the shards had the runners their own builds were
+  # queued for, and failed with no test run. A build takes 3 to 4 minutes, a simulator 6 to 14
+  # to boot and settle, so the overlap only ever saved the build's. The simulator still settles
+  # before the first test (sim-settle.py): one made for the run is busy for minutes after it
+  # boots, and a test in that time ran slowly enough to fail on time (CI: an accessibility audit
+  # "failed to complete in time"; a page took 31 s to idle).
+  #
+  # Each device has a build job and a test job of its own, not one matrix of both: `needs:` on
+  # a matrix waits for all of it, and a failed iPad build would skip the iPhone's shards too.
+  # The steps are shared by YAML anchors (GitHub expands them; it has no `<<` merge). The job
+  # names are as before: tools/release/tag-guard.sh and web/packages/website/shots.config.json
+  # find the jobs by them.
+  player-ui-build-iphone:
     name: Player UI tests build (${{ matrix.device }})
     if: inputs.player_ui
     runs-on: xcode-27
     timeout-minutes: 30
     strategy:
-      fail-fast: false
       matrix:
         include:
           - { device: iphone, scheme: "Maktaba Player" }
-          - { device: ipad, scheme: "Maktaba Player iPad" }
-    env:
+    env: &player-ui-build-env
       DERIVED: ${{ github.workspace }}/build/player-ui-derived
-    steps:
+    steps: &player-ui-build-steps
       - uses: actions/checkout@v6.0.2
 
       # the newest released Xcode, 27 or later, or the job fails (tools/apple/xcode.py)
@@ -173,39 +187,46 @@ jobs:
           tar -C "$DERIVED/Build" -cf "$RUNNER_TEMP/player-ui-build.tar" Products
           ls -la "$RUNNER_TEMP/player-ui-build.tar"
 
+      # kept a week: a failed shard run again (a later attempt of this run) downloads the app its
+      # first attempt built
       - uses: actions/upload-artifact@v7.0.1
         with:
           name: player-ui-build-${{ matrix.device }}
           path: ${{ runner.temp }}/player-ui-build.tar
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
           compression-level: 1
 
-  # Each shard starts beside the builds, not after them: its simulator boots and settles while
-  # the app builds. A simulator made for the run is busy for minutes after it boots, and a test
-  # in that time ran slowly enough to fail on time (CI: an accessibility audit "failed to
-  # complete in time" five to eight minutes after the simulator was made; a page took 31 s to
-  # idle). On main each shard built for ten minutes after booting, which hid it.
-  player-ui-tests:
+  player-ui-build-ipad:
+    name: Player UI tests build (${{ matrix.device }})
+    if: inputs.player_ui
+    runs-on: xcode-27
+    timeout-minutes: 30
+    strategy:
+      matrix:
+        include:
+          - { device: ipad, scheme: "Maktaba Player iPad" }
+    env: *player-ui-build-env
+    steps: *player-ui-build-steps
+
+  player-ui-tests-iphone:
     name: Player UI tests (${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }})
+    needs: [player-ui-build-iphone]
     if: inputs.player_ui
     runs-on: xcode-27
     timeout-minutes: 60
-    permissions:
-      contents: read
-      actions: read # the build's artifact, as soon as it is uploaded
     strategy:
       fail-fast: false
       matrix:
-        device: [iphone, ipad]
+        device: [iphone]
         # `shots`: the product screenshots (PlayerDemoShots, story 60.09), on a shard of their own
-        shard: ${{ fromJSON(inputs.shots_only && '["shots"]' || '["1", "2", "3", "4", "5", "6", "shots"]') }}
+        shard: &player-ui-shards ${{ fromJSON(inputs.shots_only && '["shots"]' || '["1", "2", "3", "4", "5", "6", "shots"]') }}
         shards: [6]
-    env:
+    env: &player-ui-tests-env
       PRODUCTS: ${{ github.workspace }}/build/player-ui-products
       SHOTS: ${{ github.workspace }}/build/player-shots
       RESULTS: ${{ github.workspace }}/build/player-results
-    steps:
+    steps: &player-ui-tests-steps
       - uses: actions/checkout@v6.0.2
 
       # the newest released Xcode, 27 or later, or the job fails (tools/apple/xcode.py)
@@ -272,24 +293,7 @@ jobs:
           # minutes: the tests run anyway, and the log says so.
           python3 tools/apple/sim-settle.py "$udid" "$RESULTS/$device-$shard-settle.log" --max 480
 
-      # The build's artifact, once its job has uploaded it (a failed build fails this shard).
-      - name: Wait for the build
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          name="player-ui-build-${{ matrix.device }}" job="Player UI tests build (${{ matrix.device }})"
-          start=$(date +%s)
-          while :; do
-            found=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=$name" --jq '.total_count' || echo 0)
-            if [ "$found" -ge 1 ]; then echo "built after $(( $(date +%s) - start ))s here"; break; fi
-            ended=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
-              --jq ".jobs[] | select(.name | endswith(\"$job\")) | .conclusion // \"\"" || true)
-            case "$ended" in failure|cancelled|timed_out) echo "the build ended: $ended"; exit 1 ;; esac
-            if [ $(( $(date +%s) - start )) -ge 1800 ]; then echo "no build in 30 minutes"; exit 1; fi
-            sleep 15
-          done
-
+      # the app its device's build job built, in this attempt or an earlier one
       - name: Download player-ui-build-${{ matrix.device }}
         id: artifact-player-ui-build
         continue-on-error: true
@@ -447,6 +451,21 @@ jobs:
             build/player-results
           if-no-files-found: warn
           retention-days: 14
+
+  player-ui-tests-ipad:
+    name: Player UI tests (${{ matrix.device }} ${{ matrix.shard }}/${{ matrix.shards }})
+    needs: [player-ui-build-ipad]
+    if: inputs.player_ui
+    runs-on: xcode-27
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        device: [ipad]
+        shard: *player-ui-shards
+        shards: [6]
+    env: *player-ui-tests-env
+    steps: *player-ui-tests-steps
 
   # The Mac Player (story 48.25): its menus read in-process, then driven from outside by
   # PlayerMacTests/UI against MockHome. A macOS UI-test runner must be signed, so the

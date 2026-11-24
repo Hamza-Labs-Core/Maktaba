@@ -199,8 +199,13 @@ describe("Components page (story 51.10)", () => {
     expect(groups).toEqual(expected);
     expect(groups.at(-1)).toBe("core");
     expect(screen.getByRole("heading", { name: "Always on" })).toBeInTheDocument();
-    // every catalog component has its row, in its group
+    // every catalog component has its row, in its group; broadcasting's only while the licence
+    // carries the broadcast flag (off by default, 2026-11-24)
     for (const c of DUMP.components) {
+      if (c.licence === "broadcast") {
+        expect(document.querySelector(`[data-component="${c.id}"]`), c.id).toBeNull();
+        continue;
+      }
       const r = row(c.id);
       expect(r.closest("[data-group]")?.getAttribute("data-group")).toBe(c.group);
       expect(within(r).getByText(EN[c.title_key]!)).toBeInTheDocument();
