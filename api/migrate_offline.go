@@ -76,12 +76,12 @@ func plainIndexBuilds(text string) (string, int) {
 				continue
 			}
 		}
-		switch {
-		case c == ';':
+		switch c {
+		case ';':
 			stmtStart = true
 			out.WriteByte(c)
 			i++
-		case c == '\'': // a string ('' inside it is a quote)
+		case '\'': // a string ('' inside it is a quote)
 			j := i + 1
 			for j < len(up) {
 				if up[j] == '\'' {
@@ -96,7 +96,7 @@ func plainIndexBuilds(text string) (string, int) {
 			end := min(j+1, len(up))
 			out.WriteString(up[i:end])
 			i = end
-		case c == '$': // a dollar quote: $$ or $tag$
+		case '$': // a dollar quote: $$ or $tag$
 			tag := dollarTag(up[i:])
 			if tag == "" {
 				out.WriteByte(c)

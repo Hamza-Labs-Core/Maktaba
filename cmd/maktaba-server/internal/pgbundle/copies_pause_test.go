@@ -25,7 +25,12 @@ func TestCopiesPauseSQL(t *testing.T) {
 	if !strings.Contains(TableSyncsSQL, `'^pg_[0-9]+_sync_[0-9]+_[0-9]+$'`) || !strings.Contains(TableSyncsSQL, "'"+AppDatabase+"'") {
 		t.Errorf("table syncs: %s", TableSyncsSQL)
 	}
-	if !strings.Contains(ReplicaLoginsSQL, "'"+ReplicaGroup+"'") || !strings.Contains(ReplicaLoginsSQL, "rolcanlogin") {
-		t.Errorf("replica logins: %s", ReplicaLoginsSQL)
+	// the machines' own roles only: never the app role, which is in the group too and which
+	// the migrations log in as (the auto-update e2e locked them out when it was paused)
+	for _, want := range []string{"'" + ReplicaGroup + "'", "rolcanlogin", `LIKE 'maktaba\_rep\_%'`,
+		"NOT IN ('" + AppRole + "', '" + SuperUser + "')", "<> current_user"} {
+		if !strings.Contains(ReplicaLoginsSQL, want) {
+			t.Errorf("replica logins lack %q: %s", want, ReplicaLoginsSQL)
+		}
 	}
 }

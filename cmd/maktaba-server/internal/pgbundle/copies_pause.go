@@ -26,11 +26,16 @@ const TableSyncsSQL = `SELECT count(*) FROM pg_replication_slots
     WHERE slot_type = 'logical' AND database = '` + AppDatabase + `'
       AND slot_name ~ '^pg_[0-9]+_sync_[0-9]+_[0-9]+$'`
 
-// ReplicaLoginsSQL selects the machines' replication roles that may log in now.
+// ReplicaLoginsSQL selects the machines' replication roles that may log in now: the
+// members of ReplicaGroup named maktaba_rep_<machine> (slot 0147's
+// cluster_node_replica_grant makes them). Never the app role, nor a superuser: the app
+// role is a member of the group too (it made it), and the migrations log in as it.
 const ReplicaLoginsSQL = `SELECT m.rolname FROM pg_roles m
     JOIN pg_auth_members am ON am.member = m.oid
     JOIN pg_roles g ON g.oid = am.roleid AND g.rolname = '` + ReplicaGroup + `'
-    WHERE m.rolcanlogin AND NOT m.rolsuper ORDER BY 1`
+    WHERE m.rolcanlogin AND NOT m.rolsuper AND m.rolname LIKE 'maktaba\_rep\_%'
+      AND m.rolname NOT IN ('` + AppRole + `', '` + SuperUser + `') AND m.rolname <> current_user
+    ORDER BY 1`
 
 // PauseCopiesSQL stops roles from logging in (each machine's replication role).
 func PauseCopiesSQL(roles []string) string {
