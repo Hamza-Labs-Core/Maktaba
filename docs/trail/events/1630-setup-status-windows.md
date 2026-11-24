@@ -39,6 +39,8 @@ The sixth build story of the approved desktop design (mockups `setup-welcome`, `
 
 - **A test that finds a button may find it before an async step enables it.** On Windows the welcome's Set up this PC waits for the adopt step; `findByRole` returns the disabled button at once. Wait for the state the test asserts.
 - **The scratchpad is shared between sessions:** another session overwrote `prbody.md` there. Use a file named for the PR.
+- **The design system's parts fall back to the system's face in the web app**: they read `--type-body-family`, which `tokens.css` does not set. The reference images showed it on the setup's footer buttons; the setup and status windows now set it, the rest of the app is #1651.
+- **A reference within the tolerance can still be stale**: after the face changed, two of the four setup images still passed. Removing all four made CI write them all again.
 
 ## Keep doing
 - Rendering the Playwright specs headless locally to compare them with the mockups, then deleting the PNGs so only CI's are committed.
