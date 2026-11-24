@@ -18,9 +18,8 @@ access without opening the home to the internet.
 
 Every release is on the [Releases page](https://github.com/Hamza-Labs-Core/Maktaba/releases/latest),
 signed with keyless cosign (Sigstore); its notes say how to verify each file. Each install
-below updates itself from the signed releases. The household install guides are built for
-maktaba.tv/install and will be served there once maktaba.tv is live; until then, the links
-below go to their source in this repository.
+below updates itself from the signed releases. The step-by-step guides for households are at
+[maktaba.tv/install](https://maktaba.tv/install/).
 
 How much machine you need depends on the size of the library:
 [docs/hardware.md](docs/hardware.md) has the tiers, measured on a live home.
@@ -58,18 +57,19 @@ Guide, with verifying the script, ffmpeg per distribution and uninstalling:
 ### NAS
 
 Every NAS runs the same image, as a non-root user, with its data on local storage. Which guide
-to follow, by model: [the NAS guide](web/packages/install/site/install/nas/index.html).
+to follow, by model: [maktaba.tv/install/nas](https://maktaba.tv/install/nas/).
 
 | NAS | What to use | Guide |
 |---|---|---|
-| Synology (DSM 7.2+) | Container Manager project: `maktaba-synology-compose.yaml` (`.j4125.yaml` on a J4125) | [guide](web/packages/install/site/install/synology/index.html), [files](deploy/nas/synology/) |
-| TrueNAS (25.04+) | Custom App: `maktaba-truenas-custom-app.yaml`, until the app is in TrueNAS's catalog | [guide](web/packages/install/site/install/truenas/index.html), [files](deploy/nas/truenas/README.md) |
-| Unraid | the Community Applications template | [guide](web/packages/install/site/install/unraid/index.html), [files](deploy/nas/unraid/README.md) |
-| QNAP | Container Station, with the Docker compose file | [guide](web/packages/install/site/install/qnap/index.html) |
-| UGREEN, ASUSTOR | Docker (UGOS Pro) or Portainer (ADM), with the Docker compose file | [guide](web/packages/install/site/install/ugreen/index.html) |
+| Synology (DSM 7.2+) | Container Manager project: `maktaba-synology-compose.yaml` (`.j4125.yaml` on a J4125) | [guide](https://maktaba.tv/install/synology/), [the files](deploy/nas/synology/) |
+| TrueNAS (25.04+) | Custom App: `maktaba-truenas-custom-app.yaml`, until the app is in TrueNAS's catalog | [guide](https://maktaba.tv/install/truenas/), [the files](deploy/nas/truenas/README.md) |
+| Unraid | the Community Applications template | [guide](https://maktaba.tv/install/unraid/), [the files](deploy/nas/unraid/README.md) |
+| QNAP | Container Station, with the Docker compose file | [guide](https://maktaba.tv/install/qnap/) |
+| UGREEN | Docker in UGOS Pro, with the Docker compose file | [guide](https://maktaba.tv/install/ugreen/) |
+| ASUSTOR | Portainer in ADM, with the Docker compose file | [guide](https://maktaba.tv/install/asustor/) |
 
-After setup: [permissions, hardware video, updates](web/packages/install/site/install/after-setup/index.html),
-[troubleshooting](web/packages/install/site/install/troubleshooting/index.html) and
+After setup: [permissions, hardware video, updates](https://maktaba.tv/install/after-setup/),
+[troubleshooting](https://maktaba.tv/install/troubleshooting/) and
 [the network](docs/nas/networking.md). All the NAS files: [deploy/nas](deploy/nas/README.md).
 
 ### Docker or Compose
@@ -83,7 +83,7 @@ docker compose run --rm maktaba setup
 ```
 
 It works the same under Portainer or Dockge.
-Guide: [the Docker page](web/packages/install/site/install/docker/index.html), which fills the file in,
+Guide: [maktaba.tv/install/docker](https://maktaba.tv/install/docker/), which fills the file in,
 and [the one-container install](docs/wiki/deployment.md#the-one-container-install-docker-a-nas).
 
 ### Other ways
