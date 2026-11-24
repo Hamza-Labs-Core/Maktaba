@@ -8693,8 +8693,6 @@
   "broadcast.analytics.device.android": "Android",
   "broadcast.analytics.device.androidtv": "Android TV",
   "broadcast.analytics.device.desktop": "Desktop app",
-  "help.topic.broadcast-access.title": "Broadcast access",
-  "help.topic.broadcast-access.summary": "Who may watch the channels this home publishes: invite links, TV codes, open channels and viewer limits",
   "broadcastAccess.title": "Who can watch",
   "broadcastAccess.free": "Free to watch",
   "broadcastAccess.noChannels": "This home hasn't published a channel yet. Publish one from the home's Broadcast page.",
