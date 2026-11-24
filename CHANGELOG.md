@@ -1016,6 +1016,13 @@ build fails when the two differ.
 
 ### Security
 
+- **The cloud's sign-in limit holds under a burst.** The shared limit on sign-in, password reset,
+  mail and claim redeem (Epic 50 story 50.17) could let one request past its burst when many
+  arrived at once on several api nodes: a refused request whose database transaction started in
+  the same microsecond as the last allowed one read as allowed. Each request's answer now comes
+  from whether it took a token, and a request that waited on another never refills the same time
+  twice.
+
 - **Watch a broadcast stays closed on Apple devices until a parental limit is ruled out (Epic 50,
   story 50.27; Epic 57).** On Apple TV and in the Player on iPhone, iPad and the Mac, the Watch a
   broadcast button and invite links (`maktaba://watch/i/…`) used to open whenever no limit was
