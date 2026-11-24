@@ -22,10 +22,13 @@ package main
 // is under t.TempDir().
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,6 +36,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -119,6 +123,10 @@ type fakeGitHub struct {
 	srv      *httptest.Server
 	releases []map[string]any
 	files    map[string][]byte
+	// shape, when set (useRealShape), serves the list and each release as GitHub really
+	// does (update rehearsal scenario 20): nil serves the short list every other scenario
+	// reads
+	shape *realShape
 }
 
 func newFakeGitHub(t *testing.T) *fakeGitHub {
@@ -128,8 +136,12 @@ func newFakeGitHub(t *testing.T) *fakeGitHub {
 		defer g.mu.Unlock()
 		base := "/repos/" + updateRepo + "/releases"
 		switch p := r.URL.Path; {
+		case p == base && g.shape != nil:
+			g.servePage(w, r)
 		case p == base:
 			_ = json.NewEncoder(w).Encode(g.releases)
+		case strings.HasPrefix(p, base+"/tags/") && g.shape != nil:
+			g.serveTag(w, r, strings.TrimPrefix(p, base+"/tags/"))
 		case strings.HasPrefix(p, base+"/tags/"):
 			tag := strings.TrimPrefix(p, base+"/tags/")
 			for _, rel := range g.releases {
@@ -166,6 +178,297 @@ func (g *fakeGitHub) publish(r *releaseverifytest.FakeRelease) {
 	g.releases = append([]map[string]any{{"tag_name": r.Tag, "html_url": "https://github.test/" + r.Tag,
 		"body": "notes " + r.Tag, "prerelease": false, "published_at": time.Now().Add(-48 * time.Hour).UTC().Format(time.RFC3339),
 		"assets": assets}}, g.releases...)
+}
+
+// ---- the release feed at its real size and shape (update rehearsal scenario 20) ----
+
+// realFeedFixture is GitHub's first page of this repository's releases as a home reads it
+// (tests/fixtures/github-releases, recorded by its record.sh): ten releases of some 190
+// assets each, some 3.2 MB.
+const realFeedFixture = "../tests/fixtures/github-releases/page-1.json.gz"
+
+// realShape is what the fake serves in place of its short list: every published release
+// in the recorded release's field set (author, node ids, each asset's uploader, digest,
+// counts), with filler assets up to the recorded count times grow and its notes as long,
+// followed by older releases from the recorded page (re-tagged v0.0.N, below any home's
+// floor: never cataloged, they fill the pages as the real older releases do). GitHub's
+// paging is honoured (per_page, default 30; page, from 1), each page minified as GitHub
+// answers a home's Accept: application/vnd.github+json.
+type realShape struct {
+	tmpl    map[string]any   // the recorded newest release
+	assets  []map[string]any // its assets: the template of every asset served
+	fillers []map[string]any // the older releases, grown
+	grow    float64
+	// pad is white space inside each page of the list (a list grown past its cap); 0: none
+	pad int
+	// largest is the longest page of the list served, last the last one, in bytes
+	largest, last int
+}
+
+// readRealFeed is the recorded page's releases.
+func readRealFeed(t *testing.T) []map[string]any {
+	t.Helper()
+	f, err := os.Open(realFeedFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dec := json.NewDecoder(zr)
+	dec.UseNumber()
+	var rels []map[string]any
+	if err := dec.Decode(&rels); err != nil {
+		t.Fatalf("%s: %v", realFeedFixture, err)
+	}
+	if len(rels) == 0 {
+		t.Fatalf("%s: no releases", realFeedFixture)
+	}
+	return rels
+}
+
+// realFeedPageBytes is the recorded page's length as GitHub answered it.
+func realFeedPageBytes(t *testing.T) int {
+	t.Helper()
+	f, err := os.Open(realFeedFixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := io.Copy(io.Discard, zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return int(n)
+}
+
+// cloneJSON is a deep copy of a decoded JSON value.
+func cloneJSON[T any](v T) T {
+	b, _ := json.Marshal(v)
+	var out T
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	_ = dec.Decode(&out)
+	return out
+}
+
+// grown is n times grow, at least n.
+func grown(n int, grow float64) int {
+	return max(n, int(float64(n)*grow+0.5))
+}
+
+// useRealShape makes the fake serve GitHub's real shape and size, every release's assets
+// and notes grow times the recorded ones (1: today's size), with fillers enough for
+// pages full pages of every page size a home asks for.
+func (g *fakeGitHub) useRealShape(t *testing.T, grow float64, pages int) {
+	t.Helper()
+	rels := readRealFeed(t)
+	s := &realShape{tmpl: rels[0], grow: grow}
+	for _, a := range rels[0]["assets"].([]any) {
+		s.assets = append(s.assets, a.(map[string]any))
+	}
+	n := 0
+	for len(s.fillers) < pages*30 {
+		for _, rel := range rels {
+			f := cloneJSON(rel)
+			n++
+			tag := fmt.Sprintf("v0.0.%d", 100000-n) // newest first, as GitHub lists them
+			f["tag_name"], f["name"] = tag, tag
+			assets := f["assets"].([]any)
+			for i, want := 0, grown(len(assets), grow); len(assets) < want; i++ {
+				a := cloneJSON(assets[i%len(assets)].(map[string]any))
+				a["name"] = fmt.Sprintf("rehearsal-filler-%03d-%v", i, a["name"])
+				assets = append(assets, a)
+			}
+			f["assets"] = assets
+			if body, _ := f["body"].(string); body != "" {
+				f["body"] = strings.Repeat(body, max(1, int(grow+0.5)))
+			}
+			s.fillers = append(s.fillers, f)
+		}
+	}
+	g.mu.Lock()
+	g.shape = s
+	g.mu.Unlock()
+}
+
+// setPad puts n bytes of white space inside each page of the list (0: none).
+func (g *fakeGitHub) setPad(n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.shape.pad = n
+}
+
+// largestPage is the longest page of the list served so far.
+func (g *fakeGitHub) largestPage() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.shape.largest
+}
+
+// lastPage is the length of the last page of the list served.
+func (g *fakeGitHub) lastPage() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.shape.last
+}
+
+// shaped is a published release (publish's short form) in the recorded release's shape.
+func (g *fakeGitHub) shaped(rel map[string]any) map[string]any {
+	s := g.shape
+	out := cloneJSON(s.tmpl)
+	tag := rel["tag_name"].(string)
+	repoAPI := g.srv.URL + "/repos/" + updateRepo
+	out["tag_name"], out["name"], out["html_url"] = tag, tag, rel["html_url"]
+	out["draft"], out["prerelease"], out["published_at"] = false, rel["prerelease"], rel["published_at"]
+	out["url"] = repoAPI + "/releases/" + tag
+	out["assets_url"] = repoAPI + "/releases/" + tag + "/assets"
+	tmplBody, _ := s.tmpl["body"].(string)
+	body, _ := rel["body"].(string)
+	if want := grown(len(tmplBody), s.grow); len(body) < want {
+		body += "\n\n" + strings.Repeat("Notes as long as a real release's. ", want/35+1)
+	}
+	out["body"] = body
+	var assets []any
+	add := func(name, url string, size any) {
+		i := len(assets)
+		a := cloneJSON(s.assets[i%len(s.assets)])
+		id := 900000000 + i
+		a["id"], a["name"], a["browser_download_url"], a["size"] = id, name, url, size
+		a["url"] = fmt.Sprintf("%s/releases/assets/%d", repoAPI, id)
+		assets = append(assets, a)
+	}
+	own, _ := rel["assets"].([]map[string]any)
+	for _, a := range own {
+		add(a["name"].(string), a["browser_download_url"].(string), a["size"])
+	}
+	for i := 0; len(assets) < grown(len(s.assets), s.grow); i++ {
+		name := fmt.Sprintf("rehearsal-filler-%03d.bin", i)
+		add(name, g.srv.URL+"/"+updateRepo+"/releases/download/"+tag+"/"+name, 1024)
+	}
+	out["assets"] = assets
+	return out
+}
+
+// all is the list GitHub would hold: the published releases, newest first, then the
+// fillers.
+func (g *fakeGitHub) all() []map[string]any {
+	out := make([]map[string]any, 0, len(g.releases)+len(g.shape.fillers))
+	for _, rel := range g.releases {
+		out = append(out, g.shaped(rel))
+	}
+	return append(out, g.shape.fillers...)
+}
+
+// minified is v as GitHub writes it for a home: no indentation, no HTML escaping.
+func minified(v any) []byte {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	_ = enc.Encode(v)
+	return bytes.TrimRight(b.Bytes(), "\n")
+}
+
+// servePage serves one page of the list (g.mu held).
+func (g *fakeGitHub) servePage(w http.ResponseWriter, r *http.Request) {
+	per, page := 30, 1
+	if v, err := strconv.Atoi(r.URL.Query().Get("per_page")); err == nil && v > 0 {
+		per = min(v, 100)
+	}
+	if v, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && v > 0 {
+		page = v
+	}
+	all := g.all()
+	part := []map[string]any{}
+	for i := (page - 1) * per; i < page*per && i < len(all); i++ {
+		part = append(part, all[i])
+	}
+	b := minified(part)
+	if g.shape.pad > 0 {
+		b = append(append(append([]byte{}, b[0]), bytes.Repeat([]byte(" "), g.shape.pad)...), b[1:]...)
+	}
+	g.shape.largest, g.shape.last = max(g.shape.largest, len(b)), len(b)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(b)
+}
+
+// serveTag serves one release by its tag (g.mu held).
+func (g *fakeGitHub) serveTag(w http.ResponseWriter, r *http.Request, tag string) {
+	for _, rel := range g.all() {
+		if rel["tag_name"] == tag {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			_, _ = w.Write(minified(rel))
+			return
+		}
+	}
+	http.NotFound(w, r)
+}
+
+// The fake's real shape is GitHub's: pages of the asked size, each about as long as the
+// recorded page times grow, every release with the recorded release's fields, and the
+// published one found by its tag with its own files.
+func TestFakeGitHubRealShape(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds pages of several MB; runs without -short")
+	}
+	g := newFakeGitHub(t)
+	rel := &releaseverifytest.FakeRelease{Tag: "v9.9.9", Files: map[string][]byte{"checksums.txt": []byte("x")}}
+	g.publish(rel)
+	g.useRealShape(t, 2, 3)
+	recorded := realFeedPageBytes(t)
+	get := func(q string) []map[string]any {
+		resp, err := g.srv.Client().Get(g.srv.URL + "/repos/" + updateRepo + "/releases" + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var out []map[string]any
+		if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	p1 := get("?per_page=10&page=1")
+	if len(p1) != 10 || p1[0]["tag_name"] != "v9.9.9" || p1[1]["tag_name"] == "v9.9.9" {
+		t.Fatalf("page 1: %d releases, first %v", len(p1), p1[0]["tag_name"])
+	}
+	page1 := g.lastPage()
+	if n := page1; n < recorded*17/10 || n > recorded*23/10 {
+		t.Fatalf("a page of ten at twice the size is %d bytes; the recorded page is %d", n, recorded)
+	}
+	for _, k := range []string{"author", "node_id", "assets_url", "upload_url", "tarball_url", "created_at"} {
+		if _, ok := p1[0][k]; !ok {
+			t.Errorf("the published release has no %s", k)
+		}
+	}
+	assets := p1[0]["assets"].([]any)
+	first := assets[0].(map[string]any)
+	if len(assets) < 300 || first["name"] != "checksums.txt" || first["uploader"] == nil ||
+		!strings.HasPrefix(first["browser_download_url"].(string), g.srv.URL+"/"+updateRepo+"/releases/download/v9.9.9/") {
+		t.Fatalf("the published release's assets: %d, first %v", len(assets), first)
+	}
+	if p3 := get("?per_page=10&page=3"); len(p3) != 10 {
+		t.Fatalf("page 3: %d releases", len(p3))
+	}
+	if all := get("?per_page=30"); len(all) != 30 {
+		t.Fatalf("per_page=30: %d releases", len(all))
+	}
+	resp, err := g.srv.Client().Get(g.srv.URL + "/repos/" + updateRepo + "/releases/tags/v9.9.9")
+	if err != nil || resp.StatusCode != 200 {
+		t.Fatalf("by tag: %v %v", resp, err)
+	}
+	resp.Body.Close()
+	g.setPad(1 << 20)
+	get("?per_page=10&page=1")
+	if g.lastPage() != page1+1<<20 {
+		t.Fatalf("the pad was not served: page 1 is %d, was %d", g.lastPage(), page1)
+	}
 }
 
 // installRelease installs r as the first release of the layout at root (as an install

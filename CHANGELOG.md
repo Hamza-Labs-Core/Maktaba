@@ -412,6 +412,18 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A home that can't check for updates now says so.** When two checks in a row fail, the Updates
+  page says "Can't check for updates since …" with the reason (GitHub's list is larger than this
+  version reads, GitHub asked to wait, GitHub answered with an error or could not be reached) and
+  what GitHub answered; one failure is a quiet line. System health has a new **Update check** item
+  that turns yellow with the same words, and admins get a notification. Before, a failed check was
+  only written to the log: from 2026-11-23 every home's check failed for over a day and nothing on
+  screen said so. A page of GitHub's list of releases may now be 16 MiB (it is some 3.2 MB today),
+  and the About check and the server's own updater read the list the same way and say "larger than
+  … bytes" instead of failing to decode it. A check in CI reads the real feed every hour, and
+  after each release, exactly as a home does, and fails when any answer passes 70% of what a home
+  reads or the newest release is not one a home can pick.
+
 - **A home whose update rolled back no longer installs an older release instead, and it sees new
   releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
   the 8 MiB a home reads, so every check for updates failed and homes stopped learning of new

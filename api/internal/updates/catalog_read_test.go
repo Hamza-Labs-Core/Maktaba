@@ -79,10 +79,10 @@ func TestListNotAList(t *testing.T) {
 }
 
 func TestListTooLong(t *testing.T) {
-	// valid JSON, longer than the 8 MiB a page of the list may be
+	// valid JSON, longer than a page of the list may be
 	d := readDiscoverer(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`[{"tag_name":"v1.0.0","body":"`))
-		_, _ = w.Write(bytes.Repeat([]byte("x"), 9<<20))
+		_, _ = w.Write(bytes.Repeat([]byte("x"), listPageLimit+1))
 		_, _ = w.Write([]byte(`"}]`))
 	})
 	_, decodeErr, err := d.list(context.Background())

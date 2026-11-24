@@ -1,0 +1,92 @@
+# The release feed, read hourly exactly as a home's update check reads it (api/cmd/release-feed-check:
+# the same URLs, headers, pages and caps, through the home's own code). It fails, and opens an
+# issue (or comments on the open one), when any page of the release list or the newest release's
+# own read is over 70% of its cap, or when the newest published stable release is not
+# selectable by a home's catalog. A run that reads fine again closes that issue.
+#
+# Since 2026-11-23 11:02Z every home's update check had failed, silently, for over a day: the
+# list had grown past the 8 MiB a home read, and nothing outside a home read the feed the way a
+# home does (the incident of 2026-11-24). Each release workflow runs the same check once it
+# publishes (tools/release/feed-check.sh); this run catches what changes between releases (a
+# release edited, assets added, GitHub's answer growing).
+name: Release feed
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-feed
+  cancel-in-progress: false
+
+jobs:
+  feed:
+    name: a home can read the release feed
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write # the issue a failure opens, and closes once it reads again
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: api/go.mod
+          cache: false
+
+      - name: Go caches
+        uses: ./.github/actions/go-cache
+
+      - name: Go modules
+        uses: ./.github/actions/go-mod-download
+        with:
+          modules: api
+
+      - name: Read the feed as a home does
+        id: check
+        env:
+          # only when GitHub rate-limits the anonymous read (its runners share addresses)
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          cd api
+          go run ./cmd/release-feed-check -repo "${GITHUB_REPOSITORY}" -token-env GH_TOKEN | tee "${RUNNER_TEMP}/feed.md"
+
+      - name: Open or update the issue
+        if: failure() && steps.check.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="The release feed: a home cannot read it, or soon cannot"
+          body="${RUNNER_TEMP}/body.md"
+          {
+            echo "The hourly release-feed check failed ([run](${RUN_URL})). Homes read the feed through the same code: until it is fixed they may not see new releases. See docs/updates.md, \"The release feed's caps\"."
+            echo
+            cat "${RUNNER_TEMP}/feed.md" 2>/dev/null || echo "(the check printed nothing: see the run)"
+          } >"${body}"
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body-file "$body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body-file "$body"
+          fi
+
+      - name: Close the issue once the feed reads again
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="The release feed: a home cannot read it, or soon cannot"
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue close "$open" --repo "$GITHUB_REPOSITORY" --comment "The feed reads again with room to spare ([run](${RUN_URL}))."
+          fi
