@@ -375,13 +375,24 @@ func TestLauncherRestartsOn75(t *testing.T) {
 	l := installed(t, map[string]string{"1.0.0": "exit:75,exit:75,run"}, "1.0.0")
 	cfg := testConfig(l.Root)
 	cfg.BackoffInitial = 2 * time.Second // a 75 must not wait for the backoff
+	// the waits the launcher asks for, not the wall clock's gaps between the starts: a fixed
+	// 1.5 s failed a slow Windows runner at 1.54 s, and the backoff itself (2 s) at 2.255 s
+	// (main's run 45292196113), with no backoff asked for either time
+	var mu sync.Mutex
+	var waits []time.Duration
+	cfg.Sleep = func(ctx context.Context, d time.Duration) bool {
+		mu.Lock()
+		waits = append(waits, d)
+		mu.Unlock()
+		return sleepCtx(ctx, d)
+	}
 	stop := startLauncher(t, cfg)
 	waitFor(t, "third start", func() bool { return countAct(readTrace(l), "1.0.0", "run") == 1 })
-	tr := readTrace(l)
-	// one backoff alone is BackoffInitial: two restarts in less than that had none (a fixed
-	// 1.5 s failed a slow Windows runner at 1.54 s with no backoff at all)
-	if d := tr[2].at.Sub(tr[0].at); d >= cfg.BackoffInitial {
-		t.Fatalf("restarts on 75 took %v, at least the %v backoff (backoff applied?)", d, cfg.BackoffInitial)
+	mu.Lock()
+	asked := append([]time.Duration(nil), waits...)
+	mu.Unlock()
+	if len(asked) != 0 {
+		t.Fatalf("restarts on 75 asked for backoff waits %v, want none", asked)
 	}
 	if err := stop(); err != nil {
 		t.Fatal(err)
