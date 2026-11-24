@@ -43,3 +43,11 @@
    share a line would interleave), and stops, the merge left in progress, on any other conflict
    or a CHANGELOG change it cannot place. Never resolve a CHANGELOG hunk by hand without reading
    the lines around it, and never use `merge=union` on them.
+9. **Decisions for the owner go through the decisions inbox, never chat** (every agent, every
+   provider): file a request with `~/.maktaba/decisions/bin/ask request.json` (title, context,
+   2+ options with exactly one recommended, optional images, `from`), write
+   `DECISION NEEDED: <id> — <title>` in your report, keep working on what doesn't depend on it,
+   and read the answer with `~/.maktaba/decisions/bin/answer <id>`. The owner answers every
+   decision on one page, synced every 15 minutes. Don't ask decisions in chat, in pull requests
+   or on pages of your own. Images: dark theme, English and Arabic pairs, demo media with no
+   women or girls. See [`docs/decisions.md`](docs/decisions.md) and `~/.maktaba/decisions/README.md`.

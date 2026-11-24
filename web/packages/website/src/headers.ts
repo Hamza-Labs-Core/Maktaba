@@ -79,8 +79,14 @@ export const SECURITY_HEADERS: Record<string, string> = {
 // /assets/.
 const HASHED = /^\/(install\/)?assets\/.+-[A-Za-z0-9_-]{8,}\.(js|css|woff2?|svg|png|webp|avif)$/;
 
+// The release feed (/updates/v1/<channel>/<platform>.json and its signature, docs/updates.md
+// "How a home finds a release"): signed files that change with each release or pull, read by
+// every home every 6 hours. A minute in any cache, so a release or a pull reaches homes at once.
+const FEED = /^\/updates\/v\d+\//;
+
 export function cacheControl(path: string, contentType: string, status: number): string {
   if (status >= 400) return "no-store";
+  if (FEED.test(path)) return "public, max-age=60, must-revalidate";
   if (HASHED.test(path)) return "public, max-age=31536000, immutable";
   if (contentType.startsWith("text/html")) return "public, max-age=0, must-revalidate";
   return "public, max-age=3600";

@@ -140,9 +140,18 @@ type Database struct {
 	// DownFrom is the release whose Down scripts brought the database back to Version's
 	// schema (layout.MarkRecordDown; the database step, when that release's migrations
 	// failed part way: updater.FailedBack), DownReason why.
-	DownFrom   string    `json:"down_from,omitempty"`
-	DownReason string    `json:"down_reason,omitempty"`
-	At         time.Time `json:"at"`
+	DownFrom   string `json:"down_from,omitempty"`
+	DownReason string `json:"down_reason,omitempty"`
+	// SchemaBefore is the newest migration the database recorded before the update's
+	// migrations started (migrating; 0: not known): the slot a failed update's Down
+	// scripts go back to (updater.FailedBack), whichever release ran on it.
+	SchemaBefore int64 `json:"schema_before,omitempty"`
+	// Restore is why a failed update's dump goes back instead of its Down scripts
+	// (restoring; the update attempt's code: db_down_failed, db_restored_lossy,
+	// db_restored_unknown). "": its migrations failed and nothing else was tried (a
+	// release from before 2026-11-24).
+	Restore string    `json:"restore,omitempty"`
+	At      time.Time `json:"at"`
 }
 
 // Ran is the release that last started on the database: Release, else Version.
