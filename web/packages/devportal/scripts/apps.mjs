@@ -873,8 +873,8 @@ export const APPS = [
               shot(
                 "android-remote-attention",
                 "phone",
-                "The Remote's Needs attention on an Android phone, with the banner of a TV waiting to sign in",
-                "ما يحتاج إلى انتباه في تطبيق الإدارة عن بُعد على هاتف أندرويد، مع شريط تلفاز ينتظر تسجيل الدخول"
+                "The Remote's Needs attention on an Android phone: each kind of problem with its count, the step it stopped at and Retry, and one that settings fix",
+                "ما يحتاج إلى انتباه في تطبيق الإدارة عن بُعد على هاتف أندرويد: كل نوع من المشكلات بعدده، والمرحلة التي توقف عندها، وزر إعادة المحاولة، ومشكلة تُصلحها الإعدادات"
               ),
             ],
           },
@@ -1190,18 +1190,6 @@ export const APPS = [
                 "wide",
                 "Signing in on an Android TV: the code, its QR code, and a phone that found the TV",
                 "تسجيل الدخول على أندرويد تي في: الرمز ورمز QR الخاص به، وهاتف وجد التلفاز"
-              ),
-              shot(
-                "firetv-home",
-                "wide",
-                "Maktaba TV's Home on a Fire TV: Continue watching and the libraries' rows",
-                "الرئيسية في تطبيق التلفاز على فاير تي في: تابع المشاهدة وصفوف المكتبات"
-              ),
-              shot(
-                "firetv-library",
-                "wide",
-                "A library on a Fire TV: its tabs and Recommended",
-                "مكتبة على فاير تي في: تبويباتها والمقترحات"
               ),
               shot(
                 "firetv-cloud-code",

@@ -61,6 +61,10 @@ class AttentionScreenshotTest {
     @Test @Config(qualifiers = "w411dp-h923dp-420dpi")
     fun pixelFoldCoverEnglish() = shoot(RemoteWindow.PixelFoldCover, "attention_pixelfoldcover_dark_en")
 
+    // a phone-sized pair in both languages: maktaba.dev's android-remote-attention is cut from it
+    @Test @Config(qualifiers = "ar-w411dp-h923dp-420dpi")
+    fun pixelFoldCoverArabic() = shoot(RemoteWindow.PixelFoldCover, "attention_pixelfoldcover_dark_ar")
+
     private companion object {
         // text is drawn by the host's font rasteriser: a reference recorded on a Mac still matches
         // on CI's Linux within a small share of pixels
