@@ -383,12 +383,18 @@ describe("Library page: Playlists and sourced collections", () => {
       source_kind: "youtube_playlist",
       automatic: true,
     });
+    const ch = col("youtube", "y2", "محاضرات أسبوعية", {
+      subkind: "channel",
+      source_kind: "youtube_channel",
+      automatic: true,
+    });
     serve({
       [`/api/libraries/${ID}/collections`]: {
         ...ALL,
-        items: [...ALL.items, yt],
-        counts: { ...COUNTS, all: 5, youtube: 1, plex: 0 },
-        total: 5,
+        items: [...ALL.items, yt, ch],
+        // a home still counts plex (0) for older clients; no chip shows for it
+        counts: { ...COUNTS, all: 6, youtube: 2, plex: 0 },
+        total: 6,
       },
     });
     renderLib(`/library/${ID}?tab=collections`);
@@ -398,5 +404,10 @@ describe("Library page: Playlists and sourced collections", () => {
     const filter = screen.getByRole("group", { name: en["collections.kindFilter"] });
     expect(within(filter).getByRole("button", { name: /From YouTube/ })).toBeInTheDocument();
     expect(within(filter).queryByRole("button", { name: /From Plex/ })).toBeNull();
+    // a channel's collection shows with no source badge (and no Automatic one)
+    const chCard = screen.getByText("محاضرات أسبوعية").closest("a")!;
+    expect(within(chCard).queryByText("YouTube channel")).toBeNull();
+    expect(within(chCard).queryByText(en["collections.automatic"])).toBeNull();
+    expect(within(chCard).queryByText(en["collections.badge.youtubePlaylist"])).toBeNull();
   });
 });

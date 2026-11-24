@@ -30,18 +30,17 @@ export interface LibrarySeries {
 }
 
 /** The Collections tab's kinds, in their order (the filter's chips). */
-export type CollectionFilter = "topic" | "filler" | "standalone" | "curated" | "youtube" | "plex";
+export type CollectionFilter = "topic" | "filler" | "standalone" | "curated" | "youtube";
 export const COLLECTION_FILTERS: CollectionFilter[] = [
   "topic",
   "filler",
   "standalone",
   "curated",
   "youtube",
-  "plex",
 ];
 
-/** youtube and plex: collections a source keeps in step (Epic 56 stories 56.06, 56.07) */
-export type CollectionKind = "topic" | "clip" | "curated" | "smart" | "youtube" | "plex";
+/** youtube: collections a YouTube playlist or channel keeps in step (Epic 56 story 56.06) */
+export type CollectionKind = "topic" | "clip" | "curated" | "smart" | "youtube";
 
 export interface LibraryCollection {
   kind: CollectionKind;
@@ -52,10 +51,10 @@ export interface LibraryCollection {
   /** its visible videos; null for a saved filter */
   videos: number | null;
   poster_video_ids: string[];
-  /** made by the pipeline (a topic or clip group, a YouTube or Plex one): read-only */
+  /** made by the pipeline (a topic or clip group, a YouTube one): read-only */
   automatic: boolean;
-  /** youtube_playlist, youtube_channel or plex: what keeps it in step */
-  source_kind?: "youtube_playlist" | "youtube_channel" | "plex";
+  /** youtube_playlist or youtube_channel: what keeps it in step */
+  source_kind?: "youtube_playlist" | "youtube_channel";
 }
 
 export interface Paged<T> {
@@ -127,8 +126,8 @@ export async function fetchLibrarySeries(
   return paged(obj(await api.get<unknown>(`${libPath(libraryId)}/series?${qs}`)), readSeries);
 }
 
-const KINDS: CollectionKind[] = ["topic", "clip", "curated", "smart", "youtube", "plex"];
-const SOURCES = ["youtube_playlist", "youtube_channel", "plex"] as const;
+const KINDS: CollectionKind[] = ["topic", "clip", "curated", "smart", "youtube"];
+const SOURCES = ["youtube_playlist", "youtube_channel"] as const;
 
 function readCollection(raw: unknown): LibraryCollection | null {
   const c = obj(raw);
@@ -143,7 +142,7 @@ function readCollection(raw: unknown): LibraryCollection | null {
     poster_video_ids: arr(c.poster_video_ids)
       .filter((x): x is string => typeof x === "string")
       .slice(0, 4),
-    automatic: kind === "topic" || kind === "clip" || kind === "youtube" || kind === "plex",
+    automatic: kind === "topic" || kind === "clip" || kind === "youtube",
     source_kind: SOURCES.find((x) => x === c.source_kind),
   };
 }
@@ -152,7 +151,6 @@ function readCollection(raw: unknown): LibraryCollection | null {
 export function filterOf(c: Pick<LibraryCollection, "kind" | "subkind">): CollectionFilter {
   if (c.kind === "clip") return c.subkind === "standalone" ? "standalone" : "filler";
   if (c.kind === "smart") return "curated";
-  if (c.kind === "youtube" || c.kind === "plex") return c.kind;
   return c.kind;
 }
 
@@ -176,7 +174,6 @@ export async function fetchLibraryCollections(
       standalone: num(c.standalone),
       curated: num(c.curated),
       youtube: num(c.youtube),
-      plex: num(c.plex),
     },
   };
 }

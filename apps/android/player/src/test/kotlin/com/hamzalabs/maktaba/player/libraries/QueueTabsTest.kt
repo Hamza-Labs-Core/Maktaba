@@ -17,6 +17,7 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -61,7 +62,7 @@ class QueueTabsTest {
                     "/api/me/play-queues" -> json(201, """{"id":"Q","source":{"kind":"library","id":"L1"},"shuffle":true,"current_pos":0,"version":1,
                         "items":[{"pos":0,"id":"v7","title":"Seven"}]}""")
                     "/api/libraries/L1/collections" -> json(200, """{"items":[{"kind":"youtube","id":"y1","name":"PL lessons","source_kind":"youtube_playlist"},
-                        {"kind":"plex","id":"p1","name":"Plex picks","source_kind":"plex"}]}""")
+                        {"kind":"youtube","id":"y2","name":"Weekly talks","source_kind":"youtube_channel"}]}""")
                     else -> json(404, "{}")
                 }
             }
@@ -95,7 +96,9 @@ class QueueTabsTest {
         val c = client()
         compose.setContent { CollectionsList(c, "L1") }
         compose.waitUntil(5_000) { shows("PL lessons") }
-        assertTrue(shows("YouTube playlist") && shows("Plex collection"))
+        assertTrue(shows("YouTube playlist") && shows("Weekly talks"))
+        // a channel's collection shows without a source badge; no Plex collection badge is left
+        assertFalse(shows("YouTube channel") || shows("Plex collection"))
     }
 
     @Test

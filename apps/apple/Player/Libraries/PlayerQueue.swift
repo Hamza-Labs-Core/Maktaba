@@ -127,8 +127,6 @@ struct CollectionsTab: View {
     static func badge(_ c: LibraryCollection) -> Text? {
         switch (c.sourceKind, c.kind) {
         case ("youtube_playlist", _): Text("YouTube playlist", tableName: "Libraries", comment: "A collection's badge")
-        case ("youtube_channel", _): Text("YouTube channel", tableName: "Libraries", comment: "A collection's badge")
-        case ("plex", _): Text("Plex collection", tableName: "Libraries", comment: "A collection's badge")
         case (_, "smart"): Text("Smart", tableName: "Libraries", comment: "A smart collection's or playlist's badge")
         default: nil
         }

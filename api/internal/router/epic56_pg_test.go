@@ -246,6 +246,31 @@ func TestPGEpic56Library(t *testing.T) {
 	if it := e.want(http.StatusOK, "admin", "GET", "/api/libraries/"+acLibA+"/collections?kind=youtube&hidden=true", nil)["items"].([]any); len(it) != 1 {
 		t.Errorf("an admin asking for hidden ones: %v", it)
 	}
+	// a collection an older release read in from Plex: nothing syncs it, so it lists as a
+	// curated one with no source_kind, and edits go through; an older client's kind=plex
+	// keeps nothing (an empty list and a count of 0), never a 400
+	px := uuid.NewString()
+	exec(`INSERT INTO collections (id, library_id, name, source_kind, source_ref) VALUES ($1, $2, 'Plex picks', 'plex', 'p1')`, px, acLibA)
+	exec(`INSERT INTO collection_items (collection_id, video_id, position) VALUES ($1, $2, 1)`, px, ids["v0032"])
+	old := e.want(http.StatusOK, "member", "GET", "/api/libraries/"+acLibA+"/collections?kind=plex", nil)
+	if it, n := old["items"].([]any), old["counts"].(map[string]any)["plex"]; len(it) != 0 || n != float64(0) {
+		t.Errorf("kind=plex: %v, count %v", it, n)
+	}
+	cur := e.want(http.StatusOK, "member", "GET", "/api/libraries/"+acLibA+"/collections?kind=curated", nil)
+	found := false
+	for _, c := range cur["items"].([]any) {
+		if m := c.(map[string]any); m["id"] == px {
+			found = m["kind"] == "curated" && m["source_kind"] == nil && m["automatic"] == false
+		}
+	}
+	if !found {
+		t.Errorf("a Plex-read collection lists as curated: %v", cur["items"])
+	}
+	if got := e.want(http.StatusOK, "admin", "GET", "/api/collections/"+px, nil); got["source_kind"] != nil {
+		t.Errorf("a Plex-read collection has a source: %v", got)
+	}
+	e.want(http.StatusOK, "admin", "PATCH", "/api/collections/"+px, map[string]any{"name": "Picks"})
+	e.want(http.StatusBadRequest, "member", "GET", "/api/libraries/"+acLibA+"/collections?kind=bogus", nil)
 	// a queue from a sourced collection plays in its order
 	q := e.want(http.StatusCreated, "member", "POST", "/api/me/play-queues", map[string]any{"source": map[string]any{"kind": "collection", "id": yt}})
 	if w := idsOf(pqWindow(q)); len(w) != 2 || w[0] != ids["v0030"] {

@@ -12,8 +12,6 @@
     <string name="queue_added">أُضيف إلى قائمة الانتظار</string>
     <string name="collections_empty">لا مجموعات في هذه المكتبة بعد.</string>
     <string name="collections_badge_youtube_playlist">قائمة تشغيل يوتيوب</string>
-    <string name="collections_badge_youtube_channel">قناة يوتيوب</string>
-    <string name="collections_badge_plex">مجموعة Plex</string>
     <string name="collections_badge_smart">ذكية</string>
     <string name="playlists_empty_library">لا تحتوي أيٌّ من قوائم تشغيلك على مقاطع من هذه المكتبة.</string>
     <string name="playlists_smart_badge">ذكية</string>

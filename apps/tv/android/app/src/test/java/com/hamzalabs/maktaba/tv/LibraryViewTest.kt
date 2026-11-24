@@ -30,6 +30,7 @@ import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -86,7 +87,7 @@ class LibraryViewTest {
                     p == "/api/libraries/L1/collections" && request.url.queryParameter("kind") == "youtube" ->
                         json("""{"items":[{"kind":"youtube","id":"y1","name":"PL Lessons","source_kind":"youtube_playlist","automatic":true}]}""")
                     p == "/api/libraries/L1/collections" -> json("""{"items":[{"kind":"youtube","id":"y1","name":"PL Lessons","source_kind":"youtube_playlist"},
-                        {"kind":"plex","id":"p1","name":"Plex picks","source_kind":"plex"},{"kind":"curated","id":"c1","name":"Picked"}]}""")
+                        {"kind":"youtube","id":"y2","name":"Weekly talks","source_kind":"youtube_channel"},{"kind":"curated","id":"c1","name":"Picked"}]}""")
                     p == "/api/series/S1" -> json("""{"id":"S1","name":"Tafsir"}""")
                     p == "/api/series/S1/episodes" -> json("""{"seasons":[{"season":1,"id":"ss1","episodes":[{"video_id":"e1","title":"One","watched":true},{"video_id":"e2","title":"Two"}]}],
                         "next_episode":{"video_id":"e2","title":"Two","season":1}}""")
@@ -140,13 +141,15 @@ class LibraryViewTest {
         show { LibraryTabsScreen(it, "L1", "Fiqh") }
         compose.waitUntil(5_000) { compose.waitForIdle(); shows("Collections") }
         compose.onNodeWithTag("tab-Collections").performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Plex picks") }
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Weekly talks") }
         assertTrue("youtube badge", shows("YouTube playlist"))
-        assertTrue("plex badge", shows("Plex collection"))
+        // a channel's collection shows without a source badge, and no kind is From Plex
+        assertFalse("no channel badge", shows("YouTube channel"))
+        assertFalse("no plex badge", shows("Plex collection"))
         compose.onNodeWithTag("collections-kind").performSemanticsAction(SemanticsActions.OnClick)
         // the kind's own read, then its cards
         compose.waitUntil(5_000) { compose.waitForIdle(); urls.any { it.contains("kind=youtube") } }
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("PL Lessons") && !shows("Plex picks") }
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("PL Lessons") && !shows("Weekly talks") }
     }
 
     @Test

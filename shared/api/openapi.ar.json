@@ -2729,6 +2729,10 @@
       "en": "A library's Series tab",
       "ar": "تبويب السلاسل في المكتبة"
     },
+    "/paths/~1libraries~1{id}~1collections/get/parameters/1/description": {
+      "en": "`plex` is still accepted for older clients and always keeps nothing (an empty list): collections are no longer read in from Plex.",
+      "ar": "ما زالت القيمة `plex` مقبولة للتطبيقات الأقدم، ولا تُرجع شيئًا أبدًا (قائمة فارغة): لم تعد المجموعات تُقرأ من Plex."
+    },
     "/paths/~1libraries~1{id}~1collections/get/responses/200/description": {
       "en": "Collection cards and every kind's count.",
       "ar": "بطاقات المجموعات وعدد كل نوع."

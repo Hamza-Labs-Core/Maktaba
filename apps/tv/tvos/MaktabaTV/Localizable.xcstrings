@@ -255,17 +255,6 @@
         }
       }
     },
-    "From Plex" : {
-      "comment" : "Epic 56: the library view",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "من Plex"
-          }
-        }
-      }
-    },
     "From YouTube" : {
       "comment" : "Epic 56: the library view",
       "localizations" : {
@@ -683,17 +672,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "قوائم التشغيل"
-          }
-        }
-      }
-    },
-    "Plex collection" : {
-      "comment" : "Epic 56: the library view",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "مجموعة Plex"
           }
         }
       }
@@ -1209,17 +1187,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "السنوات"
-          }
-        }
-      }
-    },
-    "YouTube channel" : {
-      "comment" : "Epic 56: the library view",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "قناة يوتيوب"
           }
         }
       }

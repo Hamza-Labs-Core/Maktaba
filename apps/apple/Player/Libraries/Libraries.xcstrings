@@ -625,17 +625,6 @@
         }
       }
     },
-    "Plex collection" : {
-      "comment" : "Epic 56: the library view",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "مجموعة Plex"
-          }
-        }
-      }
-    },
     "Recently Added" : {
       "comment" : "A library's row: the newest videos",
       "localizations" : {
@@ -808,17 +797,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "مُشاهَد"
-          }
-        }
-      }
-    },
-    "YouTube channel" : {
-      "comment" : "Epic 56: the library view",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "قناة يوتيوب"
           }
         }
       }
