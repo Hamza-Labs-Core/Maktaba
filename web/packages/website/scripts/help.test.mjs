@@ -41,13 +41,19 @@ const ctx = (lang, extra = {}) => ({
 
 test("T01: every topic in both languages, and the two indexes", () => {
   const ids = src.categories.flatMap((c) => c.topics);
-  assert.equal(ids.length, 45);
+  // the topics are the content's files, counted from disk: one dropped from topics.ts, or a file
+  // no topic names, fails here
+  for (const lang of ["en", "ar"]) {
+    const files = fs.readdirSync(path.join(REPO, CONTENT, lang)).filter((f) => f.endsWith(".md"));
+    assert.deepEqual(files.map((f) => f.slice(0, -3)).sort(), [...ids].sort(), lang);
+  }
+  assert.ok(ids.length > 20, `only ${ids.length} topics`);
   const pages = helpPages(src);
-  assert.equal(pages.length, 92);
+  assert.equal(pages.length, 2 * (ids.length + 1), "each topic and the index, in both languages");
   for (const lang of ["en", "ar"]) {
     const prefix = lang === "ar" ? "ar/" : "";
     const own = pages.filter((p) => p.lang === lang);
-    assert.equal(own.length, 46, lang);
+    assert.equal(own.length, ids.length + 1, lang);
     assert.ok(
       own.some((p) => p.out === `${prefix}help/index.html`),
       `${lang} index`
@@ -228,6 +234,7 @@ test("related topics: the ones it links to first, then its category's", () => {
 
 test("the index: every category in the app's order, every topic, the filter and its count", () => {
   const pages = helpPages(src);
+  const ids = src.categories.flatMap((c) => c.topics);
   for (const lang of ["en", "ar"]) {
     const body = pages.find((p) => p.lang === lang && p.path === "/help/").body;
     const cats = [...body.matchAll(/<h2 id="cat-([a-z-]+)">/g)].map((m) => m[1]);
@@ -235,10 +242,18 @@ test("the index: every category in the app's order, every topic, the filter and 
       cats,
       src.categories.map((c) => c.id)
     );
-    assert.equal([...body.matchAll(/<li data-search=/g)].length, 45);
+    assert.equal([...body.matchAll(/<li data-search=/g)].length, ids.length);
+    const pre = lang === "ar" ? "/ar" : "";
+    const links = [...body.matchAll(/<li data-search=[^>]*><a href="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(
+      links,
+      ids.map((id) => `${pre}/help/${id}/`)
+    );
     assert.match(body, /<div class="frame help-groups" data-filter-list>/);
     assert.match(body, /<input id="filter" type="search"/);
-    assert.match(body, lang === "en" ? /45 topics/ : /45 موضوعًا/);
+    const { count } = T[lang];
+    const words = count[new Intl.PluralRules(lang).select(ids.length)].replace("{n}", ids.length);
+    assert.ok(body.includes(words), `${lang}: the count reads "${words}"`);
   }
 });
 
