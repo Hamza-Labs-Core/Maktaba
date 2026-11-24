@@ -168,7 +168,7 @@ class MpvRealTest {
     private val mpvLogs: MutableList<File> = java.util.Collections.synchronizedList(mutableListOf())
 
     /** The Player's caption face, from its resources, in a folder libass reads (as Engine's). */
-    private fun fonts(): File = tmp.newFolder("fonts").also { d ->
+    private fun fonts(): File = tmp.newFolder().also { d ->
         for (name in listOf("ibm_plex_sans_arabic_regular.ttf", "ibm_plex_sans_arabic_semibold.ttf")) {
             javaClass.classLoader.getResourceAsStream(name)?.use { File(d, name).writeBytes(it.readBytes()) }
         }
@@ -290,6 +290,9 @@ class MpvRealTest {
         throw AssertionError("${title ?: "the sidecar"}: no line drawn (last $last); mpv: $state; $playing\n" + lines.joinToString("\n"))
     }
 
+    /** The frames with no committed reference yet. */
+    private val missing = mutableListOf<String>()
+
     /** As FrameReferencesTest: compared on Linux with src/test/resources/references/[name].png; a missing one is written and fails. */
     private fun reference(name: String, img: java.awt.image.BufferedImage) {
         val build = File("build")
@@ -298,7 +301,8 @@ class MpvRealTest {
         val ref = File("src/test/resources/references/$name.png")
         if (!ref.exists()) {
             File(build, "new-references").also { it.mkdirs() }.let { javax.imageio.ImageIO.write(img, "png", File(it, "$name.png")) }
-            throw AssertionError("$name: no committed reference; this run wrote build/new-references/$name.png (look at it: the Arabic joined and right to left; commit it)")
+            missing += name // each is drawn and written before the test says so
+            return
         }
         val want = javax.imageio.ImageIO.read(ref)
         assertTrue("$name: ${img.width}x${img.height}, the reference ${want.width}x${want.height}", want.width == img.width && want.height == img.height)
@@ -333,6 +337,7 @@ class MpvRealTest {
         val sidecar = drawn(p, null) { it.green == 0 && it.white > 300 }
         println("13.20 T05 sidecar: ${line(sidecar)}")
         reference("mpv-subs-sidecar", sidecar)
+        assertTrue("no committed reference for $missing; this run wrote build/new-references (look at each: the Arabic joined and right to left; commit it)", missing.isEmpty())
         assertTrue("the sidecar was asked for through the proxy, signed", home.seen.any { it.url.encodedPath == "/stream/s1/subs/sidecar/en.vtt" && it.url.queryParameter("sig") == "sig1" })
     }
 
