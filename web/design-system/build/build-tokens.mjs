@@ -21,6 +21,7 @@
 //   - apps/apple/MaktabaKit/Sources/MaktabaKit/Tokens.swift
 //   - apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Tokens.kt
 //
+// story 13.15 the desktop Player's, apps/desktop-player/src/main/kotlin/.../desktop/Tokens.kt,
 // and story 58.15 the Roku channel's dark colours, apps/tv/roku/components/theme.brs.
 //
 // (see native.mjs). The hand-written `web/src/styles/tokens.css` is what the
@@ -35,7 +36,9 @@ import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  DESKTOP_KOTLIN_PATH,
   emitBrightScript,
+  emitDesktopKotlin,
   emitKotlin,
   emitSwift,
   KOTLIN_PATH,
@@ -358,15 +361,19 @@ export function resolvedThemes({ base, themes }) {
  * token files and the site's CSS. */
 export function nativeFiles(tokens) {
   const { light, dark } = resolvedThemes(tokens);
-  const descriptions = Object.fromEntries(
-    Object.entries(tokens.base.color.semantic)
+  const described = (group, prefix) =>
+    Object.entries(group ?? {})
       .filter(([, leaf]) => leaf.description)
-      .map(([key, leaf]) => [key, leaf.description])
-  );
+      .map(([key, leaf]) => [`${prefix}${key}`, leaf.description]);
+  const descriptions = Object.fromEntries([
+    ...described(tokens.base.color.semantic, ""),
+    ...described(tokens.base.color.desktop, "desktop."),
+  ]);
   const model = nativeModel({ light, dark, descriptions });
   return {
     [SWIFT_PATH]: emitSwift(model),
     [KOTLIN_PATH]: emitKotlin(model),
+    [DESKTOP_KOTLIN_PATH]: emitDesktopKotlin(model),
     [ROKU_PATH]: emitBrightScript(model),
     [SITE_CSS_PATH]: emitSiteCss(tokens),
   };
@@ -412,7 +419,7 @@ async function main(argv) {
       `→ ${outDir}/{tokens.css,tokens.ts,tokens.json}` +
       (check
         ? "; committed files checked"
-        : `; wrote ${SWIFT_PATH}, ${KOTLIN_PATH}, ${ROKU_PATH}, ${SITE_CSS_PATH}`)
+        : `; wrote ${SWIFT_PATH}, ${KOTLIN_PATH}, ${DESKTOP_KOTLIN_PATH}, ${ROKU_PATH}, ${SITE_CSS_PATH}`)
   );
   if (stale.length > 0) {
     console.error(

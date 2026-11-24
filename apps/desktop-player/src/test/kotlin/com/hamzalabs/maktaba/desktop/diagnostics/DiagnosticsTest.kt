@@ -105,4 +105,15 @@ class DiagnosticsTest {
         setContent { PlayerTheme(Texts(Lang.Ar), big = false) { ErrorBox("x", null, onRetry = null) } }
         assertTrue(onAllNodes(androidx.compose.ui.test.hasTestTag("error-report")).fetchSemanticsNodes().isEmpty())
     }
+
+    // story 13.15: the question comes in the Player's own dialog, its two answers equal
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun theCrashQuestionIsAMaktabaDialog() = runComposeUiTest {
+        val answers = mutableListOf<Boolean>()
+        setContent { PlayerTheme(Texts(Lang.En), big = false) { CrashQuestionDialog("Living room") { answers += it } } }
+        onNodeWithTag("maktaba-dialog").assertExists()
+        onNodeWithText(Texts(Lang.En)["crash.question.no"]).performClick()
+        assertEquals(listOf(false), answers)
+    }
 }

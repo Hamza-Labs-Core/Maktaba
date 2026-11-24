@@ -47,6 +47,16 @@
   --color-semantic-error: #F0707F;
   --color-semantic-running: #FFB454;
   --color-semantic-info: #6F93FF;
+  --color-desktop-window: var(--color-semantic-bg);
+  --color-desktop-chrome: var(--site-surface-hero);
+  --color-desktop-pane: var(--color-semantic-nav);
+  --color-desktop-subtle: var(--color-semantic-subtle);
+  --color-desktop-raised: var(--color-semantic-raised);
+  --color-desktop-hover: #1C2940;
+  --color-desktop-line: var(--color-semantic-border);
+  --color-desktop-control: var(--site-line-control);
+  --color-desktop-chosen: var(--color-semantic-chosen);
+  --color-desktop-close-hover: #C42B1C;
   --spacing-0: 0px;
   --spacing-1: 4px;
   --spacing-2: 8px;

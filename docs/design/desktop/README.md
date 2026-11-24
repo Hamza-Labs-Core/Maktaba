@@ -121,11 +121,12 @@ installers, so nothing on screen looks like it came from a different product.
 - **Platform where people expect it.** Window controls, Snap Layouts, the Mac's menu bar and
   traffic lights, keyboard conventions, panels that draw their own tray menus.
 
-## Tokens: the `desktop` group (proposed)
+## Tokens: the `desktop` group
 
-Added to `web/design-system/tokens/tokens.json` beside Epic 17's groups, so `build-tokens.mjs`
-emits it to the web's CSS (the server app's pages), `Tokens.swift` and a Kotlin file the
-desktop Player reads. Most are aliases; three are new values.
+In `web/design-system/tokens/tokens.json` (`color.desktop`, since 13.15) beside Epic 17's
+groups: `build-tokens.mjs` emits it to the site's CSS and to the desktop Player's `Tokens.kt`
+(dark), and `make test-tokens` checks the contrast table below. Most are aliases; three are new
+values (the shadow stays in each surface's CSS).
 
 | Key | Dark | Alias of | For |
 |---|---|---|---|

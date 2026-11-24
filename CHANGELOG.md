@@ -14,6 +14,14 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
+  bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
+  Language and Help in the Player's language, beside the app's name, Big screen and Help, with
+  the system's own minimize, maximize and close (and Snap Layouts on Windows 11). Every question
+  the Player asks, such as signing out or switching home, comes in one dark dialog style. The
+  installers carry the JetBrains Runtime, which draws the title bar; the Player's colours now come
+  from the design tokens' build, with a new desktop group.
+
 - **One page to get Maktaba: maktaba.tv/download.** The download page now lists every setup
   guide under its download buttons: Synology, TrueNAS, Unraid, QNAP, UGREEN and ASUSTOR, Docker,
   after setup and troubleshooting, each with one line on what it covers. The NAS card's button
