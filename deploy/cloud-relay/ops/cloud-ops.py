@@ -174,6 +174,7 @@ def save(state: dict) -> None:
 def enrol(sub: str) -> dict:
     """staff add (or reset-mfa) prints an enrolment link; enrol with a new password and TOTP."""
     out = compose("exec", "-T", "api", "/usr/local/bin/maktaba-cloud", "staff", sub,
+                  "--config", "/etc/maktaba/cloud/cloud.toml",
                   "--email", STAFF_EMAIL, *(["--role", "service_admin"] if sub == "add" else []))
     link = next((w for w in out.split() if "/enroll#" in w), "")
     if not link:

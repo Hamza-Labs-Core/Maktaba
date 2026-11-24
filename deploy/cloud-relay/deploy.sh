@@ -185,7 +185,7 @@ $COMPOSE up -d --wait postgres redis
 rlog "running database migrations..."
 # -T and </dev/null: this script reaches bash on stdin (bash -s), and a command that reads
 # stdin would swallow the rest of it; bash would then end here, at 0, with nothing rolled out
-$COMPOSE run --rm -T maktaba-cloud migrate up </dev/null
+$COMPOSE run --rm -T maktaba-cloud migrate --config /etc/maktaba/cloud/cloud.toml up </dev/null
 
 # Swap the serving stack. --wait blocks until every service reports its
 # Docker healthcheck healthy (or times out non-zero).
