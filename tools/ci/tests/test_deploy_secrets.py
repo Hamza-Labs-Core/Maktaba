@@ -66,8 +66,10 @@ def _fake_ssh(tmp_path: Path) -> Path:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     ssh = bin_dir / "ssh"
-    # options until the target (user@host), then the remote command: the rollout's `bash -s`
-    # payload is swallowed (no Docker here); anything else runs as a remote shell would
+    # options until the target (user@host), then the remote command: the rollout's `bash -s --
+    # <quoted args>` payload is swallowed (no Docker here) and answered with the end marker a
+    # whole remote script prints (FAKE_CUT_SHORT=1: a script cut short, no marker); anything
+    # else runs as a remote shell would
     ssh.write_text(
         """#!/usr/bin/env bash
 while [ $# -gt 0 ]; do
@@ -77,7 +79,12 @@ while [ $# -gt 0 ]; do
     *) shift ;;
   esac
 done
-if [ "$1" = "bash -s" ]; then cat >/dev/null; echo rollout >>"$SSH_LOG"; exit 0; fi
+case "$1" in
+  "bash -s"*)
+    cat >/dev/null; echo rollout >>"$SSH_LOG"
+    [ "${FAKE_CUT_SHORT:-}" = 1 ] || echo __maktaba_deploy_complete__
+    exit 0 ;;
+esac
 echo token-step >>"$SSH_LOG"
 exec bash -c "$*"
 """
@@ -99,6 +106,7 @@ def _deploy(tmp_path: Path, token: str | None) -> tuple[subprocess.CompletedProc
         "DEPLOY_DIR": str(stack),
         "MAKTABA_CLOUD_TAG": "v2",
         "SSH_LOG": str(tmp_path / "ssh.log"),
+        "FAKE_CUT_SHORT": os.environ.get("FAKE_CUT_SHORT", ""),
     }
     if token is not None:
         env["MAKTABA_SYMBOLS_TOKEN"] = token
@@ -158,3 +166,13 @@ def test_without_the_secret_no_file_is_written(tmp_path: Path) -> None:
     assert not (stack / "secrets/symbols.token").exists()
     assert "SYMBOLS" not in (stack / ".env").read_text()
     assert (tmp_path / "ssh.log").read_text().split() == ["rollout"]
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
+def test_a_remote_script_cut_short_fails_the_deploy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # a command on the node that read the script's own stdin ends bash at exit 0 before the
+    # rollout: only the end marker says the script ran to its end
+    monkeypatch.setenv("FAKE_CUT_SHORT", "1")
+    p, _ = _deploy(tmp_path, "")
+    assert p.returncode != 0
+    assert "stopped before its end" in p.stderr

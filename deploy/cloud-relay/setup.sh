@@ -327,7 +327,7 @@ systemctl daemon-reload
 systemctl enable --now maktaba-cloud-backup.timer >/dev/null
 
 # a new signing key reaches a running api only by a restart (licences and home assertions)
-if [ "$KEY_CHANGED" = yes ] && (cd "$DEPLOY_DIR" && docker compose --env-file .env ps --status running --services 2>/dev/null | grep -qx api); then
+if [ "$KEY_CHANGED" = yes ] && (cd "$DEPLOY_DIR" && docker compose --env-file .env ps --status running --services 2>/dev/null | grep -x api >/dev/null); then
 	log "Restarting the api for the new signing key..."
 	(cd "$DEPLOY_DIR" && docker compose --env-file .env restart api >/dev/null)
 fi
