@@ -84,10 +84,19 @@ cp "$p/LICENSE" "$out/licences/libplacebo.txt"
 note "libplacebo $LIBPLACEBO_TAG: $LIBPLACEBO_GIT at $LIBPLACEBO_COMMIT, LGPL-2.1-or-later"
 
 # ---- mpv ------------------------------------------------------------------------------------
+# FFmpeg, dav1d and libplacebo are static only (their archives inside libmpv): each .pc's
+# private libraries join its Libs, so mpv links what they need without asking meson to prefer
+# static libraries everywhere (the system's own static archives are not position-independent)
+for pc in "$prefix"/lib/pkgconfig/*.pc; do
+  priv="$(sed -n 's/^Libs.private: *//p' "$pc")"
+  [ -n "$priv" ] || continue
+  sed -i.bak -e "s|^Libs: \(.*\)|Libs: \1 $priv|" -e '/^Libs.private:/d' "$pc"
+  rm -f "$pc.bak"
+done
 unpack "$(fetch "$MPV_URL" "$MPV_SHA256")"
 m="$work/src/mpv-0.42.0"
 mpvconf=(--prefix="$prefix" --libdir=lib --buildtype=release --default-library=shared
-  -Dprefer_static=true -Dlibmpv=true -Dcplayer=false -Dgpl=false -Dtests=false
+  -Dlibmpv=true -Dcplayer=false -Dgpl=false -Dtests=false
   -Dlua=disabled -Djavascript=disabled -Dlibarchive=disabled -Dlibbluray=disabled
   -Ddvdnav=disabled -Dcdda=disabled -Drubberband=disabled -Duchardet=disabled -Dzimg=disabled
   -Dvapoursynth=disabled -Dlcms2=disabled -Djpeg=disabled -Dmanpage-build=disabled
