@@ -271,6 +271,7 @@ export const SYSTEM_HEALTH_KINDS = [
   "components",
   "plugin_runners",
   "host_load",
+  "update_check",
 ] as const;
 
 export function systemHealthHelp(kind: string): HelpRef {
@@ -322,6 +323,9 @@ export const UPDATE_CODE_HELP: ReadonlyMap<string, string> = new Map([
   ["db_migrate_failed", "code-database"],
   ["db_refused_older", "code-database"],
   ["db_restore_failed", "code-database"],
+  ["db_down_failed", "code-database"],
+  ["db_restored_lossy", "code-database"],
+  ["db_restored_unknown", "code-database"],
   ["rehearsal_failed", "code-database"],
   ["pg_major_change", "code-database"],
   // updates#code-tv

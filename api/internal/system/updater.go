@@ -15,6 +15,7 @@ package system
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -102,6 +103,10 @@ type UpdaterConfig struct {
 	// Roots keeps the Sigstore trusted root fresh (<data_dir>/sigstore);
 	// nil verifies against the root embedded in the binary.
 	Roots *releaseverify.RootStore
+	// FeedURL is the release feed read before GitHub (updatefeed.go): "" is
+	// releaseverify.DefaultFeedURL for the default repository (none for a fork, or
+	// with APIBaseURL set, a test's), "off" none.
+	FeedURL string
 }
 
 // Updater polls GitHub Releases and caches the result per channel.
@@ -119,6 +124,10 @@ type Updater struct {
 	roots    *releaseverify.RootStore
 	identity releaseverify.Identity
 	idErr    error
+	feedURL  string
+	// feedTrust is the root feeds verify against (tests: a fake Sigstore's); nil is
+	// trustedMaterial
+	feedTrust func(context.Context) (root.TrustedMaterial, error)
 
 	rootsMu       sync.Mutex
 	rootRefreshed time.Time
@@ -159,7 +168,15 @@ func NewUpdater(cfg UpdaterConfig) *Updater {
 		baseURL = "https://api.github.com"
 	}
 	id, idErr := releaseverify.NewIdentity(repo)
+	feedURL := strings.TrimRight(strings.TrimSpace(cfg.FeedURL), "/")
+	switch {
+	case strings.EqualFold(feedURL, "off"):
+		feedURL = ""
+	case feedURL == "" && cfg.APIBaseURL == "" && strings.EqualFold(repo, releaseverify.DefaultRepo):
+		feedURL = releaseverify.DefaultFeedURL
+	}
 	return &Updater{
+		feedURL:  feedURL,
 		roots:    cfg.Roots,
 		identity: id,
 		idErr:    idErr,
@@ -348,7 +365,7 @@ type ghAsset struct {
 // check fetches releases and computes the status against the current
 // version on the active channel.
 func (u *Updater) check(ctx context.Context) (UpdateStatus, error) {
-	rels, err := u.fetchReleases(ctx)
+	rels, err := u.releases(ctx)
 	if err != nil {
 		return UpdateStatus{}, err
 	}
@@ -381,10 +398,48 @@ func (u *Updater) check(ctx context.Context) (UpdateStatus, error) {
 	return status, nil
 }
 
+// The About check's list of releases: the newest releasesPerPage, held to releasesLimit
+// bytes. A page of 30 passed the old 8 MiB on 2026-11-23 (some 190 assets a release), and
+// every check failed from then on. A release is some 330 KB as GitHub lists it today
+// (tests/fixtures/github-releases), so a page of ten is some 3.3 MB: 16 MiB, as the update
+// catalog's page cap (updates.listPageLimit), holds ten releases with twice the assets in
+// under 70% of it. The list is read one release at a time, so the cap bounds the answer,
+// not the memory.
+const (
+	releasesPerPage = 10
+	releasesLimit   = 16 << 20
+)
+
+// errReleasesTooLarge is an answer longer than releasesLimit.
+var errReleasesTooLarge = errors.New("larger than the cap")
+
+// cappedBody passes at most limit bytes of r on; one byte more is errReleasesTooLarge, so
+// an answer over the cap is said to be one, never a list that does not decode.
+type cappedBody struct {
+	r    io.Reader
+	left int64
+	over bool
+}
+
+func (c *cappedBody) Read(p []byte) (int, error) {
+	if c.left <= 0 {
+		var one [1]byte
+		if n, _ := io.ReadFull(c.r, one[:]); n > 0 {
+			c.over = true
+			return 0, errReleasesTooLarge
+		}
+		return 0, io.EOF
+	}
+	if int64(len(p)) > c.left {
+		p = p[:c.left]
+	}
+	n, err := c.r.Read(p)
+	c.left -= int64(n)
+	return n, err
+}
+
 func (u *Updater) fetchReleases(ctx context.Context) ([]ghRelease, error) {
-	// the newest 10: 30 passed the 8 MiB cap below on 2026-11-23 (some 190 assets a
-	// release), and every check failed from then on
-	url := u.baseURL + "/repos/" + u.repo + "/releases?per_page=10"
+	url := u.baseURL + "/repos/" + u.repo + "/releases?per_page=" + strconv.Itoa(releasesPerPage)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
@@ -403,8 +458,12 @@ func (u *Updater) fetchReleases(ctx context.Context) ([]ghRelease, error) {
 		return nil, fmt.Errorf("github releases: HTTP %d", resp.StatusCode)
 	}
 	// Cap the body so a hostile/buggy response can't OOM us, and read it one
-	// release at a time (DecodeJSONArray).
-	rels, err := DecodeJSONArray[ghRelease](io.LimitReader(resp.Body, 8<<20))
+	// release at a time (DecodeJSONArray, which reads to the end of the answer).
+	body := &cappedBody{r: resp.Body, left: releasesLimit}
+	rels, err := DecodeJSONArray[ghRelease](body)
+	if body.over {
+		return nil, fmt.Errorf("github releases: larger than %d bytes: %w", int64(releasesLimit), errReleasesTooLarge)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("decode releases: %w", err)
 	}

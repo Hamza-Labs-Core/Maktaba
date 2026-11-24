@@ -5,10 +5,14 @@
 // release.json, the archive and the extracted binary, the no-downgrade
 // watermark), and atomically replace the running executable.
 //
-// GitHub Releases is the only feed (Epic 35 story 35.1 AC9): the same one the
-// API's update check reads, so the CLI and the server can never disagree
-// about what a release is. MAKTABA_UPDATE_REPO retargets a fork and its
-// signing identity together.
+// The newest release is found as the server finds it: in this platform's
+// release feed (releaseverify.VerifyFeed, signed by update-feed.yml; a pulled
+// release is never chosen), and in GitHub's list only when the feed cannot be
+// reached. The files are always GitHub Releases' and verified the same way
+// (Epic 35 story 35.1 AC9), so the CLI and the server can never disagree about
+// what a release is. MAKTABA_UPDATE_REPO retargets a fork and its signing
+// identity together (a fork reads its GitHub list: the feed is the default
+// repository's).
 package selfupdate
 
 import (
@@ -48,6 +52,12 @@ type Options struct {
 	// Trusted returns the Sigstore trust root; nil refreshes a RootStore in
 	// the user cache directory and falls back to the embedded root.
 	Trusted func(ctx context.Context) (root.TrustedMaterial, error)
+	// FeedURL is the release feed read before GitHub's list: "" is
+	// releaseverify.DefaultFeedURL for the default repository with the real API
+	// (none for a fork or a test's APIBase, none when MAKTABA_UPDATE_FEED=off),
+	// "off" none. FeedDownloadBase is where a test feed's files are.
+	FeedURL          string
+	FeedDownloadBase string
 }
 
 // Client talks to GitHub Releases and verifies what it downloads.
@@ -68,6 +78,13 @@ func New(o Options) *Client {
 	if o.Trusted == nil {
 		o.Trusted = userRootStore
 	}
+	switch {
+	case strings.EqualFold(o.FeedURL, "off") || strings.EqualFold(strings.TrimSpace(os.Getenv("MAKTABA_UPDATE_FEED")), "off"):
+		o.FeedURL = ""
+	case o.FeedURL == "" && o.APIBase == DefaultAPIBase && o.Identity.Repo() == releaseverify.DefaultRepo:
+		o.FeedURL = releaseverify.DefaultFeedURL
+	}
+	o.FeedURL = strings.TrimRight(o.FeedURL, "/")
 	return &Client{o: o}
 }
 
@@ -91,7 +108,24 @@ type ghRelease struct {
 // ErrNoRelease: nothing matches.
 var ErrNoRelease = errors.New("no such release")
 
-func (c *Client) get(ctx context.Context, path string, out any) error {
+// What the client reads from GitHub is held to these caps, each checked against the real
+// list (tests/fixtures/github-releases) with room for the releases' assets to double in
+// under 70% of it. A release is some 330 KB as GitHub lists it today (some 190 assets): the
+// list asks for listPerPage of them, some 3.3 MB, against listLimit; one release by its tag
+// against releaseLimit; each small signed file (checksums.txt, its Sigstore bundle,
+// release.json: some 15 KB at most) against smallFileLimit. A page of 30 passed the old
+// 8 MiB on 2026-11-23, and every look for an update failed from then on.
+const (
+	listPerPage    = 10
+	listLimit      = 16 << 20
+	releaseLimit   = 8 << 20
+	smallFileLimit = 4 << 20
+)
+
+// errTooLarge is an answer longer than its cap.
+var errTooLarge = errors.New("larger than its cap")
+
+func (c *Client) get(ctx context.Context, path string, limit int64, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.o.APIBase+path, nil)
 	if err != nil {
 		return err
@@ -112,7 +146,15 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("github releases %s: HTTP %d", path, resp.StatusCode)
 	}
-	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(out)
+	// one byte past the cap tells an answer that is too long from one that does not decode
+	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return fmt.Errorf("github releases %s: %w", path, err)
+	}
+	if int64(len(b)) > limit {
+		return fmt.Errorf("github releases %s: larger than %d bytes: %w", path, limit, errTooLarge)
+	}
+	return json.Unmarshal(b, out)
 }
 
 func toRelease(r ghRelease) *Release {
@@ -123,11 +165,17 @@ func toRelease(r ghRelease) *Release {
 	return out
 }
 
-// Latest is the highest release of the channel.
+// Latest is the highest release of the channel: the feed's, or GitHub's list's when the
+// feed cannot be reached. A feed that is reached and fails its checks is an error.
 func (c *Client) Latest(ctx context.Context) (*Release, error) {
+	if c.o.FeedURL != "" {
+		rel, err := c.feedLatest(ctx)
+		if !errors.Is(err, errFeedUnreachable) {
+			return rel, err
+		}
+	}
 	var rels []ghRelease
-	// the newest 10: 30 passed get's 8 MiB cap on 2026-11-23 (some 190 assets a release)
-	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases?per_page=10", &rels); err != nil {
+	if err := c.get(ctx, fmt.Sprintf("/repos/%s/releases?per_page=%d", c.o.Identity.Repo(), listPerPage), listLimit, &rels); err != nil {
 		return nil, err
 	}
 	var best *ghRelease
@@ -156,7 +204,7 @@ func (c *Client) ByTag(ctx context.Context, version string) (*Release, error) {
 		return nil, fmt.Errorf("invalid version %q", version)
 	}
 	var r ghRelease
-	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases/tags/"+tag, &r); err != nil {
+	if err := c.get(ctx, "/repos/"+c.o.Identity.Repo()+"/releases/tags/"+tag, releaseLimit, &r); err != nil {
 		return nil, err
 	}
 	if r.Draft {
@@ -323,7 +371,7 @@ func (c *Client) FetchAsset(ctx context.Context, rel *Release, name, dir string)
 		if !ok {
 			return nil, nil
 		}
-		b, err := get(ctx, u, 4<<20)
+		b, err := get(ctx, u, smallFileLimit)
 		if err != nil {
 			return nil, fmt.Errorf("download %s: %w", n, err)
 		}

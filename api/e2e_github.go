@@ -14,6 +14,16 @@ import (
 // it: a release build always reads api.github.com.
 func e2eGitHubAPI() string { return os.Getenv("MAKTABA_E2E_GITHUB_API") }
 
+// e2eUpdateFeed is the fake release feed's base an end-to-end test serves
+// (MAKTABA_E2E_UPDATE_FEED), or "off" when it serves none: a test build never reads
+// maktaba.tv.
+func e2eUpdateFeed() string {
+	if u := os.Getenv("MAKTABA_E2E_UPDATE_FEED"); u != "" {
+		return u
+	}
+	return "off"
+}
+
 // e2eSchemaRev, set at link time in an end-to-end test's build (-X
 // main.e2eSchemaRev=150), is the newest migration that build's code takes for its own:
 // the test's next release ships a migration past this tree's schema revision.
@@ -26,3 +36,7 @@ func knownSchemaRev() int64 {
 	}
 	return schemaguard.SchemaRev
 }
+
+// e2eAboutFeed: the About page's check of a test build reads no release feed (its
+// releases come from GitHub, as e2e tests have always arranged).
+func e2eAboutFeed() string { return "off" }

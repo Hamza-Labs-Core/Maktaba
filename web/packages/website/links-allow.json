@@ -33,5 +33,35 @@
     "file": "apps/tv/web/tizen/config.xml",
     "link": "https://maktaba.tv/apps/samsung",
     "reason": "the Samsung widget's id (a W3C widget id is an IRI that names the app and is never opened), not a link"
+  },
+  {
+    "file": ".github/workflows/update-feed.yml",
+    "link": "https://maktaba.tv/updates/v1",
+    "reason": "the release feed's base (docs/updates.md, \"How a home finds a release\"): files under it are /<channel>/<platform>.json, served once update-feed.yml has run; the base itself is not a page"
+  },
+  {
+    "file": "docs/updates.md",
+    "link": "https://maktaba.tv/updates/v1/",
+    "reason": "the release feed's base (docs/updates.md, \"How a home finds a release\"): files under it are /<channel>/<platform>.json, served once update-feed.yml has run; the base itself is not a page"
+  },
+  {
+    "file": "docs/updates.md",
+    "link": "https://maktaba.tv/updates/v1",
+    "reason": "the release feed's base (docs/updates.md, \"How a home finds a release\"): files under it are /<channel>/<platform>.json, served once update-feed.yml has run; the base itself is not a page"
+  },
+  {
+    "file": "shared/go/releaseverify/feed.go",
+    "link": "https://maktaba.tv/updates/v1",
+    "reason": "the release feed's base (docs/updates.md, \"How a home finds a release\"): files under it are /<channel>/<platform>.json, served once update-feed.yml has run; the base itself is not a page"
+  },
+  {
+    "file": "tools/release/releasefeed/releasefeed.go",
+    "link": "https://maktaba.tv/updates/v1",
+    "reason": "the release feed's base (docs/updates.md, \"How a home finds a release\"): files under it are /<channel>/<platform>.json, served once update-feed.yml has run; the base itself is not a page"
+  },
+  {
+    "file": "tools/release/website-feed.sh",
+    "link": "https://maktaba.tv/updates/v1",
+    "reason": "the release feed's base (docs/updates.md, \"How a home finds a release\"): files under it are /<channel>/<platform>.json, served once update-feed.yml has run; the base itself is not a page"
   }
 ]

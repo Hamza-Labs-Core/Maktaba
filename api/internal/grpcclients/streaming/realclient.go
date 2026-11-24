@@ -197,7 +197,8 @@ func (c *realClient) GetCapabilities(ctx context.Context) (Capabilities, error) 
 			Used:     asInt(resp["transcode_used"]),
 			Capacity: asInt(resp["transcode_capacity"]),
 		},
-		SoftwareOnly: resp["software_only"] == true,
+		SoftwareOnly:   resp["software_only"] == true,
+		ClientProfiles: asStringSlice(resp["client_profiles"]),
 	}, nil
 }
 
