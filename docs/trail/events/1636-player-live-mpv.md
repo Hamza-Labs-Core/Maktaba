@@ -40,6 +40,7 @@ Part one of story 13.22, on top of 13.18 (#1591). Part two (JavaFX leaves) is ga
 - **No audio device is not "no playback":** mpv plays the picture and then reports the file's end as `AO_INIT_FAILED`. `audio-fallback-to-null=yes` keeps the timing and the end clean; CI runners have no sound card, and some users' machines (remote desktops) neither.
 - **mpv's `log-file` is the fastest way to read a CI-only failure:** one option, set from a system property the tests own, gave the cause on the first look.
 - **`withContext(NonCancellable)` throws on return when the caller was cancelled:** decide inside the block whether the made player is shown or disposed, or it leaks.
+- **Stacked on #1644**: channels ask the engine setting (13.21) at each opening, count as open for the probe (13.19), and keep the stream's own subtitles off (13.20).
 
 ## Keep doing
 - Wire the screen and the real-library test through the same function (`channelPlayback`), so CI tests the screen's own wiring.
