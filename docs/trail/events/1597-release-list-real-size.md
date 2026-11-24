@@ -28,7 +28,7 @@ agent: claude-code
   - The 10.5 MB measured during the incident was the pretty-printed answer GitHub gives to a
     generic `Accept` (curl's `*/*`), which no home asks for.
   - A token with push access lists the drafts first.
-- **#1597 (head 7a8c257ae16268ceee19345c24ca8367c310cc0f, not merged here):**
+- **#1597 (head 1d20705d43164457ad24ede47d804ddc165e29dd, not merged here):**
   - **The check:** `api/cmd/release-list-check` and `updates.ProbeReleaseList` read the live list
     through the home's own code. It runs hourly (`github-release-list.yml`, which opens an issue on a
     failure) and in `release.yml` and `desktop-release.yml` after they publish
@@ -73,13 +73,18 @@ agent: claude-code
 - Sizing a cap's test from synthetic data alone.
 - Letting a background check that fails stay log-only.
 
+- **Scenario 20's first run** on #1597's CI passed end to end:
+  - The update to the next release was found and installed through a list page of 6,439,436
+    bytes, twice the recorded one.
+  - Two checks against the list past its cap failed with `too_large`.
+  - System health then showed `update_check_failing`.
+  - One check against the list back at its size cleared it.
+
 ## Open
 - Naming: a parallel pull request adds Maktaba's own signed release feed on maktaba.tv, so
   everything here calls GitHub's list "GitHub's release list" (`github-release-list.yml`,
   `release-list-check`, `ProbeReleaseList`). Once that feed lands, the hourly check can verify it
   first.
-- Scenario 20's first real run is #1597's update rehearsal. Part (b) also proves the System
-  health item end to end.
 - The hourly check reads anonymously from GitHub's shared runner addresses and falls back to
   the workflow token when rate-limited. If that token can list drafts, the pages it reads differ
   from a home's (the report counts drafts).
