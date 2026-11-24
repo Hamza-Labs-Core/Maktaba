@@ -95,6 +95,8 @@ int main(int argc, const char *argv[]) {
             return 2;
         }
         NSString *ready = [NSString stringWithUTF8String:argv[2]];
+        // a connection to the window server as an app has one
+        [NSApplication sharedApplication];
         CGDirectDisplayID first = CGMainDisplayID();
         fprintf(stderr, "the main display (%u) is %zu x %zu pixels; its modes:\n", first, CGDisplayPixelsWide(first),
                 CGDisplayPixelsHigh(first));
@@ -103,51 +105,60 @@ int main(int argc, const char *argv[]) {
         CGDirectDisplayID target = first;
         CGDisplayModeRef mode = retinaMode(first, w, h);
         if (!mode) {
-            // none of its own: a virtual display, its one mode 2w x 2h pixels, offered at 2x
-            CGVirtualDisplayDescriptor *desc = [[NSClassFromString(@"CGVirtualDisplayDescriptor") alloc] init];
-            if (!desc) {
+            // none of its own: a virtual display offered at 2x. The ways of asking for one
+            // differ between macOS versions (the modes in pixels or in points): each is tried
+            // in turn, until one has the mode
+            if (!NSClassFromString(@"CGVirtualDisplayDescriptor")) {
                 fprintf(stderr, "this macOS has no CGVirtualDisplay\n");
                 return 1;
             }
-            [desc setDispatchQueue:dispatch_get_main_queue()];
-            desc.name = @"Maktaba shots";
-            desc.maxPixelsWide = 2 * w;
-            desc.maxPixelsHigh = 2 * h;
-            // a 16-inch screen's size: 2 * w pixels on it are a Retina density
-            desc.sizeInMillimeters = CGSizeMake(345, 345.0 * h / w);
-            desc.productID = 0x6d6b;
-            desc.vendorID = 0x6d6b;
-            desc.serialNum = 1;
-            desc.terminationHandler = ^(id a, id b) { fprintf(stderr, "the virtual display ended\n"); };
-            CGVirtualDisplay *display = [[NSClassFromString(@"CGVirtualDisplay") alloc] initWithDescriptor:desc];
-            kept = display;
-            if (!display || display.displayID == 0) {
-                fprintf(stderr, "the virtual display was not made\n");
-                return 1;
+            struct { unsigned int hiDPI, scale[2]; } ways[] = {{1, {2, 1}}, {1, {1, 0}}, {2, {2, 0}}, {1, {2, 0}}};
+            for (size_t k = 0; k < sizeof ways / sizeof *ways && !mode; k++) {
+                kept = nil;
+                for (int i = 0; i < 20; i++) pause_a_little(); // the previous one gone
+                CGVirtualDisplayDescriptor *desc = [[NSClassFromString(@"CGVirtualDisplayDescriptor") alloc] init];
+                [desc setDispatchQueue:dispatch_get_main_queue()];
+                desc.name = @"Maktaba shots";
+                desc.maxPixelsWide = 2 * w;
+                desc.maxPixelsHigh = 2 * h;
+                // a 16-inch screen's size: 2 * w pixels on it are a Retina density
+                desc.sizeInMillimeters = CGSizeMake(345, 345.0 * h / w);
+                desc.productID = 0x6d6b + (unsigned int)k;
+                desc.vendorID = 0x6d6b;
+                desc.serialNum = 1 + (unsigned int)k;
+                desc.terminationHandler = ^(id a, id b) { fprintf(stderr, "a virtual display ended\n"); };
+                CGVirtualDisplay *display = [[NSClassFromString(@"CGVirtualDisplay") alloc] initWithDescriptor:desc];
+                if (!display || display.displayID == 0) {
+                    fprintf(stderr, "way %zu: the virtual display was not made\n", k);
+                    continue;
+                }
+                kept = display;
+                CGVirtualDisplaySettings *settings = [[NSClassFromString(@"CGVirtualDisplaySettings") alloc] init];
+                settings.hiDPI = ways[k].hiDPI;
+                NSMutableArray *modes = [NSMutableArray array];
+                for (int s = 0; s < 2 && ways[k].scale[s]; s++)
+                    [modes addObject:[[NSClassFromString(@"CGVirtualDisplayMode") alloc]
+                                         initWithWidth:ways[k].scale[s] * w height:ways[k].scale[s] * h refreshRate:60]];
+                settings.modes = modes;
+                BOOL applied = [display applySettings:settings];
+                target = display.displayID;
+                for (int i = 0; i < 50 && !online(target); i++) pause_a_little();
+                // its modes can come a moment after it is online
+                for (int i = 0; i < 50 && !(mode = retinaMode(target, w, h)); i++) pause_a_little();
+                CGDisplayModeRef now = CGDisplayCopyDisplayMode(target);
+                CGRect b = CGDisplayBounds(target);
+                fprintf(stderr,
+                        "way %zu (hiDPI %u, modes x%u x%u): display %u, settings taken %d, online %d, active %d, "
+                        "bounds %.0f x %.0f, mode now %zu x %zu (%zu x %zu pixels); its modes:\n",
+                        k, ways[k].hiDPI, ways[k].scale[0], ways[k].scale[1], target, applied, online(target),
+                        CGDisplayIsActive(target), b.size.width, b.size.height, now ? CGDisplayModeGetWidth(now) : 0,
+                        now ? CGDisplayModeGetHeight(now) : 0, now ? CGDisplayModeGetPixelWidth(now) : 0,
+                        now ? CGDisplayModeGetPixelHeight(now) : 0);
+                if (now) CGDisplayModeRelease(now);
+                printModes(target);
             }
-            CGVirtualDisplaySettings *settings = [[NSClassFromString(@"CGVirtualDisplaySettings") alloc] init];
-            settings.hiDPI = 1;
-            settings.modes = @[
-                [[NSClassFromString(@"CGVirtualDisplayMode") alloc] initWithWidth:2 * w height:2 * h refreshRate:60],
-                [[NSClassFromString(@"CGVirtualDisplayMode") alloc] initWithWidth:w height:h refreshRate:60],
-            ];
-            if (![display applySettings:settings]) {
-                fprintf(stderr, "the virtual display took no settings\n");
-                return 1;
-            }
-            target = display.displayID;
-            for (int i = 0; i < 100 && !online(target); i++)
-                pause_a_little();
-            // its modes come a moment after it is online (none at first on GitHub's runner)
-            for (int i = 0; i < 150 && !(mode = retinaMode(target, w, h)); i++) {
-                // its settings again now and then, should the first have come too early
-                if (i % 50 == 49) fprintf(stderr, "settings again: %d\n", [display applySettings:settings]);
-                pause_a_little();
-            }
-            fprintf(stderr, "the virtual display (%u), online: %d; its modes:\n", target, online(target));
-            printModes(target);
             if (!mode) {
-                fprintf(stderr, "the virtual display has no 2x mode of %u x %u points\n", w, h);
+                fprintf(stderr, "no virtual display had a 2x mode of %u x %u points\n", w, h);
                 return 1;
             }
         }
