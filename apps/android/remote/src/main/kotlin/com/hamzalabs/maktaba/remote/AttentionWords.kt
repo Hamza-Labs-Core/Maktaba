@@ -20,6 +20,16 @@ internal val causeWords: Map<String, Int> = mapOf(
     "plex_unreachable" to R.string.cause_plex_unreachable,
     "plex_auth" to R.string.cause_plex_auth,
     "readback_mismatch" to R.string.cause_readback_mismatch,
+    // Epic 54: a plugin job's end (the web's queue.issues.cause.plugin_*)
+    "plugin_trap" to R.string.cause_plugin_trap,
+    "plugin_timeout" to R.string.cause_plugin_timeout,
+    "plugin_memory" to R.string.cause_plugin_memory,
+    "plugin_capability" to R.string.cause_plugin_capability,
+    "plugin_scope" to R.string.cause_plugin_scope,
+    "plugin_quota" to R.string.cause_plugin_quota,
+    "plugin_failed" to R.string.cause_plugin_failed,
+    "plugin_held" to R.string.cause_plugin_held,
+    "plugin_loop" to R.string.cause_plugin_loop,
     "no_handler" to R.string.cause_no_handler,
     "graph_violation" to R.string.cause_graph_violation,
     "db_error" to R.string.cause_db_error,
@@ -51,11 +61,17 @@ internal fun looksLikeKey(s: String): Boolean =
     Regex("^[a-z][a-z0-9_]*:").containsMatchIn(s) || Regex("<(n|path|id|hex)>").containsMatchIn(s)
 
 /** A group's title: its cause's words, else its kind's, else the home's label, else the kind in words. */
-internal fun Say.groupTitle(g: FailureGroup): String {
-    causeWords[g.cause]?.let { return t(it) }
-    causeWords[causeKind(g.cause)]?.let { return t(it) }
-    if (g.label.isNotBlank() && !looksLikeKey(g.label)) return g.label
-    return Say.spaced(causeKind(g.cause)).replaceFirstChar { it.uppercase() }
+internal fun Say.groupTitle(g: FailureGroup): String = causeTitle(g.cause, g.label)
+
+/**
+ * A cause code's words (a stage's failing signature, a group's cause): its own, else its kind's,
+ * else the home's [label] for it, else the kind in words.
+ */
+internal fun Say.causeTitle(cause: String, label: String = ""): String {
+    causeWords[cause]?.let { return t(it) }
+    causeWords[causeKind(cause)]?.let { return t(it) }
+    if (label.isNotBlank() && !looksLikeKey(label)) return label
+    return Say.spaced(causeKind(cause)).replaceFirstChar { it.uppercase() }
 }
 
 /** Why a group has no Retry, and what does fix it; null when Retry does. */

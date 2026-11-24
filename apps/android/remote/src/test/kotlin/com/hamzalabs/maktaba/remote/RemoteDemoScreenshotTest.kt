@@ -37,8 +37,8 @@ import java.util.TimeZone
  * Arabic, on the demo library's home ([DemoRemoteHome]: the fixture's account, films and clock,
  * with a made-up night's work): the Overview dashboard, Needs attention, the queue, approving a
  * TV's sign-in code, and updates, each on a phone, a 10" tablet in landscape and a 7" tablet
- * upright. On a tablet the screens with a list open a row beside it (the cause Retry cannot fix,
- * a stage, the last update). Written to `src/test/screenshots/demo/<surface>-remote-<screen>-<lang>.png`,
+ * upright. On the 10" tablet the screens with a list open a row beside it (the cause Retry cannot
+ * fix, a stage, the last update); the 7" one shows one pane at a time, as the phone. Written to `src/test/screenshots/demo/<surface>-remote-<screen>-<lang>.png`,
  * the names the store gallery's composer reads; CI's `verifyRoborazziDebug` fails when one no
  * longer matches.
  */
@@ -107,7 +107,11 @@ class RemoteDemoScreenshotTest {
         compose.onRoot().captureRoboImage("src/test/screenshots/demo/${form().prefix}-remote-$screen-${lang()}.png", roborazziOptions = options)
     }
 
-    private fun tablet() = form() != Form.Phone
+    /**
+     * The list has a page beside it: the 10" tablet. A 7" tablet upright shows one pane at a time,
+     * as a phone does (its window is too narrow for both: [twoPanesFit]), so its shots are the lists.
+     */
+    private fun tablet() = compose.has("split-list")
 
     /** Diagnostics' Overview dashboard: the home's last 24 hours. */
     private fun dashboards() {
@@ -133,10 +137,11 @@ class RemoteDemoScreenshotTest {
     private fun queue() {
         frame(Place.Queue)
         val titles = listOf("v-lake-nasser", "v-ghost-octopus", "v-llamigos").map { DemoRemoteHome.title(demo, it) }
-        until("the jobs running on $titles") { titles.all(::shows) && shows("Transcribe") }
+        val stage = compose.activity.getString(R.string.w_queue_stage_transcribe_title)
+        until("the jobs running on $titles") { titles.all(::shows) && shows(stage) }
         if (tablet()) {
             // the stage's row, under the running jobs (one of which is a transcription too)
-            compose.onAllNodes(hasText("Transcribe") and hasClickAction()).onLast().performClick()
+            compose.onAllNodes(hasText(stage) and hasClickAction()).onLast().performClick()
             until("the stage's failures read") { "/api/queues/${DemoRemoteHome.STAGE}/failures" in home.paths }
         }
         shoot("queue")

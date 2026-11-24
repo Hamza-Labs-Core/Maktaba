@@ -122,7 +122,7 @@ object DemoRemoteHome {
 
     /**
      * Needs attention: what a home shows after a night's work. The causes' titles are the app's
-     * own words; the stages and the messages are the home's.
+     * own words, and so are its stages' names; the messages are the home's.
      */
     private val ISSUES = """{"groups":[
         {"stage":"fingerprint","cause":"nas_timeout","label":"NAS read timed out","count":3,"action":"retry","sample_message":"read timed out after 30 s"},
