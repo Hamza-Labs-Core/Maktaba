@@ -10,7 +10,7 @@ prs: [1598, 1601]
 ---
 
 ## What happened
-- **Research item 1** (`docs/research/update-process.md`, #1601), built on #1598's branch. The PR targets main and carries #1598's commits, so its CI runs.
+- **Research item 1** (`docs/research/update-process.md`, #1601), built on #1598's branch, then on main once #1598 merged.
 - **The paths that put the dump back by itself:**
   - the database step's three cases that #1598 left automatic (`db_down_failed`, lossy, unknown);
   - `updater.Machine.rollback` (`MarkRestore` then `RestoreBack`);
@@ -38,4 +38,3 @@ prs: [1598, 1601]
 - Release-before-the-fix paths are unchanged:
   - Layout installs keep their old launcher, which still writes `restoring`. Only a release with this change holds it.
   - An update *to* a release from before this change runs that release's own database step.
-- Merge order: #1598 first, then #1605.
