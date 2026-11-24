@@ -1312,8 +1312,12 @@ export const APPS = [
                 "أو يتصل بـ«مكتبة» أخرى: فتعرض النافذة حينئذ جهازًا رئيسيًا يعمل في مكان آخر، ولا يعمل شيء على هذا الحاسوب."
               ),
               t(
-                "First-run setup: the admin, the libraries, the models and the optional links to other services.",
-                "إعداد التشغيل الأول: المدير والمكتبات والنماذج والروابط الاختيارية بخدمات أخرى."
+                "**First-run setup in its own window**: the admin, the libraries, the models and the optional links to other services. A pane at the start lists the five steps (welcome, what will run, your admin account, your library folders, getting Maktaba ready) under the arch from the app's icon; the welcome offers this computer or another Maktaba as two cards, with the language switch beside them, and what will run shows each part with the memory and disk it needs and the data folder. Once the setup opens a server, the main window shows it.",
+                "**إعداد التشغيل الأول في نافذة خاصة به**: المدير والمكتبات والنماذج والروابط الاختيارية بخدمات أخرى. تسرد لوحة في البداية الخطوات الخمس (الترحيب، وما الذي سيعمل، وحساب المدير، ومجلدات مكتبتك، وتجهيز مكتبة) تحت القوس المأخوذ من أيقونة التطبيق؛ ويعرض الترحيب هذا الحاسوب أو «مكتبة» أخرى في بطاقتين، ومفتاح اللغة بجانبهما، وتعرض شاشة ما الذي سيعمل كل جزء مع الذاكرة والمساحة اللتين يحتاجهما ومجلد البيانات. وحين يفتح الإعداد خادمًا تعرضه النافذة الرئيسية."
+              ),
+              t(
+                "**Server status in its own window**: **Server status** in the tray or the menu-bar item (and in the **Server** menu on Linux without a tray) opens a window with the server's state, this computer's name, the release and since when it runs, a release on its way, and a tile for each part (the library database, the server, playback and Live TV, indexing, the language model with its download, plugins) with what it waits on. Its buttons pause or resume the server, open Maktaba, the logs, **Report a problem…**, and the libraries, devices and settings pages in the main window. Closing it keeps the server running.",
+                "**حالة الخادم في نافذة خاصة بها**: يفتح **حالة الخادم** في منطقة الإشعارات أو في عنصر شريط القوائم (وفي قائمة **الخادم** على لينكس بلا منطقة إشعارات) نافذةً فيها حالة الخادم، واسم هذا الحاسوب، والإصدار ومنذ متى يعمل، وإصدارًا في الطريق، وبطاقة لكل جزء (قاعدة بيانات المكتبة، والخادم، والتشغيل والبث المباشر، والفهرسة، والنموذج اللغوي وتنزيله، والإضافات) مع ما ينتظره. وتوقف أزرارها الخادم مؤقتًا أو تستأنفه، وتفتح «مكتبة» والسجلات و**الإبلاغ عن مشكلة…** وصفحات المكتبات والأجهزة والإعدادات في النافذة الرئيسية. وإغلاقها يُبقي الخادم عاملًا."
               ),
               t(
                 "Updates itself through signed updates; **View → Big Screen** turns the window into the big-screen view.",
