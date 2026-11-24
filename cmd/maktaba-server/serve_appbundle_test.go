@@ -1040,14 +1040,8 @@ func TestAppBundleFailedRestoreIsFinishedNextStart(t *testing.T) {
 		!strings.Contains(err.Error(), "pg_restore: disk full") {
 		t.Fatalf("a failed restore = %v", err)
 	}
-	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestoring || rec.By != "admin" ||
-		!strings.Contains(rec.RestoreError, "disk full") {
+	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseRestoring || rec.By != "admin" {
 		t.Fatalf("record = %+v", rec)
-	}
-	// a release newer than the one the home is on is no way out of a restore with nothing
-	// recorded of what was before it (one an older release asked): it is tried again
-	if _, ok := newerThanRestore(recorded(t, cfg), "v0.9.0"); ok {
-		t.Fatal("a restore with nothing recorded before it was left behind")
 	}
 	f.restoreErr = nil
 	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
@@ -2184,6 +2178,23 @@ func TestAppBundleOlderRecordTakesTheSlotTheDatabaseRecorded(t *testing.T) {
 	if rec := recorded(t, cfg); rec.KeptFor != "0.2.0" {
 		t.Fatalf("record %+v", rec)
 	}
+
+	// a held record (an unasked mark of an older launcher, with no slot) was saved when the
+	// update failed, after its migrations: its time says nothing of the slot before them
+	cfg, payload = appEnv(t, "v0.3.1", "")
+	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0", Failed: "v0.3.0",
+		Dump: "/b/pre-v0.2.0-to-v0.3.0.dump", Error: "launcher_boot_loop"})
+	f = installFakeDB(t, cfg)
+	f.back, f.backSchema, f.before, f.applied = updater.FailedDown, 234, 236, 237
+	f.migrateErr = errors.New("migrate: ERROR 0237_x.sql: boom")
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	_ = prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if len(f.askedAt) != 0 || len(f.befores) != 1 || f.befores[0] != 0 {
+		t.Fatalf("asked %v, decided with the slot before %v: want none", f.askedAt, f.befores)
+	}
 }
 
 // The payload is saved as the one that ran once every process ran healthy.
@@ -2549,50 +2560,5 @@ func TestAppBundleVenvRemovesTheWheelhouse(t *testing.T) {
 	}
 	if _, err := os.Stat(wh); err == nil {
 		t.Fatal("the wheelhouse was kept after the venv was built")
-	}
-}
-
-// A restore a person asked for, on a held update, that can never finish (its dump lost): each
-// start tries again, the record keeps what was before it, and a release newer than the one
-// that failed, installed since, goes on from there; one that is not newer does not.
-func TestAppBundleNewerReleaseGoesOnFromARestoreThatCannotFinish(t *testing.T) {
-	cfg, payload := appEnv(t, "v0.2.0", "")
-	first := filepath.Join(cfg.StateDir(), "backups", "pre-v0.2.0-to-v0.3.0.dump")
-	before := apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseHeld, From: "v0.2.0", Dump: first,
-		Failed: "v0.3.0", Error: "boom", Held: "db_held_lossy", SchemaBefore: 230}
-	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
-		Dump: first, By: "admin", Before: &before})
-	f := installFakeDB(t, cfg)
-	f.restoreErr = errors.New("pg_restore: input file is too short")
-	for try := 1; try <= 2; try++ {
-		ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-		if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); !supervisor.Halted(err) ||
-			!strings.Contains(err.Error(), "give this restore up") {
-			t.Fatalf("try %d: %v", try, err)
-		}
-		if _, _, r := f.counts(); r != try {
-			t.Fatalf("%d restores after %d starts", r, try)
-		}
-	}
-	rec := recorded(t, cfg)
-	if rec.RestoreError == "" || rec.Before == nil || rec.Before.State != apppayload.DatabaseHeld || rec.Before.Dump != first {
-		t.Fatalf("record %+v", rec)
-	}
-	for cur, want := range map[string]bool{"v0.3.0": false, "v0.2.9": false, "dev": false, "v0.3.1": true} {
-		if _, ok := newerThanRestore(rec, cur); ok != want {
-			t.Errorf("%s goes on: %v, want %v", cur, ok, want)
-		}
-	}
-	newPayload(t, payload, "v0.3.1")
-	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
-	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
-		t.Fatalf("v0.3.1: %v", err)
-	}
-	if _, m, r := f.counts(); m != 1 || r != 2 {
-		t.Fatalf("%d migrations, %d restores", m, r)
-	}
-	if rec := recorded(t, cfg); rec.Version != "v0.3.1" || rec.State != apppayload.DatabaseMigrated || rec.Dump != first ||
-		rec.SchemaBefore != 230 || rec.Before != nil || rec.RestoreError != "" {
-		t.Fatalf("record %+v", rec)
 	}
 }

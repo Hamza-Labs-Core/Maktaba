@@ -56,12 +56,6 @@ function load(){
       if(s.held.backup){var hb=el('button',t('recovery.held.restore',hv));
         hb.onclick=function(){act({action:'restore',backup:s.held.backup},2)};hd.appendChild(hb)}
       hd.appendChild(el('p',t('recovery.held.newer',hv)))}
-    if(s.stuck){hd.hidden=false;var sv={backup:s.stuck.backup,why:s.stuck.why||''};
-      hd.appendChild(el('p',t('recovery.stuck',sv)));
-      var sr=el('button',t('recovery.stuck.retry',sv));sr.onclick=function(){act({action:'restore',backup:s.stuck.backup},2)};hd.appendChild(sr);
-      var so=el('button',t('recovery.stuck.other'));so.onclick=restore;hd.appendChild(so);
-      if(s.stuck.can_abandon){var sa=el('button',t('recovery.stuck.abandon'));sa.onclick=function(){act({action:'abandon_restore'},2)};hd.appendChild(sa)}
-      hd.appendChild(el('p',t('recovery.stuck.newer')))}
     document.getElementById('well').hidden=st.overall!=='ok';
     var gl=document.getElementById('groups');gl.textContent='';
     Object.keys(g).forEach(function(k){var li=el('li');li.appendChild(el('span',t('status.group.'+k)+': '));

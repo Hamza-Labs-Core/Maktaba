@@ -4578,10 +4578,8 @@ build fails when the two differ.
   a newer release that fixes the update, which goes on from where it stopped. A restore mark
   written by an older release or its launcher is held the same way. The first update to this is
   protected too: until its watch passes, the new release's record names its backup where no older
-  launcher or release puts it back from. A held update stays held when the switch back fails. A
-  restore that cannot finish (its backup lost, no room) can be tried again, replaced by another
-  backup, or given up on the recovery page (or with `maktaba-server restore --abandon`), and a
-  newer release goes on from it. In English and Arabic.
+  launcher or release puts it back from. A held update stays held when the switch back
+  fails. In English and Arabic.
 
 ## [0.2.0] - 2026-10-19
 
