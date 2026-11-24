@@ -412,6 +412,11 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A home linked to Maktaba Cloud after its owner chose a plan gets remote play through the
+  relay at once.** A newly linked home started on the Free plan whatever its owner's plan was, so
+  the relay refused it ("remote play through the relay needs a Basic or Pro plan") until the plan
+  was changed again. It now takes its owner's plan and extra streams when it is linked.
+
 - **A home whose update rolled back no longer installs an older release instead, and it sees new
   releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
   the 8 MiB a home reads, so every check for updates failed and homes stopped learning of new

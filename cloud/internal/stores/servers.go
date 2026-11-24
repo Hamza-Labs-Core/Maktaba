@@ -100,14 +100,19 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 	if reserved > 0 {
 		return Server{}, ErrSlugReserved
 	}
+	// The new home takes its owner's plan and extra streams, as a plan change gives them to the
+	// homes the account already has (SetEffectivePlan, setExtraStreams): the column defaults
+	// (free, 0) would refuse the relay to a home claimed after its owner subscribed.
 	var sv Server
 	err = tx.QueryRowContext(ctx, `
-        INSERT INTO servers (owner_user_id, name, slug, server_secret_hash, version, public_key)
-        VALUES ($1,$2,$3,$4,$5,$6)
+        INSERT INTO servers (owner_user_id, name, slug, server_secret_hash, version, public_key, plan, extra_streams)
+        SELECT $1, $2, $3, $4, $5, $6, u.plan, COALESCE(sub.extra_streams, 0)
+          FROM users u LEFT JOIN subscriptions sub ON sub.user_id = u.id
+         WHERE u.id = $1
         ON CONFLICT (slug) DO NOTHING
-        RETURNING id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at
+        RETURNING id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at, extra_streams
     `, uid, name, slug, secretHash, sql.NullString{String: version, Valid: version != ""}, pubKey).Scan(
-		&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt,
+		&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt, &sv.ExtraStreams,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Server{}, ErrSlugTaken
