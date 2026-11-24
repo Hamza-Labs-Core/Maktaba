@@ -215,10 +215,6 @@ export const APPS = [
                 "**التشغيل عن بُعد والخطط**: التشغيل في المنزل مجاني، وكذلك الوصول إلى الجهاز الرئيسي مباشرة من الإنترنت حين يسمح جهاز التوجيه بذلك. أما التشغيل عبر وسيط سحابة مكتبة (حين لا يتاح الاتصال المباشر) فيتطلب خطة مدفوعة: **الأساسية** تمرّر بجودة تصل إلى نحو 3 ميغابت في الثانية على جهازين في الوقت نفسه، مع 500 غيغابايت شهريًا من الاستخدام العادل تُشغَّل بعدها البثوث بجودة أقل؛ و**الاحترافية** تمرّر بالجودة الكاملة ضمن حصة شهرية، ثم بجودة الأساسية. لا تقطع أي خطة مدفوعة التشغيل عن بُعد أبدًا: في الأساسية يحوّل الجهاز الرئيسي الفيديو المشغَّل عبر الوسيط ليلائم حدّها، وحين يرفض الوسيط (لا خطة فيها الوسيط، أو أجهزة كثيرة، أو الجهاز الرئيسي مشغول جدًا) تقول التطبيقات السبب. تعرض صفحة **الفوترة** في الحساب الخطط، وتأتي أسعارها لاحقًا."
               ),
               t(
-                "**Viewers of a broadcast**: a home that broadcasts its channels through Maktaba Cloud has a **Viewers** page at app.maktaba.tv, from **Homes**, for the home's owner only: viewers watching now and the viewer-hours of today, the last 7 days and this month against the plan's allowance. The Broadcaster add-on also shows the most viewers at once, average watch time, countries, devices, quality watched, playback errors and viewers turned away, with a CSV export. Countries and devices with fewer than 5 viewers in an hour are grouped as **Other** for that hour, and nothing personal is kept: no names, accounts or addresses.",
-                "**مشاهدو البث**: للجهاز الرئيسي الذي يبث قنواته عبر سحابة مكتبة صفحة **المشاهدون** في app.maktaba.tv، يُوصَل إليها من **الأجهزة الرئيسية**، لمالك الجهاز وحده: من يشاهدون الآن وساعات المشاهدة اليوم وفي آخر 7 أيام وهذا الشهر مقابل حصة الخطة. وتعرض إضافة البث أيضًا أعلى عدد مشاهدين في وقت واحد ومتوسط مدة المشاهدة والبلدان والأجهزة والجودة المشاهَدة وأخطاء التشغيل والمشاهدين المرفوضين، مع تصدير بصيغة CSV. وتُجمع البلدان والأجهزة التي يقل مشاهدوها في ساعة عن 5 تحت **أخرى** في تلك الساعة، ولا يُحفظ شيء شخصي: لا أسماء ولا حسابات ولا عناوين."
-              ),
-              t(
                 "**The play queue**: **Play** and **Shuffle** on a library, a series, a season, a collection or a playlist start one queue that the home keeps for each person. **Play next** and **Add to queue** add a video to it, Up next plays from it first, and Home offers **Continue your queue** on every device.",
                 "**قائمة الانتظار**: يبدأ زرّا **تشغيل** و**تشغيل عشوائي** في مكتبة أو سلسلة أو موسم أو مجموعة أو قائمة تشغيل قائمةَ انتظار واحدة يحفظها الجهاز الرئيسي لكل شخص. ويضيف إليها **شغّل تاليًا** و**أضف إلى قائمة الانتظار** مقطعًا، ويبدأ «التالي» منها أولًا، وتعرض الرئيسية **تابع قائمة الانتظار** على كل جهاز."
               ),
@@ -366,10 +362,6 @@ export const APPS = [
                 "**الرئيسية**: ما كنت تشاهده، والدرس التالي من كل سلسلة تتابعها، وما أُضيف حديثًا، والصفوف التي يقترحها الجهاز الرئيسي."
               ),
               t(
-                "**Watch a broadcast** (iPhone, iPad, Mac and Android): a home's published channels, watched as a guest with no account, from the home picker (and **Profile** on Android) or an invite's link (pasted, opened as `maktaba://watch/i/…`, or its QR code scanned on a phone), or with the publisher's handle and an `MK-` short code. The publisher's channels with now and next, a CC BY programme's credit, and the player, where a vertical swipe changes the channel; a channel whose home is offline plays its slate with a note. Passes stay on the device (the Keychain, or a key in Android's Keystore) and out of backups; saved broadcasts each have **Remove**. Not shown under a parental limit; on Apple devices, shown only once the home has said there is no limit, and with no home signed in, not on a device where a sign-in was limited.",
-                "**شاهد بثًا** (آيفون وآيباد والماك وأندرويد): قنوات منشورة لجهاز رئيسي تُشاهَد كضيف دون حساب، من منتقي الجهاز الرئيسي (ومن **الملف الشخصي** على أندرويد) أو من رابط دعوة (يُلصق أو يُفتح بصيغة `maktaba://watch/i/…` أو يُمسح رمز QR الخاص به بالهاتف)، أو بمعرّف الناشر ورمز قصير يبدأ بـ`MK-`. قنوات الناشر مع ما يُعرض الآن وما يليه، ونسبة البرنامج المرخّص بـCC BY، والمشغّل الذي يبدّل فيه السحب العمودي القناة؛ والقناة التي انقطع جهازها الرئيسي تشغّل شريحتها البديلة مع ملاحظة. وتبقى التصاريح على الجهاز (في سلسلة المفاتيح، أو بمفتاح في مخزن مفاتيح أندرويد) وخارج النسخ الاحتياطية؛ ولكل بث محفوظ **إزالة**. ولا يظهر تحت قيود الرقابة الأبوية؛ وعلى أجهزة آبل لا يظهر إلا بعد أن يقول الجهاز الرئيسي إنه لا قيود، ودون جهاز رئيسي مسجَّل الدخول، لا يظهر على جهاز كان فيه دخولٌ مقيَّد."
-              ),
-              t(
                 "**Libraries**: each library with its series, collections, playlists and videos, filtered and sorted, with **Play** and **Shuffle**; a series shuffles too. Pin the libraries you use most.",
                 "**المكتبات**: كل مكتبة بسلاسلها ومجموعاتها وقوائم تشغيلها ومقاطعها، مع التصفية والترتيب، ومعها **تشغيل** و**تشغيل عشوائي**؛ ويمكن تشغيل السلسلة عشوائيًا أيضًا. وثبّت المكتبات التي تستعملها أكثر."
               ),
@@ -402,8 +394,8 @@ export const APPS = [
                 "**الملف الشخصي**: سجل المشاهدة والمفضلة وقوائم التشغيل والجلسات، و**الموافقة على تلفاز أو جهاز**، وتبديل الجهاز الرئيسي، وإعدادات المظهر واللغة والتشغيل على هذا الجهاز."
               ),
               t(
-                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, **Cast** to a Chromecast or a Google TV from an iPhone or iPad (the TV list keeps AirPlay first, and the TV plays and reports where it is by itself, so the phone can lock), picture in picture, sound with the screen off and **Cast** to a Chromecast or a Google TV on Android (the TV plays and reports where it is by itself, so the phone can lock). On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below; the Player plays with libmpv, which it carries, so a home that knows its `desktop-mpv` profile sends MKV, HEVC (10-bit too), AV1, AC-3, E-AC-3, DTS and 5.1 or 7.1 sound as they are instead of converting them first, and a file that does not play as it is opens once more converted.",
-                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، و**البث** إلى Chromecast أو Google TV من آيفون أو آيباد (تُبقي قائمة أجهزة التلفاز AirPlay أولًا، ويشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف)، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة و**البث** إلى Chromecast أو Google TV على أندرويد (يشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف). وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه؛ ويشغّل المشغّل المقاطع بمكتبة libmpv التي يحملها معه، فالجهاز الرئيسي الذي يعرف ملف العميل `desktop-mpv` يرسل ملفات MKV وHEVC (بعمق 10 بت أيضًا) وAV1 وAC-3 وE-AC-3 وDTS والصوت 5.1 أو 7.1 كما هي بدل تحويلها أولًا، والملف الذي لا يعمل كما هو يُفتح مرة أخرى محوَّلًا."
+                "**Watching**: subtitles and audio tracks, the next lesson, AirPlay and Picture in Picture on Apple devices, **Cast** to a Chromecast or a Google TV from an iPhone or iPad (the TV list keeps AirPlay first, and the TV plays and reports where it is by itself, so the phone can lock), picture in picture, sound with the screen off and **Cast** to a Chromecast or a Google TV on Android (the TV plays and reports where it is by itself, so the phone can lock). On the Mac the video fills the window and the **Playback** menu has the keys. On Windows and Linux: the **Audio**, **Subtitles** and **Quality** menus, Up next, and the keys below; the Player plays with libmpv, which it carries, so a home that knows its `desktop-mpv` profile sends MKV, HEVC (10-bit too), AV1, AC-3, E-AC-3, DTS and 5.1 or 7.1 sound as they are instead of converting them first, and a file that does not play as it is opens once more converted. At start the Player also tells the home what this machine plays smoothly: which codecs its graphics card decodes, how sharp a picture its processor keeps up with, and how many speakers its sound has, so a slower laptop gets a smooth version of a 4K film instead of a stuttering one, and a converted film keeps its 5.1 sound on 5.1 speakers.",
+                "**المشاهدة**: الترجمات ومسارات الصوت، والدرس التالي، وAirPlay وصورة داخل صورة على أجهزة آبل، و**البث** إلى Chromecast أو Google TV من آيفون أو آيباد (تُبقي قائمة أجهزة التلفاز AirPlay أولًا، ويشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف)، وصورة داخل صورة واستمرار الصوت مع إطفاء الشاشة و**البث** إلى Chromecast أو Google TV على أندرويد (يشغّل التلفاز ويبلّغ عن موضعه بنفسه، فيمكن قفل الهاتف). وعلى الماك يملأ المقطع النافذة، وفي قائمة **التشغيل** اختصارات لوحة المفاتيح. وعلى ويندوز ولينكس: قوائم **الصوت** و**الترجمة** و**الجودة**، و«التالي»، والمفاتيح المبيّنة أدناه؛ ويشغّل المشغّل المقاطع بمكتبة libmpv التي يحملها معه، فالجهاز الرئيسي الذي يعرف ملف العميل `desktop-mpv` يرسل ملفات MKV وHEVC (بعمق 10 بت أيضًا) وAV1 وAC-3 وE-AC-3 وDTS والصوت 5.1 أو 7.1 كما هي بدل تحويلها أولًا، والملف الذي لا يعمل كما هو يُفتح مرة أخرى محوَّلًا. ويخبر المشغّل الجهاز الرئيسي أيضًا عند بدء تشغيله بما يشغّله هذا الحاسوب بسلاسة: أيّ المرمِّزات تفكّها بطاقة الرسوميات، وأيّ دقة صورة يواكبها المعالج، وكم سماعة في صوته، فيحصل الحاسوب المحمول الأبطأ على نسخة سلسة من فيلم بدقة 4K بدل نسخة متقطّعة، ويحتفظ الفيلم المحوَّل بصوته 5.1 على سماعات 5.1."
               ),
               t(
                 "**The status strip**: when the home's streaming is down, the Player says so before you press play.",
@@ -535,18 +527,6 @@ export const APPS = [
           {
             shots: [
               shot(
-                "player-iphone-guest-channels-en",
-                "phone",
-                "Watch a broadcast on an iPhone: Al-Noor on Maktaba, its channels with now and next, and one whose home is offline",
-                "شاهد بثًا على آيفون: Al-Noor على مكتبة، وقنواته مع ما يُعرض الآن وما يليه، وقناة جهازها الرئيسي غير متصل"
-              ),
-              shot(
-                "player-iphone-guest-code-ar",
-                "phone",
-                "Watch a broadcast on an iPhone, in Arabic: a short code already used on every device its invite allows",
-                "شاهد بثًا على آيفون، بالعربية: رمز قصير استُخدم على كل الأجهزة التي تسمح بها دعوته"
-              ),
-              shot(
                 "player-iphone-home",
                 "phone",
                 "The Player's Home on an iPhone: a new series, Continue Watching and On Deck",
@@ -617,18 +597,6 @@ export const APPS = [
                 "phone",
                 "Choosing a home in the Player on an Android phone",
                 "اختيار الجهاز الرئيسي في المشغّل على هاتف أندرويد"
-              ),
-              shot(
-                "android-player-guest-channels-phone",
-                "phone",
-                "Watch a broadcast on an Android phone: Al-Noor on Maktaba, its channels with now and next",
-                "شاهد بثًا على هاتف أندرويد: Al-Noor على مكتبة، وقنواته مع ما يُعرض الآن وما يليه"
-              ),
-              shot(
-                "android-player-guest-code-phone-ar",
-                "phone",
-                "Watch a broadcast on an Android phone, in Arabic: a short code already used on every device its invite allows",
-                "شاهد بثًا على هاتف أندرويد، بالعربية: رمز قصير استُخدم على كل الأجهزة التي تسمح بها دعوته"
               ),
               shot(
                 "android-player-code-phone",
@@ -957,10 +925,6 @@ export const APPS = [
                 "**البث المباشر** حين يُسمح للشخص بمشاهدة قناة: قسم **الآن** بكل قناة وما يُعرض عليها، و**الدليل**؛ اختر قناة لتشاهدها مباشرة."
               ),
               t(
-                "**Watch a broadcast** (Apple TV, Android TV, Google TV and Fire TV): a home's published channels, watched as a guest with no account and no home chosen, from the home picker, or **Settings** on Apple TV and **Account** on Android TV. Type the publisher's handle and the invite's `MK-` short code with the remote, or scan the QR code with a phone and check the 4-character code it shows; the phone sends the TV its pass. Then the publisher's channels with now and next, and the player, where up and down change the channel. A CC BY programme shows its credit, and a channel whose home is offline plays its slate with a note, never an error. Broadcasts are saved for next time, each with **Remove**. Not shown under a parental limit; on Apple devices, shown only once the home has said there is no limit, and with no home signed in, not on a device where a sign-in was limited.",
-                "**شاهد بثًا** (آبل تي في وأندرويد تي في وجوجل تي في وفاير تي في): قنوات منشورة لجهاز رئيسي تُشاهَد كضيف دون حساب ودون اختيار جهاز رئيسي، من منتقي الجهاز الرئيسي، أو من **الإعدادات** على آبل تي في و**الحساب** على أندرويد تي في. اكتب بجهاز التحكم معرّف الناشر ورمز الدعوة القصير الذي يبدأ بـ`MK-`، أو امسح رمز QR بالهاتف وطابق الرمز ذا الأحرف الأربعة الذي يعرضه؛ فيرسل الهاتف إلى التلفاز تصريحه. ثم قنوات الناشر مع ما يُعرض الآن وما يليه، والمشغّل الذي يبدّل فيه الأعلى والأسفل القناة. ويعرض البرنامج المرخّص بـCC BY نسبته، والقناة التي انقطع جهازها الرئيسي تشغّل شريحتها البديلة مع ملاحظة، دون رسالة خطأ أبدًا. وتُحفظ البثوث للمرة القادمة، ولكل منها **إزالة**. ولا يظهر تحت قيود الرقابة الأبوية؛ وعلى أجهزة آبل لا يظهر إلا بعد أن يقول الجهاز الرئيسي إنه لا قيود، ودون جهاز رئيسي مسجَّل الدخول، لا يظهر على جهاز كان فيه دخولٌ مقيَّد."
-              ),
-              t(
                 "**Settings** on Apple TV, **Account** on Android TV: who is signed in, switch home, sign out.",
                 "**الإعدادات** على آبل تي في و**الحساب** على أندرويد تي في: من سجّل الدخول، وتبديل الجهاز الرئيسي، وتسجيل الخروج."
               ),
@@ -1160,30 +1124,6 @@ export const APPS = [
                 "wide",
                 "The Live TV guide on an Apple TV: three channels and what is on each",
                 "دليل البث المباشر على آبل تي في: ثلاث قنوات وما يُعرض على كل منها"
-              ),
-              shot(
-                "appletv-guest-space",
-                "wide",
-                "Watch a broadcast on an Apple TV: saved broadcasts, the publisher's handle and short code, and a QR code with the code Q7XZ to pair a phone",
-                "شاهد بثًا على آبل تي في: البثوث المحفوظة، ومعرّف الناشر والرمز القصير، ورمز QR مع الرمز Q7XZ لإقران هاتف"
-              ),
-              shot(
-                "appletv-guest-channels",
-                "wide",
-                "A broadcast's channels on an Apple TV, watched as a guest: Al-Noor on Maktaba, now and next, and a channel whose home is offline",
-                "قنوات بث على آبل تي في يشاهدها ضيف: Al-Noor على مكتبة، وما يُعرض الآن وما يليه، وقناة جهازها الرئيسي غير متصل"
-              ),
-              shot(
-                "androidtv-guest-channels",
-                "wide",
-                "A broadcast's channels on an Android TV, watched as a guest: Al-Noor on Maktaba, now and next",
-                "قنوات بث على أندرويد تي في يشاهدها ضيف: Al-Noor على مكتبة، وما يُعرض الآن وما يليه"
-              ),
-              shot(
-                "androidtv-guest-pair-ar",
-                "wide",
-                "Pairing a phone to watch a broadcast on an Android TV, in Arabic: the QR code and the code Q7XZ to check",
-                "إقران هاتف لمشاهدة بث على أندرويد تي في، بالعربية: رمز QR والرمز Q7XZ للمطابقة"
               ),
               shot(
                 "androidtv-code",
@@ -1599,18 +1539,6 @@ export const APPS = [
                 "**مراجعة الكلمات** (`/review`)، للمدراء: الكلمات التي يشكّ فيها الجهاز الرئيسي في نصوصه المفرَّغة، ومع كل منها جملتها ومقطعها الصوتي وسبب تعليمها والتهجئات المقترحة. اقبل أو صحّح أو علّم اسمًا أو أضف إلى القاموس أو تخطَّ، في موضع واحد أو في كل موضع فيه الكلمة نفسها، ويمكنك التراجع. وبجانبها: **التصحيحات** و**المفردات** و**حزم اللغات**، وإعدادات مراجعة الكلمات لكل مكتبة."
               ),
               t(
-                "**Broadcast access** (`/admin/broadcast-access`), for the home's owner and admins: who may watch the channels the home publishes through Maktaba Cloud. Each channel is **Invite only** or, for a verified account with the Broadcaster add-on, **Anyone with the link**. Create invite links and short TV codes (`MK-…`), each for some channels or all, a number of devices and a number of days; see the devices on each, remove one, or withdraw the invite, and its viewers stop within a minute. Viewer limits set the devices per network and the minutes a day. Viewers never pay and need no account. The same page is **Who can watch** in Maktaba Cloud's web app.",
-                "**الوصول إلى البث** (`/admin/broadcast-access`)، لمالك الجهاز الرئيسي ومدرائه: من يمكنه مشاهدة القنوات التي ينشرها الجهاز الرئيسي عبر سحابة مكتبة. كل قناة إما **بالدعوة فقط** أو، لحساب موثّق لديه إضافة المذيع، **أي شخص لديه الرابط**. أنشئ روابط دعوة ورموز تلفاز قصيرة (`MK-…`)، لكل منها بعض القنوات أو كلها، وعدد من الأجهزة وعدد من الأيام؛ واطّلع على أجهزة كل دعوة، وأزل جهازًا منها، أو اسحب الدعوة فيتوقف مشاهدوها خلال دقيقة. وتحدد حدود المشاهدة عدد الأجهزة على الشبكة الواحدة والدقائق في اليوم. لا يدفع المشاهدون شيئًا ولا يحتاجون إلى حساب. والصفحة نفسها هي **من يمكنه المشاهدة** في تطبيق سحابة مكتبة على الويب."
-              ),
-              t(
-                "**Viewers** on the **Broadcast** panel (**Live TV** → **Broadcast**), for the home's admins only: who watches the channels the home publishes through Maktaba Cloud. Viewers watching now and the viewer-hours of today, the last 7 days and this month against the plan's allowance; with the Broadcaster add-on, also the most viewers at once, average watch time, countries and devices. The numbers come from Maktaba Cloud, which the home asks with its own link, so no one needs the owner's cloud account. Countries and devices with fewer than 5 viewers in an hour are grouped as **Other** for that hour, and nothing personal is kept: no names, accounts or addresses.",
-                "**المشاهدون** في لوحة **البث** (**البث المباشر** ← **البث**)، لمدراء الجهاز الرئيسي فقط: من يشاهد القنوات التي ينشرها الجهاز الرئيسي عبر سحابة مكتبة. المشاهدون الآن وساعات المشاهدة اليوم وفي آخر 7 أيام وهذا الشهر مقابل حصة الخطة؛ ومع إضافة المذيع أيضًا أعلى عدد من المشاهدين في وقت واحد ومتوسط مدة المشاهدة والبلدان والأجهزة. تأتي الأرقام من سحابة مكتبة، ويطلبها الجهاز الرئيسي بارتباطه الخاص، فلا يحتاج أحد إلى حساب المالك في السحابة. تُجمع البلدان والأجهزة التي يقل مشاهدوها في ساعة عن 5 تحت **أخرى** في تلك الساعة، ولا يُحفظ شيء شخصي: لا أسماء ولا حسابات ولا عناوين."
-              ),
-              t(
-                "**Guests watch in a browser** at `watch.maktaba.tv`, with no account: an invite link opens the publisher's channels, each with its player, what is on now and next, today's programmes, the credit of a Creative Commons programme and a Report link, and a guide for all of them. Arabic is the default and English is a tap away. Channels switch with up and down, a swipe or the channel's number; when the home is offline its slate plays with a note. A page links only to the same publisher's channels. A TV without a keyboard shows a QR code that opens the pairing page on a phone, where the guest pastes the invite and the TV starts.",
-                "**يشاهد الضيوف في المتصفح** على `watch.maktaba.tv` من دون حساب: يفتح رابط الدعوة قنوات الناشر، ولكل قناة مشغّلها وما يُعرض الآن وما يليه وبرامج اليوم ونسبة البرنامج المرخّص بالمشاع الإبداعي إلى صاحبه ورابط للإبلاغ، ومعها دليل برامج لكل القنوات. العربية هي الأساس والإنجليزية على بُعد نقرة. وتتبدّل القنوات بالأعلى والأسفل أو بالسحب أو برقم القناة؛ وإن انقطع اتصال الجهاز الرئيسي عُرضت شريحته مع ملاحظة. ولا تربط الصفحة إلا بقنوات الناشر نفسه. أما التلفاز الذي لا لوحة مفاتيح له فيعرض رمز QR يفتح صفحة الربط على الهاتف، فيلصق الضيف الدعوة ويبدأ التلفاز."
-              ),
-              t(
                 "**Logs**, **Errors** and **Dashboards**, for admins. Logs searches every part's lines, follows one request from app to server and back, and follows new lines live. Errors groups repeated failures, with how often and since which version, and tells admins of a new one. **Diagnostics settings** choose how long logs are kept and turn on detailed logs for an hour. Dashboards draw the home's metrics over a chosen range; with several machines the Overview shows totals across them and the five most in need of attention, a machine that is offline first and named as offline, each machine by its name from the Machines page (its id beside it in the picker), says how many of how many it shows, and opens any one machine on its own.",
                 "**السجلات** و**الأخطاء** و**لوحات المتابعة**، للمدراء. تبحث صفحة السجلات في أسطر كل جزء، وتتتبّع طلبًا واحدًا من التطبيق إلى الخادم وبالعكس، وتعرض الأسطر الجديدة مباشرةً. وتجمع صفحة الأخطاء الإخفاقات المتكررة، مع عدد مراتها ومنذ أي إصدار، وتنبّه المدراء إلى كل خطأ جديد. وتحدد **إعدادات التشخيص** مدة الاحتفاظ بالسجلات، وتشغّل السجلات المفصّلة لمدة ساعة. وترسم لوحات المتابعة مقاييس الجهاز الرئيسي في مدة تختارها؛ ومع عدة أجهزة تعرض النظرة العامة المجاميع عبرها والأجهزة الخمسة الأحوج إلى الانتباه، والجهاز غير المتصل أولاً مسمًّى غير متصل، وكل جهاز باسمه في صفحة الأجهزة (ومعرّفه بجانبه في المنتقي)، وتذكر كم جهازًا تعرض من كم، وتفتح أي جهاز وحده."
               ),
@@ -1786,12 +1714,6 @@ export const APPS = [
                 "wide",
                 "The Logs page: the filters, and the lines of every part with their request ids",
                 "صفحة السجلات: المرشّحات، وأسطر كل جزء مع معرّفات طلباتها"
-              ),
-              shot(
-                "web-broadcast-viewers",
-                "wide",
-                "Viewers on the Broadcast panel: watching now, viewer-hours against the allowance, and countries and devices with Other",
-                "المشاهدون في لوحة البث: من يشاهد الآن، وساعات المشاهدة مقابل الحصة، والبلدان والأجهزة مع أخرى"
               ),
               shot(
                 "big-home",

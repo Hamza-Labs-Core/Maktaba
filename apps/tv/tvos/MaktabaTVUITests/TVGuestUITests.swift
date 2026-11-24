@@ -26,7 +26,7 @@ final class TVGuestUITests: XCTestCase {
 
     private func launch(_ language: String = "en") {
         // the saved broadcasts in the UI tests' file, not the Keychain an unsigned build may not use
-        app.launchArguments = ["-uitest-reset", "-maktaba-secrets-in-file", "-maktaba-session-reset", "-maktaba-guest-edge", home.url,
+        app.launchArguments = ["-uitest-reset", "-maktaba-secrets-in-file", "-maktaba-session-reset", "-maktaba-guest-edge", home.url, "-maktaba-guest-broadcast",
                                "-AppleLanguages", "(\(language))", "-AppleLocale", language == "ar" ? "ar_SA" : "en_US"]
         app.launch()
     }
@@ -121,7 +121,7 @@ final class TVGuestUITests: XCTestCase {
     /// Signed in to a home (no limit on the account): Settings opens Watch a broadcast too,
     /// apart from the home and its account.
     func testSettingsOpensTheGuestSpace() throws {
-        app.launchArguments = ["-uitest-reset", "-maktaba-secrets-in-file", "-maktaba-session-reset", "-maktaba-guest-edge", home.url,
+        app.launchArguments = ["-uitest-reset", "-maktaba-secrets-in-file", "-maktaba-session-reset", "-maktaba-guest-edge", home.url, "-maktaba-guest-broadcast",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         type(home.url, into: app.textFields["picker.address"])
@@ -158,7 +158,7 @@ final class TVGuestUITests: XCTestCase {
     /// here as a launch argument): with no home signed in the picker has no Watch a broadcast.
     /// Watch a broadcast fails closed: a guest has no account the edge could check.
     func testALimitedTVHasNoWatchABroadcast() throws {
-        app.launchArguments = ["-uitest-reset", "-maktaba-secrets-in-file", "-maktaba-session-reset", "-maktaba-guest-edge", home.url,
+        app.launchArguments = ["-uitest-reset", "-maktaba-secrets-in-file", "-maktaba-session-reset", "-maktaba-guest-edge", home.url, "-maktaba-guest-broadcast",
                                "-parental.limited.device", "YES", "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         XCTAssertTrue(app.textFields["picker.address"].waitForExistence(timeout: 20), "the home picker")
@@ -168,6 +168,37 @@ final class TVGuestUITests: XCTestCase {
             usleep(300_000)
         }
         XCTAssertFalse(app.buttons["picker.watchBroadcast"].exists, "no Watch a broadcast on a limited TV")
+    }
+
+    /// While the build has broadcasting off (`GuestBroadcast`; the UI tests above turn it on
+    /// with `-maktaba-guest-broadcast`): no Watch a broadcast in the picker, nor in Settings
+    /// once signed in.
+    func testBroadcastingOffShowsNoWatchABroadcast() throws {
+        app.launchArguments = ["-uitest-reset", "-maktaba-secrets-in-file", "-maktaba-session-reset", "-maktaba-guest-edge", home.url,
+                               "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        app.launch()
+        XCTAssertTrue(app.textFields["picker.address"].waitForExistence(timeout: 20), "the home picker")
+        for _ in 0..<12 {
+            remote.press(.down)
+            usleep(300_000)
+        }
+        XCTAssertFalse(app.buttons["picker.watchBroadcast"].exists, "no Watch a broadcast in the picker")
+        type(home.url, into: app.textFields["picker.address"], from: .up)
+        pressIfStillThere(app.buttons["picker.connect"], with: .right)
+        XCTAssertTrue(app.staticTexts["pairing-code"].waitForExistence(timeout: 20), "the code; the home saw \(home.seen)")
+        home.approve()
+        XCTAssertTrue(app.tabBars.firstMatch.waitForExistence(timeout: 20), "approved: signed in")
+        let tab = app.tabBars.buttons["Settings"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        for _ in 0..<6 where !app.tabBars.buttons.allElementsBoundByIndex.contains(where: \.hasFocus) {
+            remote.press(.up)
+            usleep(400_000)
+        }
+        moveFocus(to: tab, with: .right)
+        remote.press(.select)
+        XCTAssertTrue(app.staticTexts["Signed in as"].waitForExistence(timeout: 20) || app.cells.firstMatch.waitForExistence(timeout: 5), "Settings")
+        XCTAssertFalse(app.buttons["settings.watchBroadcast"].exists, "no Watch a broadcast in Settings")
+        XCTAssertFalse(home.seen.contains("POST /api/v1/pair"), "nothing was asked of the edge")
     }
 
     // MARK: helpers

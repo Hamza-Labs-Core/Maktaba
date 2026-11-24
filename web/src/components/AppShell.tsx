@@ -36,6 +36,7 @@ import { TelemetryPrompt } from "./TelemetryPrompt";
 import { IS_REMOTE, SERVER_PAGES } from "../lib/edition";
 import { useMyParental, type MyParental } from "../lib/parental";
 import { useFeatureGate } from "../lib/capabilities";
+import { useFlag } from "../lib/flags";
 
 // Where the update badge sits (Story 28.6): Settings in the sidebar and
 // the More menu, and More in the phone tab bar (Settings lives behind it).
@@ -168,6 +169,16 @@ const ADMIN = [
   { to: "/admin/extensions", key: "nav.admin.extensions", icon: "⧉" },
 ] as const;
 
+/**
+ * The admin entries this home shows: Broadcast access only while the licence carries the
+ * broadcast flag (broadcasting is off by default, 2026-11-24; the cloud's broadcast.enabled).
+ */
+export function adminNav(
+  broadcast: boolean
+): ReadonlyArray<{ to: string; key: string; icon: string }> {
+  return broadcast ? ADMIN : ADMIN.filter((item) => item.to !== "/admin/broadcast-access");
+}
+
 // A header part that throws while rendering drops out on its own instead of
 // taking the whole app down (the route boundary only wraps the page).
 class QuietBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
@@ -229,6 +240,7 @@ export function AppShell() {
       </span>
     ) : null;
   const healthDown = useSystemStatus(manage) === "down";
+  const broadcastOn = useFlag("broadcast");
   // Epic 53 story 53.11: how many error groups are new (the Errors entry's count)
   const newErrors = useNewErrors(manage);
   const pins = usePins(user?.id);
@@ -402,7 +414,7 @@ export function AppShell() {
               <span className="mkt-nav-group" aria-hidden="true">
                 {t("nav.admin")}
               </span>
-              {ADMIN.map((item) => (
+              {adminNav(broadcastOn).map((item) => (
                 <NavLink
                   key={item.to}
                   to={item.to}
@@ -514,11 +526,12 @@ export function MoreMenu() {
   const parental = useMyParental();
   const secondary = secondaryNav(parental, manage);
   const healthDown = useSystemStatus(manage) === "down";
+  const broadcastOn = useFlag("broadcast");
   const groups: Array<{
     title?: string;
     items: ReadonlyArray<{ to: string; key: string; icon: string }>;
   }> = [{ items: [SERIES, PLAYLISTS, ...secondary] }];
-  if (manage) groups.push({ title: t("nav.admin"), items: ADMIN });
+  if (manage) groups.push({ title: t("nav.admin"), items: adminNav(broadcastOn) });
   return (
     <section className="mkt-page mkt-more">
       {/* the menu lists Help itself, so no "?" beside the title */}

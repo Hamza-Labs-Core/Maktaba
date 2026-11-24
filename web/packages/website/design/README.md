@@ -181,7 +181,7 @@ links inside running text.
 
 - **Anatomy:** the mark and two sentences on what Maktaba is; four groups of links: **Get
   Maktaba** (install guides, downloads on GitHub), **Help** (help topics, messages), **Legal**
-  (privacy, terms, copyright), **Elsewhere** (maktaba.dev, source on GitHub); then a base row with
+  (privacy, terms), **Elsewhere** (maktaba.dev, source on GitHub); then a base row with
   the copyright line and the language link.
 - **Widths:** two columns of groups under 1024 px (the about block across both), five columns
   from 1024 px.

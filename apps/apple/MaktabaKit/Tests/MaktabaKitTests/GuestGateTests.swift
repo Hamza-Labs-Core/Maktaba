@@ -209,3 +209,13 @@ import Testing
         }
     }
 }
+
+/// Home broadcasting is off for now: the build's switch hides Watch a broadcast everywhere
+/// (the picker's and Settings' entry, invite links, saved broadcasts), whatever the gate says.
+@Suite struct GuestBroadcastSwitchTests {
+    @Test func offInThisBuild() {
+        #expect(GuestBroadcast.built == false)
+        #expect(GuestBroadcast.override == nil)
+        #expect(GuestBroadcast.enabled == false, "no Watch a broadcast entry while broadcasting is off")
+    }
+}
