@@ -253,9 +253,11 @@ final class RemoteDemoShotsUITests: XCTestCase {
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id].firstMatch }
 
     /// A tab: its button in the tab bar (iPhone), or its row in the sidebar (an iPad in
-    /// landscape shows the tabs as a sidebar's cells).
+    /// landscape shows the tabs as a sidebar's cells), by the start of its label: a tab with a
+    /// badge (Needs attention's count) was not found by its title alone there.
     private func openTab(_ title: String) {
-        let button = app.buttons[title].firstMatch, cell = app.cells[title].firstMatch
+        let named = NSPredicate(format: "label BEGINSWITH %@", title)
+        let button = app.buttons.matching(named).firstMatch, cell = app.cells.matching(named).firstMatch
         XCTAssertTrue(wait(timeout: 15) { button.exists || cell.exists }, "the \(title) tab")
         (cell.exists ? cell : button).tap()
     }
