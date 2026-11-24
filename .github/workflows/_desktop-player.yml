@@ -309,7 +309,9 @@ jobs:
               # libmpv's system libraries are the package's dependencies (story 13.18)
               depends=$(dpkg-deb -f "${deb[0]}" Depends)
               echo "Depends: ${depends}"
-              grep -q 'libass' <<<"${depends}" || { echo "::error::the .deb does not depend on libass, which libmpv needs"; exit 1; }
+              grep -q 'libass9' <<<"${depends}" || { echo "::error::the .deb does not depend on libass9, which libmpv needs"; exit 1; }
+              requires=$(rpm -qRp "${rpm[0]}")
+              grep -q '^libass' <<<"${requires}" || { echo "::error::the .rpm does not require libass, which libmpv needs"; echo "${requires}"; exit 1; }
               ;;
             Windows)
               msi=("$out"/msi/*.msi)
