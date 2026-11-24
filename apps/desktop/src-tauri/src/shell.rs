@@ -434,8 +434,7 @@ fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
     );
     let lang = shell(app).lang;
     // story 13.11: Maktaba's own dialog; the system's message box only when it cannot open
-    let logs = crate::traypanel::choosable(&tray_entries(app), "open-logs");
-    let content = crate::shelldialog::DialogContent::new(lang, sentence, errors, logs);
+    let content = error_content(lang, sentence, errors, &tray_entries(app));
     let (handle, message) = (app.clone(), lang::error_message(sentence, errors));
     crate::shelldialog::show(app, content, move || {
         handle
@@ -445,6 +444,18 @@ fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
             .kind(MessageDialogKind::Error)
             .show(|_| {});
     });
+}
+
+/// The error dialog's words: the way to the logs only when the tray offers Open logs (a
+/// machine that runs the server).
+fn error_content(
+    lang: Lang,
+    sentence: &str,
+    errors: &[&str],
+    entries: &[Entry],
+) -> crate::shelldialog::DialogContent {
+    let logs = crate::traypanel::choosable(entries, "open-logs");
+    crate::shelldialog::DialogContent::new(lang, sentence, errors, logs)
 }
 
 /// The record of this app's update attempts (attempts.rs: app-attempts.json beside the
@@ -2400,6 +2411,18 @@ pub fn open_external(url: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_error_dialog_offers_the_logs_only_where_the_server_runs() {
+        let sentence = "The Maktaba server could not start.";
+        let server = tray::entries(Lang::En, true, &ServerStatus::Running, false);
+        let c = error_content(Lang::En, sentence, &["bind: in use"], &server);
+        assert!(c.logs);
+        assert_eq!(c.errors, vec!["bind: in use"]);
+        // an app connected to another Maktaba has no logs of a server here
+        let client = tray::entries(Lang::En, false, &ServerStatus::Running, false);
+        assert!(!error_content(Lang::En, sentence, &[], &client).logs);
+    }
 
     #[test]
     fn the_tray_panel_s_colour_follows_the_server() {

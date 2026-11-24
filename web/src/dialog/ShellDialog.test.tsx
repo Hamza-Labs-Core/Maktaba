@@ -5,7 +5,9 @@ import userEvent from "@testing-library/user-event";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-const { listen } = vi.hoisted(() => ({ listen: vi.fn(async () => () => {}) }));
+const { listen } = vi.hoisted(() => ({
+  listen: vi.fn(async (_name: string, _cb: unknown) => () => {}),
+}));
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 
 import { ShellDialog } from "./ShellDialog";
@@ -96,7 +98,7 @@ describe("ShellDialog", () => {
 
   it("takes a second error's words while it is open", async () => {
     let push: (c: DialogContent) => void = () => {};
-    listen.mockImplementationOnce(async (_name, cb) => {
+    listen.mockImplementationOnce(async (_name: string, cb: unknown) => {
       push = (c) => (cb as (e: { payload: DialogContent }) => void)({ payload: c });
       return () => {};
     });
