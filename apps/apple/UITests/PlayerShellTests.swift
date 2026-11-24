@@ -183,6 +183,14 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertEqual(TouchWatcher.heldLine(1.5, at: .zero, cancelled: true), "touch held 1.50 s at (0, 0), cancelled")
     }
 
+    /// Where a touch landed and its recognizers' states, the hook's own left out.
+    @MainActor
+    func testTheLandedLineNamesTheViewAndEachRecognizersState() {
+        XCTAssertEqual(TouchWatcher.landedLine(view: UIView(), recognizers: [UITapGestureRecognizer(), TouchWatcher()]),
+                       "touch on UIView: UITapGestureRecognizer=possible")
+        XCTAssertEqual(TouchWatcher.landedLine(view: nil, recognizers: []), "touch on no view: no recognizers")
+    }
+
     /// Each scene change the touch hook watches has its own line in the app's log; another
     /// notification has none.
     func testTheTouchHookLogsEachSceneChange() {

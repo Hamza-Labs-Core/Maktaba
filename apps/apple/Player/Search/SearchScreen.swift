@@ -127,6 +127,7 @@ struct SearchScreen: View {
             .onDisappear { ai.cancel() }
             // the field let go: the search or the page held for it goes now
             .onChange(of: typing) { _, now in
+                Log.ui.debug("search: the field \(now ? "took" : "let go of", privacy: .public) the keyboard")
                 if let change = letGo.focusChanged(now) { perform(change) }
             }
             .navigationDestination(item: $pushed) { PlayerDestination(context: context, route: $0) }
@@ -305,10 +306,14 @@ struct SearchScreen: View {
     /// Runs `change` now when the field holds no keyboard; otherwise drops the focus, and
     /// `onChange(of: typing)` runs it once the field has let go.
     private func hold(_ change: SearchChange) {
+        // each step in the app's log (the words left out): a tap that changed nothing on CI
+        // says here whether its action ran, and whether it waited for the field (Trail #1550)
+        Log.ui.debug("search: \(change.name, privacy: .public) asked, the field \(typing ? "holds" : "has let go of", privacy: .public) the keyboard")
         if let now = letGo.begin(change, focused: typing) { perform(now) } else { typing = false }
     }
 
     private func perform(_ change: SearchChange) {
+        Log.ui.debug("search: \(change.name, privacy: .public) runs")
         switch change {
         case let .search(q): Task { await model.submit(q) }
         case let .refine(ask):
@@ -334,6 +339,18 @@ enum SearchChange: Equatable {
     /// AI mode: a new question, or a follow-up in the conversation (49.14).
     case ask(String)
     case followUp(String)
+
+    /// The change's kind, for the app's log (never its words).
+    var name: String {
+        switch self {
+        case .search: "search"
+        case .refine: "refine"
+        case .filters: "filters"
+        case .open: "open"
+        case .ask: "ask"
+        case .followUp: "followUp"
+        }
+    }
 }
 
 /// Search's two tabs (49.14): the results, and AI mode.

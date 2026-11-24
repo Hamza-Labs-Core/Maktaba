@@ -335,8 +335,15 @@ jobs:
           echo "shard $shard/$shards: ${#only[@]} arguments for $((${#only[@]} / 2)) tests"
           printf '%s\n' "${only[@]}" > "$RESULTS/$device-$shard.selection"
           xctestrun=$(ls "$PRODUCTS/Products/${scheme}_iphonesimulator"*.xctestrun)
+          # a hung test is cut at 10 minutes, with XCTest's spindump of it, and the shard goes
+          # on: the longest test that passed took 411 s, its shard's first launch included.
+          # Without a cap a test that hung in its tearDown after "Failed to terminate" held the
+          # shard until the job's 60 minutes ran out, and no later test ran (PR #1550's run
+          # 45264580791, iPhone 2/6, twice)
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
-            -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" "${only[@]}"
+            -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" \
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 600 \
+            -maximum-test-execution-time-allowance 600 "${only[@]}"
 
       # xcodebuild can say TEST EXECUTE SUCCEEDED for a run that ran none, or not all, of its
       # tests: a runner restarted after an unexpected exit may run nothing (CI run 43605618404,
