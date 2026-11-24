@@ -835,7 +835,8 @@ def said(log: Path, text: str) -> Callable[[], bool]:
 def cut_it(at_the_node: bool) -> None:
     """The session ended under it: its client killed, or the node's end of it (a dropped network)."""
     pattern = "sshd.*root@notty" if at_the_node else "^ssh .*maktaba-rollout job"
-    code, _ = rc(f"pkill -9 -f '{pattern}'")
+    # no shell: its own command line would match
+    code = subprocess.run(["pkill", "-9", "-f", pattern], check=False).returncode
     assert code == 0, f"no session to cut ({pattern})"
 
 
