@@ -157,11 +157,17 @@ func TestListAllocatesLessThanTheList(t *testing.T) {
 // The list is read in pages of listPerPage, each held to the cap on its own: on 2026-11-23
 // GitHub's one page of 30 releases (some 190 assets each) passed 8 MiB, every check
 // failed from then on, and the home chose from a catalog that no longer knew the newest
-// releases. Here three pages of some 4 MiB each (12 MiB in all) are read whole, newest
+// releases. Here three pages of some 4 MiB each (10 MiB in all) are read whole, newest
 // first, and the asking stops at the short page.
 func TestListReadsPages(t *testing.T) {
 	const total = 25
-	pad := strings.Repeat("x", 400<<10) // some 400 KiB a release: 4 MiB a page of 10
+	// some 400 KiB a release, 4 MiB a page of 10 and 10 MiB in all, without -short (the
+	// integration tier): decoding it under -race is past the unit tier's per-test cap; with
+	// -short the same pages, a KiB a release
+	pad := strings.Repeat("x", 400<<10)
+	if testing.Short() {
+		pad = strings.Repeat("x", 1<<10)
+	}
 	var asked []string
 	d := readDiscoverer(t, func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
