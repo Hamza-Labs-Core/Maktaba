@@ -54,6 +54,9 @@ type Capabilities struct {
 	TranscodeSlots      Slots
 	// SoftwareOnly: every transcode on that machine is in software (Epic 59 story 59.05).
 	SoftwareOnly bool
+	// ClientProfiles: the client profiles the streaming service knows (story 13.18);
+	// empty from a service older than the list.
+	ClientProfiles []string
 }
 
 // Slots reports transcoder capacity.

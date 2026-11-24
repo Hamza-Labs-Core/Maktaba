@@ -79,10 +79,15 @@ func TestListNotAList(t *testing.T) {
 }
 
 func TestListTooLong(t *testing.T) {
-	// valid JSON, longer than the 8 MiB a page of the list may be
+	if testing.Short() {
+		// streams a list past the 16 MiB cap: over a second under -race, past the unit tier's
+		// per-test budget on a loaded runner. Runs without -short (the integration tier)
+		t.Skip("streams a list past the page cap; runs without -short (the integration tier)")
+	}
+	// valid JSON, longer than a page of the list may be
 	d := readDiscoverer(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`[{"tag_name":"v1.0.0","body":"`))
-		_, _ = w.Write(bytes.Repeat([]byte("x"), 9<<20))
+		_, _ = w.Write(bytes.Repeat([]byte("x"), listPageLimit+1))
 		_, _ = w.Write([]byte(`"}]`))
 	})
 	_, decodeErr, err := d.list(context.Background())

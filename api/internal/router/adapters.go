@@ -153,6 +153,7 @@ func (a streamingServiceAdapter) Capabilities(ctx context.Context) (streaming.Ca
 			Used:     caps.TranscodeSlots.Used,
 			Capacity: caps.TranscodeSlots.Capacity,
 		},
-		SoftwareOnly: caps.SoftwareOnly,
+		SoftwareOnly:   caps.SoftwareOnly,
+		ClientProfiles: caps.ClientProfiles,
 	}, nil
 }

@@ -1,16 +1,16 @@
-# Story 50.26 — Viewer access: invite and open; limits and tokens
+# Story 50.26 — Viewer access by invitation; limits and tokens
 
-> Epic 50 · Phase B · Depends on: 50.20, 50.21 · Needed by: 50.27, 50.29
+> Epic 50 · Phase B · Depends on: 50.20, 50.21 · Needed by: 50.27, 50.29, 50.36
 
 ## Why
 
-Viewers aren't users of the home and **never pay** (decided 2026-11-03). Access is one of
-two modes:
+Viewers aren't users of the home and **never pay** (decided 2026-11-03). Broadcasting exists
+so people can subscribe to friends' channels, so **access is by invitation only** (decided
+2026-11-24, replacing the earlier choice of `invite` or `open`): the publisher decides who, and
+nobody else can see the channel. There are no open links, no public watch pages and no
+directory. The `open` mode this story first specified, and that was built, is removed by 50.36.
 
-- `invite` (the default): the publisher decides who;
-- `open`: anyone with the link.
-
-Both modes need the same protections against scraping and cost abuse that Epic 34 specced for its
+Invited access still needs the same protections against scraping and cost abuse that Epic 34 specced for its
 site (34.4, 34.9): short-lived tokens refreshed by a heartbeat, concurrency limits, and per-IP
 limits.
 
@@ -37,21 +37,25 @@ limits.
 - The publisher can see every invite's uses, revoke an invite (its passes stop at the next
   heartbeat), or revoke one device's pass.
 
-### 2. Open
+### 2. No access without an invite
 
-- Anyone with the link can watch, after one **Turnstile** check per browser session (server-side
-  siteverify in the Worker, as Epic 34 R7.1). The check gives a 12 h session cookie.
-- **Native apps:** they get an app attestation (App Attest or Play Integrity) from the app and
-  exchange it for the same 12 h session. Turnstile can't run in a TV app.
-- `open` needs a **verified publisher** (README §14.6: a paid plan in good standing, a confirmed
-  email, 7 days since the first publish) and `broadcast.open_access.enabled` (the broadcasting
-  gate).
-- The page is `noindex` by default. The publisher can allow indexing per channel (Epic 34 R5.5).
+- **A guest pass is the only way in.** Every viewer route on `watch.maktaba.tv` (the publisher's
+  grid, a channel page, the guide, play, beat, the guide blobs) and every playlist on
+  `live.maktaba.tv` answers `401 broadcast.invite.required` without a valid guest pass and a
+  viewer token minted from it. The answer says nothing about the channel: not its name, its
+  guide or whether it exists.
+- **No other mode.** A channel's access is always `invite`. The cloud API and the home refuse
+  any other value (`400 broadcast.accessInvalid`). There is no Turnstile or app-attestation
+  session for viewers, and no verified-publisher step.
+- **Not indexed.** Every page sends `X-Robots-Tag: noindex, nofollow`, and `robots.txt`
+  disallows everything; no setting changes that.
+- **Guests without an account.** An invited friend needs no Maktaba or home account: the
+  invite is the permission. A signed-in Maktaba user is treated the same way and still needs an
+  invite.
 
 ### 3. Play, tokens and heartbeats
 
-- `POST watch.maktaba.tv/api/v1/play {publisher, channel}` with the guest pass or the open
-  session:
+- `POST watch.maktaba.tv/api/v1/play {publisher, channel}` with the guest pass:
   1. It checks access, geo (50.23), revocations (50.25), the plan mode (50.20 §2) and the limits.
   2. It returns `{session_id, master_url, expires_at, refresh_after, state, neighbours[]}`. The
      URLs carry a **viewer token** (50.21 §4): an HMAC, 10 minutes, bound to the session and the
@@ -73,7 +77,7 @@ limits.
 | Sessions per IP per publisher | 3 | `PublisherControl`, salted IP hash kept ≤ 24 h |
 | Play requests per IP | 30 per 60 s | Workers Rate Limiting |
 | Other API requests per IP | 120 per 60 s | Workers Rate Limiting |
-| Daily minutes per guest pass or open session | 0 = none (publisher's setting) | `PublisherControl` |
+| Daily minutes per guest pass | 0 = none (publisher's setting) | `PublisherControl` |
 
 At a limit, new plays get `429` with `broadcast.full` or `broadcast.ipLimit`. Playing sessions
 aren't stopped.
@@ -85,7 +89,7 @@ aren't stopped.
 - Guest passes hold a random id and the invite id; the publisher sees labels and use counts, not
   identities.
 - One functional cookie on `watch.maktaba.tv`. The privacy page lists Cloudflare (Workers,
-  Turnstile, Analytics Engine) as processors.
+  Analytics Engine) as processors.
 
 ## Acceptance criteria
 
@@ -95,12 +99,13 @@ aren't stopped.
 - **Given** a revoked invite,
   **when** a device holding its pass heartbeats,
   **then** the heartbeat fails, and the player shows the ended card within 60 s.
-- **Given** an `open` channel,
-  **when** a browser plays without passing Turnstile,
-  **then** play answers `403 turnstile_required`.
-- **Given** an unverified publisher,
-  **when** they set a channel to `open`,
-  **then** the API refuses with `broadcast.openNeedsVerification`.
+- **Given** a live channel and a browser or app with no guest pass,
+  **when** it opens the channel's page, the publisher's grid or the guide, or calls play,
+  **then** each answers `401 broadcast.invite.required`, and the response names no channel,
+  programme or publisher detail.
+- **Given** a publisher on any plan,
+  **when** they set a channel's access to anything but `invite`,
+  **then** the API refuses with `400 broadcast.accessInvalid`.
 - **Given** a session that stops heartbeating,
   **when** 150 s pass,
   **then** no token is minted for it, and its segments stop working after the token's 10 minutes.
@@ -118,14 +123,14 @@ aren't stopped.
 |---|---|---|---|---|
 | T01 | unit (edge, vitest) | invite verify | good / expired / bad signature / uses exhausted / revoked | pass / 410 / 401 / 410 / 410 |
 | T02 | unit | short codes | redeem, a wrong code, 11 tries in a minute | pass / 404 / 429 |
-| T03 | unit | Turnstile | fake siteverify ok / fail / replay | session / 403 / 403 |
-| T04 | unit | app attestation exchange | a fake attestation verifier | session / 403 |
+| T03 | unit (edge, vitest) | no guest pass | every viewer route and playlist | `401 broadcast.invite.required`; no channel data in the body |
+| T04 | unit (Go, cloud and home) | access values | `invite`; `open`; anything else | accepted / 400 / 400 |
 | T05 | unit | play + beat | the token refresh at half-life, 150 s silence | refreshed; ended |
 | T06 | unit | limits | per publisher, channel, IP, rate | 429s; playing sessions untouched |
 | T07 | unit | routes | list every route | no payment route on `watch.` or `live.` |
 | T08 | integration (Miniflare) | 1,000 sessions | heartbeats for 10 min | exact counts; viewer-minutes = beats |
 | T09 | Arabic | strings | check | present |
-| T10 | rehearsal (CI, 50.29 `broadcast-access`) | home + edge | invite flow, open flow, limits | as above |
+| T10 | rehearsal (CI, 50.29 `broadcast-access`) | home + edge | invite flow, a viewer with no pass, limits | as above |
 
 ## Edge cases
 
@@ -144,12 +149,11 @@ aren't stopped.
 | Key | EN | AR |
 |---|---|---|
 | `broadcast.access.invite` | Invite only | بالدعوة فقط |
-| `broadcast.access.open` | Anyone with the link | أي شخص لديه الرابط |
+| `broadcast.invite.required` | This channel is for invited guests. Ask the person who shares it for an invite. | هذه القناة للضيوف المدعوين. اطلب دعوة من الشخص الذي يشاركها. |
 | `broadcast.invite.create` | Create invite link | أنشئ رابط دعوة |
 | `broadcast.invite.uses` | {used} of {max} devices | {used} من {max} أجهزة |
 | `broadcast.invite.used` | This invite has already been used on the most devices it allows. Ask for a new one. | استُخدمت هذه الدعوة على الحد الأقصى من الأجهزة. اطلب دعوة جديدة. |
 | `broadcast.invite.expired` | This invite has expired. | انتهت صلاحية هذه الدعوة. |
-| `broadcast.openNeedsVerification` | Open channels are available once your account is verified: a paid plan, a confirmed email, and 7 days since your first broadcast. | تتاح القنوات المفتوحة بعد توثيق حسابك: خطة مدفوعة، وبريد مؤكد، ومرور 7 أيام على أول بث. |
 | `broadcast.ipLimit` | Too many devices on this network are watching. Try again later. | عدد كبير من الأجهزة على هذه الشبكة يشاهد الآن. حاول لاحقًا. |
 | `broadcast.free` | Free to watch | المشاهدة مجانية |
 
@@ -159,7 +163,7 @@ aren't stopped.
 
 | File | Change |
 |---|---|
-| `web/packages/broadcast-edge/src/access.ts`, `invites.ts`, `turnstile.ts`, `attest.ts`, `play.ts`, `limits.ts`, tests | Access, tokens, limits. |
+| `web/packages/broadcast-edge/src/access.ts`, `invites.ts`, `play.ts`, `limits.ts`, tests | Access by guest pass only, tokens, limits. |
 | `cloud/internal/broadcast/invites.go` (new) | Invite signing (the home's and the cloud web app's requests). |
 | `cloud/internal/handlers/broadcast/invites.go` | `POST/GET/DELETE /v1/broadcast/invites`. |
 | `api/internal/broadcast/` | The home's Broadcast page calls the cloud for invites. |
@@ -168,18 +172,17 @@ aren't stopped.
 ### Tests
 
 - T01–T09 in the edge and cloud unit jobs.
-- **CI only:** rehearsal `broadcast-access` (50.29). Turnstile and app attestation are only ever
-  fakes in CI.
+- **CI only:** rehearsal `broadcast-access` (50.29).
 
 ### Rollout
 
-`invite` first, with the canary and the owner. `open` at the broadcasting gate, behind
-`broadcast.open_access.enabled`.
+Invites with the canary and the owner first, then every publisher at the broadcasting gate.
+There is no later `open` step.
 
 ### Rollback
 
-`broadcast.open_access.enabled = false` turns every `open` channel into invite-only for new
-sessions. Playing sessions finish.
+`broadcast.enabled = false` stops new plays; playing sessions finish. Revoking an invite stops
+its passes at the next heartbeat.
 
 ### Dependencies
 
