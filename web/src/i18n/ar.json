@@ -8759,5 +8759,11 @@
   "tv.plainHttp": "متصل دون تشفير على شبكتك",
   "tv.account.connection": "الاتصال",
   "tv.account.encrypted": "متصل بتشفير",
-  "tv.account.switchHome": "تبديل المنزل"
+  "tv.account.switchHome": "تبديل المنزل",
+  "frame.menu": "القائمة",
+  "frame.window": "النافذة",
+  "frame.minimize": "تصغير",
+  "frame.maximize": "تكبير",
+  "frame.restore": "استعادة الحجم",
+  "frame.close": "إغلاق"
 }

@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capabilities for the main window's bundled pages: shell, dialog, fs (limited), updater, deep links, and the app's own commands (incl. Epic 36 setup).",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "dialog:default",
@@ -29,6 +31,12 @@
     "allow-set-big-screen",
     "allow-set-big-screen-start",
     "allow-shell-crashes",
-    "allow-shell-crashes-sent"
+    "allow-shell-crashes-sent",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "allow-frame-claim",
+    "allow-frame-action",
+    "allow-frame-menu-items",
+    "allow-frame-menu"
   ]
 }

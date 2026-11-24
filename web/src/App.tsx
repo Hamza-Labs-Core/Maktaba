@@ -9,6 +9,7 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
 import { ToastProvider } from "@ds/components/Toast/Toast";
 import { AppShell, MoreMenu } from "./components/AppShell";
 import { DesktopBridge } from "./components/DesktopBridge";
+import { DesktopFrame } from "./components/DesktopFrame";
 import { DesktopGate } from "./components/DesktopGate";
 import { NodeGuard } from "./components/NodeGuard";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
@@ -105,6 +106,10 @@ function PublicPages() {
 export function App() {
   return (
     <I18nProvider>
+      {/* Epic 13 story 13.10: the desktop app's own window frame (a title bar for the pages
+          without the app's header; the header draws it otherwise). Outside the boundary: a
+          crashed page keeps a window that can be moved and closed. */}
+      <DesktopFrame />
       {/* the last net: a crash outside any page (the shell, a provider) shows
           an error with Try again instead of a blank window */}
       <RouteErrorBoundary resetKey="app">

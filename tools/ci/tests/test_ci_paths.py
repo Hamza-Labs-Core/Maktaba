@@ -194,17 +194,17 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # and the website: its help pages take each topic's title and summary from the catalog (60.12)
     "the language files run the catalog's words check": (
         ["web/src/i18n/ar.json"],
-        {"images", "unit", "e2e", "build-artifacts", "plugins", "website", "tv-web"},
+        {"images", "unit", "e2e", "build-artifacts", "plugins", "website", "tv-web", "desktop-frame"},
         {"lint": {"web", "catalog"}, "unit": {"web"}},
     ),
     "web only": (
         ["web/src/pages/Home.tsx"],
-        {"images", "unit", "e2e", "build-artifacts", "tv-web"},
+        {"images", "unit", "e2e", "build-artifacts", "tv-web", "desktop-frame"},
         {"lint": {"web"}, "unit": {"web"}},
     ),
     "design tokens": (
         ["web/design-system/tokens/color.json"],
-        {"images", "unit", "e2e", "build-artifacts", "website", "tv-web"},
+        {"images", "unit", "e2e", "build-artifacts", "website", "tv-web", "desktop-frame"},
         {"lint": {"web"}, "unit": {"web", "tokens"}},
     ),
     "desktop shell": (
@@ -434,7 +434,14 @@ def test_a_trail_only_change_runs_nothing() -> None:
 def test_the_trail_with_code_runs_the_codes_jobs() -> None:
     alone = run("web/src/pages/Home.tsx")
     both = run("docs/claude-trail.md", "web/src/pages/Home.tsx")
-    assert ran(both) == ran(alone) == ALWAYS | {"images", "unit", "e2e", "build-artifacts", "tv-web"}
+    assert ran(both) == ran(alone) == ALWAYS | {
+        "images",
+        "unit",
+        "e2e",
+        "build-artifacts",
+        "tv-web",
+        "desktop-frame",
+    }
     assert parts(both, "lint") == {"web"}
 
 

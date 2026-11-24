@@ -1,0 +1,258 @@
+/* Maktaba's own window frame in the desktop app (Epic 13 story 13.10; the design:
+   docs/design/desktop/README.md, "Components"). Drawn only when the shell gave the page the
+   window's frame: <html data-frame="windows|gtk|mac" data-frame-side="end|left|right">
+   (components/DesktopFrame.tsx). Logical properties: the bar mirrors in Arabic, and the
+   caption buttons go to the start of a right-to-left window, as Windows and GNOME draw it. */
+
+:root {
+  --mkt-frame-chrome: #fbf5e8;
+  --mkt-frame-hover: rgba(60, 45, 15, 0.08);
+  --mkt-frame-raised: #fffdf8;
+  --mkt-frame-close: #c42b1c;
+}
+:is([data-theme="dark"], :root:not([data-theme])) {
+  --mkt-frame-chrome: #0e1624;
+  --mkt-frame-hover: rgba(255, 255, 255, 0.08);
+  --mkt-frame-raised: #18243a;
+}
+
+/* the app's header as the title bar */
+:root[data-frame] .mkt-shell__header--frame {
+  min-block-size: 44px;
+  padding-block: 0;
+  padding-inline: var(--space-2) 0;
+  gap: var(--space-3);
+  background: var(--mkt-frame-chrome);
+  user-select: none;
+  -webkit-user-select: none;
+}
+:root[data-frame="gtk"] .mkt-shell__header--frame {
+  padding-inline-end: var(--space-2);
+}
+:root[data-frame="mac"] .mkt-shell__header--frame {
+  min-block-size: 52px;
+  padding-inline: var(--space-3);
+}
+
+/* the slim bar of a page without the app's header */
+.mkt-frame-bar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  block-size: 40px;
+  padding-inline-start: var(--space-2);
+  background: var(--mkt-frame-chrome);
+  border-block-end: 1px solid var(--color-border);
+  color: var(--color-fg);
+  user-select: none;
+  -webkit-user-select: none;
+}
+:root[data-frame="gtk"] .mkt-frame-bar {
+  padding-inline-end: var(--space-2);
+}
+:root[data-frame="mac"] .mkt-frame-bar {
+  block-size: 32px;
+}
+.mkt-frame-bar__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.mkt-frame-bar__title img {
+  border-radius: 3px;
+}
+.mkt-frame-bar__grow {
+  flex: 1;
+  align-self: stretch;
+  pointer-events: none;
+}
+/* a full-height page under the bar keeps to the window */
+:root[data-frame] .mkt-setup {
+  min-height: calc(100vh - 40px);
+}
+
+/* the Mac: room for the traffic lights, on the side AppKit draws them */
+.mkt-frame__traffic {
+  flex: none;
+  inline-size: 68px;
+  align-self: stretch;
+}
+:root[dir="ltr"][data-frame-side="right"] .mkt-frame__traffic,
+:root[dir="rtl"][data-frame-side="left"] .mkt-frame__traffic {
+  order: 99;
+}
+
+/* Windows' caption buttons: the system's sizes and glyphs; close turns Windows' red */
+.mkt-caption {
+  display: flex;
+  align-self: stretch;
+  flex: none;
+}
+.mkt-caption__btn {
+  display: grid;
+  place-items: center;
+  inline-size: 46px;
+  min-block-size: 40px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-fg);
+  cursor: default;
+}
+.mkt-caption__btn svg {
+  inline-size: 10px;
+  block-size: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.mkt-caption__btn:hover {
+  background: var(--mkt-frame-hover);
+}
+.mkt-caption__btn--close:hover {
+  background: var(--mkt-frame-close);
+  color: #fff;
+}
+.mkt-caption__btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* GTK's header-bar buttons */
+.mkt-gtk-buttons {
+  display: flex;
+  gap: var(--space-2);
+  flex: none;
+}
+.mkt-gtk-buttons__btn {
+  display: grid;
+  place-items: center;
+  inline-size: 24px;
+  block-size: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--mkt-frame-hover);
+  color: var(--color-fg);
+}
+.mkt-gtk-buttons__btn svg {
+  inline-size: 10px;
+  block-size: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+.mkt-gtk-buttons__btn:hover {
+  background: color-mix(in srgb, var(--color-fg) 18%, transparent);
+}
+.mkt-gtk-buttons__btn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* the title bar's menu: the menu bar's items */
+.mkt-frame-menu {
+  position: relative;
+  flex: none;
+}
+.mkt-frame-menu__trigger {
+  display: grid;
+  place-items: center;
+  inline-size: 36px;
+  block-size: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-fg);
+}
+.mkt-frame-menu__trigger svg {
+  inline-size: 18px;
+  block-size: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+.mkt-frame-menu__trigger:hover,
+.mkt-frame-menu__trigger[aria-expanded="true"] {
+  background: var(--mkt-frame-hover);
+}
+.mkt-frame-menu__trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+.mkt-frame-menu__list {
+  position: absolute;
+  inset-block-start: calc(100% + 4px);
+  inset-inline-start: 0;
+  z-index: 40;
+  min-inline-size: 260px;
+  max-block-size: 70vh;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--mkt-frame-raised);
+  box-shadow: var(--shadow-panel);
+  color: var(--color-fg);
+}
+.mkt-frame-menu__head {
+  padding: 8px 10px 4px;
+  color: var(--color-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mkt-frame-menu__sep {
+  block-size: 1px;
+  margin: 6px 4px;
+  background: var(--color-border);
+}
+.mkt-frame-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  inline-size: 100%;
+  min-block-size: 34px;
+  padding-inline: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+.mkt-frame-menu__item:hover:not(:disabled),
+.mkt-frame-menu__item:focus-visible {
+  background: var(--mkt-frame-hover);
+  outline: none;
+}
+.mkt-frame-menu__item:disabled {
+  color: var(--color-muted);
+}
+.mkt-frame-menu__check {
+  inline-size: 16px;
+  color: var(--color-accent);
+  text-align: center;
+}
+
+@media (forced-colors: active) {
+  .mkt-caption__btn:hover,
+  .mkt-frame-menu__item:hover:not(:disabled),
+  .mkt-frame-menu__item:focus-visible {
+    background: Highlight;
+    color: HighlightText;
+  }
+}
+
+/* the bar is not selectable text; what opens from it (the bell's panel) is */
+:root[data-frame] .mkt-shell__header--frame .mkt-bell__panel {
+  user-select: text;
+  -webkit-user-select: text;
+}

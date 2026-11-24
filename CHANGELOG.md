@@ -3778,6 +3778,15 @@ build fails when the two differ.
   and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
   search will use.
 
+- **The Maktaba app draws its own window frame.** On Windows and Linux the window's top bar is
+  Maktaba's: the app's header is the title bar (no system bar above it), with the minimize,
+  maximize and close buttons where each system puts them (on GNOME, as the desktop lays them
+  out), and a menu button that lists the menu bar's items. On Windows 11, Snap Layouts open when
+  the pointer rests on maximize. On the Mac the traffic lights stay and the header sits under
+  them, and the Mac's menu bar is in Arabic when the system is. In Arabic the bar mirrors. A page
+  that cannot draw the frame (another Maktaba in client mode, or an older home) keeps the
+  system's. In English and Arabic.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
