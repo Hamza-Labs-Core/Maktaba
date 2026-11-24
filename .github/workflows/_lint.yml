@@ -83,12 +83,26 @@ jobs:
           done < <(git diff --name-only --diff-filter=AM "$base" HEAD)
           exit $bad
 
-      # tools/dev/merge-main.sh: merging main keeps both sides of the CHANGELOGs entry by
-      # entry, and stops on any other conflict (CONTRIBUTING.md, Bringing main into a branch)
+      # tools/dev/merge-main.sh: merging main moves the branch's CHANGELOG entries to a fragment,
+      # or keeps both sides of the CHANGELOGs entry by entry, and stops on any other conflict
+      # (CONTRIBUTING.md, Bringing main into a branch)
       - name: merge-main keeps both sides of the CHANGELOGs (tools/dev/merge-main-test.sh)
         run: |
           shellcheck tools/dev/merge-main.sh tools/dev/merge-main-test.sh
           bash tools/dev/merge-main-test.sh
+
+      # changelog.d/README.md: every fragment is a well-formed English and Arabic pair, and a
+      # branch adds no line to the frozen [Unreleased] of CHANGELOG.md or CHANGELOG.ar.md (one
+      # begun before the fragments may, with a warning). It requires no entry. Its tests are in
+      # tools/ci/tests, below.
+      - name: Changelog entries are fragments (tools/dev/changelog_fragment.py)
+        env:
+          # the pull request's base and own head (the checkout is their merge); a branch head
+          # (ci-branch.yml) against main; a push against its own branch, where only the
+          # fragments themselves are checked
+          BASE: ${{ github.base_ref || (startsWith(github.ref, 'refs/heads/release/') && github.ref_name) || 'main' }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 tools/dev/changelog_fragment.py check --base "origin/$BASE" --head "$HEAD"
 
       # Story 50.01: no host name under a domain that is not ours (maktaba.app), on the lines
       # the pull request adds; app identifiers (com.maktaba.app) pass.

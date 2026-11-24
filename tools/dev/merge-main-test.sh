@@ -7,6 +7,8 @@
 # line-wise merge interleaves); the Arabic CHANGELOG; this branch edits an entry while main
 # adds one; both edit the same entry (stops); a conflict outside the CHANGELOGs (stops, the
 # merge left in progress); main adding more entries than the branch; a merge with no conflict.
+# With changelog.d/ there: the branch's entries move to a fragment pair, an entry in one
+# language only stays in the file, and a clean merge of a branch with lines names the command.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,7 +27,7 @@ fail() {
 repo() {
   local d="$work/$1"
   mkdir -p "$d/tools/dev"
-  cp "$here/merge-main.sh" "$here/changelog_merge.py" "$d/tools/dev/"
+  cp "$here/merge-main.sh" "$here/changelog_merge.py" "$here/changelog_fragment.py" "$d/tools/dev/"
   cd "$d"
   git init -q
   git checkout -q -b main
@@ -240,6 +242,75 @@ echo other | put topic OTHER.md
 code="$(run topic)"
 [ "$code" = 0 ] || fail "exit $code: $(cat "$work/out")"
 { [ -f NOTES.md ] && [ -f OTHER.md ]; } || fail "the merge lost a file"
+
+# 9. the fragments: both CHANGELOGs conflict, the branch's entries move to a fragment pair
+fragments() {
+  mkdir -p changelog.d
+  echo fragments >changelog.d/README.md
+  git add -A
+  git commit -qm fragments
+}
+CASE="fragments"
+repo fragments
+fragments
+en "" | put main CHANGELOG.md
+ar "" | put main CHANGELOG.ar.md
+en '
+- **Entry of the branch.** Its first line
+  and its tail.
+' | put topic/one CHANGELOG.md
+ar '
+- **مُدخل الفرع.** نص
+  وتتمته.
+' | put topic/one CHANGELOG.ar.md
+en '
+- **Entry of main.** x
+' | put main CHANGELOG.md
+ar '
+- **مُدخل الرئيسي.** س
+' | put main CHANGELOG.ar.md
+code="$(run topic/one)"
+[ "$code" = 0 ] || fail "exit $code: $(cat "$work/out")"
+grep -q 'changelog.d/' "$work/out" || fail "the fragment is not named: $(cat "$work/out")"
+git diff --quiet main HEAD -- CHANGELOG.md CHANGELOG.ar.md || fail "the CHANGELOGs are not main's"
+printf '### Added\n\n- **Entry of the branch.** Its first line\n  and its tail.\n' | same changelog.d/*-topic-one.md
+printf '### أُضيف\n\n- **مُدخل الفرع.** نص\n  وتتمته.\n' | same changelog.d/*-topic-one.ar.md
+[ -z "$(git status --porcelain)" ] || fail "the tree is not clean after the merge"
+if git rev-parse -q --verify MERGE_HEAD >/dev/null; then fail "the merge is not committed"; fi
+
+# 10. the fragments: English alone cannot move, so it is merged entry by entry as before
+CASE="fragments, one language"
+repo onelang
+fragments
+en "" | put main CHANGELOG.md
+ar "" | put main CHANGELOG.ar.md
+en '
+- **Entry of the branch.** x
+' | put topic CHANGELOG.md
+en '
+- **Entry of main.** x
+' | put main CHANGELOG.md
+code="$(run topic)"
+[ "$code" = 0 ] || fail "exit $code: $(cat "$work/out")"
+en '
+- **Entry of main.** x
+
+- **Entry of the branch.** x
+' | same CHANGELOG.md
+grep -q 'changelog_fragment.py convert' "$work/out" || fail "the command is not suggested: $(cat "$work/out")"
+
+# 11. the fragments: a clean merge of a branch with CHANGELOG lines names the command
+CASE="fragments, clean"
+repo cleanlines
+fragments
+en "" | put main CHANGELOG.md
+en '
+- **Entry of the branch.** x
+' | put topic CHANGELOG.md
+echo notes | put main NOTES.md
+code="$(run topic)"
+[ "$code" = 0 ] || fail "exit $code: $(cat "$work/out")"
+grep -q 'changelog_fragment.py convert' "$work/out" || fail "the command is not suggested: $(cat "$work/out")"
 
 if [ "$failures" -gt 0 ]; then
   echo "merge-main-test: $failures failed" >&2

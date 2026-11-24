@@ -1,17 +1,21 @@
 #!/bin/bash
-# Merge origin/main into the current branch, keeping both sides of CHANGELOG.md and
-# CHANGELOG.ar.md, which conflict on almost every merge because every pull request adds an
-# entry at the end of the same section.
+# Merge origin/main into the current branch. A changelog entry is a fragment of its own
+# (changelog.d/README.md) and never conflicts; a branch with lines in CHANGELOG.md and
+# CHANGELOG.ar.md (begun before the fragments) conflicts there on almost every merge.
 #
 #   tools/dev/merge-main.sh [<ref>]     (default origin/main; fetched first)
 #
-# A conflicted CHANGELOG is merged entry by entry from git's three stages
+# When a CHANGELOG conflicts, this branch's entries move to a fragment pair and both files are
+# main's, with this branch's edits of existing entries (tools/dev/changelog_fragment.py
+# convert): the branch never conflicts on them again. What that cannot move (an entry in one
+# language only) is merged entry by entry from git's three stages
 # (tools/dev/changelog_merge.py): main's file, with this branch's new entries at the end of
 # their sections and its edits of existing entries, never line by line (a line-wise merge,
 # like git's own or `merge=union`, splits two new entries that share a line and interleaves
 # them). Any other conflicted file, or a CHANGELOG change it cannot place, stops it with the
 # merge left in progress for a person (exit 3). A merge already in progress (the branch's
-# own, after fixing other files) is finished the same way.
+# own, after fixing other files) is finished the same way. A branch that merges cleanly but
+# still has CHANGELOG lines is told the command that moves them.
 #
 # Exit codes: 0 merged (or already up to date), 3 a person must resolve, 1 an error.
 # bash 3.2 (macOS): no mapfile, no associative arrays.
@@ -22,12 +26,21 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 top="$(git rev-parse --show-toplevel)"
 cd "$top"
 
+# suggest: the branch still has lines of its own in the CHANGELOGs, where the next merge conflicts
+suggest() {
+  if [ -f changelog.d/README.md ] && ! git diff --quiet "$ref...HEAD" -- CHANGELOG.md CHANGELOG.ar.md; then
+    echo "merge-main: this branch changes the CHANGELOGs, so it conflicts with every branch that does."
+    echo "merge-main: python3 tools/dev/changelog_fragment.py convert moves its entries to changelog.d/"
+  fi
+}
+
 if [ ! -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then
   if [ "$ref" = origin/main ]; then
     git fetch -q origin main
   fi
   if git merge --no-edit "$ref" >/dev/null 2>&1; then
     echo "merge-main: merged $ref cleanly"
+    suggest
     exit 0
   fi
   if [ ! -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then
@@ -58,9 +71,20 @@ if [ -n "$others" ]; then
   exit 3
 fi
 
+# this branch's entries to a fragment pair, the CHANGELOGs as main has them
+moved=0
+if [ "$n" -gt 0 ] && [ -f changelog.d/README.md ]; then
+  if python3 "$here/changelog_fragment.py" convert --merge; then
+    moved=1
+  else
+    echo "merge-main: the entries stay in the CHANGELOGs, merged entry by entry" >&2
+  fi
+fi
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 for f in ${conflicted[@]+"${conflicted[@]}"}; do
+  if [ "$moved" = 1 ]; then break; fi
   git show ":1:$f" >"$tmp/base" 2>/dev/null || : >"$tmp/base"
   git show ":2:$f" >"$tmp/ours"
   git show ":3:$f" >"$tmp/theirs"
@@ -79,8 +103,11 @@ for f in ${conflicted[@]+"${conflicted[@]}"}; do
   fi
 done
 git commit -q --no-edit
-if [ "$n" -gt 0 ]; then
+if [ "$moved" = 1 ]; then
+  echo "merge-main: merged $ref; this branch's entries are a fragment in changelog.d/"
+elif [ "$n" -gt 0 ]; then
   echo "merge-main: merged $ref; kept both sides of:${conflicted[*]+ ${conflicted[*]}}"
+  suggest
 else
   echo "merge-main: merged $ref"
 fi

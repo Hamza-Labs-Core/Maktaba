@@ -115,8 +115,9 @@ file to install, how testers get them, signing, and building them from source:
   [docs/developers/plugins](docs/developers/plugins/README.md).
 - [specs/](specs/epics/README.md): the design, one folder per epic, and
   [specs/architecture.md](specs/architecture.md).
-- [CHANGELOG.md](CHANGELOG.md) ([العربية](CHANGELOG.ar.md)), [docs/updates.md](docs/updates.md)
-  (how releases are made, updates and rollback) and [docs/testing.md](docs/testing.md).
+- [The changelog](https://maktaba.dev/changelog/) ([العربية](https://maktaba.dev/ar/changelog/)),
+  from [CHANGELOG.md](CHANGELOG.md) and [changelog.d/](changelog.d/README.md),
+  [docs/updates.md](docs/updates.md) (how releases are made, updates and rollback) and [docs/testing.md](docs/testing.md).
 - [The wiki](docs/wiki/INDEX.md), served by the wiki app in [web/wiki-app](web/wiki-app/)
   ([why not GitHub Wiki](docs/WIKI_SYNC.md)).
 
