@@ -5,7 +5,10 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -25,6 +29,9 @@ type claimRequest struct {
 	Slug    string `json:"slug"`
 	Version string `json:"version"`
 	PubKey  string `json:"public_key_pem"`
+	// RetryKey proves that a second redeem of the code is this agent's, whose first answer was
+	// lost. A cloud from before it ignores it.
+	RetryKey string `json:"retry_key,omitempty"`
 }
 
 // claimResponse matches servers.go redeemResp EXACTLY.
@@ -63,6 +70,21 @@ var (
 type Claimer struct {
 	Endpoint string
 	Client   *http.Client
+	// Key is the home's credential key (MAKTABA_CRED_KEY_HEX): each claim's retry key derives
+	// from it, so an agent restarted after a lost answer sends the same one with nothing to
+	// keep. Empty: no retry key.
+	Key []byte
+}
+
+// retryKey is the claim's retry key: HMAC-SHA256 of the code under the home's own key, so the
+// cloud learns nothing of that key and another code's retry key is another one.
+func (c *Claimer) retryKey(code string) string {
+	if len(c.Key) == 0 {
+		return ""
+	}
+	mac := hmac.New(sha256.New, c.Key)
+	mac.Write([]byte("maktaba-cloudlink-claim-retry:" + strings.ToUpper(strings.TrimSpace(code))))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 // Redeem POSTs the claim code to /v1/servers/claims/redeem. The cloud
@@ -76,6 +98,8 @@ func (c *Claimer) Redeem(ctx context.Context, code, name, slug, version, pubKeyP
 		Slug:    slug,
 		Version: version,
 		PubKey:  pubKeyPEM,
+
+		RetryKey: c.retryKey(code),
 	})
 	url := c.Endpoint + "/v1/servers/claims/redeem"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))

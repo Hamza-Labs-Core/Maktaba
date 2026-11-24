@@ -386,7 +386,7 @@ into `broadcast_usage_hourly` and folds counts under 5 into "other" when a publi
 | `TURNSTILE_API`, `ATTEST_API` | service bindings | optional: Turnstile's siteverify (else the public one) and the app-attestation verifier (50.27; unbound, attestation answers `503`) |
 | `BROADCAST_ENV` | var | `staging` or `production`: the R2 keys' first part |
 | `BROADCAST_DELIVERY` | var | `r2` (default) or `stream` |
-| `BROADCAST_ENABLED` | var | `1` or `true`: watch and live serve viewers. Anything else (the default, and `0` in `wrangler.toml` while broadcasting is off, 2026-11-24): watch and live answer `404` to every request, with no channel data. Ingest is unaffected. The tests and rehearsals set it to `1`. |
+| `BROADCAST_ENABLED` | var | `1` or `true`: the edge takes uploads and serves viewers. Anything else (the default, and `0` in `wrangler.toml` while broadcasting is off, 2026-11-24): ingest, watch and live answer `404` to every request, whatever its token or signature, with no channel data and nothing stored. Only `/v1/control/revocations` still answers, and the cron still pulls the same list: both only take access away. The tests and rehearsals set it to `1`. |
 | `BROADCAST_GLOBAL_OFF` | var | `1` stops every broadcast (50.25's break-glass) |
 | `BROADCAST_OFF_CHANNELS` | var | comma-separated edge channel ids stopped at once (50.25's break-glass) |
 | cron `* * * * *` | trigger | pulls the revocation list from `API_ORIGIN` (50.25) |
@@ -404,15 +404,24 @@ into `broadcast_usage_hourly` and folds counts under 5 into "other" when a publi
 
 The cloud's side (`cloud.toml`): `[broadcast] enabled` (50.20's broadcasting gate; the api role
 refuses to start with it on and no `key_path`), `key_path` (the Ed25519 seed, 0600; without it
-the ingest-token route answers `503 broadcast_disabled`), `ingest_url` (default
+the ingest-token route answers `503 broadcast_disabled`, once broadcasting is on), `ingest_url` (default
 `https://ingest.maktaba.tv`) and `edge_public_key` (base64url, as printed from the seed; standard
 base64 is read too).
 
 Who gets an ingest token is 50.20's entitlement (`broadcasth.StorePlans`): a home with no plan,
 or whose owner is not active, gets `403 broadcast_not_in_plan`; while `broadcast.enabled` is off,
-only a test publisher a service admin granted gets one (`403 broadcast_not_enabled` for the
-others); otherwise the home's tier from the catalog sets the rungs and the top bitrate (Pro's
+only a test publisher a service admin granted gets one (the route is a 404 for anyone else);
+otherwise the home's tier from the catalog sets the rungs and the top bitrate (Pro's
 guest sharing, or the Broadcaster add-on), and more rungs than it allows is `403 plan_rungs`.
+
+While `broadcast.enabled` is off, every broadcast and moderation path of the cloud answers what an
+unknown path answers, whoever asks (`cloud/internal/handlers/broadcastgate`, one middleware in
+front of both listeners). Open then, and nothing else: the edge's signed
+`GET /v1/broadcast/revocations`; the kill switch on the console; the console's test-publisher
+grant; and for a test publisher, its home's publish, unpublish, state, ingest-token, access and
+invite routes and its own copy of the revocation list (it can't publish without one), its owner's agreement, and the edge's `/_edge` calls about it (any
+other publisher is unknown to them: the edge drops its windows). The moderation forms and queue,
+analytics, billing and the owner's access page stay closed even for a test publisher.
 
 ## Running it
 
