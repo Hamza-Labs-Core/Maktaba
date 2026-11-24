@@ -15,7 +15,9 @@
 package servers
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -45,6 +47,9 @@ type Deps struct {
 	Licenses *license.Issuer
 	// ManageURL is the billing page a home's Settings links to.
 	ManageURL string
+	// ClaimKey is the cloud's own key (the token secret every node shares) that a claim's server
+	// secret is derived under when the agent sent a retry key. Empty: retry keys are not taken.
+	ClaimKey []byte
 }
 
 // MountUser registers the routes a signed-in cloud user calls.
@@ -92,6 +97,9 @@ type redeemReq struct {
 	Slug    string `json:"slug"`
 	Version string `json:"version"`
 	PubKey  string `json:"public_key_pem"`
+	// RetryKey is the agent's secret for this claim: the same one redeems it again when the
+	// first answer was lost (stores.RedeemClaim). An older agent sends none.
+	RetryKey string `json:"retry_key"`
 }
 
 type redeemResp struct {
@@ -124,7 +132,10 @@ func (d *Deps) RedeemClaim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 422, "bad_slug", "slug must be lowercase alphanumeric, 2-30 chars")
 		return
 	}
-	secret, err := newServerSecret()
+	if len(d.ClaimKey) == 0 || !stores.ValidRetryKey(req.RetryKey) {
+		req.RetryKey = ""
+	}
+	secret, err := d.serverSecret(req.Code, req.RetryKey)
 	if err != nil {
 		writeErr(w, 500, "secret_failed", err.Error())
 		return
@@ -134,7 +145,8 @@ func (d *Deps) RedeemClaim(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, "hash_failed", err.Error())
 		return
 	}
-	sv, err := d.Servers.RedeemClaim(r.Context(), req.Code, req.Name, req.Slug, secretHash, req.Version, []byte(req.PubKey))
+	sv, err := d.Servers.RedeemClaim(r.Context(), req.Code, req.Name, req.Slug, secretHash, req.Version, []byte(req.PubKey), req.RetryKey,
+		func(hash string) bool { return argon2id.Verify(secret, hash) == nil })
 	switch {
 	case errors.Is(err, stores.ErrClaimInvalid):
 		writeErr(w, 404, "claim_invalid", "code expired or already used")
@@ -300,6 +312,19 @@ func (d *Deps) Revocations(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	writeJSON(w, 200, list)
+}
+
+// serverSecret is the new home's secret: random, or, with a retry key, HMAC-SHA256 of the claim and
+// that key under the cloud's own key. The same agent redeeming the same claim then gets the same
+// secret every time, so each answer works, whichever of them it keeps; nobody else can make it
+// (they have neither key), and it is as random as the agent's 256-bit key is.
+func (d *Deps) serverSecret(code, retryKey string) (string, error) {
+	if retryKey == "" {
+		return newServerSecret()
+	}
+	mac := hmac.New(sha256.New, d.ClaimKey)
+	mac.Write([]byte("maktaba-claim-server-secret\x00" + code + "\x00" + retryKey))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
 func newServerSecret() (string, error) {

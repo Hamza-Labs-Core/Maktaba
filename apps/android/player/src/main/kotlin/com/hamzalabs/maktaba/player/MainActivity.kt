@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.hamzalabs.maktaba.core.guest.GuestBroadcast
 import com.hamzalabs.maktaba.core.guest.GuestInput
 import com.hamzalabs.maktaba.core.guest.LocalWatchBroadcast
 import com.hamzalabs.maktaba.core.permissions.PermissionsGate
@@ -43,9 +44,11 @@ class MainActivity : ComponentActivity() {
     /**
      * An invite's link (`maktaba://watch/i/…`, or the watch address's) opens Watch a broadcast
      * (story 50.27): at once when no parental limit is known to be on, held while the signed-in
-     * home has not said, refused (with a message) under a limit.
+     * home has not said, refused (with a message) under a limit. While the build has broadcasting
+     * off ([GuestBroadcast]) it opens nothing.
      */
     private fun openInvite(data: String?) {
+        if (!GuestBroadcast.ENABLED) return
         val invite = GuestInput.inviteInLink(data) ?: return
         val app = application as PlayerApplication
         app.guestDoor.request(invite, app.guestGate.now())

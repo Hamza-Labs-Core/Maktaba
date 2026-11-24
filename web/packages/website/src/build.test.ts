@@ -117,6 +117,15 @@ describe("the built site (dist/)", () => {
     }
   });
 
+  it("broadcasting is off (2026-11-24): no Broadcast access help page, and the help index doesn't list it", () => {
+    for (const pre of ["", "ar/"]) {
+      expect(fs.existsSync(path.join(DIST, `${pre}help/broadcast-access/index.html`)), pre).toBe(
+        false
+      );
+      expect(read(`${pre}help/index.html`), pre).not.toContain("/help/broadcast-access");
+    }
+  });
+
   it("60.12: the help pages are in part B's shell: Help current, Download to its page (built after)", () => {
     for (const lang of ["en", "ar"]) {
       const pre = lang === "ar" ? "/ar" : "";
@@ -146,7 +155,6 @@ describe("the built site (dist/)", () => {
       "problems/node-signature/index.html",
       "legal/privacy/index.html",
       "legal/terms/index.html",
-      "legal/copyright/index.html",
       "404.html",
     ];
     const current: Record<string, string | null> = {
@@ -192,7 +200,10 @@ describe("the built site (dist/)", () => {
     for (const p of ["/install/synology/", "/install/troubleshooting/"])
       expect(isPartBCard(p), p).toBe(false);
     expect(cardSub("/problems/node-signature/")).toEqual(cardSub("/problems/"));
-    expect(cardSub("/legal/copyright/").ar).toBe("الخصوصية وشروط الاستخدام وحقوق النشر");
+    expect(cardSub("/legal/terms/")).toEqual({
+      en: "Privacy and terms",
+      ar: "الخصوصية وشروط الاستخدام",
+    });
   });
 
   it("Phase 3: the legal contents list marks the section in view with CSS alone", () => {
@@ -361,7 +372,7 @@ describe("the built site (dist/)", () => {
   });
 
   it("60.07: the legal pages in both languages, dated", () => {
-    for (const n of ["privacy", "terms", "copyright"])
+    for (const n of ["privacy", "terms"])
       for (const f of [`legal/${n}/index.html`, `ar/legal/${n}/index.html`]) {
         const html = read(f);
         expect(html, f).toMatch(/<time datetime="\d{4}-\d{2}-\d{2}">/);
@@ -370,26 +381,22 @@ describe("the built site (dist/)", () => {
       }
   });
 
-  it("60.07 T03 (the build): the copyright page gives the agent's email and the notice's contents, and no form or script but the shell's", () => {
-    for (const f of ["legal/copyright/index.html", "ar/legal/copyright/index.html"]) {
-      const html = read(f);
-      expect(html, f).toContain('href="mailto:copyright@maktaba.tv"');
-      expect(html, f).toMatch(
-        /<section aria-labelledby="notice">[\s\S]*?<ol>\n(<li>[\s\S]*?<\/li>\n){7}<\/ol>/
-      );
-      expect(html, f).not.toContain("<form");
-      // no script but the shell's own two (its head script and the menu's)
-      const scripts = [...html.matchAll(/<script\b[^>]*>/gi)].map((m) => m[0]);
-      expect(scripts, f).toHaveLength(2);
-      for (const s of scripts)
-        expect(s, f).toMatch(
-          /^<script src="\/assets\/(head|shell)-[A-Za-z0-9_-]{10}\.js"( defer)?>$/
-        );
-      expect(html, f).not.toContain("challenges.cloudflare.com/turnstile/v0/api.js");
-    }
+  it("60.07: no copyright page, no link to it and no copyright address anywhere in dist/", () => {
+    expect(fs.existsSync(path.join(DIST, "legal/copyright"))).toBe(false);
+    expect(fs.existsSync(path.join(DIST, "ar/legal/copyright"))).toBe(false);
     expect(
       fs.readdirSync(path.join(DIST, "assets")).some((f) => f.startsWith("copyright-form-"))
     ).toBe(false);
+    const text = /\.(html|xml|txt|json|js|css|svg|webmanifest)$/;
+    const files = (fs.readdirSync(DIST, { recursive: true }) as string[]).filter((f) =>
+      text.test(f)
+    );
+    expect(files.length).toBeGreaterThan(100);
+    for (const f of files) {
+      const body = read(f);
+      expect(body.includes("/legal/copyright"), `${f}: a link to the copyright page`).toBe(false);
+      expect(body.includes("copyright@maktaba.tv"), `${f}: the copyright address`).toBe(false);
+    }
   });
 
   it("60.07 T01: the privacy page's cloud section equals `go run ./cmd/privacy-json`", () => {
