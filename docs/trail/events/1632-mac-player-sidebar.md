@@ -32,6 +32,7 @@ The Mac row of the approved desktop design (13.16), with decision D5, which the 
 - **Some APIs are missing from macOS.** The macOS SDK has no speech-language attribute for `AttributedString`, so use `languageIdentifier` and the line's locale.
 - **The hosted Mac tests cannot run in this agent session.** `xcodebuild test` on the app-hosted bundle hangs with "the test runner hung before establishing connection", MaktabaKit's `xcodebuild test` too. `swift test`, `build-for-testing` and off-screen `swiftc` probes work.
 - **The worktree guard refuses some commands.** Long heredocs and compound commands with Arabic text or `git` are refused, and one such Python edit silently did not run. Only `check-string-catalogs.py --stringsdata` caught the missing Arabic.
+- **A `NavigationSplitView` inside another's detail insets its own detail by the outer sidebar's width again**: Libraries' page was 160 points of a 1024-point window. No test saw it; CI's product shots (`product-shots-mac`) did. On the Mac the list and the page are now set side by side, and a test holds the page's width.
 
 ## Keep doing
 - Probe AppKit behaviour with a tiny off-screen bundle before building on an assumption about it.
