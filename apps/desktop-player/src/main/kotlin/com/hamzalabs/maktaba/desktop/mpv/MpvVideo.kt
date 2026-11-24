@@ -45,6 +45,8 @@ class MpvVideo internal constructor(
     private val fontsDir: File?,
     /** More of mpv's options, after the Player's (a test's log file). */
     private val extra: Map<String, String> = emptyMap(),
+    /** Called once when it is disposed (its players count the videos open: story 13.19). */
+    private val onDisposed: () -> Unit = {},
 ) : Video {
     private val lock = Any()
     @Volatile private var ctx: Pointer? = null
@@ -184,7 +186,8 @@ class MpvVideo internal constructor(
         var drawn = 0 to 0
         val sizeArg = Memory(8)
         val stride = Memory(8)
-        val format = Memory(5).apply { setString(0, "bgr0") }
+        // no alpha: mpv leaves that byte undefined (0 where it draws subtitles), and nothing reads it
+        val format = Memory(5).apply { setString(0, "rgb0") }
         while (!closed) {
             wake.tryAcquire(250, TimeUnit.MILLISECONDS)
             if (closed) break
@@ -194,7 +197,7 @@ class MpvVideo internal constructor(
             if (flags and MpvConst.RENDER_UPDATE_FRAME == 0L && drawn == (w to h)) continue
             val b = pool[next]?.takeIf { it.width == w && it.height == h } ?: Bitmap().also {
                 // a size's bitmaps are left to the collector: the screen may still show one
-                it.allocPixels(ImageInfo(w, h, ColorType.BGRA_8888, ColorAlphaType.OPAQUE))
+                it.allocPixels(frameInfo(w, h))
                 pool[next] = it
                 addr[next] = it.peekPixels()?.use { px -> px.addr } ?: 0L
             }
@@ -417,6 +420,7 @@ class MpvVideo internal constructor(
     override fun dispose() {
         if (closed) return
         closed = true
+        onDisposed()
         Thread({
             ops.shutdown()
             ops.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS)
@@ -483,21 +487,48 @@ class MpvVideo internal constructor(
     }
 }
 
-/** libmpv's players (story 13.18): each video in its own [MpvVideo]. */
+/**
+ * libmpv's players (story 13.18): each video in its own [MpvVideo]. Story 13.19: what this
+ * machine plays ([report], the probe's) goes with each session as `device_caps`; the videos
+ * open are counted, so the probe waits while one plays ([playing]) and the audio device's
+ * channels are measured again once the last one closes ([closed]).
+ */
 class MpvPlayers(
     private val lib: LibMpv,
     private val fontsDir: File?,
     /** More of mpv's options for each video, asked at each open (a test's log file). */
     private val extra: () -> Map<String, String> = { emptyMap() },
+    private val report: DeviceReport? = null,
+    private val closed: () -> Unit = {},
 ) : Players {
+    private val open = java.util.concurrent.atomic.AtomicInteger()
+
     override val profile: String get() = MPV_PROFILE
 
     /** mpv draws a file's own subtitle tracks and the home's files itself (story 13.20). */
     override val drawsSubtitles: Boolean get() = true
 
-    override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video =
-        MpvVideo(lib, url, fromMs, autoplay, events, fontsDir, extra())
+    /** A video is open (a watch screen): the probe waits between its clips meanwhile. */
+    val playing: Boolean get() = open.get() > 0
+
+    private val openedCount = java.util.concurrent.atomic.AtomicLong()
+
+    /** How many videos were opened so far: a probe clip during which it moved is measured again. */
+    val opened: Long get() = openedCount.get()
+
+    override fun deviceCaps(): kotlinx.serialization.json.JsonObject? = report?.json()
+
+    override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video {
+        openedCount.incrementAndGet()
+        open.incrementAndGet()
+        return MpvVideo(lib, url, fromMs, autoplay, events, fontsDir, extra()) {
+            if (open.decrementAndGet() == 0) closed()
+        }
+    }
 }
+
+/** A frame's pixels: mpv's `rgb0`, whose fourth byte is no alpha. */
+internal fun frameInfo(w: Int, h: Int) = ImageInfo(w, h, ColorType.RGB_888X, ColorAlphaType.OPAQUE)
 
 /** The streaming service's profile for libmpv (streaming/internal/capability/matrix.go). */
 const val MPV_PROFILE = "desktop-mpv"

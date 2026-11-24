@@ -57,6 +57,7 @@ internal object MpvConst {
     const val EVENT_COMMAND_REPLY = 5
     const val EVENT_END_FILE = 7
     const val EVENT_FILE_LOADED = 8
+    const val EVENT_AUDIO_RECONFIG = 18
     const val EVENT_PLAYBACK_RESTART = 21
     const val EVENT_PROPERTY_CHANGE = 22
 

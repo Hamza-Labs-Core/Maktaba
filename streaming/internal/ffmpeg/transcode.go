@@ -53,6 +53,9 @@ type Job struct {
 	SourcePixFmt string
 	// Segments is an HLS transcode's segment format ("ts", "fmp4"; "": ts).
 	Segments string
+	// AudioCodec is a transcode's audio (story 13.19, EncodePlan.AudioCodec):
+	// "eac3" 5.1, "aac" stereo; "": AAC at the encoder's channels, as always.
+	AudioCodec string
 	// Remux, when set, makes the session a remux (story 58.02): the video
 	// copied into HLS or DASH, never encoded; the ladder, the encoder verdict
 	// and StartSec are not used.
@@ -320,7 +323,7 @@ func (o *Orchestrator) Start(ctx context.Context, job Job) (*Handle, error) {
 	// which 404s with a retry hint until the first segment lands) —
 	// instead of the manifest itself 404'ing for the whole spin-up.
 	if !strings.EqualFold(job.Format, "dash") {
-		master := BuildMasterPlaylistFor(job.Ladder)
+		master := buildMasterPlaylist(job.Ladder, audioTag(job.AudioCodec))
 		if job.Remux != nil {
 			master = BuildRemuxMaster(*job.Remux)
 		}
@@ -348,14 +351,27 @@ const hlsVideoCodec = "avc1.64002a"
 // ladder. Kept here (not in handlers) so the ffmpeg package has no
 // import cycle with handlers; handlers.BuildMasterPlaylist delegates.
 func BuildMasterPlaylistFor(ladder []Rendition) []byte {
+	return buildMasterPlaylist(ladder, "mp4a.40.2")
+}
+
+// audioTag is the master playlist's CODECS entry for a transcode's audio
+// (Job.AudioCodec): E-AC-3's "ec-3", else AAC-LC's.
+func audioTag(codec string) string {
+	if codec == "eac3" {
+		return "ec-3"
+	}
+	return "mp4a.40.2"
+}
+
+func buildMasterPlaylist(ladder []Rendition, audio string) []byte {
 	var sb strings.Builder
 	sb.WriteString("#EXTM3U\n")
 	sb.WriteString("#EXT-X-VERSION:6\n")
 	sb.WriteString("#EXT-X-INDEPENDENT-SEGMENTS\n")
 	for i, r := range ladder {
 		fmt.Fprintf(&sb,
-			"#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\""+hlsVideoCodec+",mp4a.40.2\"\n",
-			r.BitrateKbps*1000, r.Width, r.Height,
+			"#EXT-X-STREAM-INF:BANDWIDTH=%d,RESOLUTION=%dx%d,CODECS=\""+hlsVideoCodec+",%s\"\n",
+			r.BitrateKbps*1000, r.Width, r.Height, audio,
 		)
 		// FFmpeg's HLS muxer names the variant folders by variant index
 		// (HLSArgs: <out>/v%v/index.m3u8), not by rung name: a capped
@@ -671,6 +687,7 @@ func (e *execRunner) run(ctx context.Context, h *Handle, job Job, hw string) err
 	plan.ToneMap = job.toneMap
 	plan.Start = job.StartSec
 	plan.Segments = job.Segments
+	plan.AudioCodec = job.AudioCodec
 	if hw == string(HWAccelVAAPI) && hwRungs > 0 {
 		plan = plan.WithVAAPI(*job.VAAPI, job.SourceCodec, job.SourcePixFmt)
 	}

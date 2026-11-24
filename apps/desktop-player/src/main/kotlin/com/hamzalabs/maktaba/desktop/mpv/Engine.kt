@@ -43,7 +43,8 @@ enum class EngineChoice(val stored: String) {
 open class Engines(
     private val env: Map<String, String> = System.getenv(),
     private val load: () -> MpvLoad = { MpvLoad.current },
-    private val mpv: (MpvLoad.Loaded) -> Players = { MpvPlayers(it.lib, captionFonts()) },
+    /** libmpv's players (null: the Player's own, with what [startProbe] measured); a test gives its own. */
+    private val mpv: ((MpvLoad.Loaded) -> Players)? = null,
     private val fx: Players = FxPlayers,
 ) {
     /** Why a video plays with the engine it does. */
@@ -76,7 +77,47 @@ open class Engines(
     @Volatile var hwdec: String? = null
 
     private val loaded: MpvLoad by lazy { load() }
-    private val mpvPlayers: Players? by lazy { (loaded as? MpvLoad.Loaded)?.let(mpv) }
+    private val mpvPlayers: Players? by lazy {
+        (loaded as? MpvLoad.Loaded)?.let { l ->
+            mpv?.invoke(l) ?: MpvPlayers(l.lib, captionFonts(), report = report, closed = { runner?.watchClosed() })
+        }
+    }
+
+    /** What this machine plays (story 13.19), once [startProbe] has run; JavaFX has none. */
+    val report = DeviceReport()
+
+    private val runner: ReportRunner? by lazy {
+        val l = loaded as? MpvLoad.Loaded ?: return@lazy null
+        ReportRunner(
+            report,
+            newDecoder = { MpvProbeDecoder(l.lib) },
+            clipsDir = { Probe.extractClips(File(cacheBase(), "maktaba-player/probe")) },
+            cache = ProbeCache(File(com.hamzalabs.maktaba.desktop.AppDirs.config, "probe.json")),
+            marker = File(com.hamzalabs.maktaba.desktop.AppDirs.config, "probe.running"),
+            busy = { (mpvPlayers as? MpvPlayers)?.playing == true },
+            videosOpened = { (mpvPlayers as? MpvPlayers)?.opened ?: 0L },
+        )
+    }
+    @Volatile private var probing = false
+
+    /**
+     * Starts the decoder probe and the audio device's measurement (story 13.19), off the UI
+     * thread, on handles of their own: nothing while videos play with JavaFX ([pick]).
+     */
+    fun startProbe() {
+        // loading libmpv itself is off the UI thread too
+        Thread({
+            runCatching {
+                if (pick().mpv) {
+                    probing = true
+                    runner?.start()
+                }
+            }
+        }, "mpv-probe-start").apply {
+            isDaemon = true
+            start()
+        }
+    }
 
     /** The engine the next video opens with. */
     fun pick(): Pick = when {
@@ -138,10 +179,14 @@ open class Engines(
         return if (p.why == Why.Missing) p.reason else null
     }
 
-    /** The problem report's lines (JSON lines): each video opened, with its engine and why, and other [note]s, then the state now. */
+    /**
+     * The problem report's lines (JSON lines): each video opened, with its engine and why, and
+     * other [note]s, then the state now, then the device report once the probe has started (story
+     * 13.19: each codec's result, the audio channels, the probe's cache key).
+     */
     fun logLines(now: Instant = Instant.now()): List<String> {
         val each = synchronized(kept) { kept.toList() }.map { (at, msg) -> line(at, msg) }
-        return each + line(now, describe())
+        return each + line(now, describe()) + if (probing) listOf(report.logLine(now)) else emptyList()
     }
 
     private fun line(at: Instant, msg: String): String = buildJsonObject {
@@ -187,11 +232,7 @@ class EngineNotice(private val store: KeyValueStore, private val version: String
  * can read; null when it cannot be written (mpv then uses the system's sans-serif).
  */
 private fun captionFonts(): File? = runCatching {
-    // this user's own folder (a shared temporary one could be another user's, fonts planted)
-    val base = System.getenv("LOCALAPPDATA")?.let(::File)
-        ?: System.getenv("XDG_CACHE_HOME")?.let(::File)
-        ?: File(System.getProperty("user.home"), ".cache")
-    val dir = File(base, "maktaba-player/fonts").apply { mkdirs() }
+    val dir = File(cacheBase(), "maktaba-player/fonts").apply { mkdirs() }
     for (name in listOf("ibm_plex_sans_arabic_regular.ttf", "ibm_plex_sans_arabic_semibold.ttf")) {
         val out = File(dir, name)
         if (out.isFile && out.length() > 0) continue
@@ -200,3 +241,8 @@ private fun captionFonts(): File? = runCatching {
     }
     dir
 }.getOrNull()
+
+/** This user's own cache folder (a shared temporary one could be another user's, files planted). */
+private fun cacheBase(): File = System.getenv("LOCALAPPDATA")?.let(::File)
+    ?: System.getenv("XDG_CACHE_HOME")?.let(::File)
+    ?: File(System.getProperty("user.home"), ".cache")

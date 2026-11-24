@@ -153,6 +153,12 @@ fun interface Players {
      * offers the home's subtitles and the file's own tracks. False: as before 13.20.
      */
     val drawsSubtitles: Boolean get() = false
+
+    /**
+     * What this machine plays, sent with [profile] as `device_caps` (story 13.19; null: no
+     * report, as JavaFX's players and libmpv's before its probe has run).
+     */
+    fun deviceCaps(): kotlinx.serialization.json.JsonObject? = null
 }
 
 /** A JavaFX player, driven on its own thread. */
@@ -768,11 +774,15 @@ class Playback(
         try {
             val profile = profileForHome()
             openedFromMs = fromMs
+            // story 13.19: what this machine plays goes with the players' own profile only (not
+            // with desktop-player, an older home's), and not on a forced transcode, as on Android;
+            // a home that refuses the key is asked again without it, and never sent it again
+            val caps = if (profile == players.profile && profile != STREAM_PROFILE && !forced) players.deviceCaps() else null
             val s = withContext(NonCancellable) {
                 client.openStream(
                     r.videoId, (fromMs / 1000).toInt(), profile, maxBitrateKbps = kbps,
                     audioTrack = audioTrack, format = if (audioTrack != null) "hls" else null,
-                    forceTranscode = forced,
+                    deviceCaps = caps, forceTranscode = forced,
                 )
             }
             try {
