@@ -15,7 +15,9 @@ import com.hamzalabs.maktaba.core.api.AuthTokens
 import com.hamzalabs.maktaba.core.queue.QueueSource
 import com.hamzalabs.maktaba.core.session.TokenStore
 import com.hamzalabs.maktaba.tv.data.TvApi
+import com.hamzalabs.maktaba.tv.data.TvCollection
 import com.hamzalabs.maktaba.tv.ui.screens.library.LibraryTabsScreen
+import com.hamzalabs.maktaba.tv.ui.screens.library.collectionBadge
 import com.hamzalabs.maktaba.tv.ui.screens.library.LocalTvNav
 import com.hamzalabs.maktaba.tv.ui.screens.library.PlaylistScreen
 import com.hamzalabs.maktaba.tv.ui.screens.library.SeriesScreen
@@ -30,7 +32,6 @@ import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -143,13 +144,26 @@ class LibraryViewTest {
         compose.onNodeWithTag("tab-Collections").performSemanticsAction(SemanticsActions.RequestFocus)
         compose.waitUntil(5_000) { compose.waitForIdle(); shows("Weekly talks") }
         assertTrue("youtube badge", shows("YouTube playlist"))
-        // a channel's collection shows without a source badge, and no kind is From Plex
-        assertFalse("no channel badge", shows("YouTube channel"))
-        assertFalse("no plex badge", shows("Plex collection"))
         compose.onNodeWithTag("collections-kind").performSemanticsAction(SemanticsActions.OnClick)
         // the kind's own read, then its cards
         compose.waitUntil(5_000) { compose.waitForIdle(); urls.any { it.contains("kind=youtube") } }
         compose.waitUntil(5_000) { compose.waitForIdle(); shows("PL Lessons") && !shows("Weekly talks") }
+    }
+
+    @Test
+    fun aChannelsOrAPlexReadCollectionHasNoBadge() {
+        var channel: String? = "unset"
+        var plex: String? = "unset"
+        var playlist: String? = null
+        compose.setContent {
+            channel = collectionBadge(TvCollection("youtube", id = "y2", sourceKind = "youtube_channel"))
+            plex = collectionBadge(TvCollection("curated", id = "p1", sourceKind = "plex"))
+            playlist = collectionBadge(TvCollection("youtube", id = "y1", sourceKind = "youtube_playlist"))
+        }
+        compose.waitForIdle()
+        assertNull(channel)
+        assertNull(plex)
+        assertEquals("YouTube playlist", playlist)
     }
 
     @Test

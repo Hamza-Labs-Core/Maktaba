@@ -17,7 +17,7 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -97,8 +97,9 @@ class QueueTabsTest {
         compose.setContent { CollectionsList(c, "L1") }
         compose.waitUntil(5_000) { shows("PL lessons") }
         assertTrue(shows("YouTube playlist") && shows("Weekly talks"))
-        // a channel's collection shows without a source badge; no Plex collection badge is left
-        assertFalse(shows("YouTube channel") || shows("Plex collection"))
+        // a channel's collection shows without a source badge, and a Plex-read one has none either
+        assertNull(collectionBadge(PlayerCollection("youtube", "y2", sourceKind = "youtube_channel")))
+        assertNull(collectionBadge(PlayerCollection("curated", "p1", sourceKind = "plex")))
     }
 
     @Test

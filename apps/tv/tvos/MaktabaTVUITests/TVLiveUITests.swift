@@ -343,7 +343,9 @@ final class TVLiveUITests: XCTestCase {
         XCTAssertTrue(element("collection.col-yt").waitForExistence(timeout: 20), "the collections")
         XCTAssertTrue(app.staticTexts["قائمة تشغيل يوتيوب"].exists, "the YouTube badge in Arabic")
         XCTAssertTrue(element("collection.col-ch").exists, "a channel's collection shows")
-        XCTAssertFalse(app.staticTexts["قناة يوتيوب"].exists, "a channel's collection has no source badge")
+        // a channel's collection has no source badge: no more text than the hand-made one's
+        XCTAssertEqual(element("collection.col-ch").staticTexts.count, element("collection.col-mine").staticTexts.count,
+                       "a channel's collection has no source badge")
         shot("tv-library-collections-ar")
     }
 
