@@ -40,13 +40,22 @@ prs: [1616, 1574]
 - **The decision was answered on the page (13:35Z) but had not synced to
   `~/.maktaba/decisions/answers/` yet.** Reading the page's `answers` collection confirmed it.
 
+- **A new bundle ID is a new app to iOS.** The old iPad apps' saved homes, theme and playback
+  settings cannot carry over, and both apps answer `maktaba://` until the old one is deleted.
+  Review found neither was said; `docs/testflight.md` and the changelogs now do.
+- **`ui-shard.py --measure` told iPad from iPhone by the test module's name,** which the two now
+  share. It reads the job's name in the log, and refuses a log without one.
+
 ## Keep doing
 - Read a decision's answer from the page when the local inbox says pending and the brief says
   it was answered.
 
+## Stop doing
+- Dropping a bundle ID without listing what its users lose.
+
 ## Open
 - **Owner:** leave the "Maktaba Player for iPad" and "Maktaba Remote iPad" records unsubmitted,
-  tell iPad testers to install the universal apps, and remove the `.tablet` App IDs after their
+  tell iPad testers to install the universal apps and delete the old ones, and remove the `.tablet` App IDs after their
   builds expire.
 - **#1574 and #1616 both regenerate `project.pbxproj`.** Whichever merges second brings main in
   and runs xcodegen again.
