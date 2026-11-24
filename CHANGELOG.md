@@ -423,6 +423,16 @@ build fails when the two differ.
 
 ### Fixed
 
+- **The second listen stores its corrections again on PostgreSQL 18.** From the home's move to
+  PostgreSQL 18 on 2026-11-20, every second-listen job failed when it stored its corrected
+  transcript ("cannot update table transcript_segments"): PostgreSQL 18 refuses an update to a
+  table published for a machine's copy when its replica identity holds a generated column the
+  copy is not sent, and the home's transcript lines were set up that way (REPLICA IDENTITY FULL,
+  with the generated search column). A migration (slot 0237) gives such tables their primary key
+  as their identity, without rewriting them; the copy keeps them. The videos left with Whisper's
+  words since then are heard again by themselves, 100 at a time, and their subtitles, search
+  index and tags follow.
+
 - **A home that can't check for updates now says so.** When two checks in a row fail, the Updates
   page says "Can't check for updates since …" with the reason (GitHub's list is larger than this
   version reads, GitHub asked to wait, GitHub answered with an error or could not be reached) and
@@ -4504,16 +4514,6 @@ build fails when the two differ.
   migrations still fail part way, nothing is put back if what they changed is additive and the
   release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
   in seconds. Only failing both does the backup go back, as before.
-
-- **The second listen stores its corrections again on PostgreSQL 18.** From the home's move to
-  PostgreSQL 18 on 2026-11-20, every second-listen job failed when it stored its corrected
-  transcript ("cannot update table transcript_segments"): PostgreSQL 18 refuses an update to a
-  table published for a machine's copy when its replica identity holds a generated column the
-  copy is not sent, and the home's transcript lines were set up that way (REPLICA IDENTITY FULL,
-  with the generated search column). A migration (slot 0237) gives such tables their primary key
-  as their identity, without rewriting them; the copy keeps them. The videos left with Whisper's
-  words since then are heard again by themselves, 100 at a time, and their subtitles, search
-  index and tags follow.
 
 ## [0.2.0] - 2026-10-19
 
