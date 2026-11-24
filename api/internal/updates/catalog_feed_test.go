@@ -142,12 +142,14 @@ func TestRealFeedPageReads(t *testing.T) {
 func TestRealFeedHeadroom(t *testing.T) {
 	t.Parallel()
 	page := realFeedPage(t)
-	var worst releaseSize
+	// the largest release by its bytes; only it is decoded (each pass is slow under -race)
+	var largest json.RawMessage
 	for _, raw := range realReleases(t) {
-		if s := sizeOf(t, raw); s.bytes > worst.bytes {
-			worst = s
+		if len(raw) > len(largest) {
+			largest = raw
 		}
 	}
+	worst := sizeOf(t, largest)
 	room := func(limit int64) float64 { return FeedHeadroom * float64(limit) }
 	if float64(len(page)) > room(listPageLimit) {
 		t.Errorf("the recorded page is %d bytes, over %.0f%% of the page cap %d", len(page), 100*FeedHeadroom, listPageLimit)

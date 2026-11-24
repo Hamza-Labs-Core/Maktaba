@@ -67,12 +67,17 @@ func loadReal() ([]byte, []realRelease, error) {
 	if err := json.Unmarshal(b, &raws); err != nil {
 		return nil, nil, err
 	}
+	// each release's bytes; only the newest is decoded here (the headroom wants its
+	// assets), the rest when a test asks (decoded): every pass over 3 MB is a third of a
+	// second under -race
 	rels := make([]realRelease, len(raws))
 	for i, raw := range raws {
-		if err := json.Unmarshal(raw, &rels[i]); err != nil {
+		rels[i].raw = raw
+	}
+	if len(rels) > 0 {
+		if err := json.Unmarshal(rels[0].raw, &rels[0]); err != nil {
 			return nil, nil, err
 		}
-		rels[i].raw = raw
 	}
 	return b, rels, nil
 }
@@ -92,11 +97,28 @@ func realReleases(t *testing.T) []realRelease {
 	return realRels
 }
 
+// decoded is every recorded release decoded (a copy: the shared list keeps only the newest).
+func decoded(t *testing.T) []realRelease {
+	t.Helper()
+	rels := append([]realRelease(nil), realReleases(t)...)
+	for i := range rels {
+		if err := json.Unmarshal(rels[i].raw, &rels[i]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return rels
+}
+
 // Latest and ByTag read the real feed: the newest stable release, every asset.
 func TestRealFeed(t *testing.T) {
+	if testing.Short() {
+		// decodes the recorded 3.2 MB page: about a second under -race, past the unit tier's
+		// per-test budget on a loaded runner. Runs without -short (the integration tier)
+		t.Skip("reads the real release list's size; runs without -short (the integration tier)")
+	}
 	t.Parallel()
 	page := realPage(t)
-	rels := realReleases(t)
+	rels := decoded(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if tag, ok := strings.CutPrefix(req.URL.Path, "/repos/"+repo+"/releases/tags/"); ok {
 			for _, r := range rels {
