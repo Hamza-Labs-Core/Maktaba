@@ -65,7 +65,7 @@ func (e *env) homeOf(ownerEmail, slug, plan string) string {
 }
 
 func TestBroadcastAnalytics(t *testing.T) {
-	e := newEnv(t)
+	e := newEnvCfg(t, nil, broadcastOn(t, nil))
 	ctx := context.Background()
 	owner := e.registerVerified("publisher@example.test")
 	home := e.homeOf("publisher@example.test", "pub-home", "pro")
