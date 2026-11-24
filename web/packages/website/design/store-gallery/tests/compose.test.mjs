@@ -67,9 +67,7 @@ test("a capture key names the surface, the Remote and the screen's language", ()
 test("every listing's images go where fastlane and the store folders expect them", () => {
   const paths = plan().map(pathOf);
   assert.ok(
-    paths.includes(
-      join("apple", "apple-player", "screenshots", "ar-SA", "01_iphone-6.3_library")
-    )
+    paths.includes(join("apple", "apple-player", "screenshots", "ar-SA", "01_iphone-6.3_library"))
   );
   assert.ok(
     paths.includes(
