@@ -370,6 +370,25 @@ data class Chapter(
 @Serializable
 internal data class ChaptersDoc(@Serializable(with = LenientList::class) val items: List<Chapter> = emptyList())
 
+/**
+ * A subtitle the home keeps for a video (`GET /api/videos/{id}/subtitles`): [source] is
+ * `external` (a sidecar file beside the video), `auto` (Maktaba's transcription) or `embedded`
+ * (a track of the file itself). A session serves the first two under its own path
+ * (`/stream/{session}/subs/sidecar/{language}.vtt`, `/stream/{session}/subs/auto.vtt`).
+ */
+@Serializable
+data class VideoSubtitle(
+    val id: Long = 0,
+    val language: String = "",
+    val format: String = "",
+    val source: String = "",
+    @SerialName("is_default") val isDefault: Boolean = false,
+    val url: String = "",
+)
+
+@Serializable
+internal data class SubtitlesDoc(@Serializable(with = LenientList::class) val items: List<VideoSubtitle> = emptyList())
+
 /** `GET /api/videos/{id}/segments`: the transcript's lines in a time window. */
 @Serializable
 data class Segments(
@@ -627,6 +646,9 @@ suspend fun ApiClient.myVideo(id: String): MyVideo = read("/api/me/videos/${seg(
 
 /** `GET /api/videos/{id}/chapters`. */
 suspend fun ApiClient.chapters(video: String): List<Chapter> = read<ChaptersDoc>("/api/videos/${seg(video)}/chapters").items
+
+/** `GET /api/videos/{id}/subtitles`: the subtitles the home keeps for the video (story 13.20 reads them). */
+suspend fun ApiClient.videoSubtitles(video: String): List<VideoSubtitle> = read<SubtitlesDoc>("/api/videos/${seg(video)}/subtitles").items
 
 /** `GET /api/videos/{id}/segments`: the transcript from [fromSec] to [toSec] (the home's default window when null). */
 suspend fun ApiClient.segments(video: String, fromSec: Double = 0.0, toSec: Double? = null, limit: Int? = null): Segments =

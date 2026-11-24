@@ -118,6 +118,17 @@ describe("help area", () => {
   );
 });
 
+describe("the Windows and Linux Player's page", () => {
+  // story 13.20 T08: which subtitles show and the two subtitle settings, in both languages
+  it.each([
+    ["en", ["In the file", "Picture", "Subtitle size", "Subtitle colour"]],
+    ["ar", ["في الملف", "صورة", "حجم الترجمة", "لون الترجمة"]],
+  ] as const)("names the subtitles and their settings (%s)", (locale, words) => {
+    const md = FILES[`./content/${locale}/desktop-player.md`]!;
+    for (const w of words) expect(md, w).toContain(w);
+  });
+});
+
 describe("help links", () => {
   it("the page '?' and a cause's Learn more are plain shareable links", () => {
     renderAt("/queue");

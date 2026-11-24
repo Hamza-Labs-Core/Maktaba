@@ -146,7 +146,11 @@ fun Watch(
                     CircularProgressIndicator()
                     Text(t["watch.opening"], color = Color.White)
                 }
-                else -> VideoSurface(player, Modifier.fillMaxSize(), caption = playback.caption)
+                // story 13.20: the subtitle size and colour the video opened with
+                else -> VideoSurface(
+                    player, Modifier.fillMaxSize(), caption = playback.caption,
+                    captionScale = playback.subtitleStyle.scale, captionColour = playback.subtitleStyle.colour,
+                )
             }
         }
         playback.note?.let { Text(t["watch.failed", it], color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp)) }
@@ -193,7 +197,7 @@ class ControlsActions(
     val seek: (Long) -> Unit = {},
     val volume: (Float) -> Unit = {},
     val mute: () -> Unit = {},
-    val subtitle: (com.hamzalabs.maktaba.desktop.watch.Rendition?) -> Unit = {},
+    val subtitle: (com.hamzalabs.maktaba.desktop.watch.SubtitleOption?) -> Unit = {},
     val audio: (AudioOption) -> Unit = {},
     val quality: (com.hamzalabs.maktaba.core.playback.QualityOption) -> Unit = {},
     val fullScreen: () -> Unit = {},
@@ -215,8 +219,8 @@ fun ControlsBar(
     features: Capabilities,
     homeUrl: String,
     fullScreen: Boolean,
-    subtitles: List<com.hamzalabs.maktaba.desktop.watch.Rendition>,
-    subtitle: com.hamzalabs.maktaba.desktop.watch.Rendition?,
+    subtitles: List<com.hamzalabs.maktaba.desktop.watch.SubtitleOption>,
+    subtitle: com.hamzalabs.maktaba.desktop.watch.SubtitleOption?,
     audioOptions: List<AudioOption>,
     audio: AudioOption?,
     qualities: List<com.hamzalabs.maktaba.core.playback.QualityOption>,

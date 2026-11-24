@@ -63,6 +63,8 @@ Above the results, **Results** and **AI mode** are two tabs. **AI mode** answers
 A video resumes where you left it, unless you finished it or were nearly at the end; **Play from start** starts it over. The controls are under the picture: play and pause, back and forward 10 seconds, the bar (with a mark at each chapter), the volume, **Subtitles**, **Audio**, **Quality** and full screen.
 
 - **Subtitles** shows the video's subtitles over the picture, in the language you choose, or **Off**. **Audio** chooses another sound track when the video has one. Your choice carries over to the next video when it has that language.
+- Which subtitles **Subtitles** lists: for a file the player plays as it is, the home's first (a subtitle file beside the video, and Maktaba's transcription), then the file's own tracks, each marked **In the file**, and **Picture** for a Blu-ray or DVD track, which is shown as it was made. A forced track (signs, or lines in another language) is not listed: it shows by itself, while subtitles are off, when it is in the language you hear. For a video the home converts, or with the older engine (see [The video engine](#video-engine)), the menu lists the subtitles the home sends.
+- Subtitles without their own styling take the **Subtitle size** and **Subtitle colour** set in **Profile → Playback**; subtitles with their own styling keep their colours and take the size.
 - **Quality** is **Auto** or a height (1080p, 720p…); the video goes on from the same moment.
 - **Up next**: near the end of an episode, a card offers the next one with a countdown; **Play now** starts it, **Cancel** stays. A playlist plays its videos in order the same way.
 
@@ -92,7 +94,7 @@ Where you stopped is kept: Continue Watching on your other devices starts there.
 - **Watch history**: what you watched; **Remove** takes a video out, and out of Continue Watching. **Favorites** and **Playlists** (a playlist's **Play** plays it in order).
 - **Sessions**: the browsers signed in to the home as you; **Sign out** ends one you do not recognise.
 - **Approve a TV or device**: the same as **Account → Approve a sign-in**.
-- **Playback**: subtitles on by default, the subtitle and audio languages, the quality a video starts at, and the **Video engine** (see [The video engine](#video-engine)).
+- **Playback**: subtitles on by default, the subtitle language, **Subtitle size** (Small, Medium, Large) and **Subtitle colour** (White, Yellow), which apply from the next video you open, the audio language, the quality a video starts at, and the **Video engine** (see [The video engine](#video-engine)).
 - **Language** and **Help and about** (the player's and the home's versions, help, **Check for updates**).
 
 ### A feature that is off {#feature-off}

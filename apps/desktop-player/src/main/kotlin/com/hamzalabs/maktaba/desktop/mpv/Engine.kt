@@ -97,21 +97,26 @@ open class Engines(
         }
     }
 
-    private val opened = ArrayDeque<Pair<Instant, Pick>>()
+    private val kept = ArrayDeque<Pair<Instant, String>>()
     @Volatile private var last: Pick? = null
 
     /**
      * The players for a video opening now, by [pick]; each open is kept for the problem report
-     * (the last [KEPT]), so a report says which engine played each video.
+     * (the last [KEPT] lines), so a report says which engine played each video.
      */
     fun players(now: Instant = Instant.now()): Players {
         val p = pick()
         last = p
-        synchronized(opened) {
-            opened.addLast(now to p)
-            while (opened.size > KEPT) opened.removeFirst()
-        }
+        note("video opened: playback: ${p.describe()}", now)
         return if (p.mpv) mpvPlayers ?: fx else fx
+    }
+
+    /** A line for the problem report's log, about playback (the last [KEPT] are kept). */
+    fun note(msg: String, now: Instant = Instant.now()) {
+        synchronized(kept) {
+            kept.addLast(now to msg)
+            while (kept.size > KEPT) kept.removeFirst()
+        }
     }
 
     /** A line for the problem report: the engine the last video played with (else the next one's) and why. */
@@ -133,9 +138,9 @@ open class Engines(
         return if (p.why == Why.Missing) p.reason else null
     }
 
-    /** The problem report's lines (JSON lines): each video opened, with its engine and why, then the state now. */
+    /** The problem report's lines (JSON lines): each video opened, with its engine and why, and other [note]s, then the state now. */
     fun logLines(now: Instant = Instant.now()): List<String> {
-        val each = synchronized(opened) { opened.toList() }.map { (at, p) -> line(at, "video opened: playback: ${p.describe()}") }
+        val each = synchronized(kept) { kept.toList() }.map { (at, msg) -> line(at, msg) }
         return each + line(now, describe())
     }
 
@@ -148,8 +153,8 @@ open class Engines(
     companion object {
         const val VARIABLE = "MAKTABA_PLAYER_ENGINE"
 
-        /** How many video opens the problem report lists. */
-        const val KEPT = 20
+        /** How many playback lines (video opens, notes) the problem report lists. */
+        const val KEPT = 40
 
         /** Support's way back to JavaFX for one release: `MAKTABA_PLAYER_ENGINE=javafx`. */
         fun variableSet(env: Map<String, String>): Boolean = env[VARIABLE].equals("javafx", ignoreCase = true)

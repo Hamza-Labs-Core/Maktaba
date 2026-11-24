@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": 7,
+      "language": "en",
+      "format": "srt",
+      "source": "external",
+      "is_default": false,
+      "url": "/stream/subtitles/11111111-0000-4000-8000-000000000002/en.srt"
+    },
+    {
+      "id": 8,
+      "language": "ar",
+      "format": "vtt",
+      "source": "auto",
+      "is_default": true,
+      "url": "/stream/subtitles/11111111-0000-4000-8000-000000000002/ar.vtt"
+    }
+  ]
+}

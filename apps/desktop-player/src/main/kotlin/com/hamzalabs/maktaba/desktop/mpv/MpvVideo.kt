@@ -9,6 +9,9 @@ import com.hamzalabs.maktaba.desktop.AudioOption
 import com.hamzalabs.maktaba.desktop.Players
 import com.hamzalabs.maktaba.desktop.Video
 import com.hamzalabs.maktaba.desktop.VideoEvents
+import com.hamzalabs.maktaba.core.playback.SubtitleColour
+import com.hamzalabs.maktaba.desktop.watch.FileSubtitle
+import com.hamzalabs.maktaba.desktop.watch.SubtitleOption
 import com.sun.jna.Memory
 import com.sun.jna.Pointer
 import com.sun.jna.ptr.PointerByReference
@@ -50,7 +53,9 @@ class MpvVideo internal constructor(
     private val wake = Semaphore(0)
     private val ops = Executors.newSingleThreadExecutor { r -> Thread(r, "mpv-commands").apply { isDaemon = true } }
     @Volatile private var audioIds: List<String> = emptyList()
-    @Volatile private var lastCaption: Triple<String?, Boolean, Float>? = null
+    @Volatile private var lastCaption: Triple<String?, Boolean, Pair<Float, SubtitleColour>>? = null
+    /** The home's subtitles added (`sub-add`), by their URL: mpv's track id (on mpv's thread only). */
+    private val added = HashMap<String, String>()
     @Volatile private var size: Pair<Int, Int> = 0 to 0
     // mpv keeps the callback's address: held here for the handle's life
     private val onUpdate = LibMpv.UpdateCallback { wake.release() }
@@ -94,9 +99,25 @@ class MpvVideo internal constructor(
             opt("osc", "no")
             // the end stays on screen, so a seek back after it plays again; eof-reached says it ended
             opt("keep-open", "yes")
-            // the Player's own subtitles are drawn as captions; a file's own stay off
-            opt("sid", "no")
+            // story 13.20: the Player chooses the subtitles (selectSubtitle); until it does, mpv
+            // shows only a forced track, one in the audio's language, as players do
+            opt("sid", "auto")
+            opt("slang", "")
+            opt("subs-fallback", "no")
+            opt("subs-fallback-forced", "yes")
+            opt("subs-with-matching-audio", "forced")
             opt("sub-auto", "no")
+            // text subtitles without their own styling in the Player's size and colour; ASS
+            // keeps its styles but takes the size; picture subtitles are drawn as authored
+            val style = events.subtitleStyle
+            opt("sub-scale", style.scale.toString())
+            opt("sub-color", style.colour.rgb)
+            opt("sub-border-color", "#000000")
+            opt("sub-border-size", "2")
+            opt("sub-ass-override", "scale")
+            // ASS's own fonts; a raw file's codepage guessed (a sidecar comes as UTF-8)
+            opt("embeddedfonts", "yes")
+            opt("sub-codepage", "auto")
             opt("volume", (events.volume * 100).toInt().toString())
             opt("mute", if (events.muted) "yes" else "no")
             opt("pause", if (autoplay) "no" else "yes")
@@ -139,7 +160,7 @@ class MpvVideo internal constructor(
                 start()
             }
             lib.mpv_command(c, arrayOf("loadfile", url, null))
-            lastCaption?.let { (s, rtl, scale) -> overlay(c, s, rtl, scale) }
+            lastCaption?.let { (s, rtl, look) -> overlay(c, s, rtl, look.first, look.second) }
         }
     }
 
@@ -215,26 +236,62 @@ class MpvVideo internal constructor(
         }
     }
 
-    /** The file is open: its length and its audio tracks, in order. */
+    /** The file is open: its length, its audio tracks and its own subtitle tracks, in order. */
     private fun loaded(c: Pointer) {
         val duration = string(c, "duration")?.toDoubleOrNull()?.let { (it * 1000).toLong() }
         val count = string(c, "track-list/count")?.toIntOrNull() ?: 0
         val ids = mutableListOf<String>()
         val audio = mutableListOf<AudioOption>()
+        val subs = mutableListOf<FileSubtitle>()
         for (i in 0 until count) {
-            if (string(c, "track-list/$i/type") != "audio") continue
+            val type = string(c, "track-list/$i/type")
+            if (type != "audio" && type != "sub") continue
             val id = string(c, "track-list/$i/id") ?: continue
-            audio += AudioOption(
-                string(c, "track-list/$i/title")?.ifBlank { null },
-                string(c, "track-list/$i/lang")?.ifBlank { null },
-                index = audio.size,
-            )
-            ids += id
+            val title = string(c, "track-list/$i/title")?.ifBlank { null }
+            val lang = string(c, "track-list/$i/lang")?.ifBlank { null }
+            if (type == "audio") {
+                audio += AudioOption(title, lang, index = audio.size)
+                ids += id
+            } else if (string(c, "track-list/$i/external") != "yes") {
+                // the file's own (a home's file added before is not one of them)
+                subs += FileSubtitle(id, title, lang, string(c, "track-list/$i/codec"), forced = string(c, "track-list/$i/forced") == "yes")
+            }
         }
         audioIds = ids
         // the track chosen before this player (a reopen keeps it)
         events.audioIndex.takeIf { it > 0 }?.let { ids.getOrNull(it) }?.let { lib.mpv_set_property_string(c, "aid", it) }
         events.ready(duration, audio)
+        events.subtitleTracks(subs)
+        // the subtitles chosen before this player (a reopen keeps them)
+        events.subtitleChoice?.let { o -> onMpv { showSubtitle(it, o) } }
+    }
+
+    /** [o] drawn: a file's track by its id, a home's file added once (`sub-add`, then by its id), none: `sid=no`. */
+    private fun showSubtitle(c: Pointer, o: SubtitleOption?) {
+        // a picture track as authored: no scale of the Player's (mpv may scale pictures too)
+        lib.mpv_set_property_string(c, "sub-scale", if (o?.picture == true) "1.0" else events.subtitleStyle.scale.toString())
+        when (o?.kind) {
+            SubtitleOption.Kind.File -> o.trackId?.let { lib.mpv_set_property_string(c, "sid", it) }
+            SubtitleOption.Kind.Home -> {
+                val url = o.url ?: return
+                val known = added[url]
+                if (known != null) {
+                    lib.mpv_set_property_string(c, "sid", known)
+                } else {
+                    // mpv reads and times it itself; "select" shows it at once
+                    lib.mpv_command(c, arrayOf("sub-add", url, "select", o.name ?: o.language ?: "", o.language ?: "", null))
+                    string(c, "sid")?.takeIf { it != "no" }?.let { added[url] = it }
+                }
+            }
+            else -> lib.mpv_set_property_string(c, "sid", "no")
+        }
+    }
+
+    /** Subtitles drawn by mpv (story 13.20): a file's own track, a home's file, or none. An HLS rendition is not one. */
+    override fun selectSubtitle(option: SubtitleOption?): Boolean {
+        if (option?.kind == SubtitleOption.Kind.Stream) return false
+        onMpv { showSubtitle(it, option) }
+        return true
     }
 
     private fun string(c: Pointer, name: String): String? {
@@ -275,19 +332,19 @@ class MpvVideo internal constructor(
         return true
     }
 
-    override fun caption(text: String?, rtl: Boolean, scale: Float) {
-        val want = Triple(text, rtl, scale)
+    override fun caption(text: String?, rtl: Boolean, scale: Float, colour: SubtitleColour) {
+        val want = Triple(text, rtl, scale to colour)
         if (want == lastCaption) return
         lastCaption = want
-        onMpv { overlay(it, text, rtl, scale) }
+        onMpv { overlay(it, text, rtl, scale, colour) }
     }
 
-    private fun overlay(c: Pointer, text: String?, rtl: Boolean, scale: Float) {
+    private fun overlay(c: Pointer, text: String?, rtl: Boolean, scale: Float, colour: SubtitleColour) {
         if (text.isNullOrBlank()) {
             lib.mpv_command(c, arrayOf("osd-overlay", "1", "none", "", "0", "720", "0", "no", null))
             return
         }
-        lib.mpv_command(c, arrayOf("osd-overlay", "1", "ass-events", captionAss(text, rtl, scale), "0", "720", "0", "no", null))
+        lib.mpv_command(c, arrayOf("osd-overlay", "1", "ass-events", captionAss(text, rtl, scale, colour), "0", "720", "0", "no", null))
     }
 
     /**
@@ -339,11 +396,11 @@ class MpvVideo internal constructor(
         }
 
         /**
-         * A caption as one ASS event for mpv's OSD: bottom centre, white with an outline, sized
-         * as JavaFX's was (a 22nd of the picture's height) times [scale]. ASS's own characters
-         * in the text are escaped; a line break is ASS's.
+         * A caption as one ASS event for mpv's OSD: bottom centre, in [colour] (white or
+         * yellow) with a black outline, sized as JavaFX's was (a 22nd of the picture's height)
+         * times [scale]. ASS's own characters in the text are escaped; a line break is ASS's.
          */
-        fun captionAss(text: String, rtl: Boolean, scale: Float): String {
+        fun captionAss(text: String, rtl: Boolean, scale: Float, colour: SubtitleColour = SubtitleColour.White): String {
             val size = (720f / 22f * scale).toInt().coerceIn(14, 96)
             val escaped = text
                 .replace("\\", "\\⁠")
@@ -353,7 +410,13 @@ class MpvVideo internal constructor(
             // a right-to-left caption starts with RLE so a line beginning with a digit or a
             // Latin word still reads from the right
             val body = if (rtl) "‫" + escaped else escaped
-            return "{\\an2\\fs$size\\bord2\\shad1\\1c&HFFFFFF&\\3c&H000000&}$body"
+            return "{\\an2\\fs$size\\bord2\\shad1\\1c&H${assColour(colour.rgb)}&\\3c&H000000&}$body"
+        }
+
+        /** `#RRGGBB` as ASS writes a colour: `BBGGRR`. */
+        fun assColour(rgb: String): String {
+            val h = rgb.removePrefix("#").uppercase()
+            return h.substring(4, 6) + h.substring(2, 4) + h.substring(0, 2)
         }
     }
 }
@@ -361,6 +424,9 @@ class MpvVideo internal constructor(
 /** libmpv's players (story 13.18): each video in its own [MpvVideo]. */
 class MpvPlayers(private val lib: LibMpv, private val fontsDir: File?) : Players {
     override val profile: String get() = MPV_PROFILE
+
+    /** mpv draws a file's own subtitle tracks and the home's files itself (story 13.20). */
+    override val drawsSubtitles: Boolean get() = true
 
     override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video =
         MpvVideo(lib, url, fromMs, autoplay, events, fontsDir)

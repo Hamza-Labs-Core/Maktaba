@@ -22,7 +22,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.playback.PlaybackSettings
 import com.hamzalabs.maktaba.core.playback.StreamQuality
+import com.hamzalabs.maktaba.core.playback.SubtitleColour
 import com.hamzalabs.maktaba.core.playback.SubtitleLanguage
+import com.hamzalabs.maktaba.core.playback.SubtitleSize
 import com.hamzalabs.maktaba.desktop.LocalTexts
 import com.hamzalabs.maktaba.desktop.Texts
 import com.hamzalabs.maktaba.desktop.mpv.EngineChoice
@@ -38,6 +40,19 @@ fun Texts.languageChoice(l: SubtitleLanguage): String = when (l) {
 /** A quality's words: Auto, or its height. */
 fun Texts.qualityChoice(q: StreamQuality): String = q.height?.let { this["watch.qualityHeight", it] } ?: this["watch.qualityAuto"]
 
+/** A subtitle size's words (story 13.20). */
+fun Texts.sizeChoice(s: SubtitleSize): String = when (s) {
+    SubtitleSize.Small -> this["profile.sizeSmall"]
+    SubtitleSize.Medium -> this["profile.sizeMedium"]
+    SubtitleSize.Large -> this["profile.sizeLarge"]
+}
+
+/** A subtitle colour's words (story 13.20). */
+fun Texts.colourChoice(c: SubtitleColour): String = when (c) {
+    SubtitleColour.White -> this["profile.colourWhite"]
+    SubtitleColour.Yellow -> this["profile.colourYellow"]
+}
+
 /** An engine choice's words (story 13.21). */
 fun Texts.engineChoice(c: EngineChoice): String = when (c) {
     EngineChoice.Auto -> this["profile.engineAuto"]
@@ -52,9 +67,9 @@ fun Texts.engineChoice(c: EngineChoice): String = when (c) {
 class EngineRow(val state: Engines.Row, val choose: (EngineChoice) -> Unit, val learnMore: () -> Unit)
 
 /**
- * Profile's Playback (story 55.09): subtitles on by default, the subtitle and audio languages,
- * and the quality a video starts at. Kept in the Player's settings file; watching (55.08) reads
- * them. Then the video engine (13.21), when [engine] is given.
+ * Profile's Playback (story 55.09): subtitles on by default, the subtitle language, size and
+ * colour (13.20), the audio language, and the quality a video starts at. Kept in the Player's
+ * settings file; watching (55.08) reads them. Then the video engine (13.21), when [engine] is given.
  */
 @Composable
 fun PlaybackSettingsPage(settings: PlaybackSettings, engine: EngineRow? = null) {
@@ -66,6 +81,12 @@ fun PlaybackSettingsPage(settings: PlaybackSettings, engine: EngineRow? = null) 
             Switch(v.subtitlesOn, { on -> settings.update { it.copy(subtitlesOn = on) } }, modifier = Modifier.testTag("subtitles-on"))
         }
         Choices(t["profile.subtitleLanguage"], SubtitleLanguage.entries, v.subtitleLanguage, t::languageChoice, "subtitle-language") { l -> settings.update { it.copy(subtitleLanguage = l) } }
+        // story 13.20: the next video's subtitles in this size and colour
+        Choices(t["profile.subtitleSize"], SubtitleSize.entries, v.subtitleSize, t::sizeChoice, "subtitle-size") { s -> settings.update { it.copy(subtitleSize = s) } }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Choices(t["profile.subtitleColour"], SubtitleColour.entries, v.subtitleColour, t::colourChoice, "subtitle-colour") { c -> settings.update { it.copy(subtitleColour = c) } }
+            Text(t["profile.subtitlePictures"], style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.testTag("subtitle-pictures"))
+        }
         Choices(t["profile.audioLanguage"], SubtitleLanguage.entries, v.audioLanguage, t::languageChoice, "audio-language") { l -> settings.update { it.copy(audioLanguage = l) } }
         Choices(t["profile.quality"], StreamQuality.entries, v.qualityWifi, t::qualityChoice, "quality") { q -> settings.update { it.copy(qualityWifi = q) } }
         if (engine != null) EngineChoices(engine)

@@ -35,6 +35,16 @@ build fails when the two differ.
   and reason instead of at every start, with **Learn more**, and Report a problem's log names
   the engine each video played with and why.
 
+- **Subtitles through mpv in the Windows and Linux Player: a file's own tracks, size and
+  colour.** On a file played as it is, **Subtitles** lists the home's subtitles (a file beside
+  the video, Maktaba's transcription), then the file's own tracks (SRT, ASS, WebVTT, and Blu-ray
+  and DVD pictures, marked **In the file** and **Picture**), all drawn by mpv, Arabic joined and
+  right to left; a forced track shows by itself with the audio of its language. Subtitles on in
+  a language pick the first track in it, the home's first. **Profile → Playback** has **Subtitle
+  size** and **Subtitle colour** (white or yellow), applied from the next video to subtitles
+  without their own styling; styled ASS subtitles take the size only, and pictures are shown as
+  made. The shared playback settings keep the colour as `playback.subtitle_colour`.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with

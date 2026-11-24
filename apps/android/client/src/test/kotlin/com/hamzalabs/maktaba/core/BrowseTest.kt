@@ -12,6 +12,8 @@ import com.hamzalabs.maktaba.core.api.VideoDetail
 import com.hamzalabs.maktaba.core.api.VideoQuery
 import com.hamzalabs.maktaba.core.api.VideoSort
 import com.hamzalabs.maktaba.core.api.chapters
+import com.hamzalabs.maktaba.core.api.videoSubtitles
+import com.hamzalabs.maktaba.core.api.videoSubtitles
 import com.hamzalabs.maktaba.core.api.clearRecentSearches
 import com.hamzalabs.maktaba.core.api.dismissRail
 import com.hamzalabs.maktaba.core.api.dismissRecommendation
@@ -99,6 +101,7 @@ class BrowseTest {
         "GET /api/videos/$video" to "video.json",
         "GET /api/me/videos/$video" to "my-video.json",
         "GET /api/videos/$video/chapters" to "chapters.json",
+        "GET /api/videos/$video/subtitles" to "subtitles.json",
         "GET /api/videos/$video/segments" to "segments.json",
         "POST /api/me/watched" to "updated.json",
         "POST /api/me/favorites" to "updated.json",
@@ -320,6 +323,12 @@ class BrowseTest {
         val ch = client().chapters(video)
         assertEquals(listOf(0.0, 300.0), ch.map { it.startSec })
         assertNull(ch[1].endSec)
+
+        // story 13.20: the subtitles the home keeps, by source
+        val subs = client().videoSubtitles(video)
+        assertEquals(listOf("external", "auto"), subs.map { it.source })
+        assertEquals(listOf("en", "ar"), subs.map { it.language })
+        assertTrue(subs[1].isDefault)
 
         val segs = client().segments(video, fromSec = 0.0, toSec = 120.0)
         assertEquals("120.0", last().url.queryParameter("to"))

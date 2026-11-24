@@ -1,5 +1,14 @@
 package com.hamzalabs.maktaba.desktop.mpv
 
+import com.hamzalabs.maktaba.core.api.Capabilities
+import com.hamzalabs.maktaba.core.api.Feature
+import com.hamzalabs.maktaba.core.playback.PlaybackValues
+import com.hamzalabs.maktaba.core.playback.SubtitleColour
+import com.hamzalabs.maktaba.core.playback.SubtitleLanguage
+import com.hamzalabs.maktaba.core.playback.SubtitleSize
+import com.hamzalabs.maktaba.desktop.watch.FileSubtitle
+import com.hamzalabs.maktaba.desktop.watch.SubtitleOption
+import com.hamzalabs.maktaba.desktop.watch.SubtitleStyle
 import com.hamzalabs.maktaba.desktop.AudioOption
 import com.hamzalabs.maktaba.desktop.PlayRequest
 import com.hamzalabs.maktaba.desktop.Playback
@@ -34,8 +43,10 @@ class PlaybackMpvTest {
     private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val opened = AtomicInteger()
 
-    private class FakeMpv(val events: VideoEvents) : Video {
+    private class FakeMpv(val events: VideoEvents, val draws: Boolean = true) : Video {
         val selected: MutableList<Int> = Collections.synchronizedList(mutableListOf())
+        /** The subtitles it was asked to draw (story 13.20), in order; null: off. */
+        val subtitles: MutableList<SubtitleOption?> = Collections.synchronizedList(mutableListOf())
         @Volatile override var started = false
         override fun toggle() {}
         override fun pause() {}
@@ -46,30 +57,47 @@ class PlaybackMpvTest {
             selected += index
             return true
         }
+        override fun selectSubtitle(option: SubtitleOption?): Boolean {
+            if (!draws || option?.kind == SubtitleOption.Kind.Stream) return false
+            subtitles += option
+            return true
+        }
     }
 
     private val made: MutableList<FakeMpv> = Collections.synchronizedList(mutableListOf())
 
     private val players = object : Players {
         override val profile = MPV_PROFILE
+        override val drawsSubtitles = true
         override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video =
             FakeMpv(events).also { made += it }
     }
 
     /** JavaFX's, as the older engine (story 13.21): the `desktop-player` profile. */
     private val fxMade: MutableList<FakeMpv> = Collections.synchronizedList(mutableListOf())
-    private val fx = Players { _, _, _, events -> FakeMpv(events).also { fxMade += it } }
+    private val fx = Players { _, _, _, events -> FakeMpv(events, draws = false).also { fxMade += it } }
 
     /** The engine Profile has now, read at each video's open. */
     @Volatile private var choice = EngineChoice.Auto
 
-    private val playback = Playback(home.client, scope, background, signedOut = {}, engine = { if (choice == EngineChoice.Older) fx else players })
+    /** Profile → Playback's settings, and what the home has on. */
+    @Volatile private var settings = PlaybackValues()
+    @Volatile private var features = Capabilities.AllOn
+
+    /** The problem report's lines Playback wrote. */
+    private val logged: MutableList<String> = Collections.synchronizedList(mutableListOf())
+
+    private val playback = Playback(
+        home.client, scope, background, signedOut = {}, settings = { settings }, features = { features },
+        engine = { if (choice == EngineChoice.Older) fx else players }, log = { logged += it },
+    )
 
     init {
         home.answer("POST /api/stream/sessions") {
             val n = opened.incrementAndGet()
-            TestHome.json("""{"session_id":"s$n","mode":"direct","direct_url":"/stream/s$n.mkv"}""")
+            TestHome.json("""{"session_id":"s$n","mode":"direct","direct_url":"/stream/s$n.mkv","stream_sig":"SIG$n"}""")
         }
+        home.answer("GET /api/videos/v1/subtitles", """{"items":[]}""")
     }
 
     @After
@@ -185,5 +213,126 @@ class PlaybackMpvTest {
         assertEquals("no new session for a track", 1, opened.get())
         // the next player of this video (a renewal, a quality change) plays the same track
         assertEquals(1, made.single().events.audioIndex)
+    }
+
+    // ---------- story 13.20: subtitles drawn by mpv ----------
+
+    /** A file's own tracks: an Arabic SRT, an English ASS, a PGS, and a forced SRT. */
+    private val fileTracks = listOf(
+        FileSubtitle("1", null, "ara", "subrip"),
+        FileSubtitle("2", "English", "eng", "ass"),
+        FileSubtitle("3", null, null, "hdmv_pgs_subtitle"),
+        FileSubtitle("4", "Signs", "eng", "subrip", forced = true),
+    )
+
+    /** Plays v1 with libmpv's players; its player reports [tracks] once open. */
+    private fun playDirect(tracks: List<FileSubtitle> = fileTracks): FakeMpv {
+        home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv"]}""")
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("playing") { playback.player != null }
+        val p = made.last()
+        p.events.subtitleTracks(tracks)
+        return p
+    }
+
+    @Test
+    fun t04_theMenuInDirectPlayAndWhatMpvIsAskedToDraw() {
+        home.answer(
+            "GET /api/videos/v1/subtitles",
+            """{"items":[{"id":7,"language":"en","format":"srt","source":"external"},{"id":8,"language":"ar","format":"vtt","source":"auto"},{"id":9,"language":"ar","format":"srt","source":"embedded"}]}""",
+        )
+        val p = playDirect()
+        until("the menu") { playback.subtitleOptions.size == 5 }
+        val menu = onMain { playback.subtitleOptions }
+        assertEquals(
+            listOf(SubtitleOption.Kind.Home, SubtitleOption.Kind.Home, SubtitleOption.Kind.File, SubtitleOption.Kind.File, SubtitleOption.Kind.File),
+            menu.map { it.kind },
+        )
+        // the home's, through the stream proxy, under the session's path, signed with its stream_sig
+        val sidecar = menu[0].url!!
+        assertTrue(sidecar, sidecar.startsWith("http://127.0.0.1:") && sidecar.endsWith("/stream/s1/subs/sidecar/en.vtt?sig=SIG1"))
+        assertTrue(menu[1].url!!, menu[1].url!!.endsWith("/stream/s1/subs/auto.vtt?sig=SIG1"))
+        assertEquals(listOf("1", "2", "3"), menu.drop(2).map { it.trackId })
+        // subtitles off by default: nothing chosen
+        assertEquals(emptyList<SubtitleOption?>(), p.subtitles.toList())
+
+        onMain { playback.chooseSubtitle(menu[2]) }
+        onMain { playback.chooseSubtitle(menu[0]) }
+        onMain { playback.chooseSubtitle(null) }
+        assertEquals(listOf("1", null, null), p.subtitles.map { it?.trackId })
+        assertEquals(listOf(SubtitleOption.Kind.File, SubtitleOption.Kind.Home, null), p.subtitles.map { it?.kind })
+        assertEquals(sidecar, p.subtitles[1]!!.url)
+        // the choice is kept for the next video, by language
+        assertEquals(true, playback.choice.textOff)
+        // S: on again, in the first track
+        onMain { playback.toggleSubtitles() }
+        assertEquals(menu[0], onMain { playback.subtitle })
+        // a reopen's player draws the same (not an HLS rendition's)
+        assertEquals(menu[0], p.events.subtitleChoice)
+    }
+
+    @Test
+    fun subtitlesOnInArabicPickTheFilesArabicTrackWithNoSidecar() {
+        settings = PlaybackValues(subtitlesOn = true, subtitleLanguage = SubtitleLanguage.Arabic)
+        val p = playDirect(listOf(FileSubtitle("1", null, "eng", "subrip"), FileSubtitle("2", null, "ara", "subrip")))
+        until("on") { p.subtitles.isNotEmpty() }
+        assertEquals("2", p.subtitles.single()!!.trackId)
+        assertEquals("2", onMain { playback.subtitle }!!.trackId)
+    }
+
+    @Test
+    fun theHomesComesFirstWhenTwoShareALanguage() {
+        settings = PlaybackValues(subtitlesOn = true, subtitleLanguage = SubtitleLanguage.Arabic)
+        home.answer("GET /api/videos/v1/subtitles", """{"items":[{"id":8,"language":"ar","format":"vtt","source":"auto"}]}""")
+        val p = playDirect(listOf(FileSubtitle("1", null, "ara", "subrip")))
+        until("on") { p.subtitles.isNotEmpty() }
+        assertEquals(SubtitleOption.Kind.Home, p.subtitles.single()!!.kind)
+    }
+
+    @Test
+    fun aHomeThatCannotListItsSubtitlesLeavesTheFilesAndSaysWhyInTheLog() {
+        home.answer("GET /api/videos/v1/subtitles", """{"title":"boom","status":500}""", 500)
+        playDirect()
+        until("the menu") { playback.subtitleOptions.size == 3 }
+        assertTrue(onMain { playback.subtitleOptions }.all { it.kind == SubtitleOption.Kind.File })
+        assertTrue(logged.toString(), logged.any { it.startsWith("subtitles: the home's list of v1 was not read") })
+    }
+
+    @Test
+    fun subtitlesOffOnTheHomeOfferNoTrackAtAll() {
+        features = TestHome.caps(Feature.SUBTITLES)
+        settings = PlaybackValues(subtitlesOn = true)
+        val p = playDirect()
+        Thread.sleep(300)
+        assertTrue(onMain { playback.subtitleOptions }.isEmpty())
+        assertTrue(p.subtitles.isEmpty())
+    }
+
+    @Test
+    fun theOlderEngineHasTheMenuAsBefore() {
+        choice = EngineChoice.Older
+        settings = PlaybackValues(subtitlesOn = true)
+        home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv"]}""")
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("playing") { playback.player != null }
+        fxMade.single().events.subtitleTracks(fileTracks)
+        Thread.sleep(300)
+        assertTrue("a direct file with JavaFX offers no subtitles", onMain { playback.subtitleOptions }.isEmpty())
+        assertTrue(home.asked("GET /api/videos/v1/subtitles").isEmpty())
+    }
+
+    @Test
+    fun theSizeAndColourAreTakenWhenAVideoOpens() {
+        settings = PlaybackValues(subtitleSize = SubtitleSize.Large, subtitleColour = SubtitleColour.Yellow)
+        val p = playDirect()
+        until("styled") { playback.subtitleStyle == SubtitleStyle(SubtitleSize.Large, SubtitleColour.Yellow) }
+        assertEquals(SubtitleStyle(SubtitleSize.Large, SubtitleColour.Yellow), p.events.subtitleStyle)
+        // changed in Profile: the open video keeps its style; the next one takes the new
+        settings = PlaybackValues()
+        Thread.sleep(200)
+        assertEquals(SubtitleColour.Yellow, onMain { playback.subtitleStyle }.colour)
+        home.answer("GET /api/videos/v2/subtitles", """{"items":[]}""")
+        onMain { playback.play(PlayRequest("v2", "v2", startSec = 0)) }
+        until("next styled") { playback.subtitleStyle == SubtitleStyle() }
     }
 }
