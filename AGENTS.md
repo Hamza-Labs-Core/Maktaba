@@ -6,6 +6,12 @@ These notes are for any coding agent working here: Codex, Cursor, Claude Code an
 - never quote the owner's words in repo text;
 - a spec change ships its Arabic.
 
+**Decisions for the owner (every agent, every provider):** never ask the owner to decide anything
+in chat, in a pull request or on a page of your own. File it with
+`~/.maktaba/decisions/bin/ask request.json`, write `DECISION NEEDED: <id> — <title>` in your
+report, and read the answer with `~/.maktaba/decisions/bin/answer <id>`. The full rules are in
+[`docs/decisions.md`](docs/decisions.md) and [`CLAUDE.md`](CLAUDE.md) rule 9.
+
 The trail below is written by [agent-trail](https://github.com/Hamza-Labs-Core/agent-trail)
 (`trail init --agent agents`). Edit outside its markers.
 

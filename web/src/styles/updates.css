@@ -71,6 +71,12 @@
   border: 1px solid var(--color-error);
   border-radius: var(--radius-md);
 }
+.mkt-updates__check-error {
+  display: block;
+  margin-block-start: var(--space-2);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
+}
 .mkt-updates__card-head {
   display: flex;
   align-items: center;
