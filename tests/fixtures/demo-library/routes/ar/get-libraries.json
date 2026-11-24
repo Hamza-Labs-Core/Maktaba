@@ -1,16 +1,16 @@
 {
  "items": [
   {
-   "id": "lib-films",
-   "name": "أفلام",
+   "id": "lib-docs",
+   "name": "وثائقيات",
    "roots": [],
    "settings": {},
    "created_at": "{{now-34560000}}",
    "updated_at": "{{now-2592000}}"
   },
   {
-   "id": "lib-shorts",
-   "name": "أفلام قصيرة",
+   "id": "lib-kids",
+   "name": "للأطفال",
    "roots": [],
    "settings": {},
    "created_at": "{{now-34473600}}",

@@ -57,7 +57,7 @@ import java.util.TimeZone
 
 /**
  * The Android phone's product screenshots for maktaba.tv (story 60.09): Home and a film's page
- * (Sintel), dark, in English and Arabic, on the demo library (`tests/fixtures/demo-library`),
+ * (Curiosity), dark, in English and Arabic, on the demo library (`tests/fixtures/demo-library`),
  * every answer and picture read from its route table, its posters the films' own art. Written
  * to `src/test/screenshots/demo/android-phone-<screen>-<lang>.png`; CI's `verifyRoborazziDebug`
  * fails when one no longer matches.
@@ -122,10 +122,10 @@ class DemoScreenshotTest {
     }
 
     private fun filmScreen() {
-        open(VideoLink.of(SINTEL))
-        val title = if (lang() == "ar") "سينتل" else "Sintel"
-        compose.settled(home, "Sintel's page") { compose.onAllNodes(hasText(title), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
-        compose.settled(home, "Sintel's poster") {
+        open(VideoLink.of(CURIOSITY))
+        val title = if (lang() == "ar") "كيوريوسيتي: الهبوط على المريخ" else "Curiosity: Landing on Mars"
+        compose.settled(home, "Curiosity's page") { compose.onAllNodes(hasText(title), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        compose.settled(home, "Curiosity's poster") {
             compose.onAllNodes(hasTestTag("video-poster") and SemanticsMatcher.expectValue(PosterStateKey, PictureState.Shown)).fetchSemanticsNodes().isNotEmpty()
         }
         shoot("film")
@@ -144,7 +144,7 @@ class DemoScreenshotTest {
     fun filmArabic() = filmScreen()
 
     private companion object {
-        const val SINTEL = "v-sintel"
+        const val CURIOSITY = "v-curiosity"
 
         // text is drawn by the host's font rasteriser: a reference recorded on a Mac still matches
         // on CI's Linux within a small share of pixels

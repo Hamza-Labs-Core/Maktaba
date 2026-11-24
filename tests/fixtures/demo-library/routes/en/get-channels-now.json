@@ -3,94 +3,50 @@
  "channels": [
   {
    "channel": {
-    "id": "ch-films",
+    "id": "ch-space",
     "number": 1,
-    "name": "Film Night",
-    "slug": "films",
+    "name": "Space",
+    "slug": "space",
     "logo_url": null
    },
    "current": {
-    "channel_id": "ch-films",
-    "kind": "program",
-    "start": "{{now-900}}",
-    "stop": "{{now+900}}",
-    "title": "Sintel",
-    "sub_title": "Sintel",
-    "desc": "A lone young woman searches the frozen mountains for the baby dragon she once rescued and raised.",
-    "poster": "/api/videos/v-sintel/poster",
-    "on_air": "Sintel",
-    "strip_title": "Sintel",
-    "is_live": true,
-    "progress": 0.5
-   },
-   "next": {
-    "channel_id": "ch-films",
-    "kind": "program",
-    "start": "{{now+900}}",
-    "stop": "{{now+1800}}",
-    "title": "Cosmos Laundromat",
-    "sub_title": "Cosmos Laundromat",
-    "desc": "On a desolate island, a weary sheep meets a strange salesman who offers him every life he could want.",
-    "poster": "/api/videos/v-cosmos-laundromat/poster",
-    "on_air": "Cosmos Laundromat",
-    "strip_title": "Cosmos Laundromat"
-   },
-   "on_air": true
-  },
-  {
-   "channel": {
-    "id": "ch-shorts",
-    "number": 2,
-    "name": "Shorts",
-    "slug": "shorts",
-    "logo_url": null
-   },
-   "current": {
-    "channel_id": "ch-shorts",
+    "channel_id": "ch-space",
     "kind": "program",
     "start": "{{now}}",
     "stop": "{{now+900}}",
-    "title": "Sprite Fright",
-    "sub_title": "Sprite Fright",
-    "desc": "Teenagers camping in a mossy forest learn the hard way that its tiny guardians want to be left alone.",
-    "poster": "/api/videos/v-sprite-fright/poster",
-    "series": "Open Shorts",
-    "season": 2,
-    "episode": 2,
-    "on_air": "Sprite Fright",
-    "strip_title": "Sprite Fright",
-    "strip_series": "Open Shorts",
+    "title": "Along the Rings of Saturn",
+    "sub_title": "Along the Rings of Saturn",
+    "desc": "Cassini's cameras sweep across Saturn's rings in their true colours, from the faint outer edge to the planet's shadow and back.",
+    "poster": "/api/videos/v-saturn-rings/poster",
+    "on_air": "Along the Rings of Saturn",
+    "strip_title": "Along the Rings of Saturn",
     "is_live": true,
     "progress": 0
    },
    "next": {
-    "channel_id": "ch-shorts",
+    "channel_id": "ch-space",
     "kind": "program",
     "start": "{{now+900}}",
     "stop": "{{now+1800}}",
-    "title": "Caminandes: Llamigos",
-    "sub_title": "Caminandes: Llamigos",
-    "desc": "In the snowy Patagonian winter, Koro meets a hungry penguin and they fight over the last berries.",
-    "poster": "/api/videos/v-llamigos/poster",
-    "series": "Open Shorts",
-    "season": 1,
-    "episode": 2,
-    "on_air": "Caminandes: Llamigos",
-    "strip_title": "Caminandes: Llamigos",
-    "strip_series": "Open Shorts"
+    "title": "Apollo 11: The Launch",
+    "sub_title": "Apollo 11: The Launch",
+    "desc": "Filmed at 500 frames a second from the launch tower: the Saturn V's engines light, and the rocket that carried the first Moon landing rises past the camera.",
+    "poster": "/api/videos/v-apollo-11-launch/poster",
+    "on_air": "Apollo 11: The Launch",
+    "strip_title": "Apollo 11: The Launch"
    },
    "on_air": true
   },
   {
    "channel": {
-    "id": "ch-family",
-    "number": 3,
-    "name": "Family",
-    "slug": "family",
+    "id": "ch-kids",
+    "number": 2,
+    "name": "Kids",
+    "slug": "kids",
     "logo_url": null
    },
    "current": {
-    "channel_id": "ch-family",
+    "channel_id": "ch-kids",
     "kind": "program",
     "start": "{{now}}",
     "stop": "{{now+900}}",
@@ -98,26 +54,66 @@
     "sub_title": "Caminandes: Gran Dillama",
     "desc": "Koro the llama wants the grass on the other side of the fence, whatever it takes.",
     "poster": "/api/videos/v-gran-dillama/poster",
-    "series": "Open Shorts",
+    "series": "Caminandes",
     "season": 1,
-    "episode": 1,
+    "episode": 2,
     "on_air": "Caminandes: Gran Dillama",
     "strip_title": "Caminandes: Gran Dillama",
-    "strip_series": "Open Shorts",
+    "strip_series": "Caminandes",
     "is_live": true,
     "progress": 0
    },
    "next": {
-    "channel_id": "ch-family",
+    "channel_id": "ch-kids",
     "kind": "program",
     "start": "{{now+900}}",
     "stop": "{{now+1800}}",
-    "title": "Big Buck Bunny",
-    "sub_title": "Big Buck Bunny",
-    "desc": "A gentle giant rabbit has had enough of three bullies in the forest, and plans a sweet revenge.",
-    "poster": "/api/videos/v-big-buck-bunny/poster",
-    "on_air": "Big Buck Bunny",
-    "strip_title": "Big Buck Bunny"
+    "title": "Caminandes: Llamigos",
+    "sub_title": "Caminandes: Llamigos",
+    "desc": "In the snowy Patagonian winter, Koro meets a hungry penguin and they fight over the last berries.",
+    "poster": "/api/videos/v-llamigos/poster",
+    "series": "Caminandes",
+    "season": 2,
+    "episode": 1,
+    "on_air": "Caminandes: Llamigos",
+    "strip_title": "Caminandes: Llamigos",
+    "strip_series": "Caminandes"
+   },
+   "on_air": true
+  },
+  {
+   "channel": {
+    "id": "ch-earth",
+    "number": 3,
+    "name": "Earth and Sea",
+    "slug": "earth",
+    "logo_url": null
+   },
+   "current": {
+    "channel_id": "ch-earth",
+    "kind": "program",
+    "start": "{{now}}",
+    "stop": "{{now+900}}",
+    "title": "Apollo 11: The Launch",
+    "sub_title": "Apollo 11: The Launch",
+    "desc": "Filmed at 500 frames a second from the launch tower: the Saturn V's engines light, and the rocket that carried the first Moon landing rises past the camera.",
+    "poster": "/api/videos/v-apollo-11-launch/poster",
+    "on_air": "Apollo 11: The Launch",
+    "strip_title": "Apollo 11: The Launch",
+    "is_live": true,
+    "progress": 0
+   },
+   "next": {
+    "channel_id": "ch-earth",
+    "kind": "program",
+    "start": "{{now+900}}",
+    "stop": "{{now+1800}}",
+    "title": "Lake Nasser from Space",
+    "sub_title": "Lake Nasser from Space",
+    "desc": "Half a century of Landsat pictures show the great lake on the Nile, behind the Aswan High Dam, rising and falling with the floods and the desert sun.",
+    "poster": "/api/videos/v-lake-nasser/poster",
+    "on_air": "Lake Nasser from Space",
+    "strip_title": "Lake Nasser from Space"
    },
    "on_air": true
   }

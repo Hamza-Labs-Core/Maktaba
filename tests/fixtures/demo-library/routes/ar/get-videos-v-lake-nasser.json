@@ -1,0 +1,20 @@
+{
+ "id": "v-lake-nasser",
+ "library_id": "lib-docs",
+ "path": "",
+ "filename": "lake-nasser.mkv",
+ "title": "بحيرة ناصر من الفضاء",
+ "description": "نصف قرن من صور الأقمار الاصطناعية لاندسات يُظهر البحيرة الكبرى على النيل خلف السد العالي في أسوان، وهي ترتفع وتنخفض مع الفيضان وشمس الصحراء.",
+ "state": "ready",
+ "detected_language": "en",
+ "duration_sec": 100,
+ "size_bytes": 25000000,
+ "content_hash": "vlakenasser00000000000000000000000000000000000000000000000000000",
+ "created_at": "{{now-777600}}",
+ "updated_at": "{{now-777000}}",
+ "published_at": "2025-06-01T00:00:00Z",
+ "playable": true,
+ "tags": [],
+ "poster_url": "/api/videos/v-lake-nasser/poster",
+ "backdrop_url": "/api/videos/v-lake-nasser/backdrop"
+}

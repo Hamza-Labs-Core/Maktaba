@@ -2,7 +2,7 @@
  "items": [
   {
    "search_id": "sr-demo",
-   "q": "تنين",
+   "q": "المريخ",
    "mode": "hybrid",
    "created_at": "{{now-600}}",
    "last_used_at": "{{now-600}}",

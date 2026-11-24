@@ -9,12 +9,14 @@ import { join } from "node:path";
 import { ROOT, LANGS, loadLibrary, buildRoutes } from "./routes.mjs";
 
 const lib = loadLibrary();
-const OPEN = /^CC BY( \d\.\d)?$|^CC0|^Public domain$/;
+// licences that allow showing a title and its art with a credit: CC BY, CC BY-SA, CC0, public domain
+const OPEN = /^CC BY(-SA)?( \d\.\d)?$|^CC0|^Public domain$/;
 
 test("T02: every title has a licence, a credit, its sources and its art", () => {
-  assert.match(lib.artwork.licence, OPEN);
   for (const v of lib.videos) {
     assert.match(v.licence ?? "", OPEN, `${v.id}: an open licence`);
+    assert.match(v.artwork_licence ?? "", OPEN, `${v.id}: its art's open licence`);
+    assert.ok((v.artwork_from ?? "").length > 5, `${v.id}: what its art is`);
     assert.ok((v.credit ?? "").length > 5, `${v.id}: a credit`);
     assert.match(v.source ?? "", /^https:\/\//, `${v.id}: the film's page`);
     assert.match(
@@ -40,8 +42,10 @@ test("T02: every title has a licence, a credit, its sources and its art", () => 
     );
   }
   const readme = readFileSync(join(ROOT, "README.md"), "utf8");
-  for (const v of lib.videos)
+  for (const v of lib.videos) {
     assert.ok(readme.includes(v.source), `README credits ${v.title.en}`);
+    assert.ok(readme.includes(v.artwork_url), `README names where ${v.title.en}'s art came from`);
+  }
 });
 
 test("T02: the art carries no metadata", () => {
@@ -95,6 +99,27 @@ test("T03: no person's name, LAN address, media path or email in any answer", ()
       }
     }
   }
+});
+
+// The demo library shows no woman or girl (story 60.09): its titles are documentaries with no
+// people and animation with no female character, and every picture was checked by eye. This
+// catches a title or synopsis that names or describes one.
+const FEMALE = new Set([
+  ..."woman women girl girls she her hers herself lady ladies mother daughter sister wife princess queen heroine".split(" "),
+  ..."امرأة امراة نساء النساء فتاة فتيات الفتاة بنت بنات شابة سيدة أم الأم ابنة أخت زوجة أميرة ملكة راعية بطلة".split(" "),
+]);
+
+test("no title, synopsis or line names or describes a woman or girl", () => {
+  const texts = [
+    lib.household,
+    ...lib.videos.flatMap((v) => [v.title, v.synopsis]),
+    ...lib.series.map((s) => s.name),
+    ...lib.channels.map((c) => c.name),
+  ].flatMap((t) => Object.values(t));
+  texts.push(...lib.search.passages.map((p) => p.text.replace(/<\/?mark>/g, "")));
+  for (const text of texts)
+    for (const word of text.toLowerCase().split(/[^\p{L}]+/u))
+      assert.ok(!FEMALE.has(word), `"${text}": "${word}"`);
 });
 
 test("routes/ is in step with library.json", () => {

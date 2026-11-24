@@ -31,8 +31,8 @@ const WEB = resolve(HERE, "../../..");
 /** The screens: what to open, and what must be on the page before the picture is taken. */
 export const SCREENS = [
   { name: "home", path: "/", ready: "img" },
-  { name: "film", path: "/videos/v-sintel", ready: "img" },
-  { name: "series", path: "/series/s-open-shorts", ready: "img" },
+  { name: "film", path: "/videos/v-curiosity", ready: "img" },
+  { name: "series", path: "/series/s-caminandes", ready: "img" },
   {
     name: "search",
     path: (lib, lang) => `/search?q=${encodeURIComponent(lib.search.query[lang])}`,

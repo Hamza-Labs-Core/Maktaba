@@ -63,7 +63,7 @@ export function buildRoutes(lang, lib = loadLibrary()) {
   const art = (path, file) =>
     routes.push({ method: "GET", path, status: 200, art: file });
 
-  const ext = (v) => (v.library_id === "lib-films" ? "mkv" : "mp4");
+  const ext = (v) => (v.library_id === "lib-docs" ? "mkv" : "mp4");
   const filename = (v) => `${v.art}.${ext(v)}`;
   const created = (v) => -v.added_days_ago * DAY;
   const lastWatched = (v) =>

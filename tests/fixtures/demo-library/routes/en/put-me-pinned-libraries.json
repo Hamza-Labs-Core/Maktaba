@@ -1,11 +1,11 @@
 {
  "library_ids": [
-  "lib-films"
+  "lib-docs"
  ],
  "items": [
   {
-   "id": "lib-films",
-   "name": "Films",
+   "id": "lib-docs",
+   "name": "Documentaries",
    "position": 0
   }
  ]

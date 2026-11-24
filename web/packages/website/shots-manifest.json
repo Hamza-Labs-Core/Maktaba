@@ -1,5 +1,5 @@
 {
-  "from": "run 43164926292 (fff3b22c8)",
+  "from": "../../../../../../../../../private/tmp/claude-501/-Users-mahmouddarwish--t3-worktrees-Maktaba-t3-57a39367-f8d9a779f51cbe4d/a0368eb0-9e83-4dbf-8f4e-e64674284368/scratchpad/empty",
   "images": {
     "android-phone-film-ar": {
       "app": "android-phone",
@@ -14,24 +14,24 @@
           "height": 520,
           "webp": "/shots/android-phone-film-ar-240.webp",
           "avif": "/shots/android-phone-film-ar-240.avif",
-          "webpBytes": 10666,
-          "avifBytes": 9692
+          "webpBytes": 10636,
+          "avifBytes": 9492
         },
         {
           "width": 360,
           "height": 780,
           "webp": "/shots/android-phone-film-ar-360.webp",
           "avif": "/shots/android-phone-film-ar-360.avif",
-          "webpBytes": 18634,
-          "avifBytes": 16546
+          "webpBytes": 18830,
+          "avifBytes": 16992
         },
         {
           "width": 480,
           "height": 1041,
           "webp": "/shots/android-phone-film-ar-480.webp",
           "avif": "/shots/android-phone-film-ar-480.avif",
-          "webpBytes": 27210,
-          "avifBytes": 23352
+          "webpBytes": 26856,
+          "avifBytes": 23257
         }
       ]
     },
@@ -48,24 +48,24 @@
           "height": 520,
           "webp": "/shots/android-phone-film-en-240.webp",
           "avif": "/shots/android-phone-film-en-240.avif",
-          "webpBytes": 12376,
-          "avifBytes": 10596
+          "webpBytes": 11998,
+          "avifBytes": 10546
         },
         {
           "width": 360,
           "height": 780,
           "webp": "/shots/android-phone-film-en-360.webp",
           "avif": "/shots/android-phone-film-en-360.avif",
-          "webpBytes": 21040,
-          "avifBytes": 17988
+          "webpBytes": 20852,
+          "avifBytes": 17976
         },
         {
           "width": 480,
           "height": 1041,
           "webp": "/shots/android-phone-film-en-480.webp",
           "avif": "/shots/android-phone-film-en-480.avif",
-          "webpBytes": 31034,
-          "avifBytes": 26198
+          "webpBytes": 30088,
+          "avifBytes": 25320
         }
       ]
     },
@@ -82,24 +82,24 @@
           "height": 520,
           "webp": "/shots/android-phone-home-ar-240.webp",
           "avif": "/shots/android-phone-home-ar-240.avif",
-          "webpBytes": 15712,
-          "avifBytes": 13531
+          "webpBytes": 13364,
+          "avifBytes": 10914
         },
         {
           "width": 360,
           "height": 780,
           "webp": "/shots/android-phone-home-ar-360.webp",
           "avif": "/shots/android-phone-home-ar-360.avif",
-          "webpBytes": 27568,
-          "avifBytes": 24312
+          "webpBytes": 23298,
+          "avifBytes": 19237
         },
         {
           "width": 480,
           "height": 1041,
           "webp": "/shots/android-phone-home-ar-480.webp",
           "avif": "/shots/android-phone-home-ar-480.avif",
-          "webpBytes": 39856,
-          "avifBytes": 34436
+          "webpBytes": 33046,
+          "avifBytes": 27427
         }
       ]
     },
@@ -116,24 +116,24 @@
           "height": 520,
           "webp": "/shots/android-phone-home-en-240.webp",
           "avif": "/shots/android-phone-home-en-240.avif",
-          "webpBytes": 16872,
-          "avifBytes": 14287
+          "webpBytes": 14796,
+          "avifBytes": 12324
         },
         {
           "width": 360,
           "height": 780,
           "webp": "/shots/android-phone-home-en-360.webp",
           "avif": "/shots/android-phone-home-en-360.avif",
-          "webpBytes": 29888,
-          "avifBytes": 25428
+          "webpBytes": 25556,
+          "avifBytes": 21296
         },
         {
           "width": 480,
           "height": 1041,
           "webp": "/shots/android-phone-home-en-480.webp",
           "avif": "/shots/android-phone-home-en-480.avif",
-          "webpBytes": 42048,
-          "avifBytes": 36244
+          "webpBytes": 37136,
+          "avifBytes": 30009
         }
       ]
     },
@@ -150,24 +150,24 @@
           "height": 360,
           "webp": "/shots/androidtv-guide-ar-640.webp",
           "avif": "/shots/androidtv-guide-ar-640.avif",
-          "webpBytes": 12854,
-          "avifBytes": 12590
+          "webpBytes": 13576,
+          "avifBytes": 13184
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/androidtv-guide-ar-960.webp",
           "avif": "/shots/androidtv-guide-ar-960.avif",
-          "webpBytes": 21756,
-          "avifBytes": 19904
+          "webpBytes": 22946,
+          "avifBytes": 20719
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/androidtv-guide-ar-1280.webp",
           "avif": "/shots/androidtv-guide-ar-1280.avif",
-          "webpBytes": 31204,
-          "avifBytes": 26273
+          "webpBytes": 32940,
+          "avifBytes": 27543
         }
       ]
     },
@@ -184,24 +184,24 @@
           "height": 360,
           "webp": "/shots/androidtv-guide-en-640.webp",
           "avif": "/shots/androidtv-guide-en-640.avif",
-          "webpBytes": 13464,
-          "avifBytes": 13008
+          "webpBytes": 13690,
+          "avifBytes": 13218
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/androidtv-guide-en-960.webp",
           "avif": "/shots/androidtv-guide-en-960.avif",
-          "webpBytes": 23720,
-          "avifBytes": 21120
+          "webpBytes": 24388,
+          "avifBytes": 21431
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/androidtv-guide-en-1280.webp",
           "avif": "/shots/androidtv-guide-en-1280.avif",
-          "webpBytes": 32266,
-          "avifBytes": 27091
+          "webpBytes": 32944,
+          "avifBytes": 27768
         }
       ]
     },
@@ -218,24 +218,24 @@
           "height": 360,
           "webp": "/shots/androidtv-home-ar-640.webp",
           "avif": "/shots/androidtv-home-ar-640.avif",
-          "webpBytes": 17492,
-          "avifBytes": 15076
+          "webpBytes": 16290,
+          "avifBytes": 13834
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/androidtv-home-ar-960.webp",
           "avif": "/shots/androidtv-home-ar-960.avif",
-          "webpBytes": 29290,
-          "avifBytes": 25510
+          "webpBytes": 27366,
+          "avifBytes": 23696
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/androidtv-home-ar-1280.webp",
           "avif": "/shots/androidtv-home-ar-1280.avif",
-          "webpBytes": 41668,
-          "avifBytes": 35460
+          "webpBytes": 38696,
+          "avifBytes": 32992
         }
       ]
     },
@@ -252,24 +252,24 @@
           "height": 360,
           "webp": "/shots/androidtv-home-en-640.webp",
           "avif": "/shots/androidtv-home-en-640.avif",
-          "webpBytes": 19536,
-          "avifBytes": 16427
+          "webpBytes": 17886,
+          "avifBytes": 15127
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/androidtv-home-en-960.webp",
           "avif": "/shots/androidtv-home-en-960.avif",
-          "webpBytes": 32640,
-          "avifBytes": 27651
+          "webpBytes": 30424,
+          "avifBytes": 25594
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/androidtv-home-en-1280.webp",
           "avif": "/shots/androidtv-home-en-1280.avif",
-          "webpBytes": 46558,
-          "avifBytes": 38622
+          "webpBytes": 42914,
+          "avifBytes": 36062
         }
       ]
     },
@@ -286,24 +286,24 @@
           "height": 360,
           "webp": "/shots/androidtv-player-ar-640.webp",
           "avif": "/shots/androidtv-player-ar-640.avif",
-          "webpBytes": 11106,
-          "avifBytes": 11138
+          "webpBytes": 7174,
+          "avifBytes": 7449
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/androidtv-player-ar-960.webp",
           "avif": "/shots/androidtv-player-ar-960.avif",
-          "webpBytes": 18288,
-          "avifBytes": 17472
+          "webpBytes": 11370,
+          "avifBytes": 11201
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/androidtv-player-ar-1280.webp",
           "avif": "/shots/androidtv-player-ar-1280.avif",
-          "webpBytes": 25758,
-          "avifBytes": 23167
+          "webpBytes": 15692,
+          "avifBytes": 14555
         }
       ]
     },
@@ -320,24 +320,24 @@
           "height": 360,
           "webp": "/shots/androidtv-player-en-640.webp",
           "avif": "/shots/androidtv-player-en-640.avif",
-          "webpBytes": 11188,
-          "avifBytes": 11233
+          "webpBytes": 7296,
+          "avifBytes": 7546
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/androidtv-player-en-960.webp",
           "avif": "/shots/androidtv-player-en-960.avif",
-          "webpBytes": 18536,
-          "avifBytes": 17647
+          "webpBytes": 11742,
+          "avifBytes": 11417
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/androidtv-player-en-1280.webp",
           "avif": "/shots/androidtv-player-en-1280.avif",
-          "webpBytes": 25616,
-          "avifBytes": 23440
+          "webpBytes": 16036,
+          "avifBytes": 14931
         }
       ]
     },
@@ -354,24 +354,24 @@
           "height": 360,
           "webp": "/shots/appletv-guide-ar-640.webp",
           "avif": "/shots/appletv-guide-ar-640.avif",
-          "webpBytes": 16224,
-          "avifBytes": 15021
+          "webpBytes": 16938,
+          "avifBytes": 15647
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/appletv-guide-ar-960.webp",
           "avif": "/shots/appletv-guide-ar-960.avif",
-          "webpBytes": 29054,
-          "avifBytes": 25699
+          "webpBytes": 30066,
+          "avifBytes": 26620
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/appletv-guide-ar-1280.webp",
           "avif": "/shots/appletv-guide-ar-1280.avif",
-          "webpBytes": 41050,
-          "avifBytes": 36772
+          "webpBytes": 42480,
+          "avifBytes": 38360
         }
       ]
     },
@@ -388,24 +388,24 @@
           "height": 360,
           "webp": "/shots/appletv-guide-en-640.webp",
           "avif": "/shots/appletv-guide-en-640.avif",
-          "webpBytes": 17370,
-          "avifBytes": 15945
+          "webpBytes": 17070,
+          "avifBytes": 15835
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/appletv-guide-en-960.webp",
           "avif": "/shots/appletv-guide-en-960.avif",
-          "webpBytes": 31544,
-          "avifBytes": 26771
+          "webpBytes": 31412,
+          "avifBytes": 26767
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/appletv-guide-en-1280.webp",
           "avif": "/shots/appletv-guide-en-1280.avif",
-          "webpBytes": 44116,
-          "avifBytes": 39605
+          "webpBytes": 43518,
+          "avifBytes": 38949
         }
       ]
     },
@@ -422,24 +422,24 @@
           "height": 360,
           "webp": "/shots/appletv-home-ar-640.webp",
           "avif": "/shots/appletv-home-ar-640.avif",
-          "webpBytes": 13066,
-          "avifBytes": 11739
+          "webpBytes": 12830,
+          "avifBytes": 11330
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/appletv-home-ar-960.webp",
           "avif": "/shots/appletv-home-ar-960.avif",
-          "webpBytes": 22496,
-          "avifBytes": 19843
+          "webpBytes": 22070,
+          "avifBytes": 19205
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/appletv-home-ar-1280.webp",
           "avif": "/shots/appletv-home-ar-1280.avif",
-          "webpBytes": 32648,
-          "avifBytes": 28611
+          "webpBytes": 32100,
+          "avifBytes": 27739
         }
       ]
     },
@@ -456,24 +456,24 @@
           "height": 360,
           "webp": "/shots/appletv-home-en-640.webp",
           "avif": "/shots/appletv-home-en-640.avif",
-          "webpBytes": 13822,
-          "avifBytes": 12213
+          "webpBytes": 13416,
+          "avifBytes": 11779
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/appletv-home-en-960.webp",
           "avif": "/shots/appletv-home-en-960.avif",
-          "webpBytes": 23720,
-          "avifBytes": 20921
+          "webpBytes": 22938,
+          "avifBytes": 20144
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/appletv-home-en-1280.webp",
           "avif": "/shots/appletv-home-en-1280.avif",
-          "webpBytes": 34206,
-          "avifBytes": 30038
+          "webpBytes": 33364,
+          "avifBytes": 28718
         }
       ]
     },
@@ -490,24 +490,24 @@
           "height": 360,
           "webp": "/shots/appletv-player-ar-640.webp",
           "avif": "/shots/appletv-player-ar-640.avif",
-          "webpBytes": 18094,
-          "avifBytes": 17088
+          "webpBytes": 12632,
+          "avifBytes": 11100
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/appletv-player-ar-960.webp",
           "avif": "/shots/appletv-player-ar-960.avif",
-          "webpBytes": 29694,
-          "avifBytes": 27116
+          "webpBytes": 20598,
+          "avifBytes": 17927
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/appletv-player-ar-1280.webp",
           "avif": "/shots/appletv-player-ar-1280.avif",
-          "webpBytes": 40836,
-          "avifBytes": 34609
+          "webpBytes": 28704,
+          "avifBytes": 24149
         }
       ]
     },
@@ -524,24 +524,24 @@
           "height": 360,
           "webp": "/shots/appletv-player-en-640.webp",
           "avif": "/shots/appletv-player-en-640.avif",
-          "webpBytes": 18498,
-          "avifBytes": 17019
+          "webpBytes": 10522,
+          "avifBytes": 9889
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/appletv-player-en-960.webp",
           "avif": "/shots/appletv-player-en-960.avif",
-          "webpBytes": 29374,
-          "avifBytes": 27030
+          "webpBytes": 16680,
+          "avifBytes": 15885
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/appletv-player-en-1280.webp",
           "avif": "/shots/appletv-player-en-1280.avif",
-          "webpBytes": 40512,
-          "avifBytes": 34401
+          "webpBytes": 23088,
+          "avifBytes": 21529
         }
       ]
     },
@@ -558,24 +558,24 @@
           "height": 360,
           "webp": "/shots/appletv-series-ar-640.webp",
           "avif": "/shots/appletv-series-ar-640.avif",
-          "webpBytes": 10026,
-          "avifBytes": 8645
+          "webpBytes": 9926,
+          "avifBytes": 8449
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/appletv-series-ar-960.webp",
           "avif": "/shots/appletv-series-ar-960.avif",
-          "webpBytes": 17884,
-          "avifBytes": 14594
+          "webpBytes": 17408,
+          "avifBytes": 14266
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/appletv-series-ar-1280.webp",
           "avif": "/shots/appletv-series-ar-1280.avif",
-          "webpBytes": 26926,
-          "avifBytes": 22202
+          "webpBytes": 26776,
+          "avifBytes": 21841
         }
       ]
     },
@@ -592,24 +592,24 @@
           "height": 360,
           "webp": "/shots/appletv-series-en-640.webp",
           "avif": "/shots/appletv-series-en-640.avif",
-          "webpBytes": 10612,
-          "avifBytes": 8821
+          "webpBytes": 10468,
+          "avifBytes": 8793
         },
         {
           "width": 960,
           "height": 540,
           "webp": "/shots/appletv-series-en-960.webp",
           "avif": "/shots/appletv-series-en-960.avif",
-          "webpBytes": 18734,
-          "avifBytes": 15268
+          "webpBytes": 18706,
+          "avifBytes": 14924
         },
         {
           "width": 1280,
           "height": 720,
           "webp": "/shots/appletv-series-en-1280.webp",
           "avif": "/shots/appletv-series-en-1280.avif",
-          "webpBytes": 27968,
-          "avifBytes": 23362
+          "webpBytes": 28650,
+          "avifBytes": 23606
         }
       ]
     },
@@ -626,24 +626,24 @@
           "height": 696,
           "webp": "/shots/ipad-film-ar-480.webp",
           "avif": "/shots/ipad-film-ar-480.avif",
-          "webpBytes": 22540,
-          "avifBytes": 19643
+          "webpBytes": 20078,
+          "avifBytes": 17665
         },
         {
           "width": 720,
           "height": 1045,
           "webp": "/shots/ipad-film-ar-720.webp",
           "avif": "/shots/ipad-film-ar-720.avif",
-          "webpBytes": 38236,
-          "avifBytes": 32455
+          "webpBytes": 33648,
+          "avifBytes": 28430
         },
         {
           "width": 960,
           "height": 1393,
           "webp": "/shots/ipad-film-ar-960.webp",
           "avif": "/shots/ipad-film-ar-960.avif",
-          "webpBytes": 55894,
-          "avifBytes": 45868
+          "webpBytes": 48570,
+          "avifBytes": 38776
         }
       ]
     },
@@ -660,24 +660,24 @@
           "height": 696,
           "webp": "/shots/ipad-film-en-480.webp",
           "avif": "/shots/ipad-film-en-480.avif",
-          "webpBytes": 23054,
-          "avifBytes": 20181
+          "webpBytes": 20642,
+          "avifBytes": 17797
         },
         {
           "width": 720,
           "height": 1045,
           "webp": "/shots/ipad-film-en-720.webp",
           "avif": "/shots/ipad-film-en-720.avif",
-          "webpBytes": 40520,
-          "avifBytes": 34083
+          "webpBytes": 35578,
+          "avifBytes": 29344
         },
         {
           "width": 960,
           "height": 1393,
           "webp": "/shots/ipad-film-en-960.webp",
           "avif": "/shots/ipad-film-en-960.avif",
-          "webpBytes": 58572,
-          "avifBytes": 47947
+          "webpBytes": 50248,
+          "avifBytes": 39430
         }
       ]
     },
@@ -694,24 +694,24 @@
           "height": 696,
           "webp": "/shots/ipad-home-ar-480.webp",
           "avif": "/shots/ipad-home-ar-480.avif",
-          "webpBytes": 26392,
-          "avifBytes": 22972
+          "webpBytes": 20654,
+          "avifBytes": 16447
         },
         {
           "width": 720,
           "height": 1045,
           "webp": "/shots/ipad-home-ar-720.webp",
           "avif": "/shots/ipad-home-ar-720.avif",
-          "webpBytes": 46014,
-          "avifBytes": 39256
+          "webpBytes": 35714,
+          "avifBytes": 27940
         },
         {
           "width": 960,
           "height": 1393,
           "webp": "/shots/ipad-home-ar-960.webp",
           "avif": "/shots/ipad-home-ar-960.avif",
-          "webpBytes": 67848,
-          "avifBytes": 56427
+          "webpBytes": 51134,
+          "avifBytes": 40310
         }
       ]
     },
@@ -728,24 +728,24 @@
           "height": 696,
           "webp": "/shots/ipad-home-en-480.webp",
           "avif": "/shots/ipad-home-en-480.avif",
-          "webpBytes": 27472,
-          "avifBytes": 23542
+          "webpBytes": 22356,
+          "avifBytes": 17296
         },
         {
           "width": 720,
           "height": 1045,
           "webp": "/shots/ipad-home-en-720.webp",
           "avif": "/shots/ipad-home-en-720.avif",
-          "webpBytes": 48192,
-          "avifBytes": 40784
+          "webpBytes": 38750,
+          "avifBytes": 29886
         },
         {
           "width": 960,
           "height": 1393,
           "webp": "/shots/ipad-home-en-960.webp",
           "avif": "/shots/ipad-home-en-960.avif",
-          "webpBytes": 70308,
-          "avifBytes": 58950
+          "webpBytes": 55752,
+          "avifBytes": 43695
         }
       ]
     },
@@ -762,24 +762,24 @@
           "height": 696,
           "webp": "/shots/ipad-player-ar-480.webp",
           "avif": "/shots/ipad-player-ar-480.avif",
-          "webpBytes": 15622,
-          "avifBytes": 13944
+          "webpBytes": 11132,
+          "avifBytes": 9697
         },
         {
           "width": 720,
           "height": 1045,
           "webp": "/shots/ipad-player-ar-720.webp",
           "avif": "/shots/ipad-player-ar-720.avif",
-          "webpBytes": 26050,
-          "avifBytes": 23019
+          "webpBytes": 17948,
+          "avifBytes": 15487
         },
         {
           "width": 960,
           "height": 1393,
           "webp": "/shots/ipad-player-ar-960.webp",
           "avif": "/shots/ipad-player-ar-960.avif",
-          "webpBytes": 38766,
-          "avifBytes": 32985
+          "webpBytes": 25534,
+          "avifBytes": 20991
         }
       ]
     },
@@ -796,24 +796,24 @@
           "height": 696,
           "webp": "/shots/ipad-player-en-480.webp",
           "avif": "/shots/ipad-player-en-480.avif",
-          "webpBytes": 15678,
-          "avifBytes": 13948
+          "webpBytes": 11148,
+          "avifBytes": 9715
         },
         {
           "width": 720,
           "height": 1045,
           "webp": "/shots/ipad-player-en-720.webp",
           "avif": "/shots/ipad-player-en-720.avif",
-          "webpBytes": 26052,
-          "avifBytes": 22994
+          "webpBytes": 17898,
+          "avifBytes": 15459
         },
         {
           "width": 960,
           "height": 1393,
           "webp": "/shots/ipad-player-en-960.webp",
           "avif": "/shots/ipad-player-en-960.avif",
-          "webpBytes": 38782,
-          "avifBytes": 33009
+          "webpBytes": 25634,
+          "avifBytes": 21015
         }
       ]
     },
@@ -830,24 +830,24 @@
           "height": 522,
           "webp": "/shots/iphone-film-ar-240.webp",
           "avif": "/shots/iphone-film-ar-240.avif",
-          "webpBytes": 14472,
-          "avifBytes": 11632
+          "webpBytes": 15026,
+          "avifBytes": 12426
         },
         {
           "width": 360,
           "height": 783,
           "webp": "/shots/iphone-film-ar-360.webp",
           "avif": "/shots/iphone-film-ar-360.avif",
-          "webpBytes": 25252,
-          "avifBytes": 20446
+          "webpBytes": 26530,
+          "avifBytes": 21603
         },
         {
           "width": 480,
           "height": 1044,
           "webp": "/shots/iphone-film-ar-480.webp",
           "avif": "/shots/iphone-film-ar-480.avif",
-          "webpBytes": 36752,
-          "avifBytes": 28910
+          "webpBytes": 37948,
+          "avifBytes": 30300
         }
       ]
     },
@@ -864,24 +864,24 @@
           "height": 522,
           "webp": "/shots/iphone-film-en-240.webp",
           "avif": "/shots/iphone-film-en-240.avif",
-          "webpBytes": 15426,
-          "avifBytes": 12016
+          "webpBytes": 15554,
+          "avifBytes": 12668
         },
         {
           "width": 360,
           "height": 783,
           "webp": "/shots/iphone-film-en-360.webp",
           "avif": "/shots/iphone-film-en-360.avif",
-          "webpBytes": 27332,
-          "avifBytes": 21330
+          "webpBytes": 28274,
+          "avifBytes": 22114
         },
         {
           "width": 480,
           "height": 1044,
           "webp": "/shots/iphone-film-en-480.webp",
           "avif": "/shots/iphone-film-en-480.avif",
-          "webpBytes": 38670,
-          "avifBytes": 30702
+          "webpBytes": 39044,
+          "avifBytes": 30587
         }
       ]
     },
@@ -898,24 +898,24 @@
           "height": 522,
           "webp": "/shots/iphone-home-ar-240.webp",
           "avif": "/shots/iphone-home-ar-240.avif",
-          "webpBytes": 13006,
-          "avifBytes": 11869
+          "webpBytes": 11766,
+          "avifBytes": 9970
         },
         {
           "width": 360,
           "height": 783,
           "webp": "/shots/iphone-home-ar-360.webp",
           "avif": "/shots/iphone-home-ar-360.avif",
-          "webpBytes": 22950,
-          "avifBytes": 20186
+          "webpBytes": 20150,
+          "avifBytes": 16432
         },
         {
           "width": 480,
           "height": 1044,
           "webp": "/shots/iphone-home-ar-480.webp",
           "avif": "/shots/iphone-home-ar-480.avif",
-          "webpBytes": 32804,
-          "avifBytes": 29099
+          "webpBytes": 29258,
+          "avifBytes": 23567
         }
       ]
     },
@@ -932,24 +932,24 @@
           "height": 522,
           "webp": "/shots/iphone-home-en-240.webp",
           "avif": "/shots/iphone-home-en-240.avif",
-          "webpBytes": 13948,
-          "avifBytes": 12436
+          "webpBytes": 12746,
+          "avifBytes": 10602
         },
         {
           "width": 360,
           "height": 783,
           "webp": "/shots/iphone-home-en-360.webp",
           "avif": "/shots/iphone-home-en-360.avif",
-          "webpBytes": 24472,
-          "avifBytes": 21464
+          "webpBytes": 22140,
+          "avifBytes": 17673
         },
         {
           "width": 480,
           "height": 1044,
           "webp": "/shots/iphone-home-en-480.webp",
           "avif": "/shots/iphone-home-en-480.avif",
-          "webpBytes": 34690,
-          "avifBytes": 30774
+          "webpBytes": 31762,
+          "avifBytes": 25571
         }
       ]
     },
@@ -966,24 +966,24 @@
           "height": 110,
           "webp": "/shots/iphone-player-ar-240.webp",
           "avif": "/shots/iphone-player-ar-240.avif",
-          "webpBytes": 4688,
-          "avifBytes": 4136
+          "webpBytes": 3076,
+          "avifBytes": 2903
         },
         {
           "width": 360,
           "height": 166,
           "webp": "/shots/iphone-player-ar-360.webp",
           "avif": "/shots/iphone-player-ar-360.avif",
-          "webpBytes": 8360,
-          "avifBytes": 7112
+          "webpBytes": 5558,
+          "avifBytes": 5262
         },
         {
           "width": 480,
           "height": 221,
           "webp": "/shots/iphone-player-ar-480.webp",
           "avif": "/shots/iphone-player-ar-480.avif",
-          "webpBytes": 12556,
-          "avifBytes": 10755
+          "webpBytes": 8122,
+          "avifBytes": 7612
         }
       ]
     },
@@ -1000,24 +1000,24 @@
           "height": 110,
           "webp": "/shots/iphone-player-en-240.webp",
           "avif": "/shots/iphone-player-en-240.avif",
-          "webpBytes": 4690,
-          "avifBytes": 4146
+          "webpBytes": 3098,
+          "avifBytes": 2925
         },
         {
           "width": 360,
           "height": 166,
           "webp": "/shots/iphone-player-en-360.webp",
           "avif": "/shots/iphone-player-en-360.avif",
-          "webpBytes": 8378,
-          "avifBytes": 7148
+          "webpBytes": 5578,
+          "avifBytes": 5242
         },
         {
           "width": 480,
           "height": 221,
           "webp": "/shots/iphone-player-en-480.webp",
           "avif": "/shots/iphone-player-en-480.avif",
-          "webpBytes": 12712,
-          "avifBytes": 10756
+          "webpBytes": 8138,
+          "avifBytes": 7617
         }
       ]
     },
@@ -1034,24 +1034,24 @@
           "height": 522,
           "webp": "/shots/iphone-remote-ar-240.webp",
           "avif": "/shots/iphone-remote-ar-240.avif",
-          "webpBytes": 7730,
-          "avifBytes": 7236
+          "webpBytes": 8852,
+          "avifBytes": 7723
         },
         {
           "width": 360,
           "height": 783,
           "webp": "/shots/iphone-remote-ar-360.webp",
           "avif": "/shots/iphone-remote-ar-360.avif",
-          "webpBytes": 13642,
-          "avifBytes": 12224
+          "webpBytes": 14916,
+          "avifBytes": 12892
         },
         {
           "width": 480,
           "height": 1044,
           "webp": "/shots/iphone-remote-ar-480.webp",
           "avif": "/shots/iphone-remote-ar-480.avif",
-          "webpBytes": 19494,
-          "avifBytes": 17055
+          "webpBytes": 21582,
+          "avifBytes": 18387
         }
       ]
     },
@@ -1068,24 +1068,24 @@
           "height": 522,
           "webp": "/shots/iphone-remote-en-240.webp",
           "avif": "/shots/iphone-remote-en-240.avif",
-          "webpBytes": 8136,
-          "avifBytes": 7377
+          "webpBytes": 9194,
+          "avifBytes": 8014
         },
         {
           "width": 360,
           "height": 783,
           "webp": "/shots/iphone-remote-en-360.webp",
           "avif": "/shots/iphone-remote-en-360.avif",
-          "webpBytes": 14536,
-          "avifBytes": 12676
+          "webpBytes": 16084,
+          "avifBytes": 13507
         },
         {
           "width": 480,
           "height": 1044,
           "webp": "/shots/iphone-remote-en-480.webp",
           "avif": "/shots/iphone-remote-en-480.avif",
-          "webpBytes": 20410,
-          "avifBytes": 17747
+          "webpBytes": 23066,
+          "avifBytes": 19400
         }
       ]
     },
@@ -1102,24 +1102,24 @@
           "height": 421,
           "webp": "/shots/mac-library-ar-640.webp",
           "avif": "/shots/mac-library-ar-640.avif",
-          "webpBytes": 17548,
-          "avifBytes": 15437
+          "webpBytes": 14268,
+          "avifBytes": 12201
         },
         {
           "width": 960,
           "height": 632,
           "webp": "/shots/mac-library-ar-960.webp",
           "avif": "/shots/mac-library-ar-960.avif",
-          "webpBytes": 29140,
-          "avifBytes": 24970
+          "webpBytes": 23138,
+          "avifBytes": 19696
         },
         {
           "width": 1024,
           "height": 674,
           "webp": "/shots/mac-library-ar-1024.webp",
           "avif": "/shots/mac-library-ar-1024.avif",
-          "webpBytes": 31402,
-          "avifBytes": 26340
+          "webpBytes": 25112,
+          "avifBytes": 19981
         }
       ]
     },
@@ -1136,24 +1136,24 @@
           "height": 421,
           "webp": "/shots/mac-library-en-640.webp",
           "avif": "/shots/mac-library-en-640.avif",
-          "webpBytes": 18702,
-          "avifBytes": 16060
+          "webpBytes": 15720,
+          "avifBytes": 13175
         },
         {
           "width": 960,
           "height": 632,
           "webp": "/shots/mac-library-en-960.webp",
           "avif": "/shots/mac-library-en-960.avif",
-          "webpBytes": 31060,
-          "avifBytes": 26037
+          "webpBytes": 25594,
+          "avifBytes": 21377
         },
         {
           "width": 1024,
           "height": 674,
           "webp": "/shots/mac-library-en-1024.webp",
           "avif": "/shots/mac-library-en-1024.avif",
-          "webpBytes": 33552,
-          "avifBytes": 27534
+          "webpBytes": 27492,
+          "avifBytes": 21618
         }
       ]
     },
@@ -1170,24 +1170,24 @@
           "height": 421,
           "webp": "/shots/mac-player-ar-640.webp",
           "avif": "/shots/mac-player-ar-640.avif",
-          "webpBytes": 23572,
-          "avifBytes": 20722
+          "webpBytes": 15062,
+          "avifBytes": 13647
         },
         {
           "width": 960,
           "height": 632,
           "webp": "/shots/mac-player-ar-960.webp",
           "avif": "/shots/mac-player-ar-960.avif",
-          "webpBytes": 37708,
-          "avifBytes": 34079
+          "webpBytes": 23324,
+          "avifBytes": 21414
         },
         {
           "width": 1024,
           "height": 674,
           "webp": "/shots/mac-player-ar-1024.webp",
           "avif": "/shots/mac-player-ar-1024.avif",
-          "webpBytes": 41382,
-          "avifBytes": 36099
+          "webpBytes": 25198,
+          "avifBytes": 22414
         }
       ]
     },
@@ -1204,24 +1204,24 @@
           "height": 421,
           "webp": "/shots/mac-player-en-640.webp",
           "avif": "/shots/mac-player-en-640.avif",
-          "webpBytes": 23342,
-          "avifBytes": 20678
+          "webpBytes": 14590,
+          "avifBytes": 13630
         },
         {
           "width": 960,
           "height": 632,
           "webp": "/shots/mac-player-en-960.webp",
           "avif": "/shots/mac-player-en-960.avif",
-          "webpBytes": 37246,
-          "avifBytes": 33962
+          "webpBytes": 23206,
+          "avifBytes": 21268
         },
         {
           "width": 1024,
           "height": 674,
           "webp": "/shots/mac-player-en-1024.webp",
           "avif": "/shots/mac-player-en-1024.avif",
-          "webpBytes": 40688,
-          "avifBytes": 35990
+          "webpBytes": 25832,
+          "avifBytes": 22280
         }
       ]
     },
@@ -1238,24 +1238,24 @@
           "height": 450,
           "webp": "/shots/web-film-ar-720.webp",
           "avif": "/shots/web-film-ar-720.avif",
-          "webpBytes": 27120,
-          "avifBytes": 25221
+          "webpBytes": 21454,
+          "avifBytes": 19971
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-film-ar-1080.webp",
           "avif": "/shots/web-film-ar-1080.avif",
-          "webpBytes": 47130,
-          "avifBytes": 42050
+          "webpBytes": 35620,
+          "avifBytes": 32223
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-film-ar-1440.webp",
           "avif": "/shots/web-film-ar-1440.avif",
-          "webpBytes": 66288,
-          "avifBytes": 58126
+          "webpBytes": 50574,
+          "avifBytes": 44275
         }
       ]
     },
@@ -1272,24 +1272,24 @@
           "height": 450,
           "webp": "/shots/web-film-en-720.webp",
           "avif": "/shots/web-film-en-720.avif",
-          "webpBytes": 28076,
-          "avifBytes": 25561
+          "webpBytes": 21668,
+          "avifBytes": 20738
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-film-en-1080.webp",
           "avif": "/shots/web-film-en-1080.avif",
-          "webpBytes": 48078,
-          "avifBytes": 42968
+          "webpBytes": 36216,
+          "avifBytes": 33129
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-film-en-1440.webp",
           "avif": "/shots/web-film-en-1440.avif",
-          "webpBytes": 68346,
-          "avifBytes": 59202
+          "webpBytes": 51536,
+          "avifBytes": 46199
         }
       ]
     },
@@ -1306,24 +1306,24 @@
           "height": 450,
           "webp": "/shots/web-guide-ar-720.webp",
           "avif": "/shots/web-guide-ar-720.avif",
-          "webpBytes": 19066,
-          "avifBytes": 18100
+          "webpBytes": 20118,
+          "avifBytes": 18756
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-guide-ar-1080.webp",
           "avif": "/shots/web-guide-ar-1080.avif",
-          "webpBytes": 35068,
-          "avifBytes": 32183
+          "webpBytes": 37564,
+          "avifBytes": 33798
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-guide-ar-1440.webp",
           "avif": "/shots/web-guide-ar-1440.avif",
-          "webpBytes": 50790,
-          "avifBytes": 44429
+          "webpBytes": 54062,
+          "avifBytes": 47114
         }
       ]
     },
@@ -1340,24 +1340,24 @@
           "height": 450,
           "webp": "/shots/web-guide-en-720.webp",
           "avif": "/shots/web-guide-en-720.avif",
-          "webpBytes": 20408,
-          "avifBytes": 19115
+          "webpBytes": 21376,
+          "avifBytes": 19835
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-guide-en-1080.webp",
           "avif": "/shots/web-guide-en-1080.avif",
-          "webpBytes": 37042,
-          "avifBytes": 33838
+          "webpBytes": 39234,
+          "avifBytes": 35305
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-guide-en-1440.webp",
           "avif": "/shots/web-guide-en-1440.avif",
-          "webpBytes": 54478,
-          "avifBytes": 46417
+          "webpBytes": 57478,
+          "avifBytes": 48666
         }
       ]
     },
@@ -1374,24 +1374,24 @@
           "height": 450,
           "webp": "/shots/web-home-ar-720.webp",
           "avif": "/shots/web-home-ar-720.avif",
-          "webpBytes": 24596,
-          "avifBytes": 22704
+          "webpBytes": 21878,
+          "avifBytes": 18656
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-home-ar-1080.webp",
           "avif": "/shots/web-home-ar-1080.avif",
-          "webpBytes": 42610,
-          "avifBytes": 37888
+          "webpBytes": 36456,
+          "avifBytes": 31793
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-home-ar-1440.webp",
           "avif": "/shots/web-home-ar-1440.avif",
-          "webpBytes": 59402,
-          "avifBytes": 52543
+          "webpBytes": 51632,
+          "avifBytes": 44517
         }
       ]
     },
@@ -1408,24 +1408,24 @@
           "height": 450,
           "webp": "/shots/web-home-en-720.webp",
           "avif": "/shots/web-home-en-720.avif",
-          "webpBytes": 25638,
-          "avifBytes": 23803
+          "webpBytes": 23486,
+          "avifBytes": 19873
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-home-en-1080.webp",
           "avif": "/shots/web-home-en-1080.avif",
-          "webpBytes": 44146,
-          "avifBytes": 40040
+          "webpBytes": 40544,
+          "avifBytes": 34190
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-home-en-1440.webp",
           "avif": "/shots/web-home-en-1440.avif",
-          "webpBytes": 63006,
-          "avifBytes": 55503
+          "webpBytes": 56246,
+          "avifBytes": 47914
         }
       ]
     },
@@ -1442,24 +1442,24 @@
           "height": 450,
           "webp": "/shots/web-search-ar-720.webp",
           "avif": "/shots/web-search-ar-720.avif",
-          "webpBytes": 23614,
-          "avifBytes": 21290
+          "webpBytes": 23932,
+          "avifBytes": 21505
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-search-ar-1080.webp",
           "avif": "/shots/web-search-ar-1080.avif",
-          "webpBytes": 41622,
-          "avifBytes": 37855
+          "webpBytes": 42956,
+          "avifBytes": 39019
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-search-ar-1440.webp",
           "avif": "/shots/web-search-ar-1440.avif",
-          "webpBytes": 59800,
-          "avifBytes": 52281
+          "webpBytes": 61658,
+          "avifBytes": 53950
         }
       ]
     },
@@ -1476,24 +1476,24 @@
           "height": 450,
           "webp": "/shots/web-search-en-720.webp",
           "avif": "/shots/web-search-en-720.avif",
-          "webpBytes": 24268,
-          "avifBytes": 21979
+          "webpBytes": 24724,
+          "avifBytes": 22579
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-search-en-1080.webp",
           "avif": "/shots/web-search-en-1080.avif",
-          "webpBytes": 42986,
-          "avifBytes": 38835
+          "webpBytes": 45022,
+          "avifBytes": 40283
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-search-en-1440.webp",
           "avif": "/shots/web-search-en-1440.avif",
-          "webpBytes": 62488,
-          "avifBytes": 53776
+          "webpBytes": 64498,
+          "avifBytes": 55184
         }
       ]
     },
@@ -1510,24 +1510,24 @@
           "height": 450,
           "webp": "/shots/web-series-ar-720.webp",
           "avif": "/shots/web-series-ar-720.avif",
-          "webpBytes": 26636,
-          "avifBytes": 23374
+          "webpBytes": 24140,
+          "avifBytes": 20825
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-series-ar-1080.webp",
           "avif": "/shots/web-series-ar-1080.avif",
-          "webpBytes": 49082,
-          "avifBytes": 42258
+          "webpBytes": 43794,
+          "avifBytes": 37355
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-series-ar-1440.webp",
           "avif": "/shots/web-series-ar-1440.avif",
-          "webpBytes": 72462,
-          "avifBytes": 60655
+          "webpBytes": 63088,
+          "avifBytes": 53933
         }
       ]
     },
@@ -1544,24 +1544,24 @@
           "height": 450,
           "webp": "/shots/web-series-en-720.webp",
           "avif": "/shots/web-series-en-720.avif",
-          "webpBytes": 28320,
-          "avifBytes": 25077
+          "webpBytes": 26058,
+          "avifBytes": 22552
         },
         {
           "width": 1080,
           "height": 675,
           "webp": "/shots/web-series-en-1080.webp",
           "avif": "/shots/web-series-en-1080.avif",
-          "webpBytes": 53226,
-          "avifBytes": 45240
+          "webpBytes": 48352,
+          "avifBytes": 41199
         },
         {
           "width": 1440,
           "height": 900,
           "webp": "/shots/web-series-en-1440.webp",
           "avif": "/shots/web-series-en-1440.avif",
-          "webpBytes": 79286,
-          "avifBytes": 66146
+          "webpBytes": 69978,
+          "avifBytes": 60076
         }
       ]
     },
@@ -1578,24 +1578,24 @@
           "height": 520,
           "webp": "/shots/webphone-home-ar-240.webp",
           "avif": "/shots/webphone-home-ar-240.avif",
-          "webpBytes": 17832,
-          "avifBytes": 15601
+          "webpBytes": 15884,
+          "avifBytes": 13126
         },
         {
           "width": 360,
           "height": 780,
           "webp": "/shots/webphone-home-ar-360.webp",
           "avif": "/shots/webphone-home-ar-360.avif",
-          "webpBytes": 31034,
-          "avifBytes": 27784
+          "webpBytes": 27644,
+          "avifBytes": 23564
         },
         {
           "width": 480,
           "height": 1041,
           "webp": "/shots/webphone-home-ar-480.webp",
           "avif": "/shots/webphone-home-ar-480.avif",
-          "webpBytes": 43982,
-          "avifBytes": 39603
+          "webpBytes": 39476,
+          "avifBytes": 33585
         }
       ]
     },
@@ -1612,24 +1612,24 @@
           "height": 520,
           "webp": "/shots/webphone-home-en-240.webp",
           "avif": "/shots/webphone-home-en-240.avif",
-          "webpBytes": 18312,
-          "avifBytes": 15722
+          "webpBytes": 16294,
+          "avifBytes": 13090
         },
         {
           "width": 360,
           "height": 780,
           "webp": "/shots/webphone-home-en-360.webp",
           "avif": "/shots/webphone-home-en-360.avif",
-          "webpBytes": 31468,
-          "avifBytes": 28243
+          "webpBytes": 27602,
+          "avifBytes": 23249
         },
         {
           "width": 480,
           "height": 1041,
           "webp": "/shots/webphone-home-en-480.webp",
           "avif": "/shots/webphone-home-en-480.avif",
-          "webpBytes": 45116,
-          "avifBytes": 40141
+          "webpBytes": 39564,
+          "avifBytes": 32997
         }
       ]
     }

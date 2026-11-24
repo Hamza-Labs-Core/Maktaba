@@ -86,7 +86,7 @@ import java.util.TimeZone
  * one no longer matches.
  *
  * The player: Media3 cannot decode a stream on the JVM, so the shot is the TV player's own
- * transport ([PlayerView], set up as `PlayerScreen` sets it up) paused on Sintel at its resume
+ * transport ([PlayerView], set up as `PlayerScreen` sets it up) paused on Curiosity at its resume
  * point, with the film's subtitle tracks, over the film's backdrop where the picture would be.
  */
 @RunWith(AndroidJUnit4::class)
@@ -185,13 +185,13 @@ class DemoScreenshotTest {
     }
 
     private fun playerScreen() {
-        val film = Json.parseToJsonElement(String(demo.answer("GET", "/api/videos/$SINTEL")!!.body)).jsonObject
-        val mine = Json.parseToJsonElement(String(demo.answer("GET", "/api/me/videos/$SINTEL")!!.body)).jsonObject
-        val subtitles = Json.parseToJsonElement(String(demo.answer("GET", "/api/videos/$SINTEL/subtitles")!!.body)).jsonObject["items"]!!.jsonArray.map { it.jsonObject }
-        val backdrop = demo.answer("GET", "/api/videos/$SINTEL/backdrop")!!.body
+        val film = Json.parseToJsonElement(String(demo.answer("GET", "/api/videos/$CURIOSITY")!!.body)).jsonObject
+        val mine = Json.parseToJsonElement(String(demo.answer("GET", "/api/me/videos/$CURIOSITY")!!.body)).jsonObject
+        val subtitles = Json.parseToJsonElement(String(demo.answer("GET", "/api/videos/$CURIOSITY/subtitles")!!.body)).jsonObject["items"]!!.jsonArray.map { it.jsonObject }
+        val backdrop = demo.answer("GET", "/api/videos/$CURIOSITY/backdrop")!!.body
         val picture = BitmapFactory.decodeByteArray(backdrop, 0, backdrop.size).asImageBitmap()
         val player = PausedPlayer(
-            id = SINTEL,
+            id = CURIOSITY,
             title = film["title"]!!.jsonPrimitive.content,
             durationMs = film["duration_sec"]!!.jsonPrimitive.int * 1000L,
             positionMs = mine["position_sec"]!!.jsonPrimitive.int * 1000L,
@@ -254,7 +254,7 @@ class DemoScreenshotTest {
 
     private companion object {
         const val TV = "w960dp-h540dp-land-television-xhdpi"
-        const val SINTEL = "v-sintel"
+        const val CURIOSITY = "v-curiosity"
 
         // text is drawn by the host's font rasteriser: a reference recorded on a Mac still matches
         // on CI's Linux within a small share of pixels

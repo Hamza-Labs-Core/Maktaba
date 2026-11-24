@@ -71,7 +71,7 @@ Big screen, from the Mac, Windows or Linux app, or the TV's browser
 
 ## screens.tv.alt
 
-The live TV guide on a TV: three channels, Film Night, Shorts and Family, and what each plays over the next two hours.
+The live TV guide on a TV: three channels, Space, Kids, and Earth and Sea, and what each plays over the next two hours.
 
 ## screens.phone.name
 
@@ -107,7 +107,7 @@ The Mac app, and Maktaba Player for Windows and Linux
 
 ## screens.computer.alt
 
-The Mac app, in English: the libraries, with Films chosen, beside the rows to carry on watching and what was added lately.
+The Mac app, in English: the libraries, with Documentaries chosen, beside the rows to carry on watching and what was added lately.
 
 ## screens.browser.name
 

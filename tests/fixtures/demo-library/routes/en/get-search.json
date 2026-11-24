@@ -1,7 +1,7 @@
 {
  "search_id": "sr-demo",
  "expires_at": "{{now+1800}}",
- "q": "dragon",
+ "q": "Mars",
  "mode": "hybrid",
  "filters": {},
  "took_ms": {
@@ -13,26 +13,26 @@
  "passages_page_size": 20,
  "videos": [
   {
-   "video_id": "v-sintel",
-   "title": "Sintel",
-   "duration_sec": 888,
-   "library_id": "lib-films",
-   "library_name": "Films",
-   "poster_url": "/api/videos/v-sintel/poster",
+   "video_id": "v-curiosity",
+   "title": "Curiosity: Landing on Mars",
+   "duration_sec": 680,
+   "library_id": "lib-docs",
+   "library_name": "Documentaries",
+   "poster_url": "/api/videos/v-curiosity/poster",
    "score": 0.9,
    "in_transcripts": true,
-   "title_snippet": "Sintel"
+   "title_snippet": "Curiosity: Landing on Mars"
   }
  ],
  "videos_total": 1,
  "transcript_videos": [
   {
-   "video_id": "v-sintel",
-   "title": "Sintel",
-   "duration_sec": 888,
-   "library_id": "lib-films",
-   "library_name": "Films",
-   "poster_url": "/api/videos/v-sintel/poster",
+   "video_id": "v-curiosity",
+   "title": "Curiosity: Landing on Mars",
+   "duration_sec": 680,
+   "library_id": "lib-docs",
+   "library_name": "Documentaries",
+   "poster_url": "/api/videos/v-curiosity/poster",
    "best_score": 0.08,
    "matches": 2,
    "in_title": true,
@@ -41,34 +41,34 @@
      "segment_id": 9001,
      "start_sec": 212,
      "end_sec": 216,
-     "snippet": "Have you seen a baby <mark>dragon</mark>? I lost him in the snow.",
+     "snippet": "The sky crane lowers Curiosity gently onto <mark>Mars</mark>.",
      "score": 0.08
     },
     {
      "segment_id": 9002,
      "start_sec": 214,
      "end_sec": 218,
-     "snippet": "هل رأيت <mark>تنينًا</mark> صغيرًا؟ أضعته في الثلج.",
+     "snippet": "الرافعة السماوية تُنزل كيوريوسيتي برفق على <mark>المريخ</mark>.",
      "score": 0.07
     }
    ]
   },
   {
-   "video_id": "v-elephants-dream",
-   "title": "Elephants Dream",
-   "duration_sec": 654,
-   "library_id": "lib-films",
-   "library_name": "Films",
-   "poster_url": "/api/videos/v-elephants-dream/poster",
+   "video_id": "v-moon-phases",
+   "title": "The Moon's Phases, 2023",
+   "duration_sec": 294,
+   "library_id": "lib-docs",
+   "library_name": "Documentaries",
+   "poster_url": "/api/videos/v-moon-phases/poster",
    "best_score": 0.06,
    "matches": 1,
    "in_title": false,
    "passages": [
     {
      "segment_id": 9003,
-     "start_sec": 431,
-     "end_sec": 435,
-     "snippet": "الآلة تتنفس مثل <mark>تنين</mark> نائم.",
+     "start_sec": 131,
+     "end_sec": 135,
+     "snippet": "القمر أقرب جيراننا، و<mark>المريخ</mark> هو الخطوة التالية.",
      "score": 0.06
     }
    ]
@@ -78,26 +78,26 @@
  "hits": [
   {
    "segment_id": 9001,
-   "video_id": "v-sintel",
+   "video_id": "v-curiosity",
    "start_sec": 212,
    "end_sec": 216,
-   "snippet": "Have you seen a baby <mark>dragon</mark>? I lost him in the snow.",
+   "snippet": "The sky crane lowers Curiosity gently onto <mark>Mars</mark>.",
    "score": 0.08
   },
   {
    "segment_id": 9002,
-   "video_id": "v-sintel",
+   "video_id": "v-curiosity",
    "start_sec": 214,
    "end_sec": 218,
-   "snippet": "هل رأيت <mark>تنينًا</mark> صغيرًا؟ أضعته في الثلج.",
+   "snippet": "الرافعة السماوية تُنزل كيوريوسيتي برفق على <mark>المريخ</mark>.",
    "score": 0.07
   },
   {
    "segment_id": 9003,
-   "video_id": "v-elephants-dream",
-   "start_sec": 431,
-   "end_sec": 435,
-   "snippet": "الآلة تتنفس مثل <mark>تنين</mark> نائم.",
+   "video_id": "v-moon-phases",
+   "start_sec": 131,
+   "end_sec": 135,
+   "snippet": "القمر أقرب جيراننا، و<mark>المريخ</mark> هو الخطوة التالية.",
    "score": 0.06
   }
  ],
