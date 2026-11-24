@@ -43,7 +43,8 @@
    `### أُصلح`) and its entries ([`changelog.d/README.md`](changelog.d/README.md)); the lint job
    checks them and refuses a new line under `[Unreleased]`. Nobody folds them at a release:
    maktaba.dev's changelog reads them and the tags. **Bring main in with
-   `tools/dev/merge-main.sh`:** where a branch begun before the fragments conflicts in
+   `tools/dev/merge-main.sh`** (a branch that has no `tools/dev/changelog_fragment.py` runs its own
+   older script the first time, which keeps both sides; then run `convert`): where a branch begun before the fragments conflicts in
    `CHANGELOG.md` or `CHANGELOG.ar.md`, it moves the branch's entries to a fragment pair
    (`python3 tools/dev/changelog_fragment.py convert` does it with no conflict) or, when it
    cannot, keeps both sides entry by entry, and stops, the merge left in progress, on any other

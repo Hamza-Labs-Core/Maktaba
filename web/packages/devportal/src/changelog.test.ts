@@ -29,6 +29,8 @@ const B = frag(
   "### Fixed\n\n- b\n  more\n\n  its second paragraph\n\n### Added\n\n- b2\n",
   "### أُصلح\n\n- ب\n  تتمة\n\n  فقرته الثانية\n\n### أُضيف\n\n- ب2\n"
 );
+type Release = { release: string; sections: { name: string; entries: number }[] };
+const outline = (md: string, lang: string) => changelogOutline(md, lang) as Release[];
 const none = new Map();
 const rel = (o: Record<string, [string, string]>) =>
   new Map(Object.entries(o).map(([k, [version, date]]) => [k, { version, date }]));
@@ -83,6 +85,60 @@ describe("the changelog page", () => {
         "- old\n",
       ])
         expect(changelogPage(EN, "en", [B, A], releases)).toContain(s);
+  });
+
+  it("shows an entry two fragments have once, in the earliest release that has it", () => {
+    // two stacked branches, each with the first's entry in a fragment of its own
+    const first = frag(
+      "2026-11-26-first.md",
+      "### Fixed\n\n- a\n  more\n",
+      "### أُصلح\n\n- أ\n  تتمة\n"
+    );
+    const second = frag(
+      "2026-11-25-second.md",
+      "### Added\n\n- own\n\n### Fixed\n\n- a\n  more\n",
+      "### أُضيف\n\n- خاص\n\n### أُصلح\n\n- أ\n  تتمة\n"
+    );
+    const all = [first, second];
+    const count = (releases: Map<string, { version: string; date: string }>) =>
+      (["en", "ar"] as const).map((lang) => {
+        const page = changelogPage(lang === "en" ? EN : AR, lang, all, releases);
+        return outline(page, lang)
+          .slice(0, -1)
+          .map((r) => `${r.release} ${r.sections.map((s) => `${s.name}:${s.entries}`).join(" ")}`);
+      });
+    expect(count(none)).toEqual(Array(2).fill(["Unreleased Added:1 Fixed:1 Fixed:1"]));
+    const earlier = (lang: string) =>
+      `${lang === "en" ? "Earlier entries, not listed by release" : "مُدخلات أسبق، غير موزّعة على الإصدارات"} Fixed:1`;
+    const both = (...r: string[]) => ["en", "ar"].map((l) => [...r, earlier(l)]);
+    // each way round, whatever the names say
+    expect(
+      count(rel({ [first.name]: ["0.3.9", "2026-11-25"], [second.name]: ["0.3.10", "2026-11-26"] }))
+    ).toEqual(both("Unreleased ", "[0.3.10] - 2026-11-26 Added:1", "[0.3.9] - 2026-11-25 Fixed:1"));
+    expect(
+      count(rel({ [first.name]: ["0.3.10", "2026-11-26"], [second.name]: ["0.3.9", "2026-11-25"] }))
+    ).toEqual(both("Unreleased ", "[0.3.9] - 2026-11-25 Added:1 Fixed:1"));
+    expect(count(rel({ [first.name]: ["0.3.9", "2026-11-25"] }))).toEqual(
+      both("Unreleased Added:1", "[0.3.9] - 2026-11-25 Fixed:1")
+    );
+    // the same English with another Arabic is another entry: the languages stay paired
+    const other = frag("2026-11-27-o.md", first.en, "### أُصلح\n\n- غيره\n");
+    const en = changelogPage(EN, "en", [other, first], none);
+    expect(checkChangelog(en, changelogPage(AR, "ar", [other, first], none))).toEqual([]);
+    expect(outline(en, "en")[0].sections[0].entries).toBe(2);
+  });
+
+  it("reads CRLF files, and no hidden file", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "maktaba-crlf-"));
+    fs.mkdirSync(path.join(dir, "changelog.d"));
+    const put = (f: string, t: string) => fs.writeFileSync(path.join(dir, "changelog.d", f), t);
+    put(".DS_Store", "x");
+    put("README.md", "x");
+    put(A.name, A.en!.replace(/\n/g, "\r\n"));
+    put(A.name.replace(".md", ".ar.md"), A.ar!.replace(/\n/g, "\r\n"));
+    expect(readFragments(dir)).toEqual([A]);
+    expect(checkFragments(readFragments(dir))).toEqual([]);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it("a file without its [Unreleased] section fails", () => {
@@ -174,8 +230,10 @@ describe("the release of a fragment", () => {
     git("tag", "v0.4.0-rc1");
     add("changelog.d/2026-11-26-b.md");
     git("tag", "nightly");
+    git("tag", "v0.3.11-rc1");
     git("tag", "v0.3.11");
     add("changelog.d/2026-11-27-c.md");
+    git("tag", "v0.3.12-rc1"); // a candidate is no release: c is unreleased
   });
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 

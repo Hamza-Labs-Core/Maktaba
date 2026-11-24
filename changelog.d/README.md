@@ -50,9 +50,10 @@ releases. To correct one, add a `Changelog-Edit: <reason>` trailer to the commit
 
 ## A branch with lines in CHANGELOG.md
 
-A branch begun before the fragments may still add lines there (the check warns). When it
-conflicts, `tools/dev/merge-main.sh` brings main in and moves the branch's entries here. Without
-a conflict, this moves them, in both languages:
+A branch begun before the fragments may still add lines there (the check warns). Bring main in
+with `tools/dev/merge-main.sh` first, if the branch has no `tools/dev/changelog_fragment.py` yet:
+that first run is the branch's own older script, which keeps both sides in the CHANGELOGs. Then
+move the branch's entries here, in both languages:
 
 ```sh
 git fetch origin main
@@ -60,5 +61,11 @@ python3 tools/dev/changelog_fragment.py convert
 git commit -m "chore: the changelog entry as a fragment"
 ```
 
-A branch begun after the fragments that adds a line there fails the check; the same command
-fixes it.
+From then on `merge-main.sh` moves them itself when a CHANGELOG conflicts, unless one was already
+resolved by hand. A branch begun after the fragments that adds a line there fails the check; the
+same command fixes it.
+
+Two stacked branches may both move the same entry before either merges. The second one's
+`merge-main.sh` (or `convert`) drops it once the first is on main or merged into it. If both merge
+without that, no check fails and the page shows the entry once; a branch that itself holds the
+entry in two fragments fails the check.

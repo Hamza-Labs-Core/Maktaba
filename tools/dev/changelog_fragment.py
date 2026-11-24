@@ -3,18 +3,24 @@
 
     changelog_fragment.py check [--base REF] [--head REF]
     changelog_fragment.py convert [--base REF] [--slug NAME] [--merge]
+    changelog_fragment.py prune [--base REF]
 
 `check` is the lint job's gate. It checks every pair in changelog.d/ (name, sections, entries,
 the same sections and number of entries in English and Arabic), and refuses a branch that
 changes the [Unreleased] section of CHANGELOG.md or CHANGELOG.ar.md: those entries are frozen,
 a new one is a fragment. A branch begun before the fragments landed on its base (its oldest
 commit is older) may still add lines there: it gets a warning. A commit in the branch with a
-`Changelog-Edit: <reason>` trailer may correct frozen entries, never add one.
+`Changelog-Edit: <reason>` trailer may correct frozen entries, never add one. An entry the branch
+adds to a fragment while another of its fragments has it is an error; one main already has twice
+is not (two stacked branches that both moved their entries: the page shows it once).
 
 `convert` moves the entries this branch added to CHANGELOG.md and CHANGELOG.ar.md into one
 fragment pair, puts both files back, and stages it all. Entries the branch edited stay edited.
 With --merge it finishes the two files of a merge in progress: main's files, this branch's
-entries in a fragment (tools/dev/merge-main.sh runs it).
+entries in a fragment (tools/dev/merge-main.sh runs it). A file resolved by hand stays: it stops.
+
+`prune` drops from the branch's own fragments the entries that fragments of the base, or of a
+branch merged into it, already have (a stacked branch merged with its own). convert does it too.
 
 Exit codes: 0 done, 1 the check failed, 2 usage, 3 nothing written: a person must look.
 Standard library only, Python 3.9 (macOS's) or newer.
@@ -29,6 +35,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 from collections.abc import Sequence
 
 sys.dont_write_bytecode = True  # no __pycache__ beside a tool run in a merge
@@ -55,7 +62,8 @@ TRAILER = re.compile(r"^Changelog-Edit:\s*(\S.*)$", re.MULTILINE)
 # an Arabic fragment with more Latin prose letters than this was left in English (the most
 # any entry of CHANGELOG.ar.md had when fragments began is 0.42)
 MAX_LATIN = 0.5
-CONVERT = "python3 tools/dev/changelog_fragment.py convert"
+TOOL = "tools/dev/changelog_fragment.py"
+CONVERT = f"python3 {TOOL} convert"
 
 
 def template(name: str) -> str:
@@ -167,12 +175,28 @@ def check_fragments(files: dict[str, str]) -> list[tuple[str, str]]:
             share = latin_share(files[pair["ar"]])
             if share > MAX_LATIN:
                 errors.append((pair["ar"], f"{share:.0%} of its letters are Latin: write it in Arabic"))
-    first: dict[str, str] = {}  # an entry is in one fragment: stacked branches carry each other's
-    for name in sorted(files):
-        for e in entries_of(name, files[name]):
-            if first.setdefault(e, name) != name:
-                errors.append((name, f"it has an entry that {DIR}/{first[e]} has: {e.splitlines()[0][:70]!r}"))
     return errors
+
+
+def holders(files: dict[str, str]) -> dict[str, set[str]]:
+    """Each entry, and the fragments it is in."""
+    out: dict[str, set[str]] = {}
+    for name, text in files.items():
+        for e in entries_of(name, text):
+            out.setdefault(e, set()).add(name)
+    return out
+
+
+def introduced(was: dict[str, str], now: dict[str, str]) -> list[tuple[str, str]]:
+    """(file, what is wrong): the entries in more fragments of `now` than of `was`, and in two."""
+    before, errors = holders(was), []
+    for e, names in holders(now).items():
+        new = sorted(names - before.get(e, set()))
+        if new and len(names) > 1:
+            other = sorted(names - {new[-1]})[0]
+            errors.append((new[-1], f"it has an entry that {DIR}/{other} has: {e.splitlines()[0][:70]!r}. "
+                                    f"Drop one (`{CONVERT}` does when main's fragment has it)"))  # fmt: skip
+    return sorted(errors)
 
 
 def entries_of(name: str, text: str) -> list[str]:
@@ -187,12 +211,16 @@ def entries_of(name: str, text: str) -> list[str]:
 # ---- git ------------------------------------------------------------------------------------
 
 
-def git(*args: str, ok: bool = True) -> str:
-    # bytes: text mode would turn a lone "\r" into a line end
-    r = subprocess.run(["git", *args], capture_output=True, check=False)
+def git_bytes(*args: str, ok: bool = True, stdin: str = "") -> bytes:
+    r = subprocess.run(["git", *args], input=stdin.encode("utf-8"), capture_output=True, check=False)
     if r.returncode and ok:
         raise Bad(f"git {' '.join(args)}: {r.stderr.decode('utf-8', 'replace').strip()}")
-    return "" if r.returncode else r.stdout.decode("utf-8")
+    return b"" if r.returncode else r.stdout
+
+
+def git(*args: str, ok: bool = True) -> str:
+    # from bytes: text mode would turn a lone "\r" into a line end
+    return git_bytes(*args, ok=ok).decode("utf-8")
 
 
 def has(rev: str, path: str) -> bool:
@@ -240,24 +268,26 @@ def check_frozen(base: str, head: str) -> list[tuple[str, str, str]]:
     changed = []
     for lang, f in FILES.items():
         was, now = at(point, f), at(head, f)
-        if was != now and unreleased(was, lang)[0] != unreleased(now, lang)[0]:
+        if unreleased(was, lang)[0] != unreleased(now, lang)[0]:
             added = len(unreleased(now, lang)[1]) - len(unreleased(was, lang)[1])
             changed.append((f, added))
     if not changed:
         return []
     since, began = landed(base), started(base, head)
+    how = f"`{CONVERT}`" if has(head, TOOL) else (
+        f"This branch has no {TOOL} yet: bring main in first (tools/dev/merge-main.sh), and then `{CONVERT}`")  # fmt: skip
     if since is None:
         return []  # the base (a maintenance line) has no fragments
     if began is None or began < since:
-        return [("warning", f, f"this branch began before the fragments, so its change of [Unreleased] is accepted; "
-                               f"`{CONVERT}` moves its entries to {DIR}/, and nothing conflicts on them again")
+        return [("warning", f, f"this branch began before the fragments, so its change of [Unreleased] is accepted. "
+                               f"{how} moves its entries to {DIR}/, and nothing conflicts on them again")
                 for f, _ in changed]  # fmt: skip
     reason = TRAILER.search(git("log", "--format=%B", f"{base}..{head}"))
     out = []
     for f, added in changed:
         if added > 0 or not reason:
             out.append(("error", f, f"[Unreleased] is frozen: a new entry is a fragment pair in {DIR}/. "
-                                    f"`{CONVERT}` moves this branch's entries there"
+                                    f"{how} moves this branch's entries there"
                                     + ("" if added > 0 else "; correcting an entry that is there already needs a "
                                        "`Changelog-Edit: <reason>` trailer on a commit")))  # fmt: skip
         else:
@@ -271,20 +301,32 @@ def fragments_here() -> dict[str, str]:
     files = {}
     for p in sorted(folder.rglob("*")) if folder.is_dir() else []:
         name = p.relative_to(folder).as_posix()
-        if p.is_file() and name != "README.md":
+        if p.is_file() and name != "README.md" and not name.startswith("."):
             files[name] = p.read_text(encoding="utf-8", errors="replace")
     return files
 
 
 def fragments_at(rev: str) -> dict[str, str]:
     names = git("ls-tree", "--name-only", f"{rev}:{DIR}", ok=False).splitlines()
-    return {n: at(rev, f"{DIR}/{n}") for n in names if n.endswith(".md") and n != "README.md"}
+    names = [n for n in names if n.endswith(".md") and n != "README.md"]
+    # one process for all of them: "<sha> blob <bytes>" and the content, each
+    raw = git_bytes("cat-file", "--batch", stdin="".join(f"{rev}:{DIR}/{n}\n" for n in names))
+    out = {}
+    for n in names:
+        head, _, raw = raw.partition(b"\n")
+        size = int(head.split()[2])
+        out[n], raw = raw[:size].decode("utf-8", "replace"), raw[size + 1 :]
+    return out
 
 
 def check(base: str, head: str) -> int:
     files = fragments_here()
     found = [("error", f"{DIR}/{name}", what) for name, what in check_fragments(files)]
     found += check_frozen(base, head)
+    # the branch's own tree: a pull request's checkout is its merge, with main's fragments in it
+    here = git("rev-parse", head).strip() == git("rev-parse", "HEAD").strip()
+    mine = files if here else fragments_at(head)
+    found += [("error", f"{DIR}/{n}", what) for n, what in introduced(fragments_at(fork_point(base, head)), mine)]
     for level, f, what in found:
         print(f"::{level} file={f}::{f}: {what}")
     if any(level == "error" for level, _, _ in found):
@@ -355,17 +397,87 @@ def slug_of(branch: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", branch.lower()).strip("-")[:60].strip("-") or "change"
 
 
+def by_hand(f: str, point: str, theirs: str) -> bool:
+    """A file of a merge in progress that a person resolved: merged in the index, or with no
+    marker left, and not what git's own merge of it is."""
+    if git("ls-files", "-u", "--", f).strip():
+        return False
+    now = pathlib.Path(f).read_bytes().decode("utf-8", "replace")
+    ours, their = at("HEAD", f), at(theirs, f)
+    with tempfile.TemporaryDirectory() as d:
+        paths = []
+        for name, text in (("ours", ours), ("base", at(point, f)), ("theirs", their)):
+            paths.append(str(pathlib.Path(d, name)))
+            pathlib.Path(d, name).write_bytes(text.encode("utf-8"))
+        return git("merge-file", "-p", *paths, ok=False) != now
+
+
+def came(name: str, head: str = "HEAD") -> bool:
+    """The branch got the fragment by merging another branch that has it (a branch it is stacked
+    on), and did not write it itself: not so for one a merge commit of its own wrote."""
+    log = git("log", "-1", "-m", "--first-parent", "--diff-filter=A", "--format=%P", head, "--", f"{DIR}/{name}")
+    return any(has(p, f"{DIR}/{name}") for p in log.split()[1:])
+
+
+def prune(theirs: str) -> int:
+    """Drop from the branch's own fragments the entries another branch's fragments have, and
+    stage it: how many (in English). A pair left with no entry goes."""
+    other = fragments_at(theirs)
+    here = fragments_here()
+    held = holders({**other, **here})
+    twice = {n for names in held.values() if len(names) > 1 for n in names}
+    foreign = {n for n in twice if n in other or came(n)}
+    texts = {n: other.get(n, here.get(n, "")) for n in foreign}
+    lose = {e for e, names in holders(texts).items() if names}
+    dropped = 0
+    for en in sorted(n for n in twice - foreign if not n.endswith(".ar.md") and n in here):
+        ar = en[:-3] + ".ar.md"
+        if ar not in here:
+            continue
+        try:
+            x, y = outline(here[en], "en"), outline(here[ar], "ar")
+        except Bad:
+            continue
+        keep: dict[str, list[tuple[str, str]]] = {"en": [], "ar": []}
+        n = 0
+        for s in x:
+            for a, b in zip(x[s], y.get(s, [])):
+                if a.strip("\n") in lose and b.strip("\n") in lose:
+                    n += 1
+                else:
+                    keep["en"].append((s, a))
+                    keep["ar"].append((s, b))
+        if not n or {s: len(e) for s, e in x.items()} != {s: len(e) for s, e in y.items()}:
+            continue
+        if keep["en"]:
+            write({f"{DIR}/{en}": render(keep["en"], "en"), f"{DIR}/{ar}": render(keep["ar"], "ar")})
+        else:
+            git("rm", "-q", "-f", "--ignore-unmatch", "--", f"{DIR}/{en}", f"{DIR}/{ar}")
+            for f in (en, ar):
+                if pathlib.Path(DIR, f).exists():  # it was never added
+                    pathlib.Path(DIR, f).unlink()
+        dropped += n
+    if dropped:
+        print(f"changelog_fragment: dropped {dropped} entr{'y' if dropped == 1 else 'ies'} of this branch's fragments "
+              "that another branch's fragment has (staged)")  # fmt: skip
+    return dropped
+
+
 def convert(base: str, slug: str | None, merging: bool) -> int:
     if merging:
         head, theirs = "HEAD", git("rev-parse", "-q", "--verify", "MERGE_HEAD", ok=False).strip()
         if not theirs:
             raise Bad("no merge in progress")
         point = fork_point(head, theirs)
+        for f in FILES.values():
+            if by_hand(f, point, theirs):
+                raise Bad(f"{f} was resolved by hand: it stays as it is")
     else:
         if git("rev-parse", "-q", "--verify", "MERGE_HEAD", ok=False).strip():
             raise Bad("a merge is in progress: tools/dev/merge-main.sh finishes it")
         point = theirs = fork_point(base, "HEAD")
     # what a fragment already has (a branch this one is stacked on moved them): not moved twice
+    prune(theirs if merging else base)
     there = [fragments_here(), {} if merging else fragments_at(base)]
     moved = frozenset(e for files in there for f, t in files.items() for e in entries_of(f, t))
     got: dict[str, list[tuple[str, str]]] = {}
@@ -416,11 +528,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     v = sub.add_parser("convert", help="move this branch's CHANGELOG entries into a fragment pair")
     v.add_argument("--base", default="origin/main")
     v.add_argument("--slug", help="the fragment's name after the date (default: the branch's name)")
+    q = sub.add_parser("prune", help="drop this branch's fragment entries that the base's fragments have")
+    q.add_argument("--base", default="origin/main")
     v.add_argument("--merge", action="store_true", help="finish the CHANGELOGs of a merge in progress")
     a = ap.parse_args(argv)
     try:
         top = git("rev-parse", "--show-toplevel").strip()
         os.chdir(top)  # every path here is from the top of the repository
+        if a.cmd == "prune":
+            prune(a.base)
+            return 0
         return check(a.base, a.head) if a.cmd == "check" else convert(a.base, a.slug, a.merge)
     except Bad as e:
         print(f"changelog_fragment: {e}", file=sys.stderr)

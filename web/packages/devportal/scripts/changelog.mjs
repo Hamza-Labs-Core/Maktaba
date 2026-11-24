@@ -32,8 +32,9 @@ const FRAGMENT_LATIN_SHARE = 0.5;
 export function readFragments(repo) {
   const dir = path.join(repo, FRAGMENTS);
   if (!fs.existsSync(dir)) return [];
-  const names = fs.readdirSync(dir).filter((f) => f !== "README.md");
-  const read = (f) => (names.includes(f) ? fs.readFileSync(path.join(dir, f), "utf8") : null);
+  const names = fs.readdirSync(dir).filter((f) => f !== "README.md" && !f.startsWith("."));
+  const text = (f) => fs.readFileSync(path.join(dir, f), "utf8").replace(/\r\n/g, "\n");
+  const read = (f) => (names.includes(f) ? text(f) : null);
   return [...new Set(names.map((f) => f.replace(/(\.ar)?\.md$/, ".md")))]
     .sort()
     .reverse()
@@ -136,23 +137,68 @@ export function fragmentReleases(repo) {
   return releases;
 }
 
-/** The entries of fragments in one language as one list of sections, in the page's order. */
-function sectionsOf(fragments, lang) {
-  const by = new Map();
-  for (const f of fragments) {
-    let section = null;
-    const body = {};
-    for (const line of f[lang].split("\n")) {
-      const m = line.match(/^### (.+)$/);
-      if (m) section = m[1].trim();
-      else if (section) body[section] = (body[section] ?? "") + line + "\n";
-    }
-    for (const [s, md] of Object.entries(body)) by.set(s, [...(by.get(s) ?? []), md.trim()]);
+/** A fragment's entries in one language: its sections (in English) and their entries' text. */
+function entriesOf(md, lang) {
+  const out = [];
+  let section = "";
+  for (const line of md.split("\n")) {
+    const m = line.match(/^### (.+)$/);
+    if (m) {
+      const name = m[1].trim();
+      section = Object.keys(CHANGELOG_SECTIONS).find(
+        (en) => (lang === "ar" ? CHANGELOG_SECTIONS[en] : en) === name
+      );
+    } else if (/^- /.test(line)) out.push({ section, text: line });
+    else if (out.length && section === out.at(-1).section) out.at(-1).text += `\n${line}`;
   }
+  return out.map((e) => ({ ...e, text: e.text.trim() }));
+}
+
+/**
+ * The fragments as entries in both languages, an entry two fragments have (in both languages)
+ * once: in the earliest release that has it, or in the older fragment. Two stacked branches that
+ * both moved their entries leave such a pair.
+ */
+export function pageEntries(fragments, releases) {
+  const rank = (f) => {
+    const r = releases.get(f.name);
+    return r ? semver(`v${r.version}`) : [Infinity, 0, 0];
+  };
+  const byAge = [...fragments].sort((a, b) => {
+    const [x, y] = [rank(a), rank(b)];
+    const i = [0, 1, 2].find((k) => x[k] !== y[k]);
+    return i === undefined ? (a.name < b.name ? -1 : 1) : x[i] - y[i];
+  });
+  const seen = new Set();
+  const out = new Map();
+  for (const f of byAge) {
+    const ar = entriesOf(f.ar, "ar");
+    const pairs = entriesOf(f.en, "en").map((e, i) => ({
+      section: e.section,
+      en: e.text,
+      ar: ar[i].text,
+    }));
+    out.set(
+      f.name,
+      pairs.filter((p) => {
+        const key = JSON.stringify(p);
+        return !seen.has(key) && seen.add(key);
+      })
+    );
+  }
+  return out;
+}
+
+/** Fragments' entries in one language as one list of sections, in the page's order. */
+function sectionsOf(fragments, lang, entries) {
   return Object.entries(CHANGELOG_SECTIONS)
-    .map(([en, ar]) => (lang === "ar" ? ar : en))
-    .filter((s) => by.has(s))
-    .map((s) => `### ${s}\n\n${by.get(s).join("\n\n")}\n\n`)
+    .map(([en, ar]) => {
+      const texts = fragments
+        .flatMap((f) => entries.get(f.name))
+        .filter((e) => e.section === en)
+        .map((e) => e[lang]);
+      return texts.length ? `### ${lang === "ar" ? ar : en}\n\n${texts.join("\n\n")}\n\n` : "";
+    })
     .join("");
 }
 
@@ -167,6 +213,7 @@ export function changelogPage(md, lang, fragments, releases) {
     .slice(start + heading.length, end)
     .trim()
     .concat("\n\n");
+  const entries = pageEntries(fragments, releases);
   const groups = new Map();
   for (const f of fragments) {
     const r = releases.get(f.name);
@@ -175,10 +222,12 @@ export function changelogPage(md, lang, fragments, releases) {
   }
   const waiting = groups.get("")?.fragments ?? [];
   groups.delete("");
-  let out = md.slice(0, start) + `${heading}\n\n` + sectionsOf(waiting, lang);
+  let out = md.slice(0, start) + `${heading}\n\n` + sectionsOf(waiting, lang, entries);
   const released = [...groups.values()].sort((a, b) => bySemver(`v${b.version}`, `v${a.version}`));
-  for (const g of released)
-    out += `## [${g.version}] - ${g.date}\n\n` + sectionsOf(g.fragments, lang);
+  for (const g of released) {
+    const list = sectionsOf(g.fragments, lang, entries);
+    if (list) out += `## [${g.version}] - ${g.date}\n\n${list}`;
+  }
   if (released.length && frozen.trim()) out += `## ${STRINGS[lang]["changelog.earlier"]}\n\n`;
   return out + (frozen.trim() ? frozen : "") + md.slice(end);
 }

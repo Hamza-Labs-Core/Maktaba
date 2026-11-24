@@ -14,7 +14,9 @@
 # like git's own or `merge=union`, splits two new entries that share a line and interleaves
 # them). Any other conflicted file, or a CHANGELOG change it cannot place, stops it with the
 # merge left in progress for a person (exit 3). A merge already in progress (the branch's
-# own, after fixing other files) is finished the same way. A branch that merges cleanly but
+# own, after fixing other files) is finished the same way; a CHANGELOG already resolved by hand
+# stays as it is. Entries that main's fragments have go from this branch's own fragments (a
+# branch stacked on one that merged: both moved its entries). A branch that merges cleanly but
 # still has CHANGELOG lines is told the command that moves them.
 #
 # Exit codes: 0 merged (or already up to date), 3 a person must resolve, 1 an error.
@@ -34,12 +36,23 @@ suggest() {
   fi
 }
 
+# prune REF: what main's fragments have goes from this branch's own (a stacked branch's entries)
+prune() {
+  if [ -f changelog.d/README.md ]; then
+    python3 "$here/changelog_fragment.py" prune --base "$1"
+  fi
+}
+
 if [ ! -f "$(git rev-parse --git-path MERGE_HEAD)" ]; then
   if [ "$ref" = origin/main ]; then
     git fetch -q origin main
   fi
   if git merge --no-edit "$ref" >/dev/null 2>&1; then
     echo "merge-main: merged $ref cleanly"
+    prune "$ref"
+    if ! git diff --cached --quiet; then
+      git commit -q -m "chore: drop the changelog entries main's fragments have"
+    fi
     suggest
     exit 0
   fi
@@ -102,6 +115,7 @@ for f in ${conflicted[@]+"${conflicted[@]}"}; do
     exit 3
   fi
 done
+prune MERGE_HEAD
 git commit -q --no-edit
 if [ "$moved" = 1 ]; then
   echo "merge-main: merged $ref; the CHANGELOGs are main's, this branch's entries in changelog.d/"

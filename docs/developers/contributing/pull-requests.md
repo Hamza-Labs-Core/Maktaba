@@ -143,7 +143,8 @@ and Arabic:
 pull request; it also refuses a new line under `[Unreleased]` in `CHANGELOG.md`, whose entries
 are from before these files. A pull request that began before them may still have lines there;
 `python3 tools/dev/changelog_fragment.py convert` moves them to a pair, and
-`tools/dev/merge-main.sh` does it when they conflict with `main`.
+`tools/dev/merge-main.sh` does it when they conflict with `main`. A branch that does not have that
+tool yet brings `main` in first, with its own `merge-main.sh`, which keeps the lines where they are.
 
 The [changelog](https://maktaba.dev/changelog/) page puts each entry in the release that brought
 it: the first version tag that contains its file. Nothing is edited when a release is made.

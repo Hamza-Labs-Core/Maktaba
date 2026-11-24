@@ -338,14 +338,17 @@ matching reason fail the `pr-body-check` gate.
 A changelog entry is two files of its own in [`changelog.d/`](changelog.d/README.md), in English
 and Arabic, so two pull requests never conflict on it. A branch begun before that has lines in
 `CHANGELOG.md` and `CHANGELOG.ar.md`, where almost every merge of `main` conflicts. Run
-`tools/dev/merge-main.sh` instead of `git merge origin/main`. It moves your entries to a fragment
-pair, takes main's two files with your edits of existing entries, and commits the merge. Entries
-it cannot move (written in one language only) it keeps in the files, both sides entry by entry.
-Any other conflicted file, or a change to the same entry on both sides, stops it with the merge
+`tools/dev/merge-main.sh` instead of `git merge origin/main`. The first run on a branch that has no
+`tools/dev/changelog_fragment.py` yet is the branch's own older script, which keeps both sides
+entry by entry in the files. From then on it moves your entries to a fragment pair, takes main's
+two files with your edits of existing entries, and commits the merge. Entries it cannot move
+(written in one language only) it keeps in the files, both sides entry by entry; so does one
+CHANGELOG you resolved by hand. It drops from your own fragments what main's already have. Any other conflicted file, or a change to the same entry on both sides, stops it with the merge
 left in progress: resolve those, `git add` them, and run it again to finish the CHANGELOGs. It
 runs on macOS's bash 3.2. Its tests: `bash tools/dev/merge-main-test.sh`. With no conflict,
-`python3 tools/dev/changelog_fragment.py convert` moves the entries. Don't bring main into a
-branch that neither conflicts nor needs it: the push restarts the pull request's CI.
+or after that first run, `python3 tools/dev/changelog_fragment.py convert` moves the entries. Don't
+bring main into a branch that neither conflicts nor needs it: the push restarts the pull request's
+CI.
 
 A line-wise merge (git's own resolution, or `merge=union` in `.gitattributes`) is not safe
 for these files: two new entries that share a line, even a blank one or a `maktaba.dev:` tail,

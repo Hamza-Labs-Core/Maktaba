@@ -312,6 +312,68 @@ code="$(run topic)"
 [ "$code" = 0 ] || fail "exit $code: $(cat "$work/out")"
 grep -q 'changelog_fragment.py convert' "$work/out" || fail "the command is not suggested: $(cat "$work/out")"
 
+# 12. the fragments: a CHANGELOG resolved by hand and staged stays, whatever the other one needs
+CASE="fragments, one resolved by hand"
+repo byhand
+fragments
+en "" | put main CHANGELOG.md
+ar "" | put main CHANGELOG.ar.md
+en '
+- **Entry of the branch.** x
+' | put topic CHANGELOG.md
+ar '
+- **مُدخل الفرع.** نص
+' | put topic CHANGELOG.ar.md
+en '
+- **Entry of main.** x
+' | put main CHANGELOG.md
+ar '
+- **مُدخل الرئيسي.** س
+' | put main CHANGELOG.ar.md
+git checkout -q topic
+git merge main >/dev/null 2>&1 || true
+en '
+- **Entry of main.** x
+
+- **Entry of the branch.** reworded by hand
+' >CHANGELOG.md
+git add CHANGELOG.md
+code=0
+bash tools/dev/merge-main.sh main >"$work/out" 2>&1 || code=$?
+[ "$code" = 0 ] || fail "exit $code: $(cat "$work/out")"
+grep -q 'CHANGELOG.md was resolved by hand' "$work/out" || fail "not said: $(cat "$work/out")"
+en '
+- **Entry of main.** x
+
+- **Entry of the branch.** reworded by hand
+' | same CHANGELOG.md
+ar '
+- **مُدخل الرئيسي.** س
+
+- **مُدخل الفرع.** نص
+' | same CHANGELOG.ar.md
+[ "$(echo changelog.d/*)" = changelog.d/README.md ] || fail "a fragment was written: $(echo changelog.d/*)"
+
+# 13. the fragments: one CHANGELOG conflicts, git merged the other itself: both still move
+CASE="fragments, one merged by git"
+repo half
+fragments
+en "" | put main CHANGELOG.md
+ar "" | put main CHANGELOG.ar.md
+en '
+- **Entry of the branch.** x
+' | put topic CHANGELOG.md
+ar '
+- **مُدخل الفرع.** نص
+' | put topic CHANGELOG.ar.md
+en '
+- **Entry of main.** x
+' | put main CHANGELOG.md
+code="$(run topic)"
+[ "$code" = 0 ] || fail "exit $code: $(cat "$work/out")"
+git diff --quiet main HEAD -- CHANGELOG.md CHANGELOG.ar.md || fail "the CHANGELOGs are not main's"
+[ -f "$(echo changelog.d/*-topic.ar.md)" ] || fail "the entries did not move: $(cat "$work/out")"
+
 if [ "$failures" -gt 0 ]; then
   echo "merge-main-test: $failures failed" >&2
   exit 1

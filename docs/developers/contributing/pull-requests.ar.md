@@ -140,7 +140,8 @@ force-merge: <one-sentence reason; at least 10 characters>
 يفحص الأمر `python3 tools/dev/changelog_fragment.py check` الملفين، وتشغّله مهمة الفحص في كل طلب دمج؛
 ويرفض كذلك كل سطر جديد تحت `[Unreleased]` في `CHANGELOG.md`، فمُدخلاته من قبل هذه الملفات. وقد تبقى
 في طلب دمج بدأ قبلها أسطر هناك؛ ينقلها الأمر `python3 tools/dev/changelog_fragment.py convert` إلى
-ملفين، ويفعل ذلك `tools/dev/merge-main.sh` حين تتعارض مع `main`.
+ملفين، ويفعل ذلك `tools/dev/merge-main.sh` حين تتعارض مع `main`. أما الفرع الذي ليست فيه هذه الأداة بعد
+فيدمج `main` أولًا بملف `merge-main.sh` الذي فيه، وهو يُبقي الأسطر في مكانها.
 
 وتضع صفحة [سجل التغييرات](https://maktaba.dev/ar/changelog/) كل مُدخل في الإصدار الذي جاء به: أول وسم
 إصدار يحوي ملفه. ولا يُعدَّل شيء عند صنع الإصدار.

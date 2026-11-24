@@ -128,6 +128,19 @@ def test_a_new_entry_above_an_edited_one_is_not_its_edit() -> None:
     }
 
 
+def test_the_most_alike_of_two_new_entries_is_the_edit() -> None:
+    old = "- **Old.** one two three four five six\n"
+    near, far = old.replace("six", "seven"), "- **Old.** one two three four new words\n"
+    for a, b in ((near, far), (far, near)):
+        got = changelog_merge.replacements(changelog_merge.parse(old), changelog_merge.parse(a + b))
+        assert got == {old: near}
+
+
+def test_an_unlike_entry_in_a_removed_ones_place_is_not_its_edit() -> None:
+    base, ours = (changelog_merge.parse(x) for x in ("- **Old.** some words here\n", "- **New.** quite different\n"))
+    assert changelog_merge.replacements(base, ours) == {}
+
+
 # ---- in a repository -------------------------------------------------------------------------
 
 
@@ -243,6 +256,55 @@ def test_a_branch_begun_before_the_fragments_may_add_lines(repo: Repo) -> None:
 
 def test_the_fragments_own_pull_request_is_not_asked(repo: Repo) -> None:
     lines(repo)  # main has no changelog.d yet (nor has a maintenance line, ever)
+    assert check(repo)[0] == 0
+
+
+def test_a_branch_without_the_tool_is_told_to_bring_main_in_first(repo: Repo) -> None:
+    lines(repo, "old")
+    repo.land()
+    lines(repo, "new", "main~1")  # begun after the fragments landed, from a main without them
+    code, out = check(repo)
+    assert code == 1 and f"This branch has no {cf.TOOL} yet: bring main in first (tools/dev/merge-main.sh)" in out
+    repo.git("checkout", "-q", "old")
+    code, out = check(repo)
+    assert code == 0 and "bring main in first" in out
+    repo.write(**{cf.TOOL: "x"})
+    repo.commit("the tool")
+    code, out = check(repo)
+    assert code == 0 and "bring main in first" not in out and f"`{cf.CONVERT}` moves" in out
+
+
+def test_an_out_of_date_branch_is_compared_with_where_it_left_main(repo: Repo) -> None:
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{"x.txt": "x"})
+    repo.commit("feat")
+    # main's [Unreleased] and fragments move on (an older branch's lines, others' fragments)
+    repo.git("checkout", "-q", "main")
+    repo.write(**{f: changelog(lang, LINE[lang]) for lang, f in cf.FILES.items()})
+    repo.write(**{f"{cf.DIR}/{f}": t for f, t in GOOD.items()})
+    repo.commit("main moves")
+    assert check(repo, "topic")[0] == 0
+    repo.git("checkout", "-q", "topic")
+    assert check(repo)[0] == 0
+
+
+def test_the_fragments_landed_when_their_merge_did_not_when_they_were_written(repo: Repo) -> None:
+    repo.git("checkout", "-q", "-b", "fragments")
+    repo.write(**{cf.README: "x\n"})
+    repo.commit("fragments, written first")
+    repo.day += 1
+    lines(repo, "between")
+    repo.day += 1
+    repo.git("checkout", "-q", "main")
+    repo.git("merge", "-q", "--no-ff", "--no-edit", "fragments")
+    code, out = check(repo, "between")
+    assert code == 0 and "::warning" in out
+
+
+def test_a_hidden_file_is_no_fragment(repo: Repo) -> None:
+    repo.land()
+    repo.write(**{f"{cf.DIR}/.DS_Store": "x"})
     assert check(repo)[0] == 0
 
 
@@ -417,11 +479,177 @@ def test_a_branch_whose_every_entry_is_in_a_fragment_only_loses_its_lines(repo: 
     assert repo.read("CHANGELOG.md") == changelog("en")
 
 
-def test_an_entry_in_two_fragments_fails() -> None:
-    twice = {**GOOD, **{f.replace("-25-", "-26-"): t for f, t in GOOD.items()}}
-    errors = cf.check_fragments(twice)
+TWICE = {**GOOD, **{f.replace("-25-", "-26-"): t for f, t in GOOD.items()}}
+
+
+def test_an_entry_a_branch_adds_to_a_second_fragment_is_an_error() -> None:
+    errors = cf.introduced(GOOD, TWICE)
     assert [f for f, _ in errors] == ["2026-11-26-a.ar.md", "2026-11-26-a.md"]
     assert "an entry that changelog.d/2026-11-25-a.md has" in errors[1][1]
+    assert len(cf.introduced({}, TWICE)) == 2
+
+
+def test_an_entry_that_was_in_two_fragments_already_is_not() -> None:
+    assert cf.introduced(TWICE, TWICE) == []
+    assert cf.introduced(TWICE, {**TWICE, "2026-11-27-b.md": "### Added\n\n- b\n"}) == []
+    assert cf.introduced(TWICE, GOOD) == []
+    assert cf.check_fragments(TWICE) == []
+
+
+class Stack:
+    """Two stacked branches, "first" and "second" (first's entry and its own), each converted on
+    main before either merged, in fragments of their own names."""
+
+    def __init__(self, r: Repo) -> None:
+        self.r = r
+        lines(r, "first")
+        r.git("checkout", "-q", "-b", "second")
+        for lang, f in cf.FILES.items():
+            more = "\n- " + ("second", "ثانٍ")[lang == "ar"] + "\n"
+            r.write(**{f: r.read(f).replace(LINE[lang], LINE[lang] + more)})
+        r.commit("feat: second")
+        r.land()
+        for b in ("first", "second"):
+            r.git("checkout", "-q", b)
+            r.git("merge", "-q", "--no-edit", "main")
+            assert r.tool("convert", "--base", "main")[0] == 0
+            r.commit("a fragment")
+            assert check(r)[0] == 0, b
+
+    def merge(self, b: str) -> None:
+        self.r.git("checkout", "-q", "main")
+        self.r.git("merge", "-q", "--no-ff", "--no-edit", b)
+
+    def merge_main(self, b: str) -> str:
+        self.r.git("checkout", "-q", b)
+        out = subprocess.run(["bash", str(ROOT / "tools/dev/merge-main.sh"), "main"], cwd=self.r.path,
+                             capture_output=True, text=True)  # fmt: skip
+        assert out.returncode == 0, out.stdout + out.stderr
+        assert self.r.git("status", "--porcelain") == ""
+        return out.stdout
+
+    def entries(self) -> list[str]:
+        files = {p.name: p.read_text(encoding="utf-8") for p in (self.r.path / cf.DIR).iterdir() if p.name != "README.md"}
+        assert cf.check_fragments(files) == []
+        return sorted(e for n, t in files.items() if not n.endswith(".ar.md") for e in cf.entries_of(n, t))
+
+
+NEW = LINE["en"].strip("\n")
+ORDERS = [("first", "second"), ("second", "first")]
+
+
+@pytest.mark.parametrize("order", ORDERS)
+def test_two_stacked_branches_that_both_converted_turn_nothing_red(repo: Repo, order: tuple[str, str]) -> None:
+    st = Stack(repo)
+    repo.git("checkout", "-q", "-b", "unrelated", "main")
+    repo.write(**{"notes.txt": "x"})
+    repo.commit("unrelated")
+    for b in order:
+        st.merge(b)
+        assert check(repo, "main")[0] == 0  # main itself
+        assert check(repo, "unrelated")[0] == 0
+        for other in order:
+            assert check(repo, other)[0] == 0, other
+        # as CI reads a pull request: its merge with main checked out, the branch's own head named
+        repo.git("checkout", "-q", "--detach", "main")
+        repo.git("merge", "-q", "--no-ff", "--no-edit", "unrelated")
+        assert check(repo, "unrelated")[0] == 0
+    assert st.entries() == [NEW, NEW, "- second"]  # on main, twice: the page shows it once
+    # a branch that begins on that main, or brings it in, is not asked either
+    repo.git("checkout", "-q", "unrelated")
+    st.merge_main("unrelated")
+    assert check(repo)[0] == 0
+    repo.write(**{"notes.txt": "y"})
+    repo.commit("more")
+    assert check(repo)[0] == 0
+
+
+@pytest.mark.parametrize("order", ORDERS)
+def test_bringing_main_in_drops_what_mains_fragments_have(repo: Repo, order: tuple[str, str]) -> None:
+    st = Stack(repo)
+    st.merge(order[0])
+    # merged by hand, the gate sees the branch hold the entry twice
+    repo.git("checkout", "-q", order[1])
+    repo.git("checkout", "-q", "-b", "by-hand")
+    repo.git("merge", "-q", "--no-edit", "main")
+    code, out = check(repo)
+    assert code == 1 and "it has an entry that changelog.d/" in out
+    # convert drops it
+    assert repo.tool("convert", "--base", "main")[0] == 0
+    repo.git("commit", "-qm", "once")
+    assert check(repo)[0] == 0 and st.entries() == [NEW, "- second"]
+    # and merge-main.sh does it all
+    out = st.merge_main(order[1])
+    assert "dropped 1 entry" in out
+    assert check(repo)[0] == 0 and st.entries() == [NEW, "- second"]
+    st.merge(order[1])
+    assert check(repo, "main")[0] == 0 and st.entries() == [NEW, "- second"]
+
+
+def test_bringing_main_in_leaves_a_branchs_other_fragments_and_mains_alone(repo: Repo) -> None:
+    st = Stack(repo)
+    st.merge("first")
+    before = repo.git("rev-parse", "main:changelog.d")
+    repo.git("checkout", "-q", "-b", "other", "main~1")
+    repo.write(**{f"{cf.DIR}/2026-11-20-mine.md": "### Added\n\n- mine\n", f"{cf.DIR}/2026-11-20-mine.ar.md": "### أُضيف\n\n- لي\n"})
+    repo.commit("feat: mine")
+    assert "dropped" not in st.merge_main("other")
+    assert st.entries() == [NEW, "- mine"]
+    assert repo.git("rev-parse", "main:changelog.d") == before
+
+
+def test_a_child_that_merged_its_converted_parent_drops_the_parents_entries(repo: Repo) -> None:
+    st = Stack(repo)
+    repo.git("checkout", "-q", "second")
+    repo.git("merge", "-q", "--no-edit", "first")
+    assert check(repo)[0] == 1
+    assert repo.tool("convert", "--base", "main")[0] == 0
+    repo.git("commit", "-qm", "once")
+    assert check(repo)[0] == 0 and st.entries() == [NEW, "- second"]
+    assert repo.git("diff", "--name-only", "first", "--", cf.DIR).count("first") == 0  # the parent's pair is as it was
+
+
+def test_an_entry_half_there_is_not_dropped(repo: Repo) -> None:
+    """Dropped only when both languages are there: never one half of a pair."""
+    repo.land()
+    en, ar = GOOD.values()
+    repo.write(**{f"{cf.DIR}/{f}": t for f, t in GOOD.items()})
+    repo.commit("main's")
+    repo.git("checkout", "-q", "-b", "topic", "main~1")
+    repo.write(**{f"{cf.DIR}/2026-11-26-b.md": en, f"{cf.DIR}/2026-11-26-b.ar.md": "### أُصلح\n\n- آخر\n"})
+    repo.commit("feat")
+    code, out = repo.tool("prune", "--base", "main")
+    assert code == 0 and out == "" and repo.git("status", "--porcelain") == ""
+
+
+def test_a_branch_out_of_date_with_a_cleaned_up_main_is_not_asked(repo: Repo) -> None:
+    repo.land()
+    repo.write(**{f"{cf.DIR}/{f}": t for f, t in TWICE.items()})
+    repo.commit("twice on main")
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{"x.txt": "x"})
+    repo.commit("feat")
+    repo.git("checkout", "-q", "main")
+    repo.git("rm", "-q", *(f"{cf.DIR}/{f}" for f in GOOD))
+    repo.commit("once")
+    repo.git("checkout", "-q", "topic")
+    assert check(repo)[0] == 0
+
+
+@pytest.mark.parametrize("side", ["--ours", "--theirs"])
+def test_a_side_taken_by_hand_stays(repo: Repo, side: str) -> None:
+    lines(repo)
+    repo.land()
+    repo.write(**{f: changelog(lang, ("\n- main\n", "\n- الرئيسي\n")[lang == "ar"]) for lang, f in cf.FILES.items()})
+    repo.commit("main's")
+    repo.git("checkout", "-q", "topic/One")
+    repo.git("merge", "main", check=False)
+    repo.git("checkout", side, "CHANGELOG.md")
+    repo.git("add", "CHANGELOG.md")
+    taken = repo.read("CHANGELOG.md")
+    code, out = repo.tool("convert", "--merge")
+    assert code == 3 and "CHANGELOG.md was resolved by hand" in out
+    assert repo.read("CHANGELOG.md") == taken
 
 
 def test_convert_in_a_merge_stops_when_both_sides_changed_an_entry(repo: Repo) -> None:
@@ -498,3 +726,17 @@ def test_the_portal_reads_the_release_tags() -> None:
     names = [s.get("name") for s in steps]
     assert names.index("The release tags") < names.index("Build")
     assert "refs/tags/v*" in steps[names.index("The release tags")]["run"]
+
+
+def test_a_failed_fetch_of_the_tags_fails_the_portals_job(tmp_path: Path) -> None:
+    steps = yaml.safe_load((ROOT / ".github/workflows/_devportal.yml").read_text(encoding="utf-8"))["jobs"]["devportal"]["steps"]
+    step, = (s for s in steps if s.get("name") == "The release tags")
+    assert "continue-on-error" not in step and "if" not in step
+    for name, body in {"sleep": "exit 0", "git": 'echo x >>"$CALLS"; [ "$(wc -l <"$CALLS")" -ge "$GOOD" ]'}.items():
+        (tmp_path / name).write_text(f"#!/bin/bash\n{body}\n")
+        (tmp_path / name).chmod(0o755)
+    for good, want, calls in (("1", 0, 1), ("3", 0, 3), ("4", 1, 3)):
+        log = tmp_path / f"calls{good}"
+        env = {"PATH": f"{tmp_path}:{os.environ['PATH']}", "CALLS": str(log), "GOOD": good}
+        r = subprocess.run(["bash", "-e", "-c", step["run"]], env=env, capture_output=True, text=True)
+        assert (r.returncode, log.read_text().count("x")) == (want, calls), (good, r.stdout)
