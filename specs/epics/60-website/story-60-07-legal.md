@@ -4,6 +4,12 @@
 > part A; the notice form's sending part on Epic 50 story 50.24's cloud handlers · Owner actions:
 > A3 (mailboxes), A4 (the designated agent), Q6, Q7
 
+> **The copyright page is removed (2026-11-24).** Broadcasting stays off for now, and nothing
+> about copyright is shown anywhere. `/legal/copyright/` and `/ar/legal/copyright/` redirect
+> (301) to the terms page, and the nav, the footer, the sitemap, the terms and privacy pages no
+> longer mention it or `copyright@maktaba.tv`. Its part of this story (the agent, the notice
+> form, its CSP) is deferred with Epic 50 story 50.24. The privacy and terms pages stand.
+
 ## Why
 
 - **Privacy:** a household deciding whether to trust Maktaba with its library reads the privacy

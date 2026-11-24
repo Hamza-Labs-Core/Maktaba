@@ -100,4 +100,13 @@ class StringsTest {
         )
         assertEquals(null, linkFor("   "))
     }
+
+    // story 13.18: the notice when libmpv did not load names why, in both languages
+    @Test
+    fun theEngineNoticeNamesWhy() {
+        for (lang in Lang.entries) {
+            val s = Texts(lang)["engine.fallback", "libmpv-2.dll is not in C:\\Maktaba"]
+            assertTrue(s, s.contains("libmpv-2.dll is not in") && !s.contains("{0}"))
+        }
+    }
 }

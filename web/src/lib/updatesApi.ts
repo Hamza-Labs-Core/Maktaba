@@ -291,6 +291,11 @@ export interface UpdatesOverview {
   catalog: CatalogRelease[];
   last_check_ok?: string;
   last_check_error?: string;
+  /** What the last check failed on (too_large, rate_limited, http_error, decode, unreachable). */
+  last_check_code?: string;
+  /** Checks that failed in a row, since check_failing_since (absent while checks work). */
+  check_failures?: number;
+  check_failing_since?: string;
   check_stale: boolean;
   time_zone: string;
   machines?: UpdateMachine[];

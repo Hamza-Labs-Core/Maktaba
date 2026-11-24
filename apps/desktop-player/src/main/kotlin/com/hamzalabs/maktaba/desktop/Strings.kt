@@ -115,6 +115,7 @@ object Strings {
 
         "menu.account" to "Account",
         "frame.menu" to "Menu",
+        "engine.fallback" to "Videos play with the Player's older engine this time, so some files take longer to start: {0}. Reinstalling the Player puts the new one back.",
         "menu.switchHome" to "Switch home",
         "menu.approve" to "Approve a sign-in",
         "menu.bigScreen" to "Big screen",
@@ -245,6 +246,7 @@ object Strings {
 
         "menu.account" to "الحساب",
         "frame.menu" to "القائمة",
+        "engine.fallback" to "تُشغَّل المقاطع هذه المرة بمحرّك المشغّل الأقدم، فيتأخر بدء بعض الملفات: {0}. تعيد إعادةُ تثبيت المشغّل المحرّكَ الجديد.",
         "menu.switchHome" to "تبديل المنزل",
         "menu.approve" to "الموافقة على تسجيل دخول",
         "menu.bigScreen" to "الشاشة الكبيرة",

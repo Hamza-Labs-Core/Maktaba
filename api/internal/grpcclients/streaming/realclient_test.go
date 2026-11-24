@@ -189,6 +189,7 @@ func TestStreamingClient_GetCapabilities(t *testing.T) {
 				"transcode_used":       2,
 				"transcode_capacity":   4,
 				"software_only":        true,
+				"client_profiles":      []any{"desktop-mpv", "desktop-player"},
 			}
 		},
 	})
@@ -197,7 +198,8 @@ func TestStreamingClient_GetCapabilities(t *testing.T) {
 		t.Fatalf("GetCapabilities: %v", err)
 	}
 	if len(caps.Codecs) != 2 || caps.HWAccel != "cuda" || caps.MaxBitrateKbps != 40000 ||
-		caps.TranscodeSlots.Used != 2 || caps.TranscodeSlots.Capacity != 4 || !caps.SoftwareOnly {
+		caps.TranscodeSlots.Used != 2 || caps.TranscodeSlots.Capacity != 4 || !caps.SoftwareOnly ||
+		len(caps.ClientProfiles) != 2 || caps.ClientProfiles[0] != "desktop-mpv" {
 		t.Fatalf("bad caps: %+v", caps)
 	}
 }
