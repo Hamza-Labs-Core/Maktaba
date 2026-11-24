@@ -40,6 +40,8 @@ class MpvVideo internal constructor(
     private val autoplay: Boolean,
     private val events: VideoEvents,
     private val fontsDir: File?,
+    /** Called once when it is disposed (its players count the videos open: story 13.19). */
+    private val onDisposed: () -> Unit = {},
 ) : Video {
     private val lock = Any()
     @Volatile private var ctx: Pointer? = null
@@ -298,6 +300,7 @@ class MpvVideo internal constructor(
     override fun dispose() {
         if (closed) return
         closed = true
+        onDisposed()
         Thread({
             ops.shutdown()
             ops.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS)
@@ -358,12 +361,39 @@ class MpvVideo internal constructor(
     }
 }
 
-/** libmpv's players (story 13.18): each video in its own [MpvVideo]. */
-class MpvPlayers(private val lib: LibMpv, private val fontsDir: File?) : Players {
+/**
+ * libmpv's players (story 13.18): each video in its own [MpvVideo]. Story 13.19: what this
+ * machine plays ([report], the probe's) goes with each session as `device_caps`; the videos
+ * open are counted, so the probe waits while one plays ([playing]) and the audio device's
+ * channels are measured again once the last one closes ([closed]).
+ */
+class MpvPlayers(
+    private val lib: LibMpv,
+    private val fontsDir: File?,
+    private val report: DeviceReport? = null,
+    private val closed: () -> Unit = {},
+) : Players {
+    private val open = java.util.concurrent.atomic.AtomicInteger()
+
     override val profile: String get() = MPV_PROFILE
 
-    override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video =
-        MpvVideo(lib, url, fromMs, autoplay, events, fontsDir)
+    /** A video is open (a watch screen): the probe waits between its clips meanwhile. */
+    val playing: Boolean get() = open.get() > 0
+
+    private val openedCount = java.util.concurrent.atomic.AtomicLong()
+
+    /** How many videos were opened so far: a probe clip during which it moved is measured again. */
+    val opened: Long get() = openedCount.get()
+
+    override fun deviceCaps(): kotlinx.serialization.json.JsonObject? = report?.json()
+
+    override suspend fun open(url: String, fromMs: Long, autoplay: Boolean, events: VideoEvents): Video {
+        openedCount.incrementAndGet()
+        open.incrementAndGet()
+        return MpvVideo(lib, url, fromMs, autoplay, events, fontsDir) {
+            if (open.decrementAndGet() == 0) closed()
+        }
+    }
 }
 
 /** The streaming service's profile for libmpv (streaming/internal/capability/matrix.go). */
