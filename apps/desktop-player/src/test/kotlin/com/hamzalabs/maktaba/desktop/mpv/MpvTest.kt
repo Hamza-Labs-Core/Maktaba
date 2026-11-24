@@ -40,12 +40,12 @@ class MpvTest {
     @Test
     fun aCaptionIsOneAssEventWithItsOwnCharactersEscaped() {
         val ass = MpvVideo.captionAss("a {b} \\c\nd", rtl = false, scale = 1f)
-        assertTrue(ass, ass.startsWith("{\\an2\\fs32\\"))
+        assertTrue(ass, ass.startsWith("{\\an2\\fs56\\"))
         assertTrue(ass, ass.endsWith("a \\{b} \\\u2060c\\Nd"))
         // right to left: an embedding mark first, so "13 دقيقة" reads from the right
         assertTrue(MpvVideo.captionAss("13 دقيقة", rtl = true, scale = 1f).contains("}\u202B13 دقيقة"))
         // the Player's caption size setting scales it, within bounds
-        assertTrue(MpvVideo.captionAss("x", rtl = false, scale = 2f).contains("\\fs65"))
-        assertTrue(MpvVideo.captionAss("x", rtl = false, scale = 10f).contains("\\fs96"))
+        assertTrue(MpvVideo.captionAss("x", rtl = false, scale = 2f).contains("\\fs113"))
+        assertTrue(MpvVideo.captionAss("x", rtl = false, scale = 10f).contains("\\fs166"))
     }
 }
