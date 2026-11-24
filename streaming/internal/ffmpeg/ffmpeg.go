@@ -252,6 +252,22 @@ type EncodePlan struct {
 	// seg-N.m4s; else TS, seg-N.ts), story 58.02: fMP4 only for a device that
 	// plays it alone.
 	Segments string
+	// AudioCodec is the audio a transcode encodes (story 13.19: the desktop
+	// Player's by its audio device's channels): "eac3" is 5.1 at 640 kbit/s,
+	// "aac" stereo at 192 kbit/s; "": AAC at 128 kbit/s at the encoder's
+	// channels, as every other profile's.
+	AudioCodec string
+}
+
+// audioArgs is a transcode's audio encoding (EncodePlan.AudioCodec).
+func audioArgs(p EncodePlan) Args {
+	switch p.AudioCodec {
+	case "eac3":
+		return Args{"-c:a", "eac3", "-b:a", "640k", "-ac", "6"}
+	case "aac":
+		return Args{"-c:a", "aac", "-b:a", "192k", "-ac", "2"}
+	}
+	return Args{"-c:a", "aac", "-b:a", "128k"}
 }
 
 // WithVAAPI is the plan for a VA-API verdict on dev: its rungs on h264_vaapi
@@ -519,7 +535,7 @@ func HLSArgs(input, outputDir, masterName string, ladder []Rendition, p EncodePl
 		for range ladder {
 			args = append(args, "-map", "0:a:0")
 		}
-		args = append(args, "-c:a", "aac", "-b:a", "128k")
+		args = append(args, audioArgs(p)...)
 	}
 	if p.Start > 0 {
 		// the segments' timestamps the source's, as the served playlist's times
@@ -561,7 +577,7 @@ func DASHArgs(input, outputDir string, ladder []Rendition, p EncodePlan) Args {
 	// Representations), the audio another; by default each stream was its own
 	sets := "id=0,streams=v"
 	if p.Audio {
-		args = append(args, "-map", "0:a:0", "-c:a", "aac", "-b:a", "128k")
+		args = append(append(args, "-map", "0:a:0"), audioArgs(p)...)
 		sets += " id=1,streams=a"
 	}
 	args = append(args,

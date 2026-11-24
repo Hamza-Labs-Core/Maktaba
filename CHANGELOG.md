@@ -25,6 +25,16 @@ build fails when the two differ.
   problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
   knows.
 
+- **The Windows and Linux Player tells the home what the machine plays smoothly.** At start it
+  plays a few short clips on its own to learn which codecs the graphics card decodes, how sharp
+  a picture the processor keeps up with for the rest, and how many channels the sound has, and
+  sends that with each video (`device_caps`, with a new `hardware` flag per codec). A slower
+  laptop now gets a smooth 1080p version of a 4K film it would have stuttered through, and a
+  converted film keeps its 5.1 sound as E-AC-3 on 5.1 speakers and comes as stereo to stereo
+  speakers.
+  The results are kept until the graphics card, its driver, the processor or the Player's libmpv
+  change; the sound is checked again after each video. Report a problem lists what was found.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with
@@ -422,6 +432,13 @@ build fails when the two differ.
   second failed probe and Broadcasting shows an outage. It is no longer an expected failure.
 
 ### Fixed
+
+- **Less to write for every change on a home with a machine's copy.** Most of the library's
+  tables on the home moved to PostgreSQL 18 on 2026-11-20 had every change logged with the whole
+  old row (REPLICA IDENTITY FULL), where their primary key is enough. A migration (slot 0238)
+  gives every table with a primary key that key as its identity, one table at a time and without
+  rewriting any; the machines' copies keep following them. Tables without a primary key keep the
+  whole row, which a copy needs.
 
 - **The second listen stores its corrections again on PostgreSQL 18.** From the home's move to
   PostgreSQL 18 on 2026-11-20, every second-listen job failed when it stored its corrected
