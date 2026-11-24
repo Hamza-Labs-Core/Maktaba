@@ -76,7 +76,7 @@ export async function checkPngs() {
 }
 
 /** In the page: each captioned shot's caption share and line counts. */
-function measure() {
+export function measure() {
   const lines = (el) => {
     if (!el) return 0;
     const r = document.createRange();
