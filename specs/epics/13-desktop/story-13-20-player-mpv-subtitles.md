@@ -20,8 +20,10 @@ Profile → Playback page has no size choice, and no Player has a colour choice.
 
 **The Subtitles menu, in direct play.** Two sources, in this order:
 - the home's tracks, from `GET /api/videos/{id}/subtitles` (sources `external`: a sidecar file
-  beside the video; `auto`: Maktaba's transcription), each fetched through the stream proxy
-  with the session's token, as the HLS renditions are;
+  beside the video; `generated`: Maktaba's transcription), both served at the session's
+  `subs/sidecar/{lang}.vtt` and fetched through the stream proxy with the session's token, as
+  the HLS renditions are; entries that resolve to the same address are one, and a row with no
+  language is left out;
 - the file's own, from mpv's `track-list` after `file-loaded` (entries of type `sub`): text
   (`subrip`, `ass`, `webvtt`, `mov_text`) and picture (`hdmv_pgs_subtitle`, `dvd_subtitle`,
   `dvb_subtitle`). Each is named by `Texts.trackName` (its title, else its language, else
@@ -96,7 +98,7 @@ Subtitles menu on test data.
 
 | ID | Type | Setup | Action | Expected |
 |---|---|---|---|---|
-| T01 | unit | a recorded `track-list` (SRT ar, ASS en, PGS, a forced SRT) and the home's list (external en, auto ar, embedded ar) | build the menu | external en, auto ar, then SRT ar, ASS en, PGS (**Picture**); no embedded row; no forced row |
+| T01 | unit | a recorded `track-list` (SRT ar, ASS en, PGS, a forced SRT) and the home's list (external en, generated ar, embedded ar) | build the menu | external en, generated ar, then SRT ar, ASS en, PGS (**Picture**); no embedded row; no forced row |
 | T02 | unit | `captionAss` with Large and Yellow, rtl | build | `\fs` 1.3 times Medium's, `\1c&H4DE1FF&`, RLE first |
 | T03 | unit | `PlaybackSettings` | write and read `subtitleColour`; an old store without it | kept; White |
 | T04 | unit (`PlaybackMpvTest`) | a fake `Video` recording calls | choose an in-file track, a home track, off | `sid` id; `sub-add` with the proxy URL; `sid=no` |
