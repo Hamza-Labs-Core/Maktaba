@@ -14,6 +14,8 @@ prs: [1598, 1605]
   - On a database an earlier rollback had left on a newer schema (kept), that also undid the kept migrations and dropped what they held.
   - #1598 gave the failed-migrations path (`FailedBack`) the recorded slot (`schema_before`), but not this one.
 - **The target is now the recorded slot**, never below it nor below the release before's newest. `Machine.migrateDown` reads it from the record (`layout.RecordSchemaBefore`).
+- **An update an older release began** has no slot in its record: goose's own timestamps say what the database held when it started.
+- **Rehearsal 03c and a real-Postgres test** start from a kept schema with rows written since.
 - **What cannot be told runs no Down script:** a kept schema with no slot recorded, an unreadable record, a schema ahead that is not recorded as kept.
 - **The schema the Down scripts leave stays kept** (`kept_for`) for the release before, in `MarkRecordDown` and in `backWithoutDump`. Both had dropped it, so the release before would have stopped with `db_ahead`.
 
