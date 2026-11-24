@@ -14,17 +14,16 @@ build fails when the two differ.
 
 ### Changed
 
-- **Homes find updates in Maktaba's own signed release feed.** A home no longer reads GitHub's
-  list of every release, which had grown to 10.5 MB and stopped every home's update check on
-  2026-11-23. It reads one small file for its channel and platform from maktaba.tv
-  (`/updates/v1/<channel>/<platform>.json`, about 4 KB as served). The file lists the newest 10
-  releases with only the files that platform installs. It is signed like a release, and every
-  home checks the signature before using any of it. The home's catalog, the re-check before an
-  update, the About page and `maktaba-server update` all read it. GitHub's list is read only when
-  the feed cannot be reached; a feed that fails its signature check stops the check instead.
-  A bad release is now pulled from the feed (`tools/release/pull-release.sh`), and every home
-  marks it withdrawn. Homes on v0.3.153 to v0.3.161 keep reading GitHub, unchanged.
-  `MAKTABA_UPDATE_FEED=off` turns the feed off.
+- **The Windows and Linux Player plays files as they are.** It now plays with libmpv, which it
+  carries: MKV, WebM, MP4, MOV and TS; H.264, HEVC (10-bit too), VP9, AV1 and MPEG-2; AAC, AC-3,
+  E-AC-3, DTS, FLAC, Opus, Vorbis and MP3, 5.1 and 7.1 included (folded down to stereo
+  speakers), and HDR10 and HLG on any screen. A home that knows the new `desktop-mpv` profile
+  sends such files as they are instead of converting them first, so a film starts sooner and
+  the home's processor rests; an older home converts as before. A file that does not play as it
+  is opens once more converted. Captions are drawn in the Player's own face, right to left in
+  Arabic. If the Player's libmpv cannot load, it says so once and plays as before, and Report a
+  problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
+  knows.
 
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
@@ -1027,6 +1026,13 @@ build fails when the two differ.
   id first, and anything that isn't one is refused.
 
 ### Security
+
+- **The cloud's sign-in limit holds under a burst.** The shared limit on sign-in, password reset,
+  mail and claim redeem (Epic 50 story 50.17) could let one request past its burst when many
+  arrived at once on several api nodes: a refused request whose database transaction started in
+  the same microsecond as the last allowed one read as allowed. Each request's answer now comes
+  from whether it took a token, and a request that waited on another never refills the same time
+  twice.
 
 - **Watch a broadcast stays closed on Apple devices until a parental limit is ruled out (Epic 50,
   story 50.27; Epic 57).** On Apple TV and in the Player on iPhone, iPad and the Mac, the Watch a
@@ -3839,6 +3845,18 @@ build fails when the two differ.
 - **maktaba.dev's screenshots show no woman or girl.** The big screen, Roku and web search
   screenshots on the Apps pages were retaken on test data with men's names only and on the new
   demo library. In English and Arabic.
+
+- **Homes find updates in Maktaba's own signed release feed.** A home no longer reads GitHub's
+  list of every release, which had grown to 10.5 MB and stopped every home's update check on
+  2026-11-23. It reads one small file for its channel and platform from maktaba.tv
+  (`/updates/v1/<channel>/<platform>.json`, about 4 KB as served). The file lists the newest 10
+  releases with only the files that platform installs. It is signed like a release, and every
+  home checks the signature before using any of it. The home's catalog, the re-check before an
+  update, the About page and `maktaba-server update` all read it. GitHub's list is read only when
+  the feed cannot be reached; a feed that fails its signature check stops the check instead.
+  A bad release is now pulled from the feed (`tools/release/pull-release.sh`), and every home
+  marks it withdrawn. Homes on v0.3.153 to v0.3.161 keep reading GitHub, unchanged.
+  `MAKTABA_UPDATE_FEED=off` turns the feed off.
 
 ### Fixed
 
