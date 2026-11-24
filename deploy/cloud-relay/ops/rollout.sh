@@ -76,14 +76,22 @@ containers() { docker ps -q --filter "label=com.docker.compose.project=$PROJECT"
 running() { [ -n "$(containers "$1")" ]; }
 # stop_all SERVICE...: stopped, and seen to be (docker keeps a stopped container stopped at boot)
 stop_all() {
-	local s c left=()
-	for s in "$@"; do
-		for c in $(containers "$s"); do docker stop -t 30 "$c" >/dev/null 2>&1 || true; done
+	local s c try left
+	# a container that is restarting at that moment (it failed, and docker starts it again) can be
+	# missed once
+	for try in 1 2 3 4 5 6 7 8 9 10; do
+		for s in "$@"; do
+			for c in $(containers "$s"); do docker stop -t 30 "$c" >/dev/null 2>&1 || true; done
+		done
+		left=""
+		for s in "$@"; do
+			if running "$s"; then left="$left $s"; fi
+		done
+		[ -n "$left" ] || return 0
+		sleep "$try"
 	done
-	for s in "$@"; do
-		if running "$s"; then left+=("$s"); fi
-	done
-	[ ${#left[@]} -eq 0 ] || { err "still running: ${left[*]}"; return 1; }
+	err "still running:$left"
+	return 1
 }
 
 # the migrations the database records, one a line, in the order they were applied

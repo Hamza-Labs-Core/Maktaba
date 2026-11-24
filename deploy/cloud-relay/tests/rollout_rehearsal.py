@@ -421,7 +421,7 @@ def no_room() -> str:
 def not_by_digest() -> str:
     before = snapshot()
     source()
-    code, out = rc(f"bash {SRC}/ops/rollout.sh begin", env={**env_for("b"), "MAKTABA_CLOUD_TAG": "b"})
+    code, out = rc(f"bash {SRC}/ops/rollout.sh begin", env={**env_for("b"), "DEPLOY_ID": "1-tag", "MAKTABA_CLOUD_TAG": "b"})
     assert code != 0 and "by digest" in out, out[-1500:]
 
     def unpin(src: Path) -> None:
@@ -659,7 +659,7 @@ def older_release() -> str:
 
 def one_at_a_time() -> str:
     before = snapshot()
-    held_by = subprocess.Popen(["flock", str(STATE / "lock"), "sleep", "600"])
+    held_by = subprocess.Popen(["flock", str(STATE / "lock"), "sleep", "600"], start_new_session=True)
     try:
         time.sleep(1)
         code, out = begin("b", extra={"LOCK_WAIT": "2"})
@@ -668,8 +668,8 @@ def one_at_a_time() -> str:
         code, out = rc(f"{ROLLOUT} boot")
         assert code == 1, f"a boot while a command is at work: {code} {out}"
     finally:
-        held_by.kill()
-        sh("pkill -f 'sleep 600' || true")
+        os.killpg(held_by.pid, signal.SIGKILL)
+        held_by.wait()
     prepare("b", "app b")
     p = subprocess.Popen(["bash", "-c", f"{ROLLOUT} job {ID} apply 0 >/dev/null 2>&1"], env={**os.environ, **JOB_ENV})
     wait_for("apply is at work", lambda: (STATE / "pending/applying").exists(), 60)
@@ -693,9 +693,15 @@ def boot_during_a_rollback() -> str:
     sh("systemctl stop maktaba-relay || true") if rc("systemctl is-active maktaba-relay")[0] == 0 else None
     p = subprocess.Popen(["bash", "-c", f"{ROLLOUT} job {ID} rollback 0 >/dev/null 2>&1"], env={**os.environ, **JOB_ENV})
     wait_for("the rollback is at work", lambda: (STATE / "pending/restoring").exists(), 60)
+    asked = 0
     while p.poll() is None:
-        rc("systemctl reset-failed maktaba-relay; timeout 20 systemctl start maktaba-relay")
+        code, out = rc(f"{ROLLOUT} boot")
+        if pending():  # the rollback was still at work when boot answered
+            assert code == 1, f"boot would start the stack in the middle of a rollback: {code} {out}"
+            asked += 1
+        rc("systemctl reset-failed maktaba-relay; timeout 5 systemctl start maktaba-relay")
         time.sleep(0.3)
+    assert asked >= 3, f"boot was asked {asked} times"
     code, out = rollback()
     assert code == 0 and "undone by their Down scripts" in out and "HELD" not in out, out[-3000:]
     not_pending()
@@ -1029,7 +1035,10 @@ def backup_and_check() -> str:
     # a dump cut short on its way out of the container is not kept
     shim = Path("/root/rehearsal-shim")
     shim.mkdir(exist_ok=True)
-    (shim / "docker").write_text('#!/bin/bash\ncase "$*" in *"cat /tmp/backup-"*) /usr/bin/docker "$@" | head -c 60000; exit 0 ;; esac\nexec /usr/bin/docker "$@"\n')
+    whole = max((folder / d).stat().st_size for d in dumps())
+    docker = sh("command -v docker").strip()
+    # its table of contents whole, and rows missing at its end
+    (shim / "docker").write_text(f'#!/bin/bash\ncase "$*" in *"cat /tmp/backup-"*) {docker} "$@" | head -c {whole * 9 // 10}; exit 0 ;; esac\nexec {docker} "$@"\n')
     (shim / "docker").chmod(0o755)
     had = dumps()
     code, said_ = rc(f"PATH={shim}:$PATH DEPLOY_DIR={DEPLOY} {DEPLOY}/ops/backup.sh")
@@ -1182,7 +1191,7 @@ def main() -> int:
                 f"| {'✅' if r['ok'] else '❌'} | {r['case']} | {r['sec']} s | {r['detail'].splitlines()[0][:200] if r['detail'] else ''} |\n" for r in results))
     print(f"\n{len(results) - len(bad)} of {len(results)} cases pass" + (f"; failed: {', '.join(bad)}" if bad else ""), flush=True)
     if MUTATE:
-        noticed = set(bad) & set(MUTATIONS[MUTATE][3])
+        noticed = set(bad)
         print(f"{MUTATE}: {'noticed by ' + ', '.join(sorted(noticed)) if noticed else 'NOT NOTICED'}", flush=True)
         return 0 if noticed else 1
     return 1 if bad or len(results) != len(first) + len(todo) else 0
