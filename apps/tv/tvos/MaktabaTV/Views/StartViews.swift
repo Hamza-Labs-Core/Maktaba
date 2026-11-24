@@ -53,7 +53,8 @@ struct TVHomePicker: View {
                     // only once the parental limit is known and is none (Epic 57; with no home,
                     // the limit this TV last kept): a broadcast is outside any home's ratings,
                     // and a guest has no account to check, so the entry fails closed
-                    if session.guestGate.allowed { broadcast }
+                    // (and never while the build has broadcasting off: `GuestBroadcast`)
+                    if session.showsWatchBroadcast { broadcast }
                 }
                 .disabled(session.connecting)
                 .readingPanel(padding: 48)

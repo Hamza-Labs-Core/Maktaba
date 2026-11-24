@@ -53,6 +53,13 @@ export interface Env {
   VIEWER_TOKEN_KEY: string;
   /** base64url Ed25519 seed: the edge's signature on its posts to api.maktaba.tv (50.20 usage). */
   EDGE_SIGNING_KEY?: string;
+  /**
+   * "1" or "true": broadcasting is on and watch and live serve viewers. Anything else (the
+   * default, and wrangler.toml's value while broadcasting is off): watch and live answer 404 to
+   * every request, so no page, guide, channel list, invite or playlist is served. Ingest is
+   * unaffected (the cloud's broadcast.enabled gate decides who may publish).
+   */
+  BROADCAST_ENABLED?: string;
   /** "1" stops every broadcast at the edge (break-glass, 50.25). */
   BROADCAST_GLOBAL_OFF?: string;
   /** Comma-separated channel ids taken off air at the edge (break-glass, 50.25). */

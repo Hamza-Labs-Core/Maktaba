@@ -405,7 +405,8 @@ final class TVParentalUITests: XCTestCase {
         XCTAssertTrue(element("settings.parental.limit").label.contains("13+"), element("settings.parental.limit").label)
         XCTAssertEqual(element("settings.parental.device").label, "This device is limited to 9+.")
         XCTAssertEqual(count("POST", "/api/me/age-signal"), 1, "sent once: nothing changed since")
-        // story 50.27: no Watch a broadcast under a limit (a broadcast is outside the home's ratings)
+        // story 50.27: no Watch a broadcast under a limit (a broadcast is outside the home's ratings),
+        // with broadcasting turned on for the test (`-maktaba-guest-broadcast`)
         XCTAssertFalse(element("settings.watchBroadcast").exists, "no Watch a broadcast for a restricted account")
         shot("tv-parental-settings-en")
     }
@@ -492,7 +493,7 @@ final class TVParentalUITests: XCTestCase {
     /// First launch: the mock home's address typed, then the code approved elsewhere.
     private func signIn(_ language: String, extra: [String] = []) {
         self.language = language
-        app.launchArguments = ["-uitest-reset", "-AppleLanguages", "(\(language))",
+        app.launchArguments = ["-uitest-reset", "-maktaba-guest-broadcast", "-AppleLanguages", "(\(language))",
                                "-AppleLocale", language == "ar" ? "ar_SA" : "en_US"] + extra
         app.launch()
         type(home.url, into: app.textFields["picker.address"])

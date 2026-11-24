@@ -237,6 +237,13 @@ mode for **new** sessions (`billing.BroadcastModeFor`). A playing viewer keeps t
   `admin.broadcast.invite.revoke`); a revoked invite redeems nothing new.
 - **Licence**: the `broadcast` feature is in a home's licence when its plan includes
   broadcasting and the gate is open (or it is a test publisher).
+- **Off.** While `broadcast.enabled` is off, every path above, and every moderation path, is an
+  unknown path (`404`, the same body and headers) on both listeners, whatever the credential or
+  the id (`internal/handlers/broadcastgate`). Its `exceptions` table is the whole list of what
+  still answers: the edge's pull of the revocation list, the kill switch, the test-publisher
+  grant, and what a test publisher's rehearsal needs. A new route under its `Paths` is closed
+  without doing anything, and a test fails on one mounted elsewhere. The workers keep running, and
+  the account's export and deletion keep covering broadcast data.
 - **Switches.** `broadcast.enabled` (default false), `broadcast.open_access.enabled` (default
   false, refused without `broadcast.enabled`), `broadcast.plans.enforce` (default true;
   false is the rollback: full up to the viewer limit), `billing.broadcast_payg.enabled` (default

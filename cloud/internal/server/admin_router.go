@@ -16,8 +16,8 @@ import (
 // X-Maktaba-Staff: 1 (403 bad_origin), and carries the console's headers. The client IP is
 // resolved as on the user listener. Only /healthz and /readyz are registered here: the
 // caller mounts /v1/admin/* (and 50.33's /v1/staff/*) on top, and nothing else.
-// opts may carry WithDraining (the api pool's drain on shutdown, story 50.17); other options
-// are ignored here.
+// opts may carry WithDraining (the api pool's drain on shutdown, story 50.17) and WithGate; other
+// options are ignored here.
 func NewAdminRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build BuildInfo, host, origin string, trusted []netip.Prefix, opts ...RouterOption) *chi.Mux {
 	var o routerOptions
 	for _, opt := range opts {
@@ -31,6 +31,9 @@ func NewAdminRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build 
 	r.Use(middleware.OnlyHosts(logger, "admin", []string{host}))
 	r.Use(middleware.AdminHeaders)
 	r.Use(middleware.AdminSameOrigin(origin))
+	if o.gate != nil {
+		r.Use(o.gate)
+	}
 	r.Get("/healthz", healthzHandler(build))
 	ready := readyzHandler(pool, mig)
 	if o.draining != nil {

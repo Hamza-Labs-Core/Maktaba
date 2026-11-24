@@ -56,7 +56,7 @@ vi.mock("../lib/desktop", async () => {
   };
 });
 
-import { AppShell, MoreMenu } from "./AppShell";
+import { AppShell, MoreMenu, adminNav } from "./AppShell";
 import { AdminGate } from "./AdminGate";
 import { DesktopBridge } from "./DesktopBridge";
 import { ApiError, api } from "../lib/api";
@@ -312,7 +312,7 @@ const ADMIN_LINKS = [
   ["nav.admin.filler", "/admin/filler"],
   ["nav.admin.liveTv", "/admin/live-tv"],
   ["nav.admin.tvChanges", "/admin/live-tv/changes"],
-  ["nav.admin.broadcastAccess", "/admin/broadcast-access"],
+  // Broadcast access shows only with the licence's broadcast flag (off by default; adminNav)
   ["nav.admin.analytics", "/admin/analytics"],
   ["nav.admin.audit", "/admin/audit"],
   ["nav.admin.health", "/admin/health"],
@@ -1180,5 +1180,15 @@ describe("MoreMenu (test-cases/more-menu.md)", () => {
     expect(signOut).toHaveFocus();
     await user.keyboard("{Enter}");
     expect(await screen.findByLabelText(en["login.username"])).toBeInTheDocument();
+  });
+});
+
+// Broadcasting is off by default (2026-11-24): the Administration group lists Broadcast access
+// only while the licence carries the broadcast flag
+describe("adminNav", () => {
+  it("lists Broadcast access only with the broadcast flag", () => {
+    expect(adminNav(false).some((i) => i.to === "/admin/broadcast-access")).toBe(false);
+    expect(adminNav(true).some((i) => i.to === "/admin/broadcast-access")).toBe(true);
+    expect(adminNav(true).length).toBe(adminNav(false).length + 1);
   });
 });
