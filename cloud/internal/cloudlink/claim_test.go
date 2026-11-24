@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -129,5 +130,54 @@ func TestCredentials_WrongKeyFails(t *testing.T) {
 func TestNewGCM_RejectsShortKey(t *testing.T) {
 	if _, err := newGCM([]byte("short")); err == nil {
 		t.Fatal("expected error for non-32-byte key")
+	}
+}
+
+// The retry key: the same for the same code after a restart (a new Claimer with the home's key),
+// another one for another code or another home, not the home's key itself, and absent without one.
+func TestRedeem_RetryKeyIsTheAgents(t *testing.T) {
+	var sent []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req claimRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		sent = append(sent, req.RetryKey)
+		if len(sent) == 1 {
+			// the answer is lost: the connection drops
+			c, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				_ = c.Close()
+			}
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(claimResponse{ServerID: "srv", ServerSecret: "s", Slug: "acme"})
+	}))
+	defer srv.Close()
+	key, other := bytes.Repeat([]byte{7}, 32), bytes.Repeat([]byte{8}, 32)
+	redeem := func(k []byte, code string) error {
+		_, err := (&Claimer{Endpoint: srv.URL, Key: k}).Redeem(context.Background(), code, "box", "acme", "1", "")
+		return err
+	}
+	if err := redeem(key, "K3F9MZ7P"); err == nil {
+		t.Fatal("a dropped answer is an error")
+	}
+	for _, c := range []struct {
+		key  []byte
+		code string
+	}{{key, "K3F9MZ7P"}, {key, " k3f9mz7p "}, {key, "OTHER777"}, {other, "K3F9MZ7P"}, {nil, "K3F9MZ7P"}} {
+		if err := redeem(c.key, c.code); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(sent[0]) != 64 || sent[1] != sent[0] || sent[2] != sent[0] {
+		t.Fatalf("the same agent's key changed: %q", sent[:3])
+	}
+	// fixed: an agent updated between its first try and its second must send the same key, so the
+	// derivation (the prefix, the code's form, HMAC-SHA256) never changes
+	if want := "ea63fa43754460eb72fbca3de8f706d3a1649e8a8d638f3940c61265ff65414c"; sent[0] != want {
+		t.Fatalf("the retry key's derivation changed: %s, want %s", sent[0], want)
+	}
+	if sent[3] == sent[0] || sent[4] == sent[0] || sent[5] != "" || sent[0] == hex.EncodeToString(key) {
+		t.Fatalf("keys: %q", sent)
 	}
 }

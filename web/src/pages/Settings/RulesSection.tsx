@@ -24,7 +24,8 @@ import { controlOf, same, subGroups, valueProblem, weekdayNames, WEEKDAYS } from
 import { StripRulesTools } from "./StripRulesTools";
 import { RemoteUsage } from "../Admin/RemoteUsage";
 import { HelpLink } from "../../help/HelpLink";
-import { ruleHelp } from "../../help/registry";
+import { BROADCAST_RULE_SECTIONS, ruleHelp } from "../../help/registry";
+import { useFlag } from "../../lib/flags";
 import "./rules.css";
 import { LinesPlaceholder, Loading } from "../../components/Placeholders";
 
@@ -230,9 +231,17 @@ export function RulesSection() {
   const [rawSections, setSections] = useState<RuleSection[] | null>(null);
   // the schema is English; a section, group or field with a catalog entry
   // shows it in the reader's language
+  // broadcasting's section only while the licence carries the broadcast flag (off by default)
+  const broadcastOn = useFlag("broadcast");
   const sections = useMemo(
-    () => (rawSections ? localizeSections(rawSections, locale) : null),
-    [rawSections, locale]
+    () =>
+      rawSections
+        ? localizeSections(
+            rawSections.filter((s) => broadcastOn || !BROADCAST_RULE_SECTIONS.has(s.key)),
+            locale
+          )
+        : null,
+    [rawSections, locale, broadcastOn]
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   // a link may open one section, found by a field's name (?section=…&q=…: a switch of

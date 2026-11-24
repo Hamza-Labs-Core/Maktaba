@@ -95,13 +95,9 @@ def test_only_downloads_retry() -> None:
 
 def test_the_player_ui_shard_says_the_app_never_downloaded() -> None:
     doc = yaml.safe_load((ROOT / ".github/workflows/_apple-apps.yml").read_text(encoding="utf-8"))
-    for job in doc["jobs"].values():
-        steps = job.get("steps") or []
-        ids = {s.get("id") for s in steps}
-        if "artifact-player-ui-build-check" not in ids:
-            continue
+    for device in ("iphone", "ipad"):
+        steps = doc["jobs"][f"player-ui-tests-{device}"]["steps"]
+        assert "artifact-player-ui-build-check" in {s.get("id") for s in steps}, device
         (log,) = [s for s in steps if s.get("name", "").startswith("Read and check the app's log")]
         assert log["env"]["APP_DOWNLOAD"] == "${{ steps.artifact-player-ui-build-check.outcome }}"
         assert "never downloaded" in log["run"] and "$APP_ARTIFACT" in log["run"]
-        return
-    raise AssertionError("the Player UI shard's download has no check step")

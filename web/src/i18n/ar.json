@@ -8705,8 +8705,6 @@
   "broadcast.analytics.device.android": "أندرويد",
   "broadcast.analytics.device.androidtv": "Android TV",
   "broadcast.analytics.device.desktop": "تطبيق سطح المكتب",
-  "help.topic.broadcast-access.title": "الوصول إلى البث",
-  "help.topic.broadcast-access.summary": "من يمكنه مشاهدة القنوات التي ينشرها هذا المنزل: روابط الدعوة، ورموز التلفاز، والقنوات المفتوحة، وحدود المشاهدة",
   "broadcastAccess.title": "من يمكنه المشاهدة",
   "broadcastAccess.free": "المشاهدة مجانية",
   "broadcastAccess.noChannels": "لم ينشر هذا المنزل أي قناة بعد. انشر قناة من صفحة البث في المنزل.",

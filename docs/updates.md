@@ -304,7 +304,9 @@ When its migrations ran, the database goes back by their own Down scripts: it st
 left it when every one of them is additive and the previous release runs on a newer schema;
 else their Down scripts undo them, the one that failed part way by its own Down script first
 (`maktaba-api migrate undo-failed`), back to the slot the database was at before the update
-(recorded as `schema_before` when the migrations start). The backup taken before them is put
+(recorded as `schema_before` when the migrations start). They never go below that slot: a
+schema an earlier rollback kept is left as it is, still kept for the previous release, and when
+its slot is not recorded no Down script runs. The backup taken before them is put
 back only when those Down scripts fail (`db_down_failed`), when a migration that ran deleted or
 overwrote data its Down script cannot give back (`db_restored_lossy`: migration-lint refuses
 such a migration unless it says so), or when the way back cannot be told
