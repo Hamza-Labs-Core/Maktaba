@@ -100,6 +100,8 @@ fun main(args: Array<String>) {
     val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     val session = playerSession(stores.settings, CoroutineScope(SupervisorJob() + Dispatchers.Main), stores::tokens)
     val prefs = AppPrefs(stores.settings)
+    // story 13.21: the video engine chosen in Profile, read at each video's open
+    com.hamzalabs.maktaba.desktop.mpv.Engine.setting = { prefs.engine }
     // a home's link handed to the player (`maktaba://connect?…`, by the system or a shortcut): asked, never followed
     args.firstOrNull { it.startsWith("maktaba:", ignoreCase = true) }?.let(session::openLink)
     // the homes on this network, the whole time the player runs: a saved home is found again
@@ -116,8 +118,10 @@ fun main(args: Array<String>) {
         var reporting by remember { mutableStateOf(false) }
         var reportRef by remember { mutableStateOf<String?>(null) }
         var crashNotice by remember { mutableStateOf<com.hamzalabs.maktaba.core.crash.CrashOutbox.Notice?>(null) }
-        // story 13.18: a packaged Player whose libmpv did not load says so once, and plays with JavaFX
-        var engineNotice by remember { mutableStateOf(com.hamzalabs.maktaba.desktop.mpv.Engine.noticeReason()) }
+        // story 13.18: a packaged Player whose libmpv did not load says so, and plays with JavaFX;
+        // story 13.21: once per Player version and reason, not at every start
+        val notices = remember { com.hamzalabs.maktaba.desktop.mpv.EngineNotice(stores.settings, BuildInfo.VERSION) }
+        var engineNotice by remember { mutableStateOf(notices.pending(com.hamzalabs.maktaba.desktop.mpv.Engine.noticeReason())) }
         var myReports by remember { mutableStateOf(false) }
         var askCrashes by remember { mutableStateOf(false) }
         var crashesOn by remember { mutableStateOf(false) }
@@ -216,7 +220,7 @@ fun main(args: Array<String>) {
                     }
                     if (reporting) {
                         ReportProblemDialog(signedIn.client, signedHome.label, crashHeader, crashOutbox, reference = reportRef,
-                            log = { listOf(com.hamzalabs.maktaba.desktop.mpv.Engine.logLine()) },
+                            log = { com.hamzalabs.maktaba.desktop.mpv.Engine.logLines() },
                             onDismiss = { reporting = false; reportRef = null })
                     }
                     crashNotice?.let { n ->
@@ -230,9 +234,16 @@ fun main(args: Array<String>) {
                         )
                     }
                     engineNotice?.let { why ->
+                        // shown: not again for this version and reason
+                        LaunchedEffect(why) { notices.said(why) }
                         MaktabaAlertDialog(
                             onDismissRequest = { engineNotice = null },
                             text = { Text(texts["engine.fallback", why]) },
+                            dismissButton = {
+                                androidx.compose.material3.TextButton(onClick = { openInBrowser(helpUrl(signedHome.url, lang, ENGINE_HELP)) }) {
+                                    Text(texts["engine.learnMore"])
+                                }
+                            },
                             confirmButton = { androidx.compose.material3.TextButton(onClick = { engineNotice = null }) { Text(texts["report.done"]) } },
                         )
                     }
@@ -251,6 +262,17 @@ fun main(args: Array<String>) {
 fun openHelp(home: String?) {
     openInBrowser(home?.let { "${it.trimEnd('/')}/help/desktop-player" } ?: "https://github.com/Hamza-Labs-Core/Maktaba/blob/main/web/src/help/content/en/desktop-player.md")
 }
+
+/** The help page's section on the video engine (story 13.21). */
+const val ENGINE_HELP = "video-engine"
+
+/**
+ * The home's help page for this Player in [lang] (`?lang=`, which the help page follows), at
+ * [anchor]; with no home signed in, maktaba.dev's Player page in that language.
+ */
+fun helpUrl(home: String?, lang: Lang, anchor: String? = null): String =
+    if (home.isNullOrBlank()) "https://maktaba.dev/" + (if (lang == Lang.Ar) "ar/" else "") + "apps/player/"
+    else "${home.trimEnd('/')}/help/desktop-player?lang=${lang.code}" + (anchor?.let { "#$it" } ?: "")
 
 /** The screens: a home to choose, signing in, then the library and the video. */
 @Composable

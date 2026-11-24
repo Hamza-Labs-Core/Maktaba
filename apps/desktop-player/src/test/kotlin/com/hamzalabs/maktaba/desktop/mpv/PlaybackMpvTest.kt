@@ -56,7 +56,14 @@ class PlaybackMpvTest {
             FakeMpv(events).also { made += it }
     }
 
-    private val playback = Playback(home.client, scope, background, signedOut = {}, players = players)
+    /** JavaFX's, as the older engine (story 13.21): the `desktop-player` profile. */
+    private val fxMade: MutableList<FakeMpv> = Collections.synchronizedList(mutableListOf())
+    private val fx = Players { _, _, _, events -> FakeMpv(events).also { fxMade += it } }
+
+    /** The engine Profile has now, read at each video's open. */
+    @Volatile private var choice = EngineChoice.Auto
+
+    private val playback = Playback(home.client, scope, background, signedOut = {}, engine = { if (choice == EngineChoice.Older) fx else players })
 
     init {
         home.answer("POST /api/stream/sessions") {
@@ -90,6 +97,43 @@ class PlaybackMpvTest {
         onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
         until("playing") { playback.player != null }
         assertTrue(bodies().single(), bodies().single().contains("\"client_profile\":\"desktop-mpv\""))
+    }
+
+    @Test
+    fun t02_theEngineChosenInProfileAppliesToTheNextVideo() {
+        home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv","desktop-player"]}""")
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("v1 playing") { playback.player != null && playback.player === made.singleOrNull() }
+        // the older engine chosen while v1 plays: v1 is not reopened
+        choice = EngineChoice.Older
+        Thread.sleep(300)
+        assertEquals(1, opened.get())
+        assertTrue(onMain { playback.player } === made.single())
+        // the next video opens with JavaFX and asks for desktop-player
+        onMain { playback.play(PlayRequest("v2", "v2", startSec = 0)) }
+        until("v2 playing") { playback.player != null && playback.player === fxMade.singleOrNull() }
+        assertTrue(bodies()[1], bodies()[1].contains("\"client_profile\":\"desktop-player\""))
+        // Automatic again: the one playing stays; the next one is libmpv's, with desktop-mpv
+        choice = EngineChoice.Auto
+        Thread.sleep(300)
+        assertEquals(2, opened.get())
+        onMain { playback.play(PlayRequest("v3", "v3", startSec = 0)) }
+        until("v3 playing") { made.size == 2 && playback.player === made[1] }
+        assertTrue(bodies()[2], bodies()[2].contains("\"client_profile\":\"desktop-mpv\""))
+        assertEquals(1, fxMade.size)
+    }
+
+    @Test
+    fun aFileThatFailsWithTheOlderEngineIsNotForcedToTranscode() {
+        // JavaFX's sessions already ask the home to convert: a failure is the watch loop's
+        choice = EngineChoice.Older
+        home.answer("GET /api/stream/capabilities", """{"client_profiles":["desktop-mpv"]}""")
+        onMain { playback.play(PlayRequest("v1", "v1", startSec = 0)) }
+        until("playing") { playback.player != null && playback.player === fxMade.singleOrNull() }
+        fxMade.single().started = false
+        fxMade.single().events.failed("no decoder")
+        Thread.sleep(300)
+        assertEquals(1, opened.get())
     }
 
     @Test

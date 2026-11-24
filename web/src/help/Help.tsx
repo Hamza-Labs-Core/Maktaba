@@ -123,13 +123,22 @@ export function HelpIndex() {
 }
 
 export function HelpTopic() {
-  const { t, locale } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const title = useTopicTitle();
   const { topic = "" } = useParams();
   const { hash } = useLocation();
+  const [params] = useSearchParams();
   const active = decodeURIComponent(hash.replace(/^#/, ""));
   const [src, setSrc] = useState<string | null | undefined>(undefined);
   const known = isHelpTopic(topic);
+
+  // An app that opens a topic asks for its own language (?lang=en|ar), as the desktop
+  // Player's Learn more does (story 13.21): the page follows it.
+  const asked = params.get("lang");
+  useEffect(() => {
+    if ((asked === "en" || asked === "ar") && asked !== locale) setLocale(asked);
+    // only when the address asks: a language chosen on the page afterwards stays
+  }, [asked]);
 
   useEffect(() => {
     if (!known) return;

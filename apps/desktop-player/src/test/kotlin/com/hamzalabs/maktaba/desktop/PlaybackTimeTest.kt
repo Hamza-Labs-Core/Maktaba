@@ -34,7 +34,7 @@ class PlaybackTimeTest {
 
     private val made: MutableList<FakeVideo> = Collections.synchronizedList(mutableListOf())
     private val players = Players { url, _, _, _ -> FakeVideo(url).also { made += it } }
-    private val playback = Playback(home.client, main.scope, main.background, signedOut = {}, players = players, nowMs = main.nowMs)
+    private val playback = Playback(home.client, main.scope, main.background, signedOut = {}, engine = { players }, nowMs = main.nowMs)
 
     init {
         home.answer("POST /api/stream/sessions") {

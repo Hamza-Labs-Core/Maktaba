@@ -186,7 +186,11 @@ class Playback(
     private val settings: () -> PlaybackValues = { PlaybackValues() },
     /** What the home has on now (chapters are read only when they are on). */
     private val features: () -> Capabilities = { Capabilities.AllOn },
-    private val players: Players = com.hamzalabs.maktaba.desktop.mpv.Engine.players,
+    /**
+     * The players for a video opening now (story 13.21: the engine is read at each video, so a
+     * change in Profile applies to the next one; the video playing, and its reopens, keep theirs).
+     */
+    private val engine: () -> Players = { com.hamzalabs.maktaba.desktop.mpv.Engine.players() },
     private val proxyFor: (ApiClient) -> StreamProxy = ::StreamProxy,
     /** The time now, in milliseconds: when the stream was opened and when to renew it (a test gives its own clock). */
     private val nowMs: () -> Long = System::currentTimeMillis,
@@ -290,6 +294,8 @@ class Playback(
     private var direct = false
     /** This video was opened again as a transcode after its file did not play as it is (once). */
     private var forced = false
+    /** This video's players, chosen by [engine] when it was asked for ([play]). */
+    private var players: Players = FxPlayers
     /** Whether this home knows [players]' profile (null: not asked yet; story 13.18). */
     private var homeKnowsProfile: Boolean? = null
     /** Where the stream last opened was to start (a forced transcode starts there too). */
@@ -317,6 +323,7 @@ class Playback(
         if (r.videoId == request?.videoId && problem == null && timeUp == null && !endedByHome && r.startSec == null) return
         stop()
         request = r
+        players = engine()
         running = scope.launch { run(r) }
     }
 

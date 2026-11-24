@@ -25,6 +25,16 @@ build fails when the two differ.
   problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
   knows.
 
+- **The video engine is a setting in the Windows and Linux Player.** **Profile → Playback** has
+  **Video engine**: **Automatic** (libmpv, and the older engine only when libmpv cannot start)
+  or the **Older engine**, for a computer where videos do not play well; it applies to the next
+  video opened. **Learn more** opens the home's help page for the Player at its video engine
+  section, in the Player's language (help pages follow `?lang=`). When
+  `MAKTABA_PLAYER_ENGINE=javafx` chooses the older engine, or libmpv cannot start, the row is
+  greyed out with the reason. The notice that libmpv could not start is shown once per version
+  and reason instead of at every start, with **Learn more**, and Report a problem's log names
+  the engine each video played with and why.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with

@@ -96,12 +96,11 @@ sealed interface MpvLoad {
             else -> "libmpv.so.2"
         }
 
-        /** The library in [dir] (the app's resources), or why it cannot be used. */
-        fun from(dir: String?, env: Map<String, String> = System.getenv()): MpvLoad {
-            // the support page's way back to the JavaFX engine for one release (story 13.18)
-            if (env["MAKTABA_PLAYER_ENGINE"].equals("javafx", ignoreCase = true)) {
-                return Missing("MAKTABA_PLAYER_ENGINE=javafx")
-            }
+        /**
+         * The library in [dir] (the app's resources), or why it cannot be used. Whether it is
+         * used at all is [Engines]' choice (`MAKTABA_PLAYER_ENGINE`, then Profile's setting).
+         */
+        fun from(dir: String?): MpvLoad {
             if (dir.isNullOrBlank()) return Missing("no app resources folder (a development run)")
             val file = File(dir, fileName())
             if (!file.isFile) return Missing("${file.name} is not in ${file.parent}")
