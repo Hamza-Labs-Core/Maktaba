@@ -27,6 +27,8 @@ prs: [1598, 1601]
 ## What we learned
 - **Why `held` keeps the failed release's version:** every release from before the change refuses the database as older (`db_refused_older`) instead of restoring it. The new state stops even code that was never taught it.
 - **A restore asked by a person** (`restorer.mark`) builds a fresh record, so the dump's kept-schema marker (`dump_kept_for`) was lost on that path. It must be carried over from the held record, or the release kept for the schema halts with `db_ahead` after the restore.
+- **Layout installs (deb/rpm, self-managed) had no Down-script path at all.** `LayoutInstaller` implemented neither `KeepsSchema` nor `DownTo`, so `migrateDown` returned false silently and the whole dump was their only way back. The auto-update e2e's 0.9.2 (a lossless migration) stopped and asked once restoring was gone. It now reads the release before's migrations from `bin/releases/<from>/`.
+- **A newer release goes on from a held update.** So a synthetic restore mark for a release *older* than the one starting (rehearsal 07's `0.0.1`) no longer halts anything. The rehearsal now names a newer failed release.
 - **While the library is halted,** the api (and so the Updates page) is not running. Only the supervisor's `/recovery` page and the start page reach the person, so the choices belong there.
 
 ## Keep doing
