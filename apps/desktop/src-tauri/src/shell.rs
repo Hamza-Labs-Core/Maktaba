@@ -153,27 +153,43 @@ pub(crate) fn open_local_page(app: &AppHandle, path: &str) -> Result<(), String>
     Ok(())
 }
 
+/// The status window's release on its way: the home's order (it installs by itself), else an
+/// update this app installs on a click (`ready`: the Linux app catching up with its server, the
+/// release `own`).
+fn update_view(
+    order: Option<&autoinstall::Shown>,
+    ready: bool,
+    own: Option<String>,
+    installing: bool,
+) -> Option<UpdateView> {
+    match order {
+        Some(order) => Some(UpdateView::of_order(order)),
+        None if ready => Some(UpdateView {
+            version: own.unwrap_or_default(),
+            by: String::new(),
+            installing,
+            install: true,
+        }),
+        None => None,
+    }
+}
+
 /// What the status window shows (statusview.rs): the status as the tray has it, the last
 /// snapshot's parts, and a release on its way.
 pub(crate) fn status_window_view(app: &AppHandle) -> StatusWindowView {
     let sh = shell(app);
     let snap = sh.snapshot.locked().clone();
-    let update = match autoinstall::shown(sh.order.locked().as_ref()) {
-        Some(order) => Some(UpdateView::of_order(&order)),
-        // the Linux app catching up with its server: a click installs it
-        None if sh.update_ready.load(Ordering::SeqCst) => Some(UpdateView {
-            version: sh
-                .catch_up
-                .locked()
-                .clone()
-                .or_else(|| sh.update_version.locked().clone())
-                .unwrap_or_default(),
-            by: String::new(),
-            installing: sh.installing.load(Ordering::SeqCst),
-            install: true,
-        }),
-        None => None,
-    };
+    let own = sh
+        .catch_up
+        .locked()
+        .clone()
+        .or_else(|| sh.update_version.locked().clone());
+    let update = update_view(
+        autoinstall::shown(sh.order.locked().as_ref()).as_ref(),
+        sh.update_ready.load(Ordering::SeqCst),
+        own,
+        sh.installing.load(Ordering::SeqCst),
+    );
     let status = sh.status.locked().clone();
     StatusWindowView {
         status,
@@ -2483,6 +2499,27 @@ pub fn open_external(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_status_window_says_the_home_s_order_else_an_update_to_click() {
+        // story 13.13: the home's order installs by itself, by its time or shortly
+        let order = autoinstall::Shown::Ready {
+            version: "0.3.113".into(),
+            by: "03:00".into(),
+        };
+        let v = update_view(Some(&order), true, Some("9.9.9".into()), false).unwrap();
+        assert_eq!((v.version.as_str(), v.by.as_str()), ("0.3.113", "03:00"));
+        assert!(!v.install, "an order is never a button");
+        // the Linux app catching up with its server: a button, until it installs
+        let v = update_view(None, true, Some("0.3.113".into()), false).unwrap();
+        assert!(v.install && !v.installing && v.by.is_empty());
+        assert!(update_view(None, true, None, true).unwrap().installing);
+        // nothing on its way
+        assert_eq!(
+            update_view(None, false, Some("0.3.113".into()), false),
+            None
+        );
+    }
 
     #[test]
     fn a_refused_login_item_whose_job_started_is_no_update_failure() {

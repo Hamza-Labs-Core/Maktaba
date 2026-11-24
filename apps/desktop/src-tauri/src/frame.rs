@@ -97,7 +97,7 @@ pub fn frame_claim<R: Runtime>(window: WebviewWindow<R>) -> Result<FrameInfo, St
     }
     // recorded once the frame is the page's: a failed claim leaves the load unclaimed (the
     // main window's loads only: the setup and status windows load only the app's own pages)
-    if window.label() == webcache::MAIN {
+    if counts_loads(window.label()) {
         window.app_handle().state::<Frame>().claim();
     }
     Ok(FrameInfo {
@@ -108,6 +108,13 @@ pub fn frame_claim<R: Runtime>(window: WebviewWindow<R>) -> Result<FrameInfo, St
         fullscreen: window.is_fullscreen().unwrap_or(false),
         snap_layouts: snap_layouts_available(),
     })
+}
+
+/// Whether window `label`'s page loads are counted (Frame): the main window's, which loads pages
+/// it does not ship. The setup and status windows (story 13.13) load only the app's own pages and
+/// are made without the system's frame, so theirs never comes back.
+fn counts_loads(label: &str) -> bool {
+    label == webcache::MAIN
 }
 
 /// A caption button, or Snap Layouts: "minimize", "maximize" (toggles), "close", "snap".
@@ -633,6 +640,19 @@ mod tests {
         assert!(!ok("https://home.example.org/"));
         assert!(!ok("http://192.168.1.20:8080/"));
         assert!(!ok("about:blank"));
+    }
+
+    #[test]
+    fn the_setup_and_status_windows_draw_the_frame_without_a_claim_on_the_main_window_s() {
+        // story 13.13: their pages may claim the frame (frame_claim)
+        for label in ["main", "setup", "status"] {
+            assert!(crate::ownwindows::has_frame(label), "{label}");
+        }
+        assert!(!crate::ownwindows::has_frame("tray-panel"));
+        // only the main window's loads are counted: a claim from the status window must not
+        // keep a main window's page that never claimed it from getting the system's frame back
+        assert!(counts_loads("main"));
+        assert!(!counts_loads("setup") && !counts_loads("status"));
     }
 
     #[test]
