@@ -166,6 +166,9 @@ final class RemoteDemoShotsUITests: XCTestCase {
         """)
     }
 
+    /// The samples are titles with no ": " in them: a sample's right-to-left parts between
+    /// ": " are each set apart (`AttentionWords.isolateRTL`), and an Arabic title with one
+    /// reads with its parts swapped.
     private func stubAttention(_ home: MockHome) {
         func group(_ stage: String, _ cause: String, _ count: Int, _ action: String, _ video: String?) -> String {
             let sample = video.map { #","sample_message":\#(Self.quoted(title(home, $0)))"# } ?? ""
@@ -173,7 +176,7 @@ final class RemoteDemoShotsUITests: XCTestCase {
         }
         home.stub("GET", "/api/issues", body: """
         {"groups":[
-          \(group("probe", "nas_timeout", 2, "retry", "v-apollo-11-launch")),
+          \(group("probe", "nas_timeout", 2, "retry", "v-lake-nasser")),
           \(group("transcode", "ffmpeg_decode", 1, "retry", "v-ghost-octopus")),
           \(group("transcribe", "disk_full", 3, "open_settings", nil))]}
         """)
