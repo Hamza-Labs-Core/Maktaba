@@ -10,8 +10,11 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf()
 }
 
+/// The file's text, its line ends as `\n` (a Windows checkout has `\r\n`).
 fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
+    std::fs::read_to_string(p)
+        .unwrap_or_else(|e| panic!("{}: {e}", p.display()))
+        .replace("\r\n", "\n")
 }
 
 /// Every double-quoted string in `text`.
