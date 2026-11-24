@@ -47,6 +47,7 @@ mod setup;
 mod shell;
 mod status;
 mod tray;
+mod traypanel;
 mod webcache;
 
 use shell::focus_main;
@@ -293,6 +294,9 @@ pub fn run() {
             frame::frame_action,
             frame::frame_menu_items,
             frame::frame_menu,
+            traypanel::tray_panel_state,
+            traypanel::tray_panel_choose,
+            traypanel::tray_panel_hide,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {

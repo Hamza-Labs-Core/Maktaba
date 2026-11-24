@@ -1,0 +1,179 @@
+/* The tray's panel (Epic 13 story 13.12; docs/design/desktop/mockups/tray.html): a 360 × 560
+   window the shell opens beside the tray icon. Dark, the raised surface of the design's menus
+   and flyouts; logical properties, so it mirrors in Arabic. */
+
+.mkt-tray {
+  --mkt-tray-raised: #18243a;
+  --mkt-tray-hover: #1c2940;
+  --mkt-tray-line: #22304a;
+  --mkt-tray-ink: rgba(11, 17, 28, 0.45);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  /* the window's height: the actions scroll, the status and the two quits stay */
+  block-size: 100vh;
+  overflow: hidden;
+  background: var(--mkt-tray-raised);
+  color: #e8ecf3;
+  font-family: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 22px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+:root[dir="rtl"] .mkt-tray {
+  font-size: 15px;
+  line-height: 26px;
+}
+.mkt-tray *,
+.mkt-tray *::before {
+  box-sizing: border-box;
+}
+
+.mkt-tray__top {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 16px 12px;
+}
+.mkt-tray__top img {
+  flex: none;
+  border-radius: 8px;
+}
+.mkt-tray__status {
+  min-inline-size: 0;
+}
+.mkt-tray__line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+.mkt-tray__note {
+  color: #a9b3c4;
+  font-size: 13px;
+  line-height: 20px;
+}
+.mkt-tray__dot {
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+}
+.mkt-tray__dot--ok {
+  background: #4cc38a;
+}
+.mkt-tray__dot--busy {
+  background: #ffb454;
+}
+.mkt-tray__dot--idle {
+  background: #a9b3c4;
+}
+.mkt-tray__dot--error {
+  background: #f0707f;
+}
+
+.mkt-tray__update {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 16px 10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(227, 178, 82, 0.14);
+  color: #e3b252;
+  font: inherit;
+  font-weight: 600;
+  text-align: start;
+}
+.mkt-tray__update svg {
+  flex: none;
+  inline-size: 16px;
+  block-size: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+}
+.mkt-tray__update:hover {
+  background: rgba(227, 178, 82, 0.22);
+}
+
+.mkt-tray__menu {
+  flex: 1;
+  min-block-size: 0;
+  padding: 6px;
+  border-block-start: 1px solid var(--mkt-tray-line);
+  overflow-y: auto;
+}
+.mkt-tray__group + .mkt-tray__group {
+  margin-block-start: 6px;
+  padding-block-start: 6px;
+  border-block-start: 1px solid var(--mkt-tray-line);
+}
+.mkt-tray__row {
+  display: flex;
+  align-items: center;
+  inline-size: 100%;
+  min-block-size: 34px;
+  padding-inline: 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+.mkt-tray__row:hover:not(:disabled),
+.mkt-tray__row:focus-visible,
+.mkt-tray__update:focus-visible,
+.mkt-tray__quit:focus-visible {
+  background: var(--mkt-tray-hover);
+  outline: 2px solid #e9be63;
+  outline-offset: -2px;
+}
+.mkt-tray__row:hover:not(:disabled) {
+  outline: none;
+}
+.mkt-tray__row:disabled {
+  color: #a9b3c4;
+}
+
+.mkt-tray__foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--mkt-tray-ink);
+  border-block-start: 1px solid var(--mkt-tray-line);
+}
+.mkt-tray__quit {
+  inline-size: 100%;
+  min-block-size: 36px;
+  border: 1px solid #6b7a94;
+  border-radius: 8px;
+  background: transparent;
+  color: #e8ecf3;
+  font: inherit;
+  font-weight: 600;
+}
+.mkt-tray__quit--stop {
+  border-color: rgba(240, 112, 127, 0.6);
+  color: #f0707f;
+}
+.mkt-tray__quit:hover {
+  background: var(--mkt-tray-hover);
+}
+
+@media (forced-colors: active) {
+  .mkt-tray__row:hover:not(:disabled),
+  .mkt-tray__row:focus-visible {
+    background: Highlight;
+    color: HighlightText;
+  }
+}

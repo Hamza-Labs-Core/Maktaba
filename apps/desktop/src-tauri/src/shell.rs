@@ -298,6 +298,56 @@ fn shell(app: &AppHandle) -> tauri::State<'_, Shell> {
     app.state::<Shell>()
 }
 
+/// The tray menu's entries as they are now (story 13.12's panel shows the same), or the first
+/// ones before the first status refresh.
+pub(crate) fn tray_entries(app: &AppHandle) -> Vec<Entry> {
+    let sh = shell(app);
+    let now = sh.menu.locked().clone();
+    if now.is_empty() {
+        tray::entries(sh.lang, sh.server_side(), &ServerStatus::Starting, false)
+    } else {
+        now
+    }
+}
+
+/// What the tray's panel draws (traypanel.rs): the tray's entries, its language, and the
+/// status line's colour.
+pub(crate) fn tray_panel_state(app: &AppHandle) -> crate::traypanel::PanelState {
+    let sh = shell(app);
+    let tone = panel_tone(sh.server_side(), &sh.status.locked().status);
+    crate::traypanel::PanelState {
+        lang: match sh.lang {
+            Lang::En => "en",
+            Lang::Ar => "ar",
+        },
+        tone,
+        entries: crate::traypanel::panel_entries(&tray_entries(app)),
+    }
+}
+
+/// The panel's status colour: none for an app that runs no server here.
+fn panel_tone(server: bool, status: &ServerStatus) -> &'static str {
+    if !server {
+        return "none";
+    }
+    match status {
+        ServerStatus::Running => "ok",
+        ServerStatus::Starting => "busy",
+        ServerStatus::SetupNeeded | ServerStatus::Paused | ServerStatus::Stopped => "idle",
+        ServerStatus::Problem { .. } | ServerStatus::NotAnswering { .. } => "error",
+    }
+}
+
+/// A tray item chosen in the panel: as a click on the tray menu.
+pub(crate) fn choose_tray_item(app: &AppHandle, id: &str) {
+    on_tray_event(app, id);
+}
+
+/// The app's name in the tray's language.
+pub(crate) fn brand(app: &AppHandle) -> &'static str {
+    shell(app).lang.words().brand
+}
+
 /// The app's own repository: the one its updater endpoints (tauri.conf.json, as built)
 /// point at, else autoinstall::OWN_REPO.
 fn own_repo(app: &AppHandle) -> String {
@@ -1112,6 +1162,8 @@ fn refresh(app: &AppHandle) {
     *last = entries.clone();
     *last_badge = badge;
     drop((last, last_badge));
+    // story 13.12: an open tray panel says what the menu says
+    crate::traypanel::emit_state(app);
     // the icon with this badge (the plain icon without one)
     let icon = if new_badge {
         let plain = sh.plain_icon.locked();
@@ -1837,9 +1889,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         *sh.plain_icon.locked() = Some((icon.rgba().to_vec(), icon.width(), icon.height()));
         tray = tray.icon(icon.clone());
     }
-    // Windows: a left click opens the window (the menu is on the right
-    // button), as Windows tray icons do
-    #[cfg(windows)]
+    // Windows and the Mac (story 13.12, D2): a left click opens the tray's panel; the menu is
+    // on the right button. Linux keeps its panel's own menu (StatusNotifier).
+    #[cfg(any(windows, target_os = "macos"))]
     {
         use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
         tray = tray
@@ -1848,10 +1900,11 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 if let TrayIconEvent::Click {
                     button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
+                    rect,
                     ..
                 } = event
                 {
-                    focus_main(tray.app_handle());
+                    crate::traypanel::toggle(tray.app_handle(), rect);
                 }
             });
     }
@@ -2337,6 +2390,24 @@ pub fn open_external(url: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_tray_panel_s_colour_follows_the_server() {
+        assert_eq!(panel_tone(true, &ServerStatus::Running), "ok");
+        assert_eq!(panel_tone(true, &ServerStatus::Starting), "busy");
+        assert_eq!(panel_tone(true, &ServerStatus::Paused), "idle");
+        assert_eq!(
+            panel_tone(
+                true,
+                &ServerStatus::NotAnswering {
+                    reason: "port".into()
+                }
+            ),
+            "error"
+        );
+        // an app connected to another Maktaba runs no server here: no colour
+        assert_eq!(panel_tone(false, &ServerStatus::Running), "none");
+    }
     use super::*;
 
     #[test]
