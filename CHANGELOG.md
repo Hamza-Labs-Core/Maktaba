@@ -14,6 +14,17 @@ build fails when the two differ.
 
 ### Changed
 
+- **The Windows and Linux Player plays files as they are.** It now plays with libmpv, which it
+  carries: MKV, WebM, MP4, MOV and TS; H.264, HEVC (10-bit too), VP9, AV1 and MPEG-2; AAC, AC-3,
+  E-AC-3, DTS, FLAC, Opus, Vorbis and MP3, 5.1 and 7.1 included (folded down to stereo
+  speakers), and HDR10 and HLG on any screen. A home that knows the new `desktop-mpv` profile
+  sends such files as they are instead of converting them first, so a film starts sooner and
+  the home's processor rests; an older home converts as before. A file that does not play as it
+  is opens once more converted. Captions are drawn in the Player's own face, right to left in
+  Arabic. If the Player's libmpv cannot load, it says so once and plays as before, and Report a
+  problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
+  knows.
+
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
   Language and Help in the Player's language, beside the app's name, Big screen and Help, with
