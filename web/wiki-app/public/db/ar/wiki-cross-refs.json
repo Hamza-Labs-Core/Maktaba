@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 60,
-    "stories": 743,
+    "stories": 745,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -2047,6 +2047,24 @@
       "plan_files": [
         "specs/epics/13-desktop/plan-13-08-auto-update.md"
       ]
+    },
+    {
+      "id": "13.09",
+      "epic": 13,
+      "num": "09",
+      "slug": "desktop-design",
+      "title": "التصميم: مظهر مكتبة الخاص على سطح المكتب، في نماذج مُراجَعة",
+      "story_file": "specs/epics/13-desktop/story-13-09-desktop-design.md",
+      "plan_files": []
+    },
+    {
+      "id": "13.18",
+      "epic": 13,
+      "num": "18",
+      "slug": "player-libmpv",
+      "title": "المشغّل يعمل بـ libmpv: تشغيل مباشر يُبلَغ به الجهاز الرئيسي",
+      "story_file": "specs/epics/13-desktop/story-13-18-player-libmpv.md",
+      "plan_files": []
     },
     {
       "id": "14.01",

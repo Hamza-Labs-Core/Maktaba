@@ -231,7 +231,7 @@ export const FEATURES = [
   { key: "live", icon: "live", epic: "27-live-channels", topic: "watch-tv", fallback: null },
   { key: "search", icon: "search", epic: "05-search-indexing", topic: "search", fallback: null },
   { key: "updates", icon: "updates", epic: "28-auto-update", topic: "updates", fallback: null },
-  { key: "runs", icon: "server", epic: "59-nas", topic: null, fallback: "/install/" },
+  { key: "runs", icon: "server", epic: "59-nas", topic: null, fallback: "/download/#nas-guides" },
 ];
 
 /** Where a feature links: its help topic once built, else its fallback, else nowhere (null). */
@@ -386,7 +386,7 @@ export function homePage(lang, { links, resolves = () => false }) {
     </ol>
     <div class="start-actions">
       ${dl("button", c("start.download"))}
-      <a class="button quiet" href="${local("/install/")}">${c("start.guides")}${ICONS.onward}</a>
+      <a class="button quiet" href="${local("/download/#guides")}">${c("start.guides")}${ICONS.onward}</a>
     </div>
   </div>
 </section>`;

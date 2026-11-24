@@ -14,11 +14,13 @@ build fails when the two differ.
 
 ### Changed
 
-- **New pictures on maktaba.tv.** The screenshots of every app now show a library of
-  documentaries and children's animation: NASA's Curiosity rover, the Apollo 11 launch, Saturn's
-  rings, Lake Nasser seen from space, the Moon's phases, a deep-sea octopus, Big Buck Bunny and
-  the Caminandes llama films. Every title is public domain or Creative Commons, credited, and
-  no woman or girl appears in any picture. In English and Arabic.
+- **One page to get Maktaba: maktaba.tv/download.** The download page now lists every setup
+  guide under its download buttons: Synology, TrueNAS, Unraid, QNAP, UGREEN and ASUSTOR, Docker,
+  after setup and troubleshooting, each with one line on what it covers. The NAS card's button
+  goes straight to the NAS guides. maktaba.tv/install now opens the download page, every guide
+  keeps its own address (maktaba.tv/install/synology and the others), and each guide's "All NAS
+  guides" link goes back to it. The site's menu has Download, Help and Messages. In English and
+  Arabic.
 
 - **A full guide for each NAS on maktaba.tv/install.** QNAP, UGREEN and a new ASUSTOR page each
   walk through the same steps as the TrueNAS and Unraid guides: what to check first, the user and
@@ -3775,6 +3777,12 @@ build fails when the two differ.
   for a copy, or the upgrade fails, the home keeps running on PostgreSQL 16, says why in its log,
   and tries again at its next start. PostgreSQL 18 brings pg_textsearch, which ranked keyword
   search will use.
+
+- **New pictures on maktaba.tv.** The screenshots of every app now show a library of
+  documentaries and children's animation: NASA's Curiosity rover, the Apollo 11 launch, Saturn's
+  rings, Lake Nasser seen from space, the Moon's phases, a deep-sea octopus, Big Buck Bunny and
+  the Caminandes llama films. Every title is public domain or Creative Commons, credited, and
+  no woman or girl appears in any picture. In English and Arabic.
 
 ### Fixed
 

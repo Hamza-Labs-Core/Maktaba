@@ -1,7 +1,7 @@
 // The NAS guides (Epic 59 story 59.14): every guide on maktaba.tv is a pair of pages, English
 // and Arabic, mirrored: the same sections with the same ids, the same screenshots still to come
-// (each a marked placeholder in both languages), each page linking to its twin and to the NAS
-// landing page, and the Arabic page passing maktaba.dev's Latin-share check (T02). The pages a
+// (each a marked placeholder in both languages), each page linking to its twin and to every NAS
+// guide (maktaba.tv's download page), and the Arabic page passing maktaba.dev's Latin-share check (T02). The pages a
 // script fills (the install page, the Synology guide) are checked on what their script renders.
 import BASE from "../../../../cloud/installers/docker/docker-compose.yml?raw";
 import { describe, expect, it } from "vitest";
@@ -67,10 +67,11 @@ describe("the NAS guides", () => {
   });
 
   it.each(STATIC.filter((n) => n !== "nas" && n !== "truenas"))(
-    "%s: links back to the NAS landing page in its language",
+    "%s: links back to every NAS guide, on maktaba.tv's download page, in its language",
     (name) => {
-      expect(page("en", name)).toContain('href="/install/nas/"');
-      expect(page("ar", name)).toContain('href="/ar/install/nas/"');
+      // the guides' index is the download page's NAS section (60.05, 60.11): /install/ redirects
+      expect(page("en", name)).toContain('href="/download/#nas-guides"');
+      expect(page("ar", name)).toContain('href="/ar/download/#nas-guides"');
     }
   );
 

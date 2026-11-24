@@ -1791,6 +1791,58 @@
       }
     },
     {
+      "id": "story-13.9",
+      "type": "story",
+      "title": "Design: Maktaba's own look on the desktop, as reviewed mockups",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# Story 13.9 — Design: Maktaba's own look on the desktop, as reviewed mockups\n\n> Epic 13 · Design first · **Approved 2026-11-24** · Depends on: Epic 17 (tokens), Epic 60\n> story 60.01 part B (the direction, Maktaba Display) · Gates: every story that changes a\n> desktop surface's look (the build stories below)\n\n## Why\n\nMaktaba's desktop apps show the operating system's stock parts wherever the app's own pages\nstop: the title bar, the menu bar, error message boxes, the tray menu and every installer.\nThe apps are to look like one designed Maktaba product instead, in English and Arabic, while\nkeep",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-09-desktop-design.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "desktop-design"
+      }
+    },
+    {
+      "id": "story-13.18",
+      "type": "story",
+      "title": "The Player plays with libmpv: direct play, reported to the home",
+      "epic": "13-desktop",
+      "phase": 3,
+      "content": "# Story 13.18 — The Player plays with libmpv: direct play, reported to the home\n\n> Epic 13 · Build · Decided in story 13.9 (D4, approved 2026-11-24) · Depends on: 13.15 (the\n> Player on the JetBrains Runtime) · Size: L\n\n## Why\n\nThe Player for Windows and Linux plays through JavaFX's media stack, which decodes H.264 and\nAAC in MP4 or HLS and nothing else. Its sessions open with the streaming service's\n`desktop-player` profile (`streaming/internal/capability/matrix.go`: H.264, AAC, stereo,\n1080p), so the home remuxes or transcodes every MKV, every HEVC file and every AC-3 or 5.1\ntrack before the",
+      "tags": [
+        "story",
+        "13-desktop",
+        "phase-3"
+      ],
+      "related": [
+        "epic-13-desktop"
+      ],
+      "files": {
+        "story": "specs/epics/13-desktop/story-13-18-player-libmpv.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "player-libmpv"
+      }
+    },
+    {
       "id": "story-14.1",
       "type": "story",
       "title": "tvOS app (Swift / SwiftUI)",

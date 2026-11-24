@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="960x640">
+<title>Server: status</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .main { flex: 1; padding: 22px 30px 0; background: var(--dk-window); border-start-start-radius: 12px; border-block-start: 1px solid var(--dk-line); }
+  .state { display: flex; align-items: center; gap: 18px; }
+  .halo { position: relative; display: grid; place-items: center; inline-size: 56px; block-size: 56px; border-radius: 16px; background: rgba(76,195,138,.12); color: var(--dk-ok); }
+  .halo .dot { position: absolute; inset-block-start: 6px; inset-inline-end: 6px; box-shadow: 0 0 0 3px var(--dk-window); }
+  .state h1 { font-size: var(--dk-t-h2); line-height: var(--dk-t-h2-lh); }
+  .state .grow { flex: 1; }
+  .upd { display: flex; align-items: center; gap: 12px; margin-block: 18px 16px; padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(227,178,82,.35); background: linear-gradient(90deg, rgba(227,178,82,.12), rgba(227,178,82,.03)); }
+  .upd .i { color: var(--dk-brass); }
+  .upd .txt { flex: 1; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .tile { padding: 14px 16px; border-radius: 12px; background: var(--dk-pane); border: 1px solid var(--dk-line); }
+  .tile .k { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .tile .k .i { color: var(--dk-muted); }
+  .tile .k .dot { margin-inline-start: auto; }
+  .tile .v { font-size: 22px; line-height: 30px; font-weight: 600; margin-block-start: 10px; }
+  .tile .s { color: var(--dk-muted); font-size: var(--dk-t-small); line-height: var(--dk-t-small-lh); }
+  .tile .bar { margin-block-start: 10px; }
+  .foot { display: flex; align-items: center; gap: 8px; margin-block-start: 16px; }
+  .foot .grow { flex: 1; }
+  .rail .ver { color: var(--dk-muted); font-size: 11px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="win win11">
+  <header class="titlebar mica">
+    <div class="app"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="c.server"></span></div>
+    <span class="crumb" data-t="crumb"></span>
+    <div class="grow"></div>
+    <div data-caption></div>
+  </header>
+  <div class="body mica">
+    <nav class="rail">
+      <a class="on"><span class="pill"><i data-i="server"></i></span><span data-t="n.status"></span></a>
+      <a><span class="pill"><i data-i="library"></i></span><span data-t="n.library"></span></a>
+      <a><span class="pill"><i data-i="device"></i></span><span data-t="n.devices"></span></a>
+      <a><span class="pill"><i data-i="logs"></i></span><span data-t="n.logs"></span></a>
+      <span class="spacer"></span>
+      <a><span class="pill"><i data-i="settings"></i></span><span data-t="n.settings"></span></a>
+    </nav>
+    <main class="main">
+      <div class="state">
+        <span class="halo"><i data-i="server" class="s24"></i><span class="dot"></span></span>
+        <div><h1 class="display" data-t="running"></h1><div class="muted" data-th="sub"></div></div>
+        <span class="grow"></span>
+        <span class="btn"><i data-i="pausecircle" class="s16"></i><span data-t="pause"></span></span>
+        <span class="btn primary"><i data-i="external" class="s16 dir"></i><span data-t="open"></span></span>
+      </div>
+      <div class="upd"><i data-i="update"></i><div class="txt"><b data-th="updT"></b> <span class="muted" data-t="updS"></span></div><span class="btn ghost" data-t="updNow"></span></div>
+      <div class="tiles">
+        <div class="tile"><div class="k"><i data-i="db" class="s16"></i><span data-t="t1"></span><span class="dot"></span></div><div class="v num" data-t="t1v"></div><div class="s" data-t="t1s"></div></div>
+        <div class="tile"><div class="k"><i data-i="server" class="s16"></i><span data-t="t2"></span><span class="dot"></span></div><div class="v num" data-t="t2v"></div><div class="s" data-t="t2s"></div></div>
+        <div class="tile"><div class="k"><i data-i="live" class="s16"></i><span data-t="t3"></span><span class="dot"></span></div><div class="v num" data-t="t3v"></div><div class="s" data-t="t3s"></div></div>
+        <div class="tile"><div class="k"><i data-i="search" class="s16"></i><span data-t="t4"></span><span class="dot run"></span></div><div class="v num" data-t="t4v"></div><div class="s" data-t="t4s"></div><div class="bar"><i style="inline-size: 72%"></i></div></div>
+        <div class="tile"><div class="k"><i data-i="chat" class="s16"></i><span data-t="t5"></span><span class="dot run"></span></div><div class="v num" data-t="t5v"></div><div class="s" data-t="t5s"></div><div class="bar"><i style="inline-size: 38%"></i></div></div>
+        <div class="tile"><div class="k"><i data-i="sparkle" class="s16"></i><span data-t="t6"></span><span class="dot idle"></span></div><div class="v num" data-t="t6v"></div><div class="s" data-t="t6s"></div><div class="bar"><i style="inline-size: 64%"></i></div></div>
+      </div>
+      <div class="foot">
+        <span class="btn ghost"><i data-i="logs" class="s16"></i><span data-t="logs"></span></span>
+        <span class="btn ghost"><i data-i="flag" class="s16"></i><span data-t="report"></span></span>
+        <span class="grow"></span>
+        <span class="muted small" data-t="close"></span>
+      </div>
+    </main>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>
+const pc = '<bdi dir="ltr">Haddad-PC</bdi>';
+MK.applyKit({
+  en: {
+    title: "Server: status", crumb: "Haddad-PC",
+    "n.status": "Status", "n.library": "Libraries", "n.devices": "Devices", "n.logs": "Logs", "n.settings": "Settings",
+    running: "Maktaba is running", sub: `On ${pc} · version 0.3.112 · since Monday 08:14`,
+    pause: "Pause server", open: "Open Maktaba",
+    updT: "Maktaba 0.3.113 is ready.", updS: "It installs tonight at 03:00, when no one is watching.", updNow: "Install now",
+    t1: "Library database", t1v: "2.1 GB", t1s: "Backed up today at 04:00",
+    t2: "Server", t2v: "3 devices", t2s: "Living room TV, two phones",
+    t3: "Playback and Live TV", t3v: "1 watching", t3s: "Film Night on the TV",
+    t4: "Indexing and search", t4v: "128 waiting", t4s: "Shorts: reading new videos",
+    t5: "Transcription", t5v: "2 of 4 workers", t5s: "About 6 hours of audio left",
+    t6: "Language model", t6v: "Downloading", t6s: "3.2 of 5 GB · resumes by itself",
+    logs: "Open logs", report: "Report a problem…", close: "Closing this window keeps the server running.",
+  },
+  ar: {
+    title: "الخادم: الحالة", crumb: "Haddad-PC",
+    "n.status": "الحالة", "n.library": "المكتبات", "n.devices": "الأجهزة", "n.logs": "السجلات", "n.settings": "الإعدادات",
+    running: "مكتبة تعمل", sub: `على ${pc} · الإصدار <bdi>0.3.112</bdi> · منذ الاثنين ٠٨:١٤`,
+    pause: "إيقاف الخادم مؤقتًا", open: "فتح مكتبة",
+    updT: "مكتبة <bdi>0.3.113</bdi> جاهزة.", updS: "تُثبَّت الليلة عند ٠٣:٠٠ حين لا يشاهد أحد.", updNow: "التثبيت الآن",
+    t1: "قاعدة بيانات المكتبة", t1v: "٢٫١ غيغابايت", t1s: "نُسخت احتياطيًا اليوم عند ٠٤:٠٠",
+    t2: "الخادم", t2v: "٣ أجهزة", t2s: "تلفاز غرفة الجلوس وهاتفان",
+    t3: "التشغيل والبث المباشر", t3v: "مشاهدة واحدة", t3s: "سهرة الأفلام على التلفاز",
+    t4: "الفهرسة والبحث", t4v: "١٢٨ في الانتظار", t4s: "أفلام قصيرة: قراءة المقاطع الجديدة",
+    t5: "التفريغ", t5v: "عاملان من ٤", t5s: "بقي نحو ٦ ساعات من الصوت",
+    t6: "النموذج اللغوي", t6v: "جارٍ التنزيل", t6s: "٣٫٢ من ٥ غيغابايت · يُستأنف تلقائيًا",
+    logs: "فتح السجلات", report: "الإبلاغ عن مشكلة…", close: "إغلاق هذه النافذة يُبقي الخادم عاملًا.",
+  },
+});
+</script>
+</body>
+</html>

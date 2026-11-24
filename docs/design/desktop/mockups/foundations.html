@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x760">
+<title>Foundations: colour, type, controls and window chrome</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  body { background: var(--dk-window); overflow: hidden; }
+  .sheet { padding: 28px 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 22px 40px; }
+  h1 { font-size: var(--dk-t-h1); line-height: var(--dk-t-h1-lh); grid-column: 1 / -1; }
+  h1 + p { grid-column: 1 / -1; margin-block-start: -14px; }
+  h2 { font-size: var(--dk-t-small); font-weight: 600; color: var(--dk-muted); margin-block-end: 10px; }
+  .sw { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .sw div { border-radius: 8px; overflow: hidden; border: 1px solid var(--dk-line); font-size: 11px; line-height: 15px; }
+  .sw div i { display: block; block-size: 34px; }
+  .sw div span { display: block; padding: 5px 7px; background: var(--dk-pane); }
+  .sw div b { display: block; font-weight: 600; }
+  .type div { display: flex; align-items: baseline; gap: 14px; padding-block: 3px; border-block-end: 1px solid var(--dk-line); }
+  .type div .k { inline-size: 92px; flex: none; color: var(--dk-muted); font-size: 11px; }
+  .type .both { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 1; }
+  .type .ar { direction: rtl; text-align: start; }
+  .ctrls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .ctrls + .ctrls { margin-block-start: 10px; }
+  .bars > div { position: relative; border: 1px solid var(--dk-line); border-radius: 8px; overflow: hidden; margin-block-end: 8px; }
+  .bars .titlebar { block-size: 40px; }
+  .bars .lab { position: absolute; inset-block-start: 11px; inset-inline-start: 50%; color: var(--dk-muted); font-size: 11px; }
+  .mini-menu { position: relative; inline-size: 240px; }
+  .mini-menu .menu { position: static; inline-size: 240px; }
+  .row2 { display: flex; gap: 18px; align-items: flex-start; }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <h1 class="display" data-t="h1"></h1>
+  <p class="muted" data-t="lead"></p>
+
+  <section>
+    <h2 data-t="colour"></h2>
+    <div class="sw">
+      <div><i style="background:#0B111C"></i><span><b>window</b>#0B111C</span></div>
+      <div><i style="background:#0E1624"></i><span><b>chrome / Mica</b>#0E1624</span></div>
+      <div><i style="background:#0F1725"></i><span><b>pane</b>#0F1725</span></div>
+      <div><i style="background:#131D2E"></i><span><b>subtle</b>#131D2E</span></div>
+      <div><i style="background:#18243A"></i><span><b>raised</b>#18243A</span></div>
+      <div><i style="background:#22304A"></i><span><b>line</b>#22304A</span></div>
+      <div><i style="background:#3A3020"></i><span><b>chosen</b>#3A3020</span></div>
+      <div><i style="background:#E3B252"></i><span><b>brass</b>#E3B252</span></div>
+      <div><i style="background:#E8ECF3"></i><span><b>fg</b>#E8ECF3 · 15.9:1</span></div>
+      <div><i style="background:#A9B3C4"></i><span><b>muted</b>#A9B3C4 · 8.9:1</span></div>
+      <div><i style="background:#4CC38A"></i><span><b>ok</b>#4CC38A</span></div>
+      <div><i style="background:#F0707F"></i><span><b>error</b>#F0707F</span></div>
+    </div>
+  </section>
+
+  <section class="type">
+    <h2 data-t="type"></h2>
+    <div><span class="k">hero · Display</span><span class="both"><span class="display" style="font-size:40px;line-height:48px">Journey to Saturn</span><span class="display ar" style="font-size:44px;line-height:64px">رحلة إلى زحل</span></span></div>
+    <div><span class="k">h2 · Display</span><span class="both"><span class="display" style="font-size:24px;line-height:32px">Welcome to Maktaba</span><span class="display ar" style="font-size:26px;line-height:40px">مرحبًا بك في مكتبة</span></span></div>
+    <div><span class="k">h3 · Text 600</span><span class="both"><span style="font-size:18px;font-weight:600">Continue Watching</span><span class="ar" style="font-size:19px;font-weight:600;line-height:30px">تابع المشاهدة</span></span></div>
+    <div><span class="k">body · Text 400</span><span class="both"><span style="font-size:14px">The server keeps running.</span><span class="ar" style="font-size:15px;line-height:26px">يبقى الخادم عاملًا.</span></span></div>
+    <div><span class="k">caption</span><span class="both"><span style="font-size:12px" class="muted">3 devices · 1 watching</span><span class="ar muted" style="font-size:13px;line-height:20px">٣ أجهزة · مشاهدة واحدة</span></span></div>
+  </section>
+
+  <section>
+    <h2 data-t="controls"></h2>
+    <div class="ctrls">
+      <span class="btn primary" data-t="b1"></span><span class="btn" data-t="b2"></span><span class="btn ghost" data-t="b3"></span><span class="btn danger" data-t="b4"></span><span class="btn primary focus" data-t="b5"></span>
+    </div>
+    <div class="ctrls">
+      <span class="switch on"></span><span class="switch"></span>
+      <span class="check on"><i data-i="check" class="s16"></i></span><span class="check"></span>
+      <span class="radio on"></span><span class="radio"></span>
+      <span class="seg"><span class="on" data-t="s1"></span><span data-t="s2"></span></span>
+      <span class="chip on" data-t="c1"></span><span class="chip" data-t="c2"></span>
+    </div>
+    <div class="ctrls">
+      <div class="field" style="inline-size: 300px"><i data-i="search" class="s16"></i><span data-t="c.search"></span><span class="kbd">Ctrl K</span></div>
+      <span class="badge" data-t="ok"></span><span class="badge brass" data-t="new"></span><span class="badge warn" data-t="warn"></span>
+      <div style="inline-size: 140px" class="bar"><i style="inline-size: 60%"></i></div>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-t="chrome"></h2>
+    <div class="bars">
+      <div><header class="titlebar mica"><div class="app"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="c.player"></span></div><div class="grow"></div><span class="lab">Windows 11 · Mica</span><div data-caption></div></header></div>
+      <div><header class="titlebar gtk mica"><div class="app"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="c.player"></span></div><div class="grow"></div><span class="lab">GNOME · KDE</span><div data-gtk></div></header></div>
+      <div><header class="titlebar mica" style="padding-inline-start: 8px"><div data-traffic></div><div class="app"><span data-t="c.player"></span></div><div class="grow"></div><span class="lab">macOS</span></header></div>
+    </div>
+    <div class="row2">
+      <div class="mini-menu"><div class="menu">
+        <div class="mi hover"><i data-i="window"></i><span data-t="m1"></span><span class="end">Ctrl O</span></div>
+        <div class="mi on"><i data-i="check"></i><span data-t="m2"></span></div>
+        <div class="sep"></div>
+        <div class="mi"><i data-i="power"></i><span data-t="m3"></span></div>
+      </div></div>
+      <div class="small muted" style="max-inline-size: 300px" data-t="iconNote"></div>
+    </div>
+  </section>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Foundations", h1: "Maktaba on the desktop: foundations",
+    lead: "Epic 17's tokens and maktaba.tv's part B direction, set for windows: ink and brass, Maktaba Display for titles, Maktaba Text for everything else, one icon style, mirrored for Arabic.",
+    colour: "Colour (dark; contrast on the window colour)", type: "Type: Latin and Arabic side by side, Arabic one step larger and looser",
+    controls: "Controls", chrome: "Window chrome, menus and icons",
+    b1: "Open Maktaba", b2: "Pause server", b3: "See the logs", b4: "Stop server and quit", b5: "Focused",
+    s1: "Dark", s2: "System", c1: "All", c2: "Unwatched", ok: "Running", new: "New", warn: "Needs you",
+    m1: "Open Maktaba", m2: "Start when I sign in", m3: "Quit",
+    iconNote: "Icons: 24-unit grid, 1.75 stroke, round caps and joins, currentColor. Arrows, back, onward and chevrons mirror in Arabic; play, media controls, the app icon and checks never do.",
+  },
+  ar: {
+    title: "الأسس", h1: "مكتبة على سطح المكتب: الأسس",
+    lead: "رموز الملحمة ١٧ واتجاه الجزء (ب) من maktaba.tv، مضبوطة للنوافذ: الحبر والنحاس، وخط Maktaba Display للعناوين، وMaktaba Text لكل ما عداها، وأسلوب واحد للأيقونات، معكوسًا للعربية.",
+    colour: "الألوان (الداكنة؛ التباين على لون النافذة)", type: "الخطوط: اللاتينية والعربية جنبًا إلى جنب، والعربية أكبر بدرجة وأوسع تباعدًا",
+    controls: "عناصر التحكم", chrome: "إطار النافذة والقوائم والأيقونات",
+    b1: "فتح مكتبة", b2: "إيقاف الخادم مؤقتًا", b3: "عرض السجلات", b4: "إيقاف الخادم والخروج", b5: "محدَّد",
+    s1: "داكن", s2: "النظام", c1: "الكل", c2: "لم تُشاهَد", ok: "يعمل", new: "جديد", warn: "يحتاج إليك",
+    m1: "فتح مكتبة", m2: "التشغيل عند تسجيل دخولي", m3: "خروج",
+    iconNote: "الأيقونات: شبكة من ٢٤ وحدة، وخط بسماكة ١٫٧٥، وأطراف ووصلات مستديرة، بلون النص. الأسهم والرجوع والتقدّم والشارات تنعكس في العربية؛ أما التشغيل وأزرار الوسائط وأيقونة التطبيق وعلامات الاختيار فلا تنعكس أبدًا.",
+  },
+});
+</script>
+</body>
+</html>

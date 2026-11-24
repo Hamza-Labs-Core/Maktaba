@@ -30,11 +30,10 @@ const reps = { install: ["/install/nas/"], problems: [] };
 const hand = ["/", "/ar/", "/404", "/ar/404"];
 
 test("the hand-made pages: their paths, the 404 at /404 (status 200, which Lighthouse measures)", () => {
-  // the front door, the 404, the install chooser (60.05) and the legal pages (60.07)
+  // the front door, the 404 and the legal pages (60.07); the install chooser (60.05) is the
+  // download page's guides now, and /install/ redirects there
   const all = [
     ...hand,
-    "/install/",
-    "/ar/install/",
     // a TV's QR page (58.03): it forwards only with a code, so it is measured as it stands
     "/tv/",
     "/ar/tv/",

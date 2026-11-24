@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="960x640">
+<title>Server setup: what will run</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .runs { margin-block: 18px 16px; }
+  .runs .row { min-block-size: 44px; padding-block: 6px; }
+  .runs .ok { color: var(--dk-ok); }
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-block-end: 14px; }
+  .meter { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--dk-line); background: var(--dk-pane); }
+  .meter .k { display: flex; align-items: center; gap: 8px; color: var(--dk-muted); font-size: var(--dk-t-small); }
+  .meter .v { font-weight: 600; margin-block: 2px 8px; }
+  .meter .v .muted { font-weight: 400; }
+  .meter .bar i { background: var(--dk-ok); }
+  .path { direction: ltr; unicode-bidi: isolate; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="win win11">
+  <header class="titlebar mica">
+    <div class="app"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="wtitle"></span></div>
+    <div class="grow"></div>
+    <div data-caption></div>
+  </header>
+  <div class="wizard">
+    <aside class="brand">
+      <div class="wordmark"><img src="../../../../web/public/icons/icon-192.png" alt=""><span data-t="c.server"></span></div>
+      <ol class="steps">
+        <li class="done"><span class="n"><i data-i="check"></i></span><span data-t="s1"></span></li>
+        <li class="now"><span class="n" data-t="n2"></span><span data-t="s2"></span></li>
+        <li><span class="n" data-t="n3"></span><span data-t="s3"></span></li>
+        <li><span class="n" data-t="n4"></span><span data-t="s4"></span></li>
+        <li><span class="n" data-t="n5"></span><span data-t="s5"></span></li>
+      </ol>
+      <div data-arch></div>
+    </aside>
+    <section class="wpage">
+      <div class="wbody">
+        <h1 class="display" data-t="h1"></h1>
+        <p class="lead" data-th="intro"></p>
+        <div class="rows runs">
+          <div class="row"><i data-i="db"></i><div class="txt" data-t="r1"></div><i data-i="checkcircle" class="ok"></i></div>
+          <div class="row"><i data-i="server"></i><div class="txt" data-t="r2"></div><i data-i="checkcircle" class="ok"></i></div>
+          <div class="row"><i data-i="live"></i><div class="txt" data-t="r3"></div><i data-i="checkcircle" class="ok"></i></div>
+          <div class="row"><i data-i="sparkle"></i><div class="txt" data-t="r4"></div><i data-i="checkcircle" class="ok"></i></div>
+        </div>
+        <div class="meters">
+          <div class="meter"><div class="k"><i data-i="chip" class="s16"></i><span data-t="ram"></span></div><div class="v" data-th="ramV"></div><div class="bar"><i style="inline-size: 100%"></i></div></div>
+          <div class="meter"><div class="k"><i data-i="disk" class="s16"></i><span data-t="disk"></span></div><div class="v" data-th="diskV"></div><div class="bar"><i style="inline-size: 100%"></i></div></div>
+        </div>
+        <div class="callout warn"><i data-i="warn"></i><div data-th="gpu"></div></div>
+      </div>
+      <div class="wfoot">
+        <span class="muted" style="display:flex" title="Data folder"><i data-i="folder" class="s16"></i></span>
+        <span class="path muted">%LOCALAPPDATA%\Maktaba\data</span>
+        <span class="btn ghost" data-t="change"></span>
+        <span class="grow"></span>
+        <span class="btn lg" data-t="back"></span>
+        <span class="btn lg primary"><span data-t="next"></span><i data-i="onward" class="s16 dir"></i></span>
+      </div>
+    </section>
+  </div>
+</div>
+<script src="kit.js"></script>
+<script>
+const pc = '<bdi dir="ltr">Haddad-PC</bdi>';
+MK.applyKit({
+  en: {
+    title: "Server setup: what will run", wtitle: "Set up Maktaba",
+    s1: "Welcome", s2: "What will run", s3: "Your admin account", s4: "Your library folders", s5: "Getting Maktaba ready",
+    h1: "What will run", intro: `Maktaba will run these on ${pc}:`,
+    r1: "The library database (private to Maktaba)", r2: "The server the app and your devices talk to",
+    r3: "Playback and Live TV", r4: "Indexing, transcription (4 workers) and search",
+    ram: "Memory", ramV: '16 GB <span class="muted">(needs 8 GB)</span>',
+    disk: "Free disk space", diskV: '412 GB <span class="muted">(needs 20 GB)</span>',
+    gpu: `No NVIDIA graphics card: ${pc} transcribes on its processor, many times slower than on a graphics card.`,
+    change: "Change", back: "Back", next: "Next",
+  },
+  ar: {
+    title: "إعداد الخادم: ما الذي سيعمل", wtitle: "إعداد مكتبة",
+    s1: "مرحبًا", s2: "ما الذي سيعمل", s3: "حساب المدير", s4: "مجلدات مكتبتك", s5: "تجهيز مكتبة",
+    h1: "ما الذي سيعمل", intro: `ستشغّل مكتبة ما يلي على ${pc}:`,
+    r1: "قاعدة بيانات المكتبة (خاصة بمكتبة)", r2: "الخادم الذي يتصل به التطبيق وأجهزتك",
+    r3: "التشغيل والبث التلفزيوني المباشر", r4: "الفهرسة والتفريغ (٤ عمّال) والبحث",
+    ram: "الذاكرة", ramV: '١٦ غيغابايت <span class="muted">(المطلوب ٨ غيغابايت)</span>',
+    disk: "المساحة الحرة", diskV: '٤١٢ غيغابايت <span class="muted">(المطلوب ٢٠ غيغابايت)</span>',
+    gpu: `لا توجد بطاقة رسوميات من NVIDIA: يفرّغ ${pc} على معالجه، وهذا أبطأ بأضعاف من بطاقة الرسوميات.`,
+    change: "تغيير", back: "رجوع", next: "التالي",
+  },
+});
+</script>
+</body>
+</html>

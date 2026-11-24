@@ -232,10 +232,6 @@ export const CARD_SUB = {
     en: "Mac · Windows · Linux · NAS",
     ar: "Mac وWindows وLinux وخوادم التخزين",
   },
-  "/install/": {
-    en: "A NAS, Docker, or any Linux computer",
-    ar: "خادم تخزين أو Docker أو أي حاسوب بنظام Linux",
-  },
   // a family: every page under it (CARD_FAMILIES)
   "/problems/": {
     en: "Messages and what they mean",

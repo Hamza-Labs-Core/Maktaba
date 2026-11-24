@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="960x640">
+<title>Server on Linux: the tray menu (GNOME, AppIndicator)</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  /* GNOME Shell's top bar and its popup menu, drawn by the desktop, not by Maktaba: the
+     StatusNotifier menu takes Maktaba's labels, order, sections, enabled state, check marks
+     and themed icon names, and nothing else. */
+  .topbar { position: absolute; inset-inline: 0; inset-block-start: 0; block-size: 32px; display: flex; align-items: center; padding-inline: 14px; background: #000; color: #fff; font-family: Cantarell, system-ui, sans-serif; font-size: 14px; font-weight: 600; }
+  .topbar .grow { flex: 1; }
+  .topbar .ind { display: flex; align-items: center; gap: 14px; }
+  .topbar .ind svg { inline-size: 16px; block-size: 16px; }
+  .topbar .mk { position: relative; display: grid; place-items: center; inline-size: 30px; block-size: 26px; border-radius: 999px; background: rgba(255,255,255,.18); }
+  .topbar .mk img { inline-size: 16px; block-size: 16px; }
+  .topbar .mk .dot { position: absolute; inset-block-end: 3px; inset-inline-end: 5px; inline-size: 6px; block-size: 6px; box-shadow: 0 0 0 1.5px #000; }
+  .gmenu { position: absolute; inset-block-start: 38px; inset-inline-end: 84px; inline-size: 330px; padding: 8px; border-radius: 14px; background: #353535; color: #fff; font-family: Cantarell, system-ui, sans-serif; font-size: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  .gmenu .gi { display: flex; align-items: center; gap: 12px; min-block-size: 34px; padding-inline: 12px; border-radius: 8px; }
+  .gmenu .gi svg { inline-size: 16px; block-size: 16px; opacity: .9; }
+  .gmenu .gi.hover { background: rgba(255,255,255,.1); }
+  .gmenu .gi.status { color: #fff; font-weight: 700; }
+  .gmenu .gi.dim { color: rgba(255,255,255,.55); }
+  .gmenu .gsep { block-size: 1px; margin: 6px 12px; background: rgba(255,255,255,.12); }
+  .note { position: absolute; inset-inline-start: 36px; inset-block-start: 120px; inline-size: 380px; }
+  .note h2 { font-size: var(--dk-t-h3); line-height: var(--dk-t-h3-lh); margin-block-end: 8px; }
+  .note p { color: var(--dk-muted); margin-block-end: 10px; }
+  .note ul { margin: 0; padding-inline-start: 18px; color: var(--dk-muted); }
+  .note li { margin-block-end: 4px; }
+</style>
+</head>
+<body>
+<div class="desk" style="background: #141b28"></div>
+<div class="topbar">
+  <span data-t="act"></span><span class="grow"></span><span class="num" data-t="clock"></span><span class="grow"></span>
+  <div class="ind"><span class="mk"><img src="../../../../web/public/icons/icon-192.png" alt=""><span class="dot"></span></span><i data-i="wifi"></i><i data-i="speaker"></i><i data-i="power"></i></div>
+</div>
+<div class="gmenu">
+  <div class="gi status"><span class="dot"></span><span data-t="running"></span></div>
+  <div class="gi dim"><span data-th="sub"></span></div>
+  <div class="gsep"></div>
+  <div class="gi"><i data-i="update"></i><span data-t="upd"></span></div>
+  <div class="gsep"></div>
+  <div class="gi hover"><i data-i="window"></i><span data-t="open"></span></div>
+  <div class="gi"><i data-i="pausecircle"></i><span data-t="pause"></span></div>
+  <div class="gi"><i data-i="logs"></i><span data-t="logs"></span></div>
+  <div class="gi"><i data-i="grid"></i><span data-t="comp"></span></div>
+  <div class="gi"><i data-i="flag"></i><span data-t="report"></span></div>
+  <div class="gsep"></div>
+  <div class="gi"><span style="inline-size:16px"></span><span data-t="quit"></span></div>
+  <div class="gi"><span style="inline-size:16px"></span><span data-t="stop"></span></div>
+</div>
+<div class="note">
+  <h2 data-t="nh"></h2>
+  <p data-t="np"></p>
+  <ul><li data-t="n1"></li><li data-t="n2"></li><li data-t="n3"></li></ul>
+</div>
+<script src="kit.js"></script>
+<script>
+const pc = '<bdi dir="ltr">haddad-desktop</bdi>';
+MK.applyKit({
+  en: {
+    title: "Server on Linux: tray menu", act: "Activities", clock: "Nov 23  21:40",
+    running: "Maktaba is running", sub: `${pc} · 3 devices · 1 watching`,
+    upd: "Update ready: restart to install", open: "Open Maktaba", pause: "Pause server", logs: "Open logs",
+    comp: "Open Components", report: "Report a problem…", quit: "Quit (server keeps running)", stop: "Stop server and quit",
+    nh: "The desktop draws this menu",
+    np: "On GNOME (with AppIndicator) and KDE the panel draws a StatusNotifier menu in its own theme. Maktaba decides only:",
+    n1: "the words, in the order a person needs them: state first, then the one action that matters now (the update), then the rest;",
+    n2: "the icon: the app icon with a status dot, plus a symbolic variant for light panels;",
+    n3: "what clicking the icon does: open the status window where the panel allows it (KDE, Cinnamon, XFCE).",
+  },
+  ar: {
+    title: "الخادم على لينكس: قائمة شريط المهام", act: "الأنشطة", clock: "٢٣ نوفمبر  ٢١:٤٠",
+    running: "مكتبة تعمل", sub: `${pc} · ٣ أجهزة · مشاهدة واحدة`,
+    upd: "التحديث جاهز: أعد التشغيل لتثبيته", open: "فتح مكتبة", pause: "إيقاف الخادم مؤقتًا", logs: "فتح السجلات",
+    comp: "فتح المكوّنات", report: "الإبلاغ عن مشكلة…", quit: "خروج (يبقى الخادم عاملًا)", stop: "إيقاف الخادم والخروج",
+    nh: "سطح المكتب هو من يرسم هذه القائمة",
+    np: "في GNOME (مع AppIndicator) وفي KDE يرسم الشريط قائمة StatusNotifier بسمته الخاصة. ولا تقرّر مكتبة إلا:",
+    n1: "الكلمات، بالترتيب الذي يحتاجه الشخص: الحالة أولًا، ثم الإجراء المهم الآن (التحديث)، ثم البقية؛",
+    n2: "الأيقونة: أيقونة التطبيق مع نقطة الحالة، ونسخة رمزية للأشرطة الفاتحة؛",
+    n3: "ما يحدث عند النقر على الأيقونة: فتح نافذة الحالة حيث يسمح الشريط بذلك (KDE وCinnamon وXFCE).",
+  },
+});
+</script>
+</body>
+</html>

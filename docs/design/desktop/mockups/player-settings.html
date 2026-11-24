@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x800">
+<title>Player: settings</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .split { display: flex; block-size: 100%; }
+  .side { border-inline-end: 1px solid var(--dk-line); background: var(--dk-pane); border-start-start-radius: 12px; }
+  .who { display: flex; align-items: center; gap: 12px; padding: 14px 12px 8px; }
+  .who .av { display: grid; place-items: center; inline-size: 44px; block-size: 44px; border-radius: 50%; background: var(--dk-brass); color: var(--dk-on-brass); font-weight: 600; font-size: 18px; }
+  .who .n { font-weight: 600; }
+  .who .h { color: var(--dk-muted); font-size: var(--dk-t-small); line-height: var(--dk-t-small-lh); }
+  .content { flex: 1; padding: 28px 40px; overflow: hidden; }
+  .content h1 { font-size: var(--dk-t-h2); line-height: var(--dk-t-h2-lh); margin-block-end: 4px; }
+  .content > .muted { margin-block-end: 20px; }
+  .grp { margin-block: 22px 8px; font-weight: 600; color: var(--dk-muted); font-size: var(--dk-t-small); }
+  .sel { display: inline-flex; align-items: center; gap: 10px; block-size: 34px; padding-inline: 12px 10px; border-radius: 8px; border: 1px solid var(--dk-control); font-weight: 600; font-size: var(--dk-t-small); }
+  .rows { max-inline-size: 760px; }
+  .upd { display: flex; align-items: center; gap: 14px; max-inline-size: 760px; padding: 14px 16px; border-radius: 12px; background: linear-gradient(90deg, rgba(227,178,82,.14), rgba(227,178,82,.04)); border: 1px solid rgba(227,178,82,.35); margin-block-start: 22px; }
+  .upd .i { color: var(--dk-brass); }
+  .upd .txt { flex: 1; }
+</style>
+</head>
+<body>
+<div data-shell="player" data-on="profile">
+  <main class="page flat" style="background: transparent">
+    <div class="split">
+      <aside class="side">
+        <div class="who"><span class="av" data-t="c.initial"></span><div><div class="n">haddad</div><div class="h" data-t="c.home"></div></div></div>
+        <div class="group" data-t="g.lib"></div>
+        <a><i data-i="history"></i><span data-t="history"></span></a>
+        <a><i data-i="heart"></i><span data-t="fav"></span></a>
+        <a><i data-i="playlist"></i><span data-t="playlists"></span></a>
+        <div class="group" data-t="g.device"></div>
+        <a class="on"><i data-i="settings"></i><span data-t="general"></span></a>
+        <a><i data-i="play"></i><span data-t="playback"></span></a>
+        <a><i data-i="device"></i><span data-t="approve"></span></a>
+        <a><i data-i="key"></i><span data-t="sessions"></span></a>
+        <div class="group" data-t="g.help"></div>
+        <a><i data-i="help"></i><span data-t="help"></span></a>
+        <a><i data-i="flag"></i><span data-t="report"></span></a>
+        <a><i data-i="signout" class="dir"></i><span data-t="signout"></span></a>
+      </aside>
+      <section class="content page" style="border-radius: 0; border: 0">
+        <h1 class="display" data-t="general"></h1>
+        <p class="muted" data-t="generalNote"></p>
+        <div class="grp" data-t="g.look"></div>
+        <div class="rows">
+          <div class="row"><i data-i="globe"></i><div class="txt"><div data-t="lang"></div><div class="muted" data-t="langNote"></div></div><span class="seg"><span data-t="lang.en" class="ltrword"></span><span class="on" data-t="lang.ar"></span></span></div>
+          <div class="row"><i data-i="full"></i><div class="txt"><div data-t="big"></div><div class="muted" data-t="bigNote"></div></div><span class="switch"></span></div>
+        </div>
+        <div class="grp" data-t="g.watch"></div>
+        <div class="rows">
+          <div class="row"><i data-i="cc"></i><div class="txt" data-t="subsOn"></div><span class="switch on"></span></div>
+          <div class="row hover"><i data-i="globe"></i><div class="txt" data-t="subLang"></div><span class="sel"><span data-t="subLangV"></span><i data-i="chevdown" class="s16"></i></span></div>
+          <div class="row"><i data-i="quality"></i><div class="txt" data-t="quality"></div><span class="sel"><span data-t="qualityV"></span><i data-i="chevdown" class="s16"></i></span></div>
+          <div class="row"><i data-i="shield"></i><div class="txt"><div data-t="crash"></div><div class="muted" data-t="crashNote"></div></div><span class="switch"></span></div>
+        </div>
+        <div class="upd"><i data-i="update"></i><div class="txt"><div style="font-weight:600" data-th="updTitle"></div><div class="muted small" data-t="updNote"></div></div><span class="btn primary" data-t="updGo"></span></div>
+      </section>
+    </div>
+  </main>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Player: settings",
+    "g.lib": "Your library", history: "Watch history", fav: "Favorites", playlists: "Playlists",
+    "g.device": "Settings on this computer", general: "General", playback: "Playback", approve: "Approve a TV or device", sessions: "Sessions",
+    "g.help": "Help and about", help: "Help", report: "Report a problem", signout: "Sign out",
+    generalNote: "These apply to Maktaba Player on this computer only.",
+    "g.look": "Look and language", lang: "Language", langNote: "The Player's words and the direction of its pages.",
+    "lang.en": "English", "lang.ar": "العربية",
+    big: "Start in big screen", bigNote: "Full screen, larger text, for a TV or a projector. F11 switches.",
+    "g.watch": "Watching", subsOn: "Subtitles on by default", subLang: "Subtitle language", subLangV: "Arabic",
+    quality: "Quality", qualityV: "Best for this network",
+    crash: "Send crash reports to the home", crashNote: "Off until you turn it on. Nothing else is sent.",
+    updTitle: "Maktaba Player 0.4.2 is ready", updNote: "Installs when you restart the Player. About 1 minute.", updGo: "Restart and update",
+  },
+  ar: {
+    title: "المشغّل: الإعدادات",
+    "g.lib": "مكتبتك", history: "سجل المشاهدة", fav: "المفضلة", playlists: "قوائم التشغيل",
+    "g.device": "الإعدادات على هذا الحاسوب", general: "عام", playback: "التشغيل", approve: "الموافقة على تلفاز أو جهاز", sessions: "الجلسات",
+    "g.help": "المساعدة وحول التطبيق", help: "المساعدة", report: "الإبلاغ عن مشكلة", signout: "تسجيل الخروج",
+    generalNote: "تنطبق هذه على مشغّل مكتبة في هذا الحاسوب فقط.",
+    "g.look": "المظهر واللغة", lang: "اللغة", langNote: "كلمات المشغّل واتجاه صفحاته.",
+    "lang.en": "English", "lang.ar": "العربية",
+    big: "البدء بالشاشة الكبيرة", bigNote: "ملء الشاشة بخط أكبر، للتلفاز أو جهاز العرض. يبدّل بينهما F11.",
+    "g.watch": "المشاهدة", subsOn: "تشغيل الترجمة افتراضيًا", subLang: "لغة الترجمة", subLangV: "العربية",
+    quality: "الجودة", qualityV: "الأفضل لهذه الشبكة",
+    crash: "إرسال تقارير الأعطال إلى الجهاز الرئيسي", crashNote: "متوقف حتى تشغّله أنت. لا يُرسل شيء غيرها.",
+    updTitle: "مشغّل مكتبة <bdi>0.4.2</bdi> جاهز", updNote: "يُثبَّت عند إعادة تشغيل المشغّل. نحو دقيقة واحدة.", updGo: "إعادة التشغيل والتحديث",
+  },
+});
+</script>
+</body>
+</html>

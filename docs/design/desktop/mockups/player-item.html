@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="window" content="1280x800">
+<title>Player: a video</title>
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  .hero { position: relative; block-size: 360px; }
+  .hero img { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; object-fit: cover; object-position: 50% 30%; }
+  .hero::after { content: ""; position: absolute; inset: 0;
+    background: linear-gradient(0deg, var(--dk-window) 0%, rgba(11,17,28,.7) 38%, rgba(11,17,28,.05) 75%),
+                linear-gradient(90deg, rgba(11,17,28,.85) 0%, rgba(11,17,28,0) 60%); }
+  :root[dir="rtl"] .hero::after {
+    background: linear-gradient(0deg, var(--dk-window) 0%, rgba(11,17,28,.7) 38%, rgba(11,17,28,.05) 75%),
+                linear-gradient(270deg, rgba(11,17,28,.85) 0%, rgba(11,17,28,0) 60%); }
+  .back { position: absolute; z-index: 1; inset-block-start: 20px; inset-inline-start: 28px; }
+  .back .btn { background: rgba(11,17,28,.6); border-color: rgba(255,255,255,.18); }
+  .info { position: absolute; z-index: 1; inset-inline: 40px; inset-block-end: 4px; }
+  .info h1 { font-size: var(--dk-t-hero); line-height: var(--dk-t-hero-lh); }
+  .meta { display: flex; align-items: center; gap: 10px; margin-block: 6px 16px; color: var(--dk-muted); }
+  .meta .cc { padding: 0 6px; border: 1px solid var(--dk-control); border-radius: 4px; font-size: var(--dk-t-caption); line-height: 18px; }
+  .acts { display: flex; align-items: center; gap: 10px; }
+  .resume { display: flex; flex-direction: column; gap: 6px; }
+  .resume .bar { inline-size: 100%; block-size: 4px; }
+  .acts .iconbtn { border: 1px solid var(--dk-control); inline-size: 44px; block-size: 44px; border-radius: 10px; }
+  .acts .iconbtn.on { color: var(--dk-brass); border-color: rgba(227,178,82,.55); }
+  .cols { display: grid; grid-template-columns: 1.35fr 1fr; gap: 40px; padding: 18px 40px 0; }
+  .syn { font-size: var(--dk-t-lead); line-height: var(--dk-t-lead-lh); max-inline-size: 46ch; margin-block-end: 18px; }
+  .chap { display: flex; align-items: center; gap: 14px; padding: 8px 10px; border-radius: 8px; }
+  .chap .ts { inline-size: 48px; color: var(--dk-brass); font-weight: 600; }
+  .chap.now { background: var(--dk-chosen); }
+  .chap.now .ts::before { content: ""; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 18px; margin: 0; }
+  dt { color: var(--dk-muted); }
+  dd { margin: 0; }
+  h2.sub { font-size: var(--dk-t-body); line-height: var(--dk-t-body-lh); font-weight: 600; color: var(--dk-muted); margin-block-end: 8px; }
+</style>
+</head>
+<body>
+<div data-shell="player" data-on="libraries">
+  <main class="page">
+    <div class="hero">
+      <img src="art/saturn.jpg" alt="">
+      <div class="back"><span class="btn"><i data-i="back" class="s16 dir"></i><span data-t="backto"></span></span></div>
+      <div class="info">
+        <h1 class="display" data-t="name"></h1>
+        <div class="meta"><span class="num" data-t="year"></span>·<span class="num" data-t="dur"></span>·<span data-t="lib"></span><span class="cc">CC</span><span class="cc">HD</span></div>
+        <div class="acts">
+          <div class="resume"><span class="btn primary lg"><i data-i="play" class="s16"></i><span data-t="resume"></span></span><div class="bar"><i style="inline-size: 49%"></i></div></div>
+          <span class="btn lg" style="align-self: flex-start" data-t="start"></span>
+          <span class="iconbtn on" style="align-self: flex-start" title=""><i data-i="heart"></i></span>
+          <span class="iconbtn" style="align-self: flex-start"><i data-i="check"></i></span>
+          <span class="iconbtn" style="align-self: flex-start"><i data-i="more"></i></span>
+        </div>
+      </div>
+    </div>
+    <div class="cols">
+      <div>
+        <p class="syn" data-t="syn"></p>
+        <h2 class="sub" data-t="chapters"></h2>
+        <div class="chap"><span class="ts num" data-t="c1t"></span><span data-t="c1"></span></div>
+        <div class="chap"><span class="ts num" data-t="c2t"></span><span data-t="c2"></span></div>
+        <div class="chap now"><span class="ts num" data-t="c3t"></span><span data-t="c3"></span><span class="badge brass" style="margin-inline-start:auto" data-t="here"></span></div>
+        <div class="chap"><span class="ts num" data-t="c4t"></span><span data-t="c4"></span></div>
+      </div>
+      <div>
+        <h2 class="sub" data-t="details"></h2>
+        <dl>
+          <dt data-t="audio"></dt><dd data-t="audioV"></dd>
+          <dt data-t="subs"></dt><dd data-t="subsV"></dd>
+          <dt data-t="added"></dt><dd data-t="addedV"></dd>
+          <dt data-t="licence"></dt><dd data-t="licenceV"></dd>
+        </dl>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="kit.js"></script>
+<script>
+MK.applyKit({
+  en: {
+    title: "Player: a video", backto: "Documentaries", name: "Journey to Saturn", year: "2017", dur: "52:10", lib: "Documentaries",
+    resume: "Resume from 25:30", start: "Play from start",
+    syn: "Twenty years of the Cassini probe: the launch, seven years to Saturn, thirteen among its rings and moons, and the last dive into the planet.",
+    chapters: "Chapters", here: "You stopped here",
+    c1t: "0:00", c1: "The launch", c2t: "9:40", c2: "Seven years to Saturn", c3t: "24:15", c3: "Rings and moons", c4t: "44:05", c4: "The Grand Finale",
+    details: "About this video", audio: "Audio", audioV: "English, Arabic · 5.1", subs: "Subtitles", subsV: "Arabic, English",
+    added: "Added", addedV: "2 days ago", licence: "Video", licenceV: "1080p HEVC, plays as it is",
+  },
+  ar: {
+    title: "المشغّل: فيديو", backto: "وثائقيات", name: "رحلة إلى زحل", year: "٢٠١٧", dur: "٥٢:١٠", lib: "وثائقيات",
+    resume: "استئناف من ٢٥:٣٠", start: "التشغيل من البداية",
+    syn: "عشرون عامًا من رحلة المسبار كاسيني: الإطلاق، وسبع سنوات إلى زحل، وثلاث عشرة سنة بين حلقاته وأقماره، ثم الغوص الأخير في الكوكب.",
+    chapters: "الفصول", here: "توقفت هنا",
+    c1t: "٠:٠٠", c1: "الإطلاق", c2t: "٩:٤٠", c2: "سبع سنوات إلى زحل", c3t: "٢٤:١٥", c3: "الحلقات والأقمار", c4t: "٤٤:٠٥", c4: "الختام الكبير",
+    details: "عن هذا الفيديو", audio: "الصوت", audioV: "الإنجليزية، العربية · 5.1", subs: "الترجمة", subsV: "العربية، الإنجليزية",
+    added: "أضيف", addedV: "قبل يومين", licence: "الفيديو", licenceV: "1080p ‏HEVC، يُشغَّل كما هو",
+  },
+});
+</script>
+</body>
+</html>

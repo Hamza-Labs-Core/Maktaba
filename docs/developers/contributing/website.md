@@ -10,13 +10,13 @@ and is built and deployed the way this portal is: a Cloudflare Worker in front o
 `npm run build` in `web/packages/website` writes `dist/`, in this order:
 
 1. the install build (`pnpm -C web build:install`, Epic 59's guides), copied to the root of the
-   site at `/install/` and `/ar/install/`, its hashed files under `/install/assets/`, without
+   site at `/install/<guide>/` and `/ar/install/<guide>/`, its hashed files under `/install/assets/`, without
    each "Screenshot to come" figure whose image does not exist yet (the install package's own
    preview keeps them);
 2. the generated families: the help pages (below), the problem pages and the download page
    (below), in that order: a family links an earlier one's pages, and a later one's own page
    (`paths`, such as `/download/`) once the build is sure to make it;
-3. the hand-made pages (`src/pages/`: the front door, the `/install/` chooser, the 404 page) and
+3. the hand-made pages (`src/pages/`: the front door, the 404 page) and
    the legal pages, each wrapped in part B's page shell (`scripts/shell.mjs`);
 4. the copied files: the app icons (`favicon.ico`, `apple-touch-icon.png`, the 192, 512 and
    maskable icons and `manifest.webmanifest`), the log schema at `/schema/log-line.json` (its
@@ -53,9 +53,8 @@ guides included.
 
 **Every page is now drawn in part B's shell** (story 60.01 part B, `page({ variant: "b" })`),
 except the install guides, which keep part A's until they move to their own part B layout: the
-home and download pages, and since Phase 3 the problem pages and their index, the legal pages,
-the `/install/` chooser and the 404. Part B's shell adds the wordmark (the app icon with the name
-in the display face, both scripts in the footer), the nav with Download, Install, Help and
+home and download pages, and since Phase 3 the problem pages and their index, the legal pages and the 404. Part B's shell adds the wordmark (the app icon with the name
+in the display face, both scripts in the footer), the nav with Download, Help and
 Messages (Download and Help link their pages once the site builds them, `bLinks`), the display
 face for each page title, and part B's stylesheet (`design/site.css` with `src/part-b.css`); each
 of these pages has part B's social card (`cardSub` in `scripts/cards.mjs`). A change to part B's
@@ -148,6 +147,13 @@ release. `scripts/download.mjs` builds them, as a generated family:
   shifts. Each card has a `#mac`, `#windows`, `#linux` or `#nas` anchor.
 - **Its look** is part B's (`design/site.css`, with `src/download.css`), in a stylesheet of its
   own, after the shell's.
+- **Every setup guide,** under the cards: it is the site's one page for getting Maktaba. A
+  section (`#guides`) lists the six NAS guides (`#nas-guides`, with "Find your NAS", the model
+  table at `/install/nas/`), Docker (`#docker-guide`), and after setup and troubleshooting
+  (`#after-guides`), each a tile linking its guide once the site has built it (`GUIDES` in
+  `scripts/download.mjs`, the words `guides.*` in `copy/download.<lang>.md`). The NAS card's
+  button goes to `#nas-guides`. `/install/` and `/ar/install/` redirect here (301,
+  `src/redirects.json`); the guides keep their addresses, `/install/<guide>/`.
 
 `WEBSITE_RELEASE_FIXTURE=scripts/fixtures/release npm run build` builds from a saved release
 (v0.3.135's answer and `checksums.txt`) with no network; the unit tests
@@ -162,7 +168,8 @@ GitHub's latest release. The deploy goes live only with `vars.WEBSITE_LIVE`, lik
 ## The Worker
 
 `src/worker.ts` sends `www.maktaba.tv` and plain http to `https://maktaba.tv`, sends `/docs` to
-`/help/` (and `/ar/docs` to `/ar/help/`), answers a missing path with the 404 page
+`/help/` (and `/ar/docs` to `/ar/help/`) and the guides' old index `/install/` to `/download/`
+(and `/ar/install/` to `/ar/download/`), answers a missing path with the 404 page
 in its language and status 404, and puts the headers on every answer: a strict CSP, HSTS without
 `includeSubDomains` (the relay's names must not inherit it), and the cache policy.
 
