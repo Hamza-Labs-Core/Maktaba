@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base32"
 	"encoding/hex"
@@ -73,10 +74,19 @@ var ErrSlugReserved = errors.New("servers: slug reserved")
 // RedeemClaim consumes an 8-char claim code and registers the server it
 // links, in one transaction: the code is spent only when the server is
 // created (a taken slug leaves it usable for another try), and two
-// agents racing the same code cannot both win (the UPDATE … WHERE
-// used_at IS NULL is the one gate). A code whose owner is not active
-// (suspended) is refused as an invalid one is.
-func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash, version string, pubKey []byte) (Server, error) {
+// agents racing the same code cannot both win (the claim's row is locked
+// and its used_at read under that lock). A code whose owner is not
+// active (suspended) is refused as an invalid one is.
+//
+// retryKey is the agent's own secret for this claim (empty: an agent that sends none). An agent
+// whose first answer was lost redeems again with the same key, within the claim's lifetime, and
+// gets the same server. The caller derives the secret from the key, so every answer carries the
+// same one and all of them work, two at once included; isSecret says whether the stored hash is
+// that secret's. When it is not (the cloud's own key changed in between, or differs between its
+// nodes), the claim is refused: an answer already given is never made useless. It
+// holds only until the home has used its secret (VerifyHome): from then on the claim is spent
+// for everyone.
+func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash, version string, pubKey []byte, retryKey string, isSecret func(hash string) bool) (Server, error) {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return Server{}, err
@@ -86,7 +96,7 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 	// order LockAccount's writers and the account purge keep)
 	var uid string
 	err = tx.QueryRowContext(ctx, `
-        SELECT user_id FROM server_claims WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
+        SELECT user_id FROM server_claims WHERE token_hash = $1 AND expires_at > now()
     `, hashClaim(code)).Scan(&uid)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Server{}, ErrClaimInvalid
@@ -103,17 +113,30 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 	if err != nil {
 		return Server{}, err
 	}
-	res, err := tx.ExecContext(ctx, `
-        UPDATE server_claims SET used_at = now()
-         WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now()
-    `, hashClaim(code))
+	var used bool
+	var usedServer, retryHash sql.NullString
+	err = tx.QueryRowContext(ctx, `
+        SELECT used_at IS NOT NULL, used_server_id::text, retry_key_hash FROM server_claims
+         WHERE token_hash = $1 AND expires_at > now() FOR UPDATE
+    `, hashClaim(code)).Scan(&used, &usedServer, &retryHash)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Server{}, ErrClaimInvalid
+	}
 	if err != nil {
 		return Server{}, err
 	}
-	if n, err := res.RowsAffected(); err != nil {
+	keyHash := hashRetryKey(retryKey)
+	if used {
+		if !keyHash.Valid || !retryHash.Valid || !usedServer.Valid ||
+			subtle.ConstantTimeCompare([]byte(keyHash.String), []byte(retryHash.String)) != 1 {
+			return Server{}, ErrClaimInvalid
+		}
+		return redeemAgain(ctx, tx, usedServer.String, uid, isSecret)
+	}
+	if _, err := tx.ExecContext(ctx, `
+        UPDATE server_claims SET used_at = now(), retry_key_hash = $2 WHERE token_hash = $1
+    `, hashClaim(code), keyHash); err != nil {
 		return Server{}, err
-	} else if n == 0 {
-		return Server{}, ErrClaimInvalid // another agent spent it meanwhile
 	}
 	var reserved int
 	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM reserved_slugs WHERE slug = $1`, slug).Scan(&reserved); err != nil {
@@ -149,6 +172,46 @@ func (s *Servers) RedeemClaim(ctx context.Context, code, name, slug, secretHash,
 		return Server{}, err
 	}
 	return sv, tx.Commit()
+}
+
+// redeemAgain answers a claim already made, while the home has not used its secret: its use
+// clears the claim's retry key (endClaimRetry), and the caller holds the claim's row. It commits
+// tx.
+func redeemAgain(ctx context.Context, tx *sql.Tx, serverID, ownerID string, isSecret func(hash string) bool) (Server, error) {
+	var sv Server
+	var have string
+	err := tx.QueryRowContext(ctx, `
+        SELECT server_secret_hash, id, owner_user_id, name, slug, plan, version, last_seen_at, direct_ip::text, direct_port, created_at, extra_streams
+          FROM servers WHERE id = $1 AND owner_user_id = $2 AND last_seen_at IS NULL FOR UPDATE
+    `, serverID, ownerID).Scan(&have,
+		&sv.ID, &sv.OwnerUserID, &sv.Name, &sv.Slug, &sv.Plan, &sv.Version, &sv.LastSeenAt, &sv.DirectIP, &sv.DirectPort, &sv.CreatedAt, &sv.ExtraStreams,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Server{}, ErrClaimInvalid
+	}
+	if err != nil {
+		return Server{}, err
+	}
+	if isSecret == nil || !isSecret(have) {
+		return Server{}, ErrClaimInvalid
+	}
+	return sv, tx.Commit()
+}
+
+// RetryKeyMin is the shortest retry key taken: 32 random bytes are 64 hex digits. A shorter one
+// counts as none, as does one longer than 256.
+const RetryKeyMin = 64
+
+// ValidRetryKey says whether key counts as one.
+func ValidRetryKey(key string) bool { return len(key) >= RetryKeyMin && len(key) <= 256 }
+
+// hashRetryKey is what the claim keeps of an agent's retry key (NULL for none).
+func hashRetryKey(key string) sql.NullString {
+	if !ValidRetryKey(key) {
+		return sql.NullString{}
+	}
+	sum := sha256.Sum256([]byte("maktaba-claim-retry:" + key))
+	return sql.NullString{String: hex.EncodeToString(sum[:]), Valid: true}
 }
 
 // HasSlug reports whether a server has the slug: the relay edge's TLS

@@ -18,6 +18,9 @@ type Registry struct {
 	// open is every tunnel not yet closed, a draining one a newer tunnel
 	// replaced included (story 50.03): Shutdown waits for them all
 	open map[*Tunnel]struct{}
+	// openBySlug is open by slug: a home's tunnels here (its primary or standby, and draining
+	// ones), found without reading every home's
+	openBySlug map[string]map[*Tunnel]struct{}
 	// closing: the process is shutting down; new tunnels are refused
 	closing atomic.Bool
 	// seen is when each slug last had a tunnel here (registered or gone):
@@ -42,7 +45,7 @@ var ErrNoTunnel = errors.New("relay: no live tunnel for slug")
 const retireDeadline = 2 * time.Minute
 
 func NewRegistry() *Registry {
-	return &Registry{conns: make(map[string]*Tunnel), open: make(map[*Tunnel]struct{}), seen: make(map[string]time.Time), slugLocks: make(map[string]*slugLock)}
+	return &Registry{conns: make(map[string]*Tunnel), open: make(map[*Tunnel]struct{}), openBySlug: make(map[string]map[*Tunnel]struct{}), seen: make(map[string]time.Time), slugLocks: make(map[string]*slugLock)}
 }
 
 // lockSlug holds slug's lock until the returned func is called (dropped once no one
