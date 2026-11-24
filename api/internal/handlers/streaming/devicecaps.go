@@ -28,12 +28,15 @@ type DeviceCaps struct {
 // A list left out is null (the profile's), an empty one the device's "none":
 // the lists carry no omitempty, so an empty answer is passed on as one.
 
-// VideoCap is one video codec the device decodes and its limits.
+// VideoCap is one video codec the device decodes and its limits. Hardware
+// (story 13.19, the desktop Player on libmpv) says whether a hardware decoder
+// takes it; nil: not said. The streaming service names it in a verdict's reason.
 type VideoCap struct {
 	Codec     string `json:"codec"`
 	MaxHeight int    `json:"max_height,omitempty"`
 	MaxFPS    int    `json:"max_fps,omitempty"`
 	BitDepth  int    `json:"bit_depth,omitempty"`
+	Hardware  *bool  `json:"hardware,omitempty"`
 }
 
 // deviceCapsLimit bounds each list of a report: a platform's real answer is a

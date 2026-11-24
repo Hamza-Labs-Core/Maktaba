@@ -64,7 +64,7 @@ class ChannelMpvRealTest {
 
     private fun lib(): LibMpv {
         assumeTrue("MAKTABA_LIBMPV_DIR is not set", dir != null)
-        val l = MpvLoad.from(dir, emptyMap())
+        val l = MpvLoad.from(dir)
         assertTrue("libmpv: $l", l is MpvLoad.Loaded)
         return (l as MpvLoad.Loaded).lib
     }

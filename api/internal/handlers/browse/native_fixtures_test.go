@@ -77,6 +77,9 @@ type (
 	chaptersDoc struct {
 		Items []videos.Chapter `json:"items"`
 	}
+	subtitlesDoc struct {
+		Items []videos.Subtitle `json:"items"`
+	}
 	segmentsDoc struct {
 		Items   []videos.Segment `json:"items"`
 		Partial bool             `json:"partial"`
@@ -127,6 +130,7 @@ func TestAndroidBrowseFixturesMatchTheHandlers(t *testing.T) {
 		"video.json":                &videos.Video{},
 		"my-video.json":             &browse.MyVideo{},
 		"chapters.json":             &chaptersDoc{},
+		"subtitles.json":            &subtitlesDoc{},
 		"segments.json":             &segmentsDoc{},
 		"series-list.json":          &seriesListDoc{},
 		"series.json":               &series.Item{},

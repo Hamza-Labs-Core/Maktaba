@@ -79,7 +79,7 @@ class PlaybackTest {
 
     private var settings = PlaybackValues()
 
-    private val playback = Playback(home.client, scope, background, signedOut = {}, settings = { settings }, players = players)
+    private val playback = Playback(home.client, scope, background, signedOut = {}, settings = { settings }, engine = { players })
 
     init {
         home.answer("POST /api/stream/sessions") {

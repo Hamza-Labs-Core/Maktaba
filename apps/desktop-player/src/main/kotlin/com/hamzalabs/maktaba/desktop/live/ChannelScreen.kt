@@ -79,7 +79,7 @@ import java.time.temporal.ChronoUnit
  * screen's, or JavaFX's when libmpv cannot load or JavaFX is chosen.
  */
 @Composable
-fun ChannelScreen(id: String, players: Players = Engine.players) {
+fun ChannelScreen(id: String, players: Players = remember { Engine.players() }) {
     val t = LocalTexts.current
     val home = LocalDesktopHome.current
     val live = home.liveTv()

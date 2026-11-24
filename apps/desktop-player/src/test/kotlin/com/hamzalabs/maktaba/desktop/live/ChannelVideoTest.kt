@@ -8,7 +8,8 @@ import com.hamzalabs.maktaba.desktop.FxPlayers
 import com.hamzalabs.maktaba.desktop.Players
 import com.hamzalabs.maktaba.desktop.Video
 import com.hamzalabs.maktaba.desktop.VideoEvents
-import com.hamzalabs.maktaba.desktop.mpv.Engine
+import com.hamzalabs.maktaba.desktop.mpv.EngineChoice
+import com.hamzalabs.maktaba.desktop.mpv.Engines
 import com.hamzalabs.maktaba.desktop.mpv.MpvLoad
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -140,9 +141,10 @@ class ChannelVideoTest {
     @Test
     fun t05_withTheOlderEngineChosenChannelsPlayWithJavaFx() {
         tmp.newFile(MpvLoad.fileName()).writeText("not opened: JavaFX is chosen first")
-        val chosen = MpvLoad.from(tmp.root.absolutePath, mapOf("MAKTABA_PLAYER_ENGINE" to "javafx"))
-        assertSame(FxPlayers, Engine.playersFor(chosen) { null })
-        assertSame(FxPlayers, Engine.playersFor(MpvLoad.Missing("libmpv-2.dll is not in C:\\Maktaba")) { null })
+        val here = { MpvLoad.from(tmp.root.absolutePath) }
+        assertSame(FxPlayers, Engines(mapOf(Engines.VARIABLE to "javafx"), here).players())
+        assertSame(FxPlayers, Engines(emptyMap(), here).apply { setting = { EngineChoice.Older } }.players())
+        assertSame(FxPlayers, Engines(emptyMap(), { MpvLoad.Missing("libmpv-2.dll is not in C:\\Maktaba") }).players())
     }
 }
 

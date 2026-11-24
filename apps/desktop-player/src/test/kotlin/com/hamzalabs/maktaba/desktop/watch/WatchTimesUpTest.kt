@@ -57,7 +57,7 @@ class WatchTimesUpTest {
         fake.answer("GET /api/me/parental/guardians", """{"guardians":[{"id":"g1","username":"khalid"}]}""")
         fake.answer("POST /api/me/parental/unlock", """{"grant":{"id":"t1","minutes":15}}""")
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
-        val playback = Playback(fake.client, scope, scope, signedOut = {}, players = noVideo)
+        val playback = Playback(fake.client, scope, scope, signedOut = {}, engine = { noVideo })
         try {
             runComposeUiTest {
                 setContent {
@@ -100,7 +100,7 @@ class WatchTimesUpTest {
         fake.answer("GET /api/videos/A", """{"id":"A","library_id":"l1","filename":"a.mkv","title":"A","state":"ready"}""")
         // no stream opens here (the video's surface is Swing's, which a test window has none of)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
-        val playback = Playback(fake.client, scope, scope, signedOut = {}, players = noVideo)
+        val playback = Playback(fake.client, scope, scope, signedOut = {}, engine = { noVideo })
         val home = fake.home()
         try {
             kotlinx.coroutines.runBlocking { home.parental.refresh() }

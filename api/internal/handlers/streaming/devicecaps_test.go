@@ -49,6 +49,29 @@ func TestOpenSession_DeviceCapsUnknownKeysIgnored(t *testing.T) {
 	}
 }
 
+// Story 13.19: the desktop Player's `hardware`, true or false, is passed on as sent (a
+// false is the Player's "software", not a key left out), and a report without it sends none.
+func TestOpenSession_DeviceCapsHardwarePassedOn(t *testing.T) {
+	h, _, svc := offlineRig(t, true)
+	body := `{"video_id":"` + vHere + `","client_profile":"desktop-mpv","device_caps":{` +
+		`"video":[{"codec":"hevc","max_height":2160,"bit_depth":10,"hardware":true},` +
+		`{"codec":"av1","max_height":1080,"hardware":false},{"codec":"vp9","max_height":2160}],"max_audio_channels":6}}`
+	if rec := call(h, as("u-amal", "lib1"), http.MethodPost, "/api/stream/sessions", body); rec.Code != http.StatusCreated {
+		t.Fatalf("open: %d %s", rec.Code, rec.Body.String())
+	}
+	got := string(svc.opened[0].DeviceCaps)
+	for _, want := range []string{`"codec":"hevc","max_height":2160,"bit_depth":10,"hardware":true}`,
+		`"codec":"av1","max_height":1080,"hardware":false}`, `{"codec":"vp9","max_height":2160}`, `"max_audio_channels":6`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("device_caps passed on without %s: %s", want, got)
+		}
+	}
+	if rec := call(h, as("u-amal", "lib1"), http.MethodPost, "/api/stream/sessions",
+		`{"video_id":"`+vHere+`","device_caps":{"video":[{"codec":"av1","hardware":"yes"}]}}`); rec.Code != http.StatusBadRequest {
+		t.Errorf("hardware of the wrong type: %d, want 400", rec.Code)
+	}
+}
+
 func TestOpenSession_DeviceCapsRefusesAWrongShape(t *testing.T) {
 	h, _, svc := offlineRig(t, true)
 	for _, caps := range []string{`{"containers":"mp4"}`, `["mp4"]`, `{"video":[{"codec":7}]}`,

@@ -18,7 +18,7 @@ and audio it plays. An unknown name is `generic`: H.264 and AAC in HLS, at most 
 |---|---|
 | `generic` | anything that names no profile, or one the home does not know |
 | `desktop-player` | the Windows and Linux desktop Player on JavaFX (H.264 and AAC only) |
-| `desktop-mpv` | the Windows and Linux desktop Player on libmpv (story 13.18), asked for only when the home lists it in `GET /api/stream/capabilities`'s `client_profiles` |
+| `desktop-mpv` | the Windows and Linux desktop Player on libmpv (story 13.18), asked for only when the home lists it in `GET /api/stream/capabilities`'s `client_profiles`, with the machine's report (story 13.19) |
 | `browser-chrome`, `browser-safari` | the web app |
 | `ios-native`, `tvos` | the Apple apps |
 | `android-native`, `androidtv` | the Android apps |
@@ -31,6 +31,9 @@ depends on its model and year, not its platform. So a TV app also reports what i
 A phone is the same: the Android Player opens every stream with `android-native` and the phone's
 report. Its ceiling adds the audio a phone may decode itself (AC-3, E-AC-3, FLAC, Vorbis, DTS)
 and HLG, so a film whose Dolby audio the phone decodes plays as it is. A player
+The desktop Player on libmpv opens its streams with `desktop-mpv` and a report too (story 13.19),
+built from a probe it runs at start: which codecs a hardware decoder takes, how tall a picture
+software decodes smoothly, and the audio device's channels (below). A player
 that names no profile gets `generic`, and nearly every film is transcoded for it: its first
 frame waits for the transcode's first segment, and its length grows as the transcode is written
 (below).
@@ -47,6 +50,24 @@ frame waits for the transcode's first segment, and its length grows as the trans
 | Roku | `roDeviceInfo` (`CanDecodeVideo`, `CanDecodeAudio`, `GetDisplayProperties`, `GetAudioOutputChannel`) |
 | Cast receiver | `cast.framework.CastReceiverContext.canDisplayType` |
 | Vega OS | its W3C media capability calls |
+| The Windows and Linux desktop Player (libmpv) | its own probe: short 2160p clips of each codec played on a libmpv handle of its own at start (`hwdec-current` for the hardware, the frames per second for software), and a silent 7.1 clip on the default audio output (`audio-out-params/channel-count`) |
+
+The desktop Player's report names `video` and `max_audio_channels` only: mpv reads every
+container and decodes every audio codec of `desktop-mpv`, and tone-maps HDR on any screen, so the
+profile's lists stand. Each codec that decoded is listed with `hardware` (true when a hardware
+decoder took it) and a `max_height`: 2160 in hardware, else from software's speed at 2160p
+(45 fps or more: 2160; 45 × 9/16: 1440; 45 / 4: 1080; slower: 720), timed from the first
+picture, after libmpv has been warmed up once. A codec that did not decode is left out, so it is
+transcoded. A clip that ran out of time, or that an earlier probe stopped in (libmpv crashed),
+counts as software at 720; a codec the probe did not reach is listed without limits, as a listed
+`video` is read as the whole list. The probe's results are cached per GPU and driver (on Linux
+with the VA-API driver files), CPU and libmpv version; an incomplete probe is tried again after a
+day, doubling. The channels are measured again after each watch screen closes. No decision
+reads `hardware`: a transcode's reason names it ("AV1 decoded in software up to 1080p"). A
+`desktop-mpv` transcode keeps up to the report's channels: 6 or more, for a source of 6 or more,
+give E-AC-3 5.1 at 640 kbit/s, fewer stereo AAC at 192 kbit/s; with no channels reported (no
+report, or no audio device) the audio is any transcode's. Its ladder stops at the report's H.264
+height. Direct play is never narrowed by channels: mpv folds 5.1 and 7.1 down for stereo.
 
 ```json
 {

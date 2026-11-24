@@ -17,9 +17,9 @@ class MpvTest {
         assertEquals("libmpv-2.dll", MpvLoad.fileName("Windows 11"))
         assertEquals("libmpv.so.2", MpvLoad.fileName("Linux"))
         // a development run has no app resources: JavaFX, and the reason says so
-        assertTrue(reason(MpvLoad.from(null, emptyMap())).contains("development"))
+        assertTrue(reason(MpvLoad.from(null)).contains("development"))
         // an install folder without it (a broken install): the file and the folder are named
-        val missing = reason(MpvLoad.from(tmp.root.absolutePath, emptyMap()))
+        val missing = reason(MpvLoad.from(tmp.root.absolutePath))
         assertTrue(missing, missing.contains(MpvLoad.fileName()) && missing.contains(tmp.root.absolutePath))
     }
 
@@ -33,14 +33,8 @@ class MpvTest {
     @Test
     fun aFileThatIsNotALibraryIsReportedNotLoaded() {
         tmp.newFile(MpvLoad.fileName()).writeText("not a library")
-        val why = reason(MpvLoad.from(tmp.root.absolutePath, emptyMap()))
+        val why = reason(MpvLoad.from(tmp.root.absolutePath))
         assertTrue(why, why.contains("did not load"))
-    }
-
-    @Test
-    fun theSupportPagesSettingPlaysWithJavaFx() {
-        tmp.newFile(MpvLoad.fileName()).writeText("whatever")
-        assertEquals("MAKTABA_PLAYER_ENGINE=javafx", reason(MpvLoad.from(tmp.root.absolutePath, mapOf("MAKTABA_PLAYER_ENGINE" to "JavaFX"))))
     }
 
     @Test

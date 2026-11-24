@@ -86,6 +86,7 @@ class MpvVideoEntryTest {
             }
             return 0
         }
+        override fun mpv_command_async(ctx: Pointer, replyUserdata: Long, args: Array<String?>): Int = 0
         override fun mpv_observe_property(ctx: Pointer, replyUserdata: Long, name: String, format: Int) = 0
         override fun mpv_wait_event(ctx: Pointer, timeout: Double): Pointer = queue.take()
         override fun mpv_wakeup(ctx: Pointer) {}

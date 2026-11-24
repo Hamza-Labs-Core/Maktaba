@@ -24,7 +24,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.remember
+import com.hamzalabs.maktaba.desktop.ENGINE_HELP
 import com.hamzalabs.maktaba.desktop.LocalTexts
+import com.hamzalabs.maktaba.desktop.helpUrl
+import com.hamzalabs.maktaba.desktop.mpv.Engines
 import com.hamzalabs.maktaba.desktop.shell.DesktopHome
 import com.hamzalabs.maktaba.desktop.shell.LocalDesktopHome
 
@@ -91,6 +95,18 @@ fun ProfileContent(state: ProfileState, home: DesktopHome, nav: ProfileNav) {
     }
 }
 
+/**
+ * The Video engine row for [home]'s Profile (story 13.21): [engines]' state with the Player's
+ * own choice; **Learn more** opens the home's help page in the Player's language.
+ */
+@Composable
+fun engineRow(home: DesktopHome, engines: Engines = home.engines): EngineRow {
+    val chosen = home.prefs.engine
+    val lang = home.prefs.lang
+    val state = remember(chosen, engines) { engines.row(chosen) }
+    return EngineRow(state, choose = home.prefs::chooseEngine, learnMore = { home.actions.openUrl(helpUrl(home.webUrl, lang, ENGINE_HELP)) })
+}
+
 @Composable
 private fun GroupPage(group: ProfileGroup, state: ProfileState, home: DesktopHome) {
     val t = LocalTexts.current
@@ -103,7 +119,7 @@ private fun GroupPage(group: ProfileGroup, state: ProfileState, home: DesktopHom
             ProfileGroup.Playlists -> PlaylistsPage(state, home)
             ProfileGroup.Sessions -> SessionsPage(state)
             ProfileGroup.Approve -> AccountPage(state, home)
-            ProfileGroup.Playback -> PlaybackSettingsPage(home.prefs.playback)
+            ProfileGroup.Playback -> PlaybackSettingsPage(home.prefs.playback, engineRow(home))
             ProfileGroup.Language -> LanguagePage(home)
             ProfileGroup.Help -> HelpPage(state, home)
         }

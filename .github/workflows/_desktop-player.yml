@@ -247,14 +247,15 @@ jobs:
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} -Pmaktaba.version=0.0.1 "-Pmaktaba.jbr=${JBR}"
           # the real libmpv's tests ran, not skipped, and what they measured: videos (story
-          # 13.18, MpvRealTest) and channels (story 13.22, ChannelMpvRealTest)
+          # 13.18, MpvRealTest; 13.19's T04 and T05: the decoder probe's time and results, the
+          # audio device's channels; 13.20's) and channels (story 13.22, ChannelMpvRealTest)
           shopt -s nullglob
           reports=(build/test-results/test/TEST-*MpvRealTest.xml)
           [ "${#reports[@]}" -ge 2 ] || { echo "::error::expected MpvRealTest and ChannelMpvRealTest reports, found ${#reports[@]}"; exit 1; }
           for report in "${reports[@]}"; do
             counts=$(grep -m 1 -oE 'tests="[0-9]+" skipped="[0-9]+"' "${report}" || true)
             echo "${report##*/}: ${counts}"
-            grep -oE '(T0[0-9][^<]*|13\.22 [^<]*|mpv-configuration[^<]*)' "${report}" || true
+            grep -oE '(T0[0-9][^<]*|13\.2[02] [^<]*|mpv-configuration[^<]*)' "${report}" || true
             grep -q 'skipped="0"' <<<"${counts}" || { echo "::error::${report##*/} was skipped: no libmpv or no test media"; exit 1; }
           done
 

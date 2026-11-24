@@ -63,6 +63,8 @@ Above the results, **Results** and **AI mode** are two tabs. **AI mode** answers
 A video resumes where you left it, unless you finished it or were nearly at the end; **Play from start** starts it over. The controls are under the picture: play and pause, back and forward 10 seconds, the bar (with a mark at each chapter), the volume, **Subtitles**, **Audio**, **Quality** and full screen.
 
 - **Subtitles** shows the video's subtitles over the picture, in the language you choose, or **Off**. **Audio** chooses another sound track when the video has one. Your choice carries over to the next video when it has that language.
+- Which subtitles **Subtitles** lists: for a file the player plays as it is, the home's first (a subtitle file beside the video, and Maktaba's transcription), then the file's own tracks, each marked **In the file**, and **Picture** for a Blu-ray or DVD track, which is shown as it was made. A forced track (signs, or lines in another language) is not listed: it shows by itself, while subtitles are off, when it is in the language you hear. For a video the home converts, or with the older engine (see [The video engine](#video-engine)), the menu lists the subtitles the home sends.
+- Subtitles without their own styling take the **Subtitle size** and **Subtitle colour** set in **Profile → Playback**; subtitles with their own styling keep their colours and take the size.
 - **Quality** is **Auto** or a height (1080p, 720p…); the video goes on from the same moment.
 - **Up next**: near the end of an episode, a card offers the next one with a countdown; **Play now** starts it, **Cancel** stays. A playlist plays its videos in order the same way.
 
@@ -80,7 +82,7 @@ The keys:
 | **F**                         | full screen (**F11** stays big screen)                  |
 | **Escape**                    | leave full screen, else close the video                 |
 
-Where you stopped is kept: Continue Watching on your other devices starts there. The home sends this player H.264 video, at most 1080p. A video stored another way (HEVC, a 4K file) is converted by the home as it plays, so it may take a few seconds to start.
+Where you stopped is kept: Continue Watching on your other devices starts there. The player plays most files as they are: MKV, MP4, WebM, MOV and TS; H.264, HEVC (10-bit too), AV1 and VP9; AC-3, E-AC-3, DTS and 5.1 or 7.1 sound. So a film starts without waiting for the home to convert it, and a file that does not play as it is opens once more converted. With the older engine (see [The video engine](#video-engine)), or from a home older than the player, the home converts what is not H.264 at most 1080p as it plays, so such a video may take a few seconds to start.
 
 ### Live TV {#live-tv}
 
@@ -92,7 +94,7 @@ Where you stopped is kept: Continue Watching on your other devices starts there.
 - **Watch history**: what you watched; **Remove** takes a video out, and out of Continue Watching. **Favorites** and **Playlists** (a playlist's **Play** plays it in order).
 - **Sessions**: the browsers signed in to the home as you; **Sign out** ends one you do not recognise.
 - **Approve a TV or device**: the same as **Account → Approve a sign-in**.
-- **Playback**: subtitles on by default, the subtitle and audio languages, and the quality a video starts at.
+- **Playback**: subtitles on by default, the subtitle language, **Subtitle size** (Small, Medium, Large) and **Subtitle colour** (White, Yellow), which apply from the next video you open, the audio language, the quality a video starts at, and the **Video engine** (see [The video engine](#video-engine)).
 - **Language** and **Help and about** (the player's and the home's versions, help, **Check for updates**).
 
 ### A feature that is off {#feature-off}
@@ -167,9 +169,15 @@ No. The player talks to the home at the address you chose. When that address is 
 
 ### The video stays black or does not start on Linux {#linux-video}
 
-- **What it means:** the system's FFmpeg libraries, which the player uses to decode video, are missing.
+- **What it means:** the player plays with the older engine (see [The video engine](#video-engine)), and the system's FFmpeg libraries, which that engine uses to decode video, are missing.
 - **Does Maktaba fix it itself?** No.
 - **What you can do:** install them (`sudo apt install libavcodec-extra` on Debian and Ubuntu, `sudo dnf install ffmpeg-libs` on Fedora with RPM Fusion), then open the video again.
+
+### The video engine {#video-engine}
+
+- **What it means:** the player has two engines that play video. **Automatic**, the usual one, plays with libmpv, which the player carries: most files play as they are. The **Older engine** (JavaFX's) plays only H.264 and AAC, so the home converts more files for it and they take longer to start. **Profile → Playback → Video engine** chooses between them; the choice applies to the next video you open, and the one playing keeps its engine. When libmpv cannot start on this computer, the player plays with the older engine, says so once with the reason, and the row shows **Older engine**, greyed out, with **The new engine could not start:** and why. The row shows **Set by MAKTABA_PLAYER_ENGINE on this computer.** when that variable chooses the older engine.
+- **Does Maktaba fix it itself?** Partly: when libmpv cannot start, the player uses the older engine by itself, so videos still play.
+- **What you can do:** choose **Older engine** only if videos stutter, stay black or have no sound, and go back to **Automatic** once that is fixed. On Linux the older engine needs the system's FFmpeg libraries (see [The video stays black or does not start on Linux](#linux-video)). For support, starting the player with `MAKTABA_PLAYER_ENGINE=javafx` does the same as the setting. If libmpv could not start, reinstall the player. Either way, send a problem report from the menu's **Help → Report a problem…**: its log names the engine each video played with and why. The older engine leaves the player in a coming release; from that version the player has one engine, and a choice of the older one reads as **Automatic**.
 
 ### No update was installed: … {#update-failed}
 

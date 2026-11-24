@@ -43,6 +43,22 @@ class PlaybackSettingsTest {
         assertEquals(SubtitleLanguage.Default, SubtitleLanguage.of("klingon"))
     }
 
+    // story 13.20 T03: the subtitle colour is kept; a store from before it reads White
+    @Test
+    fun theSubtitleColourIsKeptAndAnOlderStoreReadsWhite() {
+        val store = MapStore()
+        store.put("playback.subtitle_size", "l")
+        assertEquals(SubtitleColour.White, PlaybackSettings(store).current.subtitleColour)
+        PlaybackSettings(store).update { it.copy(subtitleColour = SubtitleColour.Yellow) }
+        assertEquals("yellow", store.get("playback.subtitle_colour"))
+        val again = PlaybackSettings(store).current
+        assertEquals(SubtitleColour.Yellow, again.subtitleColour)
+        assertEquals(SubtitleSize.Large, again.subtitleSize)
+        store.put("playback.subtitle_colour", "magenta")
+        assertEquals(SubtitleColour.White, PlaybackSettings(store).current.subtitleColour)
+        assertEquals("#FFE14D", SubtitleColour.Yellow.rgb)
+    }
+
     @Test
     fun aVideoStartsAtWiFisOrMobileDatasQuality() {
         val settings = PlaybackSettings(MapStore())
