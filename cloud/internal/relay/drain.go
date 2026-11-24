@@ -180,12 +180,30 @@ func (r *Registry) track(t *Tunnel) {
 		return
 	}
 	r.open[t] = struct{}{}
+	if r.openBySlug[t.Slug] == nil {
+		r.openBySlug[t.Slug] = map[*Tunnel]struct{}{}
+	}
+	r.openBySlug[t.Slug][t] = struct{}{}
 	go func() {
 		<-t.done
 		r.mu.Lock()
 		delete(r.open, t)
+		if delete(r.openBySlug[t.Slug], t); len(r.openBySlug[t.Slug]) == 0 {
+			delete(r.openBySlug, t.Slug)
+		}
 		r.mu.Unlock()
 	}()
+}
+
+// OfSlug returns slug's open tunnels, draining ones included, in no order.
+func (r *Registry) OfSlug(slug string) []*Tunnel {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]*Tunnel, 0, len(r.openBySlug[slug]))
+	for t := range r.openBySlug[slug] {
+		out = append(out, t)
+	}
+	return out
 }
 
 // tunnelStats are the handover counters served on /metrics.

@@ -37,7 +37,7 @@ heartbeat.
 | 0001 | 25.1 bootstrap | system tables; `schema_versions` view |
 | 0002 | 25.2 identity | users, sessions, refresh tokens, OAuth links |
 | 0003 | 25.5 account | profile fields, email change tokens, deletes |
-| 0004 | 25.6 server linking | servers, server_claims, server_health |
+| 0004 | 25.6 server linking | servers, server_claims (its retry key: `00040002`), server_health |
 | 0005 | 25.11 bandwidth | bandwidth_samples, monthly_buckets |
 | 0006 | 25.13 billing | plans, subscriptions, the webhook event ledger (renamed provider-neutral in 0016) |
 | 0007 | 25.17 push | push_devices, push_dispatch_log |

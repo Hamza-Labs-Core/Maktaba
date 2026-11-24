@@ -8,6 +8,10 @@
 // (authmw.RequireAdmin, enforced here, not in the page). A cloud sign-in with the play scope is
 // never an admin (principal.ApplyCloudScope), so it is refused too. The cloud then holds the
 // home to its own channels: an invite grants only the home's channels it names.
+//
+// Every route also needs the licence's broadcast feature (subscriptions.RequireFeature), checked
+// here and not only in the page: the cloud withholds it while broadcasting is off, so nothing is
+// asked of the agent or the cloud then.
 package broadcastaccess
 
 import (
@@ -25,6 +29,7 @@ import (
 
 	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 )
 
 // Prefix is where the routes live on the home's API.
@@ -41,6 +46,8 @@ type Handler struct {
 	// MAKTABA_CLOUDLINK_ADMIN, and none means the home is not linked to the cloud.
 	AgentAddr string
 	Client    *http.Client
+	// License is the home's entitlements; nil is the free tier, which refuses every route.
+	License *subscriptions.StoreRef
 }
 
 func (h *Handler) agentAddr() string {
@@ -50,7 +57,8 @@ func (h *Handler) agentAddr() string {
 	return os.Getenv("MAKTABA_CLOUDLINK_ADMIN")
 }
 
-// Mount registers the routes, each owner or admin only:
+// Mount registers the routes, each owner or admin only, and only with the licence's broadcast
+// feature (403 license-required):
 //
 //	GET    /api/broadcast/access                              the channels' access, limits, verification
 //	PUT    /api/broadcast/access/channels/{id}                a channel's access and viewer cap
@@ -63,6 +71,7 @@ func (h *Handler) agentAddr() string {
 func (h *Handler) Mount(r chi.Router) {
 	r.Group(func(r chi.Router) {
 		r.Use(authmw.RequireAdmin)
+		r.Use(subscriptions.RequireFeature(h.License, subscriptions.FeatureBroadcast))
 		r.Get(Prefix, h.pass("access"))
 		r.Put(Prefix+"/channels/{id}", h.pass("channels/{id}/access"))
 		r.Put(Prefix+"/limits", h.pass("viewer-limits"))

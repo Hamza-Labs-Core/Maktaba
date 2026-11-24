@@ -126,6 +126,13 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, provider string, ev b
 		if err != nil || uid == "" {
 			return nil, err
 		}
+		// the account first, then its subscription and homes (stores.LockAccount): a claim under
+		// way ends first and its home gets this change, or it waits and copies it
+		if _, _, err := stores.LockAccount(ctx, tx, uid); errors.Is(err, stores.ErrUserNotFound) {
+			return nil, nil // purged since: nothing to apply
+		} else if err != nil {
+			return nil, err
+		}
 		var cur struct {
 			subID  sql.NullString
 			status sql.NullString
@@ -321,7 +328,7 @@ func userExists(ctx context.Context, tx *sql.Tx, uid string) (bool, error) {
 // uses it too. A plan without broadcasting ends each home's guest
 // sharing (billingpkg.EndGuestSharing): it answers the homes whose
 // viewer access changed, for the caller to push to the edge after its
-// commit.
+// commit. The caller holds the account's lock (stores.LockAccount).
 func SetEffectivePlan(ctx context.Context, tx *sql.Tx, uid, plan string) ([]string, error) {
 	if _, err := tx.ExecContext(ctx, `UPDATE users SET plan = $2, updated_at = now() WHERE id = $1`, uid, plan); err != nil {
 		return nil, err
