@@ -325,6 +325,7 @@ func (ln *launcher) rollback(ver, reason string) bool {
 	ln.failures = nil
 	ln.guardVersion = ""
 	if err != nil {
+		ln.startGuardAgain()
 		ln.log.Event("no_previous", ver, map[string]any{"reason": reason, "err": err.Error()})
 		return false
 	}
@@ -449,27 +450,29 @@ func (ln *launcher) bundleRollback(reason string) bool {
 	if g == nil {
 		return false
 	}
+	// nothing to go back to: the release stays
+	stays := func(detail map[string]any) bool {
+		ln.startGuardAgain()
+		ln.log.Event("no_previous", g.Version, detail)
+		return false
+	}
 	to := ""
 	switch {
 	case ln.cfg.RuntimeRoot != "" && g.PreviousRuntime != "":
 		if err := setRuntimeCurrent(ln.cfg.RuntimeRoot, g.PreviousRuntime); err != nil {
-			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
-			return false
+			return stays(map[string]any{"reason": reason, "err": err.Error()})
 		}
 		to = g.PreviousRuntime
 	case ln.cfg.RuntimeRoot == "" && g.PreviousPayload != "":
 		if _, err := os.Stat(filepath.Join(g.PreviousPayload, "bin", layout.Exe("maktaba-server"))); err != nil {
-			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
-			return false
+			return stays(map[string]any{"reason": reason, "err": err.Error()})
 		}
 		if err := layout.WriteRollbackOverride(ln.cfg.Root, g.PreviousPayload, g.Version); err != nil {
-			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
-			return false
+			return stays(map[string]any{"reason": reason, "err": err.Error()})
 		}
 		to = g.PreviousPayload
 	default:
-		ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason})
-		return false
+		return stays(map[string]any{"reason": reason})
 	}
 	ln.markRecord(g.Version, g.Record, reason)
 	_ = layout.ClearGuard(ln.cfg.Root)

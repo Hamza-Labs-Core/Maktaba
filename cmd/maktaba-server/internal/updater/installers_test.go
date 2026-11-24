@@ -261,6 +261,9 @@ func TestRuntimeInstallerPointsAndReverts(t *testing.T) {
 		t.Fatal(err)
 	}
 	g, _ := layout.ReadGuard(lroot)
+	if g == nil || g.MaxRunSec != int64(guardRun(j)/time.Second) {
+		t.Fatalf("the runtime's guard %+v", g)
+	}
 	if cur, _ := rt.Current(); cur != filepath.Base(second.Dir) || g == nil || g.PreviousRuntime != filepath.Base(first.Dir) {
 		t.Fatalf("after the switch: current %q guard %+v", cur, g)
 	}
@@ -322,7 +325,8 @@ func TestAppInstaller(t *testing.T) {
 	if err := ai.Switch(ctx, j); err != nil {
 		t.Fatal(err)
 	}
-	if g, _ := layout.ReadGuard(lroot); g == nil || g.PreviousPayload != j.FromRef || g.Record != "/state/database.json" {
+	if g, _ := layout.ReadGuard(lroot); g == nil || g.PreviousPayload != j.FromRef || g.Record != "/state/database.json" ||
+		g.MaxRunSec != int64(guardRun(j)/time.Second) {
 		t.Fatalf("guard %+v", g)
 	}
 	err := ai.Restart(ctx, j, nil)

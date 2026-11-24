@@ -202,6 +202,13 @@ func TestAppWaitCountsAwakeTime(t *testing.T) {
 		}
 		return 0
 	}
+	if appAnswerAtLeast <= 45*time.Minute {
+		t.Fatalf("%s: less than the app's download may take", appAnswerAtLeast)
+	}
+	var wall appWait // the wall clock's times alone: Go's monotonic clock stops while a Mac sleeps
+	if wall.look(time.Now()); wall.looked != wall.looked.Round(0) || wall.awake != wall.awake.Round(0) {
+		t.Fatal("a look keeps the monotonic clock")
+	}
 	var awake appWait
 	if got := looks(&awake, 0, 5*time.Hour); got != 3*time.Hour+time.Minute {
 		t.Fatalf("awake: given up on after %s", got)
@@ -210,11 +217,11 @@ func TestAppWaitCountsAwakeTime(t *testing.T) {
 	if got := looks(&slept, 0, time.Hour); got != 0 {
 		t.Fatalf("within its time: %s", got)
 	}
-	if got := looks(&slept, 9*time.Hour, 12*time.Hour); got != 9*time.Hour+30*time.Minute {
+	if got := looks(&slept, 9*time.Hour, 12*time.Hour); got != 9*time.Hour+appAnswerAtLeast {
 		t.Fatalf("awake again after 9 h: given up on after %s", got)
 	}
 	var started appWait // the server started long past the order's time
-	if got := looks(&started, 20*time.Hour, 22*time.Hour); got != 20*time.Hour+30*time.Minute {
+	if got := looks(&started, 20*time.Hour, 22*time.Hour); got != 20*time.Hour+appAnswerAtLeast {
 		t.Fatalf("a start: given up on after %s", got)
 	}
 	var back appWait // the clock set back while it waits

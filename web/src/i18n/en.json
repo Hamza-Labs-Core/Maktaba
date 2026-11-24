@@ -4017,7 +4017,7 @@
   "updates.code.no_app_update": "The release has no desktop app update for this machine",
   "updates.code.app_install_failed": "The desktop app could not install the update",
   "updates.code.app_order_gone": "The desktop app's install order was withdrawn or replaced",
-  "updates.code.app_no_answer": "The desktop app did not take the update in time: it is not running on this machine, or could not be started",
+  "updates.code.app_no_answer": "The desktop app did not take the update in time: it is not running on this machine, could not be started, or did not finish its download",
   "updates.code.app_request_failed": "The desktop app could not be reached",
   "updates.code.app_not_started": "The desktop app could not be started",
   "updates.code.app_did_not_install": "The desktop app did not install the update in time",

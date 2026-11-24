@@ -145,7 +145,7 @@
     <string name="w_updates_code_no_app_update">The release has no desktop app update for this machine</string>
     <string name="w_updates_code_app_install_failed">The desktop app could not install the update</string>
     <string name="w_updates_code_app_order_gone">The desktop app\'s install order was withdrawn or replaced</string>
-    <string name="w_updates_code_app_no_answer">The desktop app did not take the update in time: it is not running on this machine, or could not be started</string>
+    <string name="w_updates_code_app_no_answer">The desktop app did not take the update in time: it is not running on this machine, could not be started, or did not finish its download</string>
     <string name="w_updates_code_app_request_failed">The desktop app could not be reached</string>
     <string name="w_updates_code_app_not_started">The desktop app could not be started</string>
     <string name="w_updates_code_app_did_not_install">The desktop app did not install the update in time</string>

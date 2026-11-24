@@ -964,10 +964,11 @@ func (m *Machine) SetInstallBy(runID string, at time.Time) {
 
 // appAnswerLimit is how long an order waits for the app to stage it when the run
 // names no time to install by (an Update now): the app is started with the order's link
-// every NudgeAfter meanwhile. appAnswerAtLeast is the least it waits.
+// every NudgeAfter meanwhile. appAnswerAtLeast is the least it waits: more than the app's
+// own limit on its download (45 minutes: shell.rs, agent_orders.rs DOWNLOAD_TIMEOUT).
 const (
 	appAnswerLimit   = 3 * time.Hour
-	appAnswerAtLeast = 30 * time.Minute
+	appAnswerAtLeast = 50 * time.Minute
 )
 
 // answerGap is the longest two looks of await are apart while the machine is awake.

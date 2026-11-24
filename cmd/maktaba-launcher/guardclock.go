@@ -20,7 +20,10 @@ import (
 //     (guard-ran.json), and never extended: whatever the release being judged pushes, it is
 //     given up on there.
 //   - Within it, the deadline the release pushes ahead while it starts is read as time left
-//     when it is written: a clock set forward after that takes nothing away, and every start of the launcher gives PendingTimeout again, for the release to push.
+//     when it is written: a clock set forward after that takes nothing away, and every start
+//     of the launcher gives PendingTimeout again, for the release to push.
+//   - A release given up on with nothing to go back to stays: its time starts again (again),
+//     twice as long each time.
 
 // guardGap is the most a look counts: a longer gap between two looks is sleep (or a
 // machine too busy to look), no time the release ran.
@@ -38,6 +41,7 @@ type guardClock struct {
 	ran   time.Duration // its running time, the starts before included
 	saved time.Duration // ran as saved last
 	floor time.Duration // run at this start's PendingTimeout
+	kept  int           // how often it was given up on with nothing to go back to
 	// the deadline as written, and run at it
 	deadline time.Time
 	end      time.Duration
@@ -99,8 +103,8 @@ func (c *guardClock) look(tick time.Duration, now time.Time, key string, deadlin
 		c.saved = c.ran
 	}
 	c.ran += step
-	if deadline.IsZero() {
-		return c.run >= c.floor // a switch no update run watches
+	if deadline.IsZero() { // a switch no update run watches
+		return c.ran >= budget || c.run >= c.floor
 	}
 	left := max(0, min(deadline.Sub(now), budget))
 	if !deadline.Equal(c.deadline) {
@@ -109,6 +113,23 @@ func (c *guardClock) look(tick time.Duration, now time.Time, key string, deadlin
 		c.end = max(c.end, c.run+left) // the same: a clock set forward takes nothing away
 	}
 	return c.ran >= budget || c.run >= max(c.floor, c.end)
+}
+
+// again starts the time of the guard over: it was given up on, and there is nothing to go
+// back to, so its release stays. Without it the time used up ends every start at its first
+// look, for good (the review of #1607). Twice as long each time (PendingTimeout, at most the
+// guard's whole budget): the library and its recovery page stay up for a person, and a
+// release that hung is still started again.
+func (c *guardClock) again(timeout time.Duration) {
+	c.kept = min(c.kept+1, 7)
+	c.ran, c.saved, c.deadline, c.end = 0, 0, time.Time{}, 0
+	c.floor = c.run + timeout<<(c.kept-1)
+}
+
+// startGuardAgain is again, for the starts after this one too.
+func (ln *launcher) startGuardAgain() {
+	ln.clock.again(ln.cfg.PendingTimeout)
+	_ = os.Remove(ln.guardRanPath())
 }
 
 // readGuardRan is the running time the launcher's starts before used of the guard key.
