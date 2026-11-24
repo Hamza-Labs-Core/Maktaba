@@ -46,6 +46,11 @@ shutdown_grace = "20s"
 # (seconds, not the pool's two-minute drain)
 enabled = false
 
+[broadcast]
+# off (Epic 50 §14): no plan grants it, nothing is published or watched, and no broadcast edge
+# is deployed with a node. The deploy's test requires it off (tests/e2e.py, broadcast-off)
+enabled = false
+
 [relay.plans]
 # each home's plan limits, enforced by the relay (Epic 50 story 50.19)
 enforce = ${RELAY_PLANS_ENFORCE}

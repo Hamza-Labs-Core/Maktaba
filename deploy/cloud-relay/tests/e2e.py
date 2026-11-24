@@ -27,6 +27,9 @@ What it proves, each a check in the summary:
              (the cloud signs with the key releases embed, docs/licensing.md)
   plans      the Free plan has no relay (402 relay_needs_plan); Basic does again
   restart    (full) the relay container restarted: the home is back through the relay, plays
+  broadcast-off  broadcasting is off: every public broadcast and moderation route answers 404
+             (with and without a signed-in account), the providers and plans lists offer
+             none, no home is a test publisher, and only the node's six services run
   firewall   from outside, only 22, 80 and 443 answer on TCP; UFW denies the rest
   backup     the nightly backup's timer is on; a backup taken now restores into a scratch
              database with the live accounts and homes
@@ -108,8 +111,8 @@ def check(name: str, fn: Callable[[], str], needs: tuple[bool, ...] = ()) -> boo
         log(f"ok  {name}: {detail}")
         return True
     except Exception as e:  # noqa: BLE001 - every check reports; the run fails at the end
-        results.append({"check": name, "ok": False, "detail": str(e)[:600], "sec": round(time.monotonic() - t0, 1)})
-        log(f"FAIL {name}: {str(e)[:600]}")
+        results.append({"check": name, "ok": False, "detail": str(e)[:1500], "sec": round(time.monotonic() - t0, 1)})
+        log(f"FAIL {name}: {str(e)[:1500]}")
         return False
 
 
@@ -262,6 +265,62 @@ def check_account(acct: Account) -> str:
     s, b = http("GET", f"{API}/v1/account/me", token=acct.token)
     need(s, b, (200,), "account/me")
     return f"registered; 403 email_not_verified before; confirmed and Basic by cloud-ops; signed in (plan {b.get('plan', '?')})"
+
+
+# The public routes of broadcasting and its moderation (cloud/internal/handlers: broadcast,
+# moderation, billing/broadcast.go), and the operator's, which no public name serves. With
+# broadcasting off each answers 404: not 401, which would say the route is there.
+ZERO = "00000000-0000-0000-0000-000000000000"
+BROADCAST_ROUTES = (
+    ("POST", "/v1/broadcast/channels"), ("DELETE", f"/v1/broadcast/channels/{ZERO}"),
+    ("GET", "/v1/broadcast/state"), ("POST", "/v1/broadcast/ingest-token"),
+    ("GET", "/v1/broadcast/agreement"), ("POST", "/v1/broadcast/agreement"),
+    ("GET", "/v1/broadcast/analytics"),
+    ("GET", "/v1/broadcast/takedowns"), ("POST", f"/v1/broadcast/takedowns/{ZERO}/ack"),
+    ("GET", "/v1/broadcast/moderation"), ("POST", "/v1/broadcast/moderation/counter-notices"),
+    ("POST", "/v1/moderation/notices"), ("POST", "/v1/moderation/reports"),
+    ("GET", "/v1/billing/broadcast"), ("PUT", "/v1/billing/broadcast"),
+    ("PATCH", "/v1/billing/broadcast/payg"), ("PATCH", "/v1/billing/broadcast/extras"),
+    ("GET", "/v1/admin/moderation"), ("GET", "/v1/admin/broadcast/geo-deny"),
+    ("GET", "/v1/admin/broadcast/analytics"), ("GET", "/v1/admin/broadcast/revocations"),
+)
+SERVICES = {"caddy", "maktaba-cloud", "api", "worker", "postgres", "redis"}
+
+
+def check_broadcast_off(acct: Account) -> str:
+    wrong = []
+    for who, token in (("no account", ""), ("a signed-in account", acct.token)):
+        for method, path in BROADCAST_ROUTES:
+            s, _ = http(method, API + path, None if method in ("GET", "DELETE") else {}, token)
+            if s != 404:
+                wrong.append(f"{method} {path} ({who}) {s}")
+    # the app's name proxies /v1 to the same api: one of each family there
+    for method, path in (("GET", "/v1/broadcast/state"), ("POST", "/v1/moderation/reports")):
+        s, _ = http(method, f"https://{APP_HOST}{path}", None if method == "GET" else {})
+        if s != 404:
+            wrong.append(f"{method} {APP_HOST}{path} {s}")
+    s, b = http("GET", API + "/v1/auth/providers")
+    if not isinstance(b, dict) or b.get("broadcast") is not False:
+        wrong.append("auth/providers does not say broadcast false")
+    s, b = http("GET", API + "/v1/billing/plans")
+    if not isinstance(b, dict) or b.get("broadcast"):
+        wrong.append("billing/plans offers broadcasting")
+    compose = "cd /opt/maktaba-relay && docker compose --env-file .env "
+    n = node(compose + "exec -T postgres sh -c 'psql -X -A -t -U \"$POSTGRES_USER\" -d \"$POSTGRES_DB\" "
+             "-c \"SELECT count(*) FROM servers WHERE broadcast_test_publisher\"' </dev/null").strip()
+    if n != "0":
+        wrong.append(f"{n} homes are test publishers")
+    extra = set(node("docker ps --format '{{.Label \"com.docker.compose.service\"}}|{{.Names}}'").split())
+    extra = {x for x in extra if x.split("|")[0] not in SERVICES}
+    if extra:
+        wrong.append(f"containers besides the node's services: {sorted(extra)}")
+    conf = tomllib.loads(node("cat /opt/maktaba-relay/cloud.toml"))
+    if conf.get("broadcast", {}).get("enabled") is not False:
+        wrong.append("cloud.toml does not set broadcast.enabled = false")
+    if wrong:
+        raise AssertionError(f"{len(wrong)} wrong: " + "; ".join(wrong))
+    return (f"{len(BROADCAST_ROUTES)} routes answer 404 with and without an account; no offer in the providers "
+            "or plans; no test publisher; only the node's services run")
 
 
 class Home:
@@ -668,6 +727,7 @@ def main() -> int:
         check("firewall", check_firewall)
         check("backup", check_backup)
         a = check("account", lambda: check_account(acct))
+        check("broadcast-off", lambda: check_broadcast_off(acct), needs=(a,))
         h = check("home", lambda: make_home(acct, home), needs=(a,))
         lc = check("licence", lambda: check_licence(home), needs=(h,))
         p = check("relay-play", lambda: check_relay_play(home), needs=(lc,))

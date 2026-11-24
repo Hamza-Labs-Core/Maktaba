@@ -65,6 +65,9 @@ CA, which the tests trust).
   (`server.trusted_proxies`, story 50.31's rule, kept).
 - **The web app is Caddy's, not a Worker.** Caddy serves `web/cloud`'s bundle on the app name
   with the Worker's headers, and `/v1/*` to the api on the same origin.
+- **No broadcasting.** `broadcast.enabled` is false and no broadcast edge is deployed. A release
+  whose broadcast or moderation routes answer anything but 404 fails QA's test, so it can't reach
+  production.
 - **No Floating IP, no standby, no witness.** The relay's drain is off
   (there is no second relay to move homes to): a restart drops the tunnels, and homes dial back
   within seconds (the test fails past a minute).
@@ -103,6 +106,7 @@ production (no relay restart, no load):
 | firewall | from outside, of 1,040 TCP ports only 22, 80 and 443 answer; UFW is active and denies incoming; only Caddy publishes a port |
 | backup | the timer is on; a backup taken now restores into a scratch database with the live accounts and homes |
 | account | a new account is refused sign-in until confirmed; the operator tool confirms it and gives it Basic |
+| broadcast-off | broadcasting is off: every public broadcast and moderation route answers 404, with and without an account; the providers and plans lists offer none; no home is a test publisher; `broadcast.enabled` is false; only the node's six services run (no broadcast edge) |
 | home | the release's `maktaba-server` image on the runner, set up headlessly with a test video; its claim code minted by the account; online in the account's homes |
 | licence | the home holds the cloud's licence for its owner's plan, signed with the key its release embeds, and serves the relay |
 | link | the home's admin linked to the account (the Linked accounts flow, the web app's step by API), and the cloud lists the home as linked |
