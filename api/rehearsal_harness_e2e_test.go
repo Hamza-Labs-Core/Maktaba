@@ -891,6 +891,23 @@ type dbRecord struct {
 	KeptFor string `json:"kept_for"`
 }
 
+// recordConfirmed waits for the record of a good update to version as every release reads
+// it: its backup named (dump), nothing withheld.
+func (m *appMachine) recordConfirmed(version string) {
+	t := m.r.t
+	t.Helper()
+	var all map[string]any
+	waitFor(t, "the record of "+version+" naming its backup", 3*time.Minute, func() bool {
+		var rec dbRecord
+		rec, all = m.record()
+		_, withheld := all["dump_unconfirmed"]
+		return layoutVersion(rec.Version) == layoutVersion(version) && rec.State == "migrated" && rec.Dump != "" && !withheld
+	})
+	if all["confirmed"] != true {
+		t.Errorf("the record of %s: %v", version, all)
+	}
+}
+
 func (m *appMachine) record() (dbRecord, map[string]any) {
 	var rec dbRecord
 	var all map[string]any

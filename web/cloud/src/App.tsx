@@ -19,6 +19,7 @@ import { Homes } from "./pages/Homes";
 import { Broadcast } from "./pages/Broadcast";
 import { ApproveTv } from "./pages/ApproveTv";
 import { BroadcastAnalytics } from "./pages/BroadcastAnalytics";
+import { useBroadcastOn } from "./providers";
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -45,6 +46,7 @@ function Shell() {
   const { t } = useI18n();
   const { status, signOut } = useSession();
   const signedIn = status === "signed_in";
+  const broadcastOn = useBroadcastOn();
   return (
     <div className="mkc-shell">
       <header className="mkc-shell__header">
@@ -62,9 +64,12 @@ function Shell() {
             <NavLink to="/billing" className="mkc-shell__link">
               {t("nav.billing")}
             </NavLink>
-            <NavLink to="/broadcast" className="mkc-shell__link">
-              {t("nav.broadcast")}
-            </NavLink>
+            {/* broadcasting is off by default (broadcast.enabled): no link to its pages */}
+            {broadcastOn && (
+              <NavLink to="/broadcast" className="mkc-shell__link">
+                {t("nav.broadcast")}
+              </NavLink>
+            )}
           </nav>
         )}
         <div className="mkc-row">
@@ -102,6 +107,14 @@ function SignedOutOnly() {
   return <Outlet />;
 }
 
+/** The broadcasting pages exist only while the cloud has broadcasting on: otherwise a 404. */
+function RequireBroadcast() {
+  const on = useBroadcastOn();
+  if (on === null) return <Loading />;
+  if (!on) return <NotFound />;
+  return <Outlet />;
+}
+
 function Home() {
   const { status } = useSession();
   if (status === "loading") return <Loading />;
@@ -135,11 +148,13 @@ export function AppRoutes() {
         <Route element={<RequireAuth />}>
           <Route path="account" element={<Account />} />
           <Route path="billing" element={<Billing />} />
-          {/* who may watch each home's channels: invites and access (50.26) */}
-          <Route path="broadcast" element={<Broadcast />} />
           {/* a linked home's player and remote, served by the cloud (42.9) */}
           <Route path="homes" element={<Homes />} />
-          <Route path="homes/:id/viewers" element={<BroadcastAnalytics />} />
+          <Route element={<RequireBroadcast />}>
+            {/* who may watch each home's channels: invites and access (50.26) */}
+            <Route path="broadcast" element={<Broadcast />} />
+            <Route path="homes/:id/viewers" element={<BroadcastAnalytics />} />
+          </Route>
           {/* a home's Account page sends a person here to link their cloud account (42.7) */}
           <Route path="link-home" element={<LinkHome />} />
           {/* a TV's Maktaba Cloud code, from the QR's maktaba.tv/tv?c= (story 58.03) */}

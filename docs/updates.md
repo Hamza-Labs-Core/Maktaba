@@ -206,7 +206,8 @@ the others go, and it takes its turn once staged, with no click. A run waiting o
 download gives way to a newer release. An app that never stages its order (not running on that
 machine, or its start with the order's link failed, which the run's log now says) ends the order
 `app_no_answer` at the time the run installs by (its window's end), else three hours after the
-order, and never within half an hour of it; nothing changed. It is the machine's, not the
+order, and never within half an hour of it, nor before the app had half an hour with the machine
+awake (since it woke, or the server started); nothing changed. It is the machine's, not the
 release's: it counts no attempt, and the next window tries again. The Linux app's runtime order has
 nothing to stage, so an app that does not answer it within 10 minutes no longer holds the run: it
 goes on, and the server switches its runtime itself at the go. A power cut at any step is
@@ -362,14 +363,6 @@ launcher and server against it.
 held record stays held: its Down scripts may have run in part, and the failed release never
 migrates and runs on that by itself.
 
-**A restore that cannot finish** (its backup lost or unreadable, no room) changes nothing, and has
-a way out: the next start tries it again; the recovery page and `maktaba-server restore` can put
-the same or another backup back; **Give this restore up** (`maktaba-server restore --abandon
---confirm`) leaves the database as it was before it (a held update waits again; on a home that
-ran well, the release that ran on it starts again); and a release newer than the one that failed
-goes on from there. While a restore runs, none of these is possible, and one whose database is
-gone is not given up: only a restore brings a database back.
-
 The automatic restores of 2026-11-14, 2026-11-23 (v0.3.158) and 2026-11-24
 (v0.3.157) each kept the library stopped for about three hours. The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
@@ -382,11 +375,15 @@ through the releases in between, which have none of the fixes made after the fai
 Updates page says which release holds the others back; **Update now** naming a release installs
 it all the same. On a machine, the launcher's guard does the same when the
 new release does not confirm in time (15 minutes) or stops three times in ten minutes. While the
-new release's database step and watch run, its watch keeps that deadline ahead; since 2026-11-24
-never past the latest the release that switched wrote in the guard (`latest`: the watch's own
-longest wait, its start steps' cap and its bound, plus 45 minutes), and never more than a day after
-the switch for a guard with none. Before, the release being judged could push it without limit,
-so one that hung with its watch alive was never timed out.
+new release's database step and watch run, its watch keeps that deadline ahead,
+since 2026-11-24 within the running time the release that switched gave it in the guard
+(`max_run_seconds`: the watch's own longest wait, its start steps' cap and its bound, plus 45
+minutes; a day for a guard with none). The launcher counts that time itself while it runs, across
+its starts, and never extends it: a release that hangs with its watch alive is given up on there,
+wherever the clock is set. A machine switched off or asleep, or a clock set forward, is no time the
+release had: a good update is not taken back after a long power cut. A rollback under way has six
+hours more of its own (`rolling_back`), so its Down scripts are not stopped part way. A launcher
+from before it counts nothing; the release stops pushing the deadline itself at the same time.
 
 ### The database during an update
 
@@ -435,9 +432,12 @@ so one that hung with its watch alive was never timed out.
 - **Index builds are plain while the library is stopped (since 2026-11-24).** The migrations
   run before any role starts, so their `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
   run without `CONCURRENTLY` (`MAKTABA_MIGRATE_OFFLINE=1`, set by the database step and the
-  rehearsal on a copy). A plain build takes a lock that only holds writes back, which the
-  stopped library makes none of, waits for no older transaction, and rolls back whole: it leaves
-  no INVALID index. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
+  rehearsal on a copy). A plain build takes a lock that only holds writes to that table
+  back, waits for no older transaction, and rolls back whole: it leaves no INVALID index. The
+  stopped library writes nothing. A joined machine's own sessions (`maktaba_node_*`) are ended
+  when the migrations start and may come back: one that writes to a table while its index is
+  built waits for the build, and one a migration waits on for more than 10 seconds is ended; the
+  machine's workers try again once the home answers. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
   left as it is. An INVALID index an earlier try left is dropped, and built again, plainly too.
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous
@@ -582,7 +582,9 @@ release that cannot start back under the guard, and finds the home as it was.
 new release at the service's restart); in the Linux runtime copy it installs a new runtime; a
 plain binary is replaced in place, the previous one kept as `<binary>.bak`. A layout switch from
 the command line is no update run's, so the new release confirms itself once it has run healthy
-for a few minutes, as a switch by hand does. Before 2026-11-24 the command named its switch `cli`,
+for a few minutes, as a switch by hand does. Nothing pushes such a switch's deadline: one whose
+start takes over 15 minutes (a large library's backup or migrations) still goes back, and is for
+an update run (**Update now**). Before 2026-11-24 the command named its switch `cli`,
 which nothing confirmed, and the launcher went back after 15 minutes; a release since confirms
 such a switch too.
 

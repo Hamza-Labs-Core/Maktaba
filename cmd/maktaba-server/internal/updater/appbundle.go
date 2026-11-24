@@ -124,6 +124,11 @@ func (ai *AppInstaller) Extend(j *Journal, until time.Time) error {
 	return err
 }
 
+// RollingBack implements RollbackGuarder.
+func (ai *AppInstaller) RollingBack(j *Journal) error {
+	return layout.GuardRollingBack(ai.LauncherRoot, j.Job.RunID)
+}
+
 func (ai *AppInstaller) requests() requests { return requests{dir: ai.updatesDir(), now: ai.now} }
 
 func (ai *AppInstaller) nudgeAfter() time.Duration {
@@ -504,7 +509,7 @@ func (ai *AppInstaller) Tools(j *Journal) (string, string) {
 func (ai *AppInstaller) Switch(_ context.Context, j *Journal) error {
 	if err := layout.WriteGuard(ai.LauncherRoot, layout.Guard{Version: layout.NormalizeVersion(j.Job.Version),
 		RunID: j.Job.RunID, Since: ai.now().UTC(), Deadline: guardDeadline(ai.now(), j).UTC(),
-		Latest: guardLatest(ai.now(), j).UTC(), PreviousPayload: j.FromRef, Record: ai.Record}); err != nil {
+		MaxRunSec: int64(guardRun(j) / time.Second), PreviousPayload: j.FromRef, Record: ai.Record}); err != nil {
 		return Fail("switch_failed", "%v", err)
 	}
 	return nil

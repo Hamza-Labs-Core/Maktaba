@@ -84,7 +84,16 @@ func stallLimit(j *Journal) time.Duration {
 	return d
 }
 
-// extendGuard pushes the launcher's guard to until (best effort).
+// RollbackGuarder is an installer that can tell the launcher's guard a rollback is under way
+// (it has its own time: the Down scripts are not stopped part way).
+type RollbackGuarder interface {
+	RollingBack(j *Journal) error
+}
+
+// extendGuard pushes the launcher's guard to until (best effort), while this release has not
+// run longer than the launcher gives it (guardRun; a rollback under way has more): a launcher
+// from before 2026-11-24 counts no time of its own, and pushed without limit it would never
+// give up on a release that hung with its watch alive (research P5).
 func (m *Machine) extendGuard(until time.Time) {
 	e, ok := m.Installer.(Extender)
 	if !ok {
@@ -92,6 +101,10 @@ func (m *Machine) extendGuard(until time.Time) {
 	}
 	j := m.Status().Journal
 	if j == nil {
+		return
+	}
+	budget := layout.GuardBudget(int64(guardRun(j)/time.Second), j.State == StateRollingBack)
+	if started := m.startedAt(); !started.IsZero() && m.now().Sub(started) >= budget {
 		return
 	}
 	if err := e.Extend(j, until); err != nil {
@@ -103,6 +116,13 @@ func (m *Machine) extendGuard(until time.Time) {
 // once a minute, checked every checkEvery) until the returned stop is called; stop
 // returns once nothing pushes it any more.
 func (m *Machine) keepGuard() (stop func()) {
+	if g, ok := m.Installer.(RollbackGuarder); ok {
+		if j := m.Status().Journal; j != nil && j.State == StateRollingBack {
+			if err := g.RollingBack(j); err != nil {
+				m.logf("the launcher cannot be told the rollback is under way: %v", err)
+			}
+		}
+	}
 	done, finished := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(finished)
@@ -257,6 +277,7 @@ type Machine struct {
 	cancel  context.CancelFunc
 	running sync.WaitGroup
 	base    context.Context
+	began   time.Time // when Start was called
 	// saveErr is the last journal write failure logged (one line per distinct one)
 	saveErr string
 }
@@ -443,8 +464,15 @@ func ordered(state string) bool { return state == StateOrdered || state == State
 // life). Resume reads the journal of a run the last start left.
 func (m *Machine) Start(ctx context.Context) {
 	m.mu.Lock()
-	m.base = ctx
+	m.base, m.began = ctx, m.now()
 	m.mu.Unlock()
+}
+
+// startedAt is when this server started the machine (zero: not started).
+func (m *Machine) startedAt() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.began
 }
 
 func (m *Machine) ctx() context.Context {
@@ -942,6 +970,27 @@ const (
 	appAnswerAtLeast = 30 * time.Minute
 )
 
+// answerGap is the longest two looks of await are apart while the machine is awake.
+const answerGap = 5 * time.Minute
+
+// appWait is how long the app had, awake, to take its order: since the server began to wait,
+// or the machine woke (a gap between two looks by the wall clock, which goes on while it
+// sleeps). A laptop that slept past the order's time is given appAnswerAtLeast when it wakes.
+type appWait struct{ awake, looked time.Time }
+
+func (a *appWait) look(now time.Time) {
+	now = now.Round(0) // the wall clock
+	if a.looked.IsZero() || now.Sub(a.looked) > answerGap || now.Before(a.looked) {
+		a.awake = now
+	}
+	a.looked = now
+}
+
+// over reports whether the order is given up on: by passed, and the app had its time.
+func (a *appWait) over(by time.Time) bool {
+	return a.looked.After(by) && a.looked.Sub(a.awake) >= appAnswerAtLeast
+}
+
 // answerCheckEvery is how often (wall time) await looks at answerBy: a minute
 // (AnswerCheckEvery; negative: at every check).
 func (m *Machine) answerCheckEvery() time.Duration {
@@ -990,6 +1039,7 @@ func (m *Machine) await(ctx context.Context, runID string) {
 	}
 	m.logf("ordered %s from the app: it stages it, then installs it at the home's go", j.Job.Version)
 	var lastLooked time.Time // when answerBy was last looked at (wall time)
+	wait := appWait{}
 	t := time.NewTicker(m.checkEvery())
 	defer t.Stop()
 	for {
@@ -1002,11 +1052,13 @@ func (m *Machine) await(ctx context.Context, runID string) {
 			m.orderFailed(runID, err)
 			return
 		}
+		wait.look(m.now())
 		if state == RequestOrdered && time.Since(lastLooked) >= m.answerCheckEvery() {
 			lastLooked = time.Now()
-			if m.now().After(answerBy(cur)) {
+			if wait.over(answerBy(cur)) {
 				m.orderFailed(runID, Fail("app_no_answer", "the app did not stage the order of %s by %s: it is not "+
-					"running on this machine, or could not be started (the update waits for the next try)",
+					"running on this machine, could not be started, or had not downloaded it yet (the update waits for "+
+					"the next try)",
 					cur.Job.Version, answerBy(cur).Format(time.RFC3339)))
 				return
 			}
@@ -1181,10 +1233,6 @@ func (m *Machine) Resume() {
 		_ = m.endStep(StepRollback, "done", "")
 		_ = m.mutate(func(j *Journal) { j.State, j.Step = StateRolledBack, "" })
 		m.logf("rolled back to %s (%s)", orNone(running), j.Reason)
-	case StateCommitted:
-		if newRel {
-			m.confirmRecord(j) // a commit cut short before it
-		}
 	}
 }
 
@@ -1454,8 +1502,9 @@ type ConfirmRecords interface {
 	Confirm(version string) error
 }
 
-// confirmRecord tells the database's record that j's release is kept. Best effort: a record
-// that still withholds its backup says it to the releases that know where.
+// confirmRecord tells the database's record that j's release is kept, at the commit. Best
+// effort: the server does it too once the release runs healthy (serve's confirmRecord), a
+// commit cut short included.
 func (m *Machine) confirmRecord(j *Journal) {
 	c, ok := m.Records.(ConfirmRecords)
 	if !ok || j == nil || !j.Job.Home {

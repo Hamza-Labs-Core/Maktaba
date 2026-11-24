@@ -5,8 +5,8 @@ package layout
 // orchestrator writes <launcher root>/updates/pending.json before it restarts onto a new
 // release; the launcher falls back to the previous release (a kept copy of the app's
 // payload, or the runtime directory that ran before) when the new one cannot stay up,
-// and marks the database record so the previous release puts back the dump taken
-// before the new one's migrations (shared with the layout's pending, Pending.Record).
+// and marks the database record held, so nothing is put back by itself and a person
+// chooses (shared with the layout's pending, Pending.Record).
 
 import (
 	"encoding/json"
@@ -33,15 +33,16 @@ type Guard struct {
 	// Deadline: not confirmed by then, the launcher falls back (zero: its own
 	// pending timeout).
 	Deadline time.Time `json:"deadline,omitzero"`
-	// Latest is how far the deadline may ever be pushed (GuardLatest), set by the release
-	// that switched; zero (a guard from before 2026-11-24): Since plus MaxGuardSpan.
-	Latest time.Time `json:"latest,omitzero"`
+	// MaxRunSec is the running time the release has to confirm (GuardBudget), set by the
+	// release that switched; RollingBack says its rollback is under way (GuardRollingBack).
+	MaxRunSec   int64 `json:"max_run_seconds,omitempty"`
+	RollingBack bool  `json:"rolling_back,omitempty"`
 	// PreviousPayload is the kept copy of the app payload that ran before (app
 	// bundle); PreviousRuntime the runtime directory that did (runtime copy).
 	PreviousPayload string `json:"previous_payload,omitempty"`
 	PreviousRuntime string `json:"previous_runtime,omitempty"`
-	// Record is the database's record (state/database.json) the fallback marks for
-	// the dump to be put back (a home's; "" on a node).
+	// Record is the database's record (state/database.json) the fallback marks held
+	// (MarkRecordHeld; a home's, "" on a node).
 	Record string `json:"record,omitempty"`
 }
 
@@ -233,37 +234,37 @@ func markRecordFailed(path, failed, reason, state string) (bool, error) {
 	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
 }
 
-// MaxGuardSpan is the longest a guard or pending marker may wait for its release to
-// confirm when the release that switched set no latest of its own: a day from its
-// switch, longer than any home's database step (research P5: the release being judged
-// pushed the deadline 15 minutes ahead every minute, without limit, so a release that
-// hung with its watch alive was never timed out).
-const MaxGuardSpan = 24 * time.Hour
+// MaxGuardRun is the running time a guard or pending marker gives its release to confirm
+// when the release that switched set none (one from before 2026-11-24), and RollbackRun what
+// a rollback under way adds: its Down scripts are not stopped part way.
+const (
+	MaxGuardRun = 24 * time.Hour
+	RollbackRun = 6 * time.Hour
+)
 
-// GuardLatest is how far a guard's deadline may be pushed: latest when the release that
-// switched set it (its database step's own cap and watch, which pass a day on a large
-// library), else since plus MaxGuardSpan. The launcher never waits past it, whatever the
-// deadline says; the release being judged cannot move it.
-func GuardLatest(since, latest time.Time) time.Time {
-	if !latest.IsZero() {
-		return latest
+// GuardBudget is the running time a guard's release has to confirm: maxRunSec, what the
+// release that switched gave it (its database step's own cap and watch, which pass a day on
+// a large library; 0: MaxGuardRun), and RollbackRun when its rollback is under way. The
+// launcher counts it while it runs and never goes past it, whatever the deadline says
+// (research P5: the release being judged pushed the deadline 15 minutes ahead every minute,
+// without limit, so a release that hung with its watch alive was never timed out).
+func GuardBudget(maxRunSec int64, rollingBack bool) time.Duration {
+	d := MaxGuardRun
+	if maxRunSec > 0 {
+		d = time.Duration(maxRunSec) * time.Second
 	}
-	if since.IsZero() {
-		since = time.Now()
+	if rollingBack {
+		d += RollbackRun
 	}
-	return since.Add(MaxGuardSpan)
+	return d
 }
 
 // ExtendGuard pushes the guard's deadline to until when the guard is runID's and its
-// deadline is earlier (the new release is busy starting), never past its latest
-// (GuardLatest); it reports whether it did.
+// deadline is earlier (the new release is busy starting); it reports whether it did.
 func ExtendGuard(root, runID string, until time.Time) (bool, error) {
 	g, err := ReadGuard(root)
 	if err != nil || g == nil || runID == "" || g.RunID != runID {
 		return false, err
-	}
-	if latest := GuardLatest(g.Since, g.Latest); until.After(latest) {
-		until = latest
 	}
 	if !g.Deadline.Before(until) {
 		return false, nil
@@ -302,6 +303,17 @@ func ConfirmRecord(path, version string) (bool, error) {
 		return false, err
 	}
 	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
+}
+
+// GuardRollingBack says the rollback of the guard's release is under way: the launcher gives
+// it RollbackRun more.
+func GuardRollingBack(root, runID string) error {
+	g, err := ReadGuard(root)
+	if err != nil || g == nil || runID == "" || g.RunID != runID || g.RollingBack {
+		return err
+	}
+	g.RollingBack = true
+	return WriteGuard(root, *g)
 }
 
 // UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the release

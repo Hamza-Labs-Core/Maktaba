@@ -54,8 +54,11 @@ type Deps struct {
 	// revoked its invites or changed its channels (story 50.26's push); nil leaves it to the
 	// worker's PushPending.
 	AccessPush func(ctx context.Context, serverID string)
-	WebURL     string
-	Now        func() time.Time
+	// BroadcastEnabled is broadcast.enabled (the broadcasting gate, default off). Off, the plans
+	// list carries no broadcast catalog, so the web app shows no broadcasting offer.
+	BroadcastEnabled bool
+	WebURL           string
+	Now              func() time.Time
 }
 
 func (d *Deps) provider() billingpkg.Provider {
@@ -132,8 +135,13 @@ func (d *Deps) Plans(w http.ResponseWriter, _ *http.Request) {
 		})
 	}
 	// payments_enabled false: paid plans are "coming soon".
-	// broadcast: Pro's guest sharing and the Broadcaster add-on (story 50.20), prices null: TBD
-	writeJSON(w, http.StatusOK, map[string]any{"plans": out, "payments_enabled": p.Enabled(), "broadcast": BroadcastTiers()})
+	// broadcast: Pro's guest sharing and the Broadcaster add-on (story 50.20), prices null: TBD;
+	// only while broadcasting is on (broadcast.enabled, off since 2026-11-24)
+	body := map[string]any{"plans": out, "payments_enabled": p.Enabled()}
+	if d.BroadcastEnabled {
+		body["broadcast"] = BroadcastTiers()
+	}
+	writeJSON(w, http.StatusOK, body)
 }
 
 type subRow struct {
