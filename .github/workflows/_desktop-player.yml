@@ -205,6 +205,7 @@ jobs:
             mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-meson mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-libass
             mingw-w64-ucrt-x86_64-ntldd mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-shaderc mingw-w64-ucrt-x86_64-spirv-cross
             mingw-w64-ucrt-x86_64-ffmpeg
       - name: Build libmpv (Linux)
         if: runner.os == 'Linux' && steps.mpv-cache.outputs.cache-hit != 'true'

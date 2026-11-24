@@ -113,10 +113,9 @@ if [ "$os" = linux ]; then
   # another FFmpeg in the same process (JavaFX's media plugin links the system's)
   mpvconf+=(-Dalsa=enabled -Dpulse=enabled "-Dc_link_args=-Wl,--exclude-libs,ALL")
 else
-  # D3D11VA decoding (copied back) without mpv's D3D11 output: mpv 0.42 then leaves
-  # HAVE_DXGI_DEBUG_D3D11 undefined and defines a GUID MSYS2's headers already define
-  mpvconf+=(-Dwasapi=enabled -Dd3d11=disabled -Ddirect3d=disabled -Dd3d-hwaccel=enabled
-    "-Dc_args=-DHAVE_DXGI_DEBUG_D3D11=1")
+  # D3D11VA decoding (copied back): mpv 0.42 builds it only beside its D3D11 output, which
+  # needs shaderc and SPIRV-Cross (Apache-2.0, MSYS2's DLLs beside libmpv-2.dll)
+  mpvconf+=(-Dwasapi=enabled -Dd3d11=enabled -Ddirect3d=disabled -Dd3d-hwaccel=enabled)
 fi
 meson setup "$work/b/mpv" "$m" "${mpvconf[@]}"
 grep -qE '#define HAVE_GPL 0' "$work/b/mpv/config.h" || { echo "::error::mpv is configured GPL" >&2; exit 1; }
