@@ -324,6 +324,12 @@ pub fn setup_done(app: &AppHandle) {
         if let Some(main) = app.get_webview_window(webcache::MAIN) {
             focus(&main);
         }
+        // Start in Big Screen, held back while the setup ran (lib.rs)
+        if app.state::<crate::bigscreen::BigScreen>().start() {
+            if let Err(e) = crate::bigscreen::set_full_screen(app, true) {
+                crate::applog::warn("Start in Big Screen could not go full screen", e);
+            }
+        }
     }
     let _ = setup.destroy();
 }

@@ -81,8 +81,7 @@ pub fn open_window(app: &AppHandle, hidden: bool) -> tauri::Result<()> {
     let stamp = webcache::Stamp::new(state_dir(app).join(webcache::STAMP_FILE));
     // story 13.13: a machine not set up shows its setup window (setup_at_start); the main
     // window waits hidden until the setup opens a server
-    let setup = mode::start_target(mode::load(&mode_path(app)).as_ref(), server_bin().is_some())
-        == Target::Setup;
+    let setup = launch_setup(app);
     webcache::open_main(
         app,
         &bundled_url(app),
@@ -90,6 +89,12 @@ pub fn open_window(app: &AppHandle, hidden: bool) -> tauri::Result<()> {
         &own_version(app),
         hidden || setup,
     )
+}
+
+/// Whether the app starts on its setup (no saved mode): read before the shell is made.
+pub fn launch_setup(app: &AppHandle) -> bool {
+    mode::start_target(mode::load(&mode_path(app)).as_ref(), server_bin().is_some())
+        == Target::Setup
 }
 
 /// The bundled maktaba-server, when this build carries the server. MAKTABA_SERVER_BIN points

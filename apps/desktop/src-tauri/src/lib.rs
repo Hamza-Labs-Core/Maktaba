@@ -243,7 +243,12 @@ pub fn run() {
             shell::open_window(handle, hidden)?;
             // Epic 46: Start in Big Screen opens it full screen (the server's
             // page loads at /big: bigscreen::entry_url)
-            if !hidden && app.state::<bigscreen::BigScreen>().start() {
+            // (story 13.13: not while the setup runs; its end applies it)
+            if bigscreen::full_screen_at_start(
+                app.state::<bigscreen::BigScreen>().start(),
+                hidden,
+                shell::launch_setup(handle),
+            ) {
                 if let Err(e) = bigscreen::set_full_screen(handle, true) {
                     applog::warn("Start in Big Screen could not go full screen", e);
                 }

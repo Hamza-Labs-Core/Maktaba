@@ -199,6 +199,13 @@ pub fn ignored_in_setup(id: &str, setup: bool) -> bool {
     setup && (id == MENU_ID || id == LEAVE_MENU_ID)
 }
 
+/// Whether Start in Big Screen turns the main window full screen at launch: not when the app
+/// starts in its tray, nor while this machine is not set up (the main window waits hidden and
+/// blank; the setup's end applies it, ownwindows::setup_done).
+pub fn full_screen_at_start(start: bool, hidden: bool, setup: bool) -> bool {
+    start && !hidden && !setup
+}
+
 /// Whether the main window's page is in big screen now.
 pub fn in_big_screen(app: &AppHandle) -> bool {
     app.get_webview_window(crate::webcache::MAIN)
@@ -290,6 +297,15 @@ mod tests {
         assert!(ignored_in_setup(LEAVE_MENU_ID, true));
         assert!(!ignored_in_setup(START_MENU_ID, true));
         assert!(!ignored_in_setup(MENU_ID, false));
+    }
+
+    #[test]
+    fn start_in_big_screen_waits_for_the_setup_too() {
+        assert!(full_screen_at_start(true, false, false));
+        // setup running again (a reset config dir): the hidden main window stays as it is
+        assert!(!full_screen_at_start(true, false, true));
+        assert!(!full_screen_at_start(true, true, false));
+        assert!(!full_screen_at_start(false, false, false));
     }
 
     #[test]
