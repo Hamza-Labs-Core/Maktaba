@@ -41,6 +41,10 @@ const (
 	MaxFeed = 1 << 20
 	// FeedKeep is how many releases a feed lists that a machine may install.
 	FeedKeep = 10
+	// FeedMaxAge is how old a signed feed a machine believes: update-feed.yml signs it
+	// again every week, so one older than this is an old feed served again (a machine then
+	// reads GitHub's list instead).
+	FeedMaxAge = 21 * 24 * time.Hour
 	// FeedBundleSuffix names a feed file's Sigstore bundle (<file>.sigstore.json).
 	FeedBundleSuffix = ".sigstore.json"
 	// FeedIndexFile is each channel's index.
@@ -141,16 +145,13 @@ func FeedFileNames(m *Manifest, tag, platform string, sums Checksums) (names []s
 	}
 	names = []string{ChecksumsFile, BundleFile, ManifestFile, a.Archive}
 	if p := m.Pipeline; p != nil {
-		names = append(names, p.Wheel, p.Constraints)
-		if p.ConstraintsCUDA != "" && strings.HasPrefix(platform, "windows/") {
-			names = append(names, p.ConstraintsCUDA)
-		}
+		// every set release.json names: a layout install fetches each (venv.go)
+		names = append(names, p.Wheel, p.Constraints, p.ConstraintsCUDA)
 	}
 	ver := strings.TrimPrefix(tag, "v")
 	// the pipeline's other constraints sets (constraints-core, -stt), when the release has them
 	for n := range sums {
-		if strings.HasPrefix(n, "maktaba-pipeline-"+ver+"-constraints-") && strings.HasSuffix(n, ".txt") &&
-			n != m.Pipeline.consCUDA() {
+		if strings.HasPrefix(n, "maktaba-pipeline-"+ver+"-constraints-") && strings.HasSuffix(n, ".txt") {
 			names = append(names, n)
 		}
 	}
@@ -177,13 +178,6 @@ func FeedFileNames(m *Manifest, tag, platform string, sums Checksums) (names []s
 	}
 	sort.Strings(out[4:])
 	return out, true
-}
-
-func (p *Pipeline) consCUDA() string {
-	if p == nil {
-		return ""
-	}
-	return p.ConstraintsCUDA
 }
 
 // FeedSource is one published release as the feed's builder reads it: GitHub's listing

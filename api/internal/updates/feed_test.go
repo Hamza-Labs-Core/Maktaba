@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -113,6 +114,13 @@ func (e *feedEnv) release(tag string, prerelease, onList bool) {
 		man.Assets[p] = releaseverify.Asset{Archive: name}
 		files[name] = []byte("archive " + p)
 	}
+	var listed strings.Builder
+	for n, b := range files {
+		if n != ChecksumsFile && n != BundleFile {
+			fmt.Fprintf(&listed, "%s  %s\n", sha256Hex(b), n)
+		}
+	}
+	files[ChecksumsFile] = []byte(listed.String())
 	for n, b := range files {
 		sums[n] = sha256Hex(b)
 	}
@@ -238,16 +246,19 @@ func TestFeedIsReadInsteadOfGitHubsList(t *testing.T) {
 			if n.find(NoticeReleaseWithdrew) == nil {
 				t.Fatalf("no withdrawal notice: %v", n.kinds())
 			}
-			// only the files of this machine's and its machines' platforms
+			// this machine's and its machines' platforms' files from the feed; once verified,
+			// every other signed file beside checksums.txt (the feed itself lists none of them)
 			var names []string
 			for _, a := range cat["1.5.0"].Assets {
 				names = append(names, a.Name)
 			}
 			joined := strings.Join(names, " ")
 			if !strings.Contains(joined, releaseverify.FeedPlatform(releaseverify.Platform())) ||
-				!strings.Contains(joined, "linux-amd64") ||
-				(releaseverify.Platform() != "windows/amd64" && strings.Contains(joined, "windows-amd64")) {
+				!strings.Contains(joined, "linux-amd64") || !strings.Contains(joined, "windows-amd64") {
 				t.Fatalf("1.5.0's files: %v", names)
+			}
+			if f := e.f.files["stable/linux-amd64.json"]; bytes.Contains(f, []byte("windows-amd64")) {
+				t.Fatal("the linux-amd64 feed lists a Windows file")
 			}
 			st := store.LoadState(ctx)
 			if st.LastCheckSource != SourceFeed || st.LastCheckErr != "" || len(st.FeedSignedAt) == 0 {
@@ -465,9 +476,30 @@ func TestFeedCapAndARealGeneratedFeed(t *testing.T) {
 	if r.VerifyState != VerifyVerified {
 		t.Fatalf("0.3.161: %+v", r)
 	}
-	if len(r.Assets) < 10 || len(r.Assets) > 30 {
-		t.Fatalf("0.3.161 has %d files in the catalog, want its machines' platforms' only", len(r.Assets))
+	// the feed lists the machines' platforms' files; once verified, the catalog holds every
+	// file the signed checksums.txt lists too (a machine's job asks for packs and plugins by
+	// name), each beside checksums.txt, and keeps them across the next check
+	sums, _ := releaseverify.ParseChecksums(read(ChecksumsFile))
+	check := func(when string) {
+		r := catalogOf(t, store)["0.3.161"]
+		urls := map[string]string{}
+		for _, a := range r.Assets {
+			urls[a.Name] = a.URL
+		}
+		for n := range sums {
+			if urls[n] != releaseverify.ReleaseDownloadURL(e.g.srv.URL, "o/r", "v0.3.161", n) {
+				t.Fatalf("%s: %s is at %q", when, n, urls[n])
+			}
+		}
+		if _, ok := urls["lang.en-0.3.161-darwin-arm64.tar.zst"]; !ok {
+			t.Fatalf("%s: a pack is missing", when)
+		}
 	}
+	check("after the first check")
+	if _, err := d.Check(ctx); err != nil {
+		t.Fatal(err)
+	}
+	check("after the next check")
 }
 
 // A fork's homes and MAKTABA_UPDATE_FEED=off read GitHub only.
@@ -529,5 +561,58 @@ func TestMirrorServesASignedFileTheFeedDoesNotList(t *testing.T) {
 	}
 	if _, _, err := m.Artifact(ctx, "1.5.0", "bad.tar.zst"); !errors.Is(err, errNotMirrored) {
 		t.Fatalf("a file checksums.txt does not list: %v", err)
+	}
+}
+
+// A feed signed more than FeedMaxAge ago (an old feed served again; the real one is
+// signed every week) is not believed: GitHub's list is read.
+func TestFeedTooOldFallsBack(t *testing.T) {
+	ctx := context.Background()
+	e := newFeedEnv(t)
+	e.release("v1.5.0", false, true)
+	e.at = time.Now().Add(-releaseverify.FeedMaxAge - time.Hour)
+	e.publish()
+	store := &Store{DB: backends(t)[0].db}
+	d := e.discoverer(store, "1.4.0")
+	c := countList(d)
+	if _, err := d.Check(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st := store.LoadState(ctx); c.list == 0 || st.LastCheckSource != SourceGitHub || !strings.Contains(st.FeedError, "ago") {
+		t.Fatalf("a feed too old: list %d, state %+v", c.list, st)
+	}
+}
+
+// A machine on a platform with no feed does not turn the feed off for the home; its files
+// come from beside checksums.txt. A release only another platform's feed lists is not one.
+func TestFeedMachinePlatformWithoutAFeed(t *testing.T) {
+	ctx := context.Background()
+	e := newFeedEnv(t)
+	e.release("v1.5.0", false, true)
+	e.publish()
+	// a release in another platform's feed only
+	e.f.mu.Lock()
+	for k := range e.f.files {
+		if strings.Contains(k, "windows-amd64") && releaseverify.Platform() != "windows/amd64" {
+			delete(e.f.files, k)
+		}
+	}
+	e.f.mu.Unlock()
+	store := &Store{DB: backends(t)[0].db}
+	d := e.discoverer(store, "1.4.0", "freebsd/riscv64", "windows/amd64")
+	c := countList(d)
+	if _, err := d.Check(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if c.list != 0 || store.LoadState(ctx).LastCheckSource != SourceFeed {
+		t.Fatalf("a machine's missing feed turned the feed off (list %d)", c.list)
+	}
+	r := catalogOf(t, store)["1.5.0"]
+	found := false
+	for _, a := range r.Assets {
+		found = found || a.Name == "maktaba-server-1.5.0-windows-amd64.tar.gz"
+	}
+	if r.VerifyState != VerifyVerified || !found {
+		t.Fatalf("1.5.0: %s, the Windows archive beside checksums.txt: %v", r.VerifyState, found)
 	}
 }

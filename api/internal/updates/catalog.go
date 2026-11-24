@@ -386,6 +386,10 @@ func (d *Discoverer) Check(ctx context.Context) (CheckResult, error) {
 			continue
 		}
 		r.Assets = d.pinnedAssets(r)
+		if held, err := d.Store.Get(ctx, r.Version); err == nil {
+			// the feed lists a platform's files; the signed others found before are kept
+			r.Assets = keepSignedAssets(r, held.Assets)
+		}
 		res.Seen++
 		created, err := d.Store.Seen(ctx, r)
 		if err != nil {
@@ -517,6 +521,8 @@ func (d *Discoverer) verify(ctx context.Context, r Release) (bool, *VerifyError)
 					d.log().Warn("update catalog write failed", "event", "update_catalog_error", "err", err.Error())
 					return false, nil
 				}
+				// every file the signed checksums.txt lists, by name, for the machines' jobs
+				noteStore(d.log(), "SetAssets", d.Store.SetAssets(ctx, r.Version, signedAssets(r, files.Checksums)))
 				d.Store.Audit(ctx, "", "system", "release_verified", r.Version, map[string]any{
 					"tag": r.Tag, "identity": v.Identity, "checksums_sha256": v.ChecksumsSHA256})
 				return true, nil

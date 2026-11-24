@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify"
 )
@@ -42,10 +43,14 @@ func (c *Client) feedLatest(ctx context.Context) (*Release, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, _, err := releaseverify.VerifyFeed(releaseverify.FeedInput{Data: data, Bundle: bundle, Identity: c.o.Identity,
+	f, signedAt, err := releaseverify.VerifyFeed(releaseverify.FeedInput{Data: data, Bundle: bundle, Identity: c.o.Identity,
 		TrustedMaterial: tm, Channel: ch, Platform: releaseverify.FeedPlatform(plat), DownloadBase: c.o.FeedDownloadBase})
 	if err != nil {
 		return nil, fmt.Errorf("update feed refused: %w", err)
+	}
+	if time.Since(signedAt) > releaseverify.FeedMaxAge {
+		// an old feed served again: GitHub's list says what there is
+		return nil, fmt.Errorf("%w: %s was signed %s", errFeedUnreachable, path, signedAt.Format("2006-01-02"))
 	}
 	var best *releaseverify.FeedRelease
 	for i := range f.Releases {

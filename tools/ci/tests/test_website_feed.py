@@ -33,7 +33,7 @@ def fake_gh(tmp: Path, run_id: str, artifact: Path | None) -> Path:
     (bin_dir / "gh").write_text(
         "#!/usr/bin/env bash\n"
         'echo "gh $*" >>"$GH_LOG"\n'
-        'if [ "$1" = api ]; then echo "' + run_id + '"; exit 0; fi\n'
+        'if [ "$1 $2" = "run list" ]; then echo "' + run_id + '"; exit 0; fi\n'
         'if [ "$1 $2" = "run download" ]; then\n'
         '  while [ $# -gt 0 ]; do [ "$1" = -D ] && dest="$2"; shift; done\n'
         f"  mkdir -p \"$dest\"; {copy}\n"
@@ -76,10 +76,22 @@ def test_the_newest_artifact_goes_live(tmp_path: Path) -> None:
     assert json.loads((out / "stable/darwin-arm64.json").read_text())["from"] == "artifact"
     assert (out / "beta/linux-amd64.json.sigstore.json").exists()
     log = (tmp_path / "gh.log").read_text()
-    # the newest artifact of main, not expired
-    assert "actions/artifacts?name=update-feed" in log and "run download 4242" in log
-    assert 'head_branch == "main"' in log and "expired | not" in log
+    # update-feed.yml's own runs on main, by its own triggers only (never a pull request's)
+    assert "run list --repo o/r --workflow update-feed.yml --branch main" in log and "run download 4242" in log
+    assert 'select(.event == "workflow_run" or .event == "workflow_dispatch" or .event == "schedule")' in log
     assert "run 4242" in (tmp_path / "summary.md").read_text()
+
+
+def test_an_artifact_with_other_files_is_passed_over(tmp_path: Path) -> None:
+    art = feed_dir(tmp_path / "artifact", ["linux-amd64"])
+    (art / "index.html").write_text("<script>")
+    live = feed_dir(tmp_path / "live", ["linux-amd64"])
+    r = run(tmp_path, "4242", art, live)
+    assert r.returncode == 0, r.stderr
+    out = tmp_path / "dist/updates/v1"
+    assert not (out / "index.html").exists()
+    assert json.loads((out / "stable/linux-amd64.json").read_text())["from"] == "live"
+    assert "not a feed" in r.stderr
 
 
 def test_no_artifact_carries_over_the_live_feed(tmp_path: Path) -> None:

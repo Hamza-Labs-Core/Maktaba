@@ -95,9 +95,12 @@ platform, `https://maktaba.tv/updates/v1/<channel>/<platform>.json`, with its Si
   repository it asked for, with every file at its release's own GitHub address. The files are still
   downloaded from GitHub and verified as in 35.1.
 - **Fallback.** GitHub's list (in pages, #1592) is read only when the feed cannot be reached, or is older
-  than the one the home read last. A feed that fails its checks stops the check and is never passed over.
-- **The cluster.** The home reads the feed of each platform its machines run; its mirror still serves any
-  file the signed `checksums.txt` lists.
+  than the one the home read last, or too old. A feed that fails its checks stops the check and is never passed over.
+- **The cluster.** The home's own platform's feed says which releases there are; the feed of each platform
+  its machines run adds their files. Once a release verifies, the catalog keeps every file its signed
+  `checksums.txt` lists, from beside it, so machine jobs (packs, plugins) and the mirror find each by name.
+- **Freshness.** A feed older than the one last read, or signed more than 21 days ago, is not believed
+  (GitHub's list is read): a rollback of maktaba.tv never stops updates.
 - **Withdrawal.** TC5's re-check reads the feed first: a release pulled there
   (`tools/release/pull-release.sh`, the repository variable `UPDATE_FEED_WITHDRAWN`) is withdrawn.
   Homes before the feed still learn of a pull only from GitHub.

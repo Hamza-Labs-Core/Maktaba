@@ -93,51 +93,56 @@ func feedChannel(channel string) string {
 	return releaseverify.FeedStable
 }
 
+// feedPlatforms are the platforms whose feeds the home reads: its own first, then its
+// machines' (each once).
 func (d *Discoverer) feedPlatforms(ctx context.Context) []string {
-	seen := map[string]bool{}
-	var out []string
-	add := func(p string) {
-		if p = strings.TrimSpace(p); p != "" && strings.Contains(p, "/") && !seen[p] {
-			seen[p] = true
-			out = append(out, p)
-		}
-	}
-	add(releaseverify.Platform())
+	own := releaseverify.Platform()
+	seen := map[string]bool{own: true}
+	out := []string{own}
 	if d.Feed.Platforms != nil {
+		var others []string
 		for _, p := range d.Feed.Platforms(ctx) {
-			add(p)
+			if p = strings.TrimSpace(p); p != "" && strings.Contains(p, "/") && !seen[p] {
+				seen[p] = true
+				others = append(others, p)
+			}
 		}
+		sort.Strings(others)
+		out = append(out, others...)
 	}
-	sort.Strings(out)
 	return out
 }
 
-// feedFile reads one feed file and its bundle. A transport failure or a status other
-// than 200 on the feed file is errFeedUnreachable; a missing bundle is an unsigned feed.
-func (d *Discoverer) feedFile(ctx context.Context, path string) (data, bundle []byte, err error) {
+// feedFile reads one feed file and its bundle. No answer, a 5xx or a 429 is
+// errFeedUnreachable (code: the feed file's status, 0 when none came); any other status
+// on the bundle once the feed file came is an unsigned feed.
+func (d *Discoverer) feedFile(ctx context.Context, path string) (data, bundle []byte, code int, err error) {
 	base := strings.TrimRight(d.Feed.URL, "/")
-	data, _, err = d.get(ctx, base+"/"+path, false, releaseverify.MaxFeed)
+	data, code, err = d.get(ctx, base+"/"+path, false, releaseverify.MaxFeed)
 	if err != nil {
 		if strings.Contains(err.Error(), "larger than") {
-			return nil, nil, fmt.Errorf("%s: %w", path, err)
+			return nil, nil, code, fmt.Errorf("%s: %w", path, err)
 		}
-		return nil, nil, fmt.Errorf("%w: %s: %v", errFeedUnreachable, path, err)
+		return nil, nil, code, fmt.Errorf("%w: %s: %v", errFeedUnreachable, path, err)
 	}
-	bundle, code, err := d.get(ctx, base+"/"+path+releaseverify.FeedBundleSuffix, false, releaseverify.MaxFeed)
+	bundle, bcode, err := d.get(ctx, base+"/"+path+releaseverify.FeedBundleSuffix, false, releaseverify.MaxFeed)
 	if err != nil {
-		if code == http.StatusNotFound || strings.Contains(err.Error(), "larger than") {
-			return nil, nil, fmt.Errorf("%s is not signed: %w: %v", path, releaseverify.ErrSignature, err)
+		if bcode == 0 || bcode >= 500 || bcode == http.StatusTooManyRequests {
+			return nil, nil, code, fmt.Errorf("%w: %s%s: %v", errFeedUnreachable, path, releaseverify.FeedBundleSuffix, err)
 		}
-		return nil, nil, fmt.Errorf("%w: %s%s: %v", errFeedUnreachable, path, releaseverify.FeedBundleSuffix, err)
+		return nil, nil, code, fmt.Errorf("%s is not signed: %w: %v", path, releaseverify.ErrSignature, err)
 	}
-	return data, bundle, nil
+	return data, bundle, code, nil
 }
 
-// feedList reads the channel's feed of every platform of the home's machines and merges
-// them: each release once, with the files of all those platforms. withdrawn names the
-// releases the feed pulled (tag → reason). A file signed before the one this home read
-// last (st.FeedSignedAt) is errFeedStale: it would hide the releases and pulls made since,
-// so GitHub's list is read instead (a release pulled since stays withdrawn in the catalog).
+// feedList reads the channel's feed of the home's platform and of every platform its
+// machines run. The home's own feed says which releases there are; the others add their
+// platforms' files to those releases. withdrawn names the releases the feed pulled (tag →
+// reason). A file signed before the one this home read last (st.FeedSignedAt), or more
+// than releaseverify.FeedMaxAge ago, is errFeedStale: it would hide the releases and pulls
+// made since, so GitHub's list is read instead (a release pulled since stays withdrawn in
+// the catalog). A machine's platform whose feed cannot be read is passed over (logged):
+// its files then come from beside checksums.txt (the catalog keeps every signed file).
 func (d *Discoverer) feedList(ctx context.Context, channel string, st *State) (rels []ghRelease, withdrawn map[string]string, err error) {
 	if d.Feed.Verifier == nil {
 		return nil, nil, errors.New("the update feed has no verifier")
@@ -146,11 +151,17 @@ func (d *Discoverer) feedList(ctx context.Context, channel string, st *State) (r
 	byTag := map[string]*ghRelease{}
 	withdrawn = map[string]string{}
 	signed := map[string]time.Time{}
-	for _, p := range d.feedPlatforms(ctx) {
+	for i, p := range d.feedPlatforms(ctx) {
+		own := i == 0
 		fp := releaseverify.FeedPlatform(p)
 		path := releaseverify.FeedPath(ch, fp)
-		data, bundle, err := d.feedFile(ctx, path)
+		data, bundle, _, err := d.feedFile(ctx, path)
 		if err != nil {
+			if !own && errors.Is(err, errFeedUnreachable) {
+				d.log().Warn("update feed: a machine's platform has no feed to read", "event", "update_feed_platform_missing",
+					"platform", fp, "err", err.Error())
+				continue
+			}
 			return nil, nil, err
 		}
 		f, at, err := d.Feed.Verifier.VerifyFeed(ctx, releaseverify.FeedInput{Data: data, Bundle: bundle,
@@ -162,13 +173,20 @@ func (d *Discoverer) feedList(ctx context.Context, channel string, st *State) (r
 			return nil, nil, fmt.Errorf("%w: %s signed %s, the one read before %s", errFeedStale, path,
 				at.Format(time.RFC3339), last.Format(time.RFC3339))
 		}
+		if age := d.now().Sub(at); age > releaseverify.FeedMaxAge {
+			return nil, nil, fmt.Errorf("%w: %s signed %s, more than %s ago", errFeedStale, path,
+				at.Format(time.RFC3339), releaseverify.FeedMaxAge)
+		}
 		signed[path] = at
 		for _, r := range f.Releases {
-			if r.Withdrawn != nil {
-				withdrawn[r.Tag] = r.Withdrawn.Reason
-			}
 			g := byTag[r.Tag]
 			if g == nil {
+				if !own {
+					continue // the home's own feed says which releases there are
+				}
+				if r.Withdrawn != nil {
+					withdrawn[r.Tag] = r.Withdrawn.Reason
+				}
 				g = &ghRelease{TagName: r.Tag, HTMLURL: r.URL, Prerelease: r.Prerelease, PublishedAt: r.PublishedAt}
 				byTag[r.Tag] = g
 			}
@@ -198,6 +216,52 @@ func (d *Discoverer) feedList(ctx context.Context, channel string, st *State) (r
 		st.FeedSignedAt[k] = v
 	}
 	return rels, withdrawn, nil
+}
+
+// signedAssets are r's files from the feed and, for every other file its signed
+// checksums.txt lists (packs, first-party plugins, another platform's files), its address
+// beside checksums.txt: a machine's update asks for files by name (MachineJob.Assets), and
+// each is checked against checksums.txt when it is downloaded.
+func signedAssets(r Release, checksums []byte) []Asset {
+	sums, err := releaseverify.ParseChecksums(checksums)
+	if err != nil {
+		return r.Assets
+	}
+	have := map[string]bool{}
+	for _, a := range r.Assets {
+		have[a.Name] = true
+	}
+	out := append([]Asset(nil), r.Assets...)
+	names := make([]string, 0, len(sums))
+	for n := range sums {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	for _, n := range names {
+		if have[n] {
+			continue
+		}
+		if u := siblingURL(r, n); u != "" {
+			out = append(out, Asset{Name: n, URL: u})
+		}
+	}
+	return out
+}
+
+// keepSignedAssets: the files the catalog already holds for r (signedAssets of an earlier
+// check) that the feed does not list are kept, so each check's feed does not drop them.
+func keepSignedAssets(fresh Release, held []Asset) []Asset {
+	have := map[string]bool{}
+	for _, a := range fresh.Assets {
+		have[a.Name] = true
+	}
+	out := append([]Asset(nil), fresh.Assets...)
+	for _, a := range held {
+		if !have[a.Name] && siblingURL(fresh, a.Name) == a.URL {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // listing is the releases to look at: the feed's when it has one, else GitHub's list

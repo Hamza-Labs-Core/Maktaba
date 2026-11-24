@@ -19,15 +19,28 @@ if [ "${1:-}" = "--restore" ]; then
 fi
 ver="${1:?VERSION}"
 ver="${ver#v}"
-case "${ver}" in
-    [0-9]*.[0-9]*.[0-9]*) ;;
-    *)
-        echo "pull-release: ${ver} is not a version (X.Y.Z)" >&2
-        exit 2
-        ;;
-esac
-cur="$(gh variable get UPDATE_FEED_WITHDRAWN --repo "${repo}" 2>/dev/null || true)"
+if ! [[ "${ver}" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+    echo "pull-release: ${ver} is not a version (X.Y.Z)" >&2
+    exit 2
+fi
+# the pulls so far: none only when the variable does not exist; any other failure stops here,
+# so an earlier pull is never undone by a read that failed
+errf="$(mktemp)"
+trap 'rm -f "${errf}"' EXIT
+if ! cur="$(gh variable get UPDATE_FEED_WITHDRAWN --repo "${repo}" 2>"${errf}")"; then
+    if grep -qi "not found" "${errf}"; then
+        cur='{}'
+    else
+        cat "${errf}" >&2
+        echo "pull-release: UPDATE_FEED_WITHDRAWN could not be read: nothing changed" >&2
+        exit 1
+    fi
+fi
 [ -n "${cur}" ] || cur='{}'
+if ! jq -e 'type == "object"' >/dev/null <<<"${cur}"; then
+    echo "pull-release: UPDATE_FEED_WITHDRAWN is not a JSON object: fix it by hand" >&2
+    exit 1
+fi
 if "${restore}"; then
     next="$(jq -c --arg v "${ver}" 'del(.[$v])' <<<"${cur}")"
 else
@@ -37,3 +50,4 @@ fi
 gh variable set UPDATE_FEED_WITHDRAWN --repo "${repo}" --body "${next}"
 gh workflow run update-feed.yml --repo "${repo}" --ref main
 echo "pull-release: UPDATE_FEED_WITHDRAWN is now ${next}; update-feed.yml started (Actions → Update feed)"
+echo "pull-release: homes before the feed (v0.3.153 to v0.3.161) learn of a pull only from GitHub: mark it a pre-release there too while any remain"

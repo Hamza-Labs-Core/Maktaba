@@ -28,10 +28,18 @@ while IFS= read -r tag; do
     "${retry}" gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" \
         --json tagName,isDraft,isPrerelease,publishedAt,url,assets >"${out}/views/${tag}.json"
     mkdir -p "${out}/signed/${tag}"
-    # a release from before story 35.1 has none of them: an empty folder
-    "${retry}" gh release download "${tag}" --repo "${GITHUB_REPOSITORY}" --dir "${out}/signed/${tag}" --clobber \
-        --pattern checksums.txt --pattern checksums.txt.sigstore.json --pattern release.json ||
-        echo "release-feed-inputs: ${tag} has no signed files"
+    # a release from before story 35.1 has none of them (an empty folder); any other failure
+    # stops the run, so a release is never left out of the feed by a passing error
+    if ! "${retry}" gh release download "${tag}" --repo "${GITHUB_REPOSITORY}" --dir "${out}/signed/${tag}" --clobber \
+        --pattern checksums.txt --pattern checksums.txt.sigstore.json --pattern release.json 2>"${out}/err.txt"; then
+        if grep -qi "no assets match" "${out}/err.txt"; then
+            echo "release-feed-inputs: ${tag} has no signed files"
+        else
+            cat "${out}/err.txt" >&2
+            echo "::error::release-feed-inputs: ${tag}'s signed files could not be downloaded" >&2
+            exit 1
+        fi
+    fi
     n=$((n + 1))
 done <"${out}/tags.txt"
 if [ "${n}" -eq 0 ]; then

@@ -99,13 +99,14 @@ func TestFeedFromTheRealV0_3_161(t *testing.T) {
 	common := []string{"checksums.txt", "checksums.txt.sigstore.json", "release.json",
 		"maktaba_pipeline-0.3.161-py3-none-any.whl", "maktaba-pipeline-0.3.161-constraints.txt",
 		"maktaba-pipeline-0.3.161-constraints-core.txt", "maktaba-pipeline-0.3.161-constraints-stt.txt",
+		"maktaba-pipeline-0.3.161-constraints-cuda.txt",
 		"maktaba-migrations-0.3.161.tar.gz", "components-0.3.161.json", "latest.json"}
 	for p, extra := range map[string][]string{
 		"linux-amd64":   {"maktaba-server-0.3.161-linux-amd64.tar.gz", "maktaba-linux-payload-0.3.161-x86_64.tar.gz"},
 		"linux-arm64":   {"maktaba-server-0.3.161-linux-arm64.tar.gz", "maktaba-linux-payload-0.3.161-aarch64.tar.gz"},
 		"darwin-arm64":  {"maktaba-server-0.3.161-darwin-arm64.tar.gz"},
 		"darwin-amd64":  {"maktaba-server-0.3.161-darwin-amd64.tar.gz"},
-		"windows-amd64": {"maktaba-server-0.3.161-windows-amd64.zip", "maktaba-pipeline-0.3.161-constraints-cuda.txt"},
+		"windows-amd64": {"maktaba-server-0.3.161-windows-amd64.zip"},
 	} {
 		if got := names(p); !sameSet(got, append(append([]string{}, common...), extra...)) {
 			t.Errorf("%s lists %v", p, got)

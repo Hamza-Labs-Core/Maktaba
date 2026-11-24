@@ -209,6 +209,13 @@ func (s *Store) Seen(ctx context.Context, r Release) (bool, error) {
 	return false, err
 }
 
+// SetAssets replaces a release's files (signedAssets: the feed's and every other signed one).
+func (s *Store) SetAssets(ctx context.Context, version string, assets []Asset) error {
+	b, _ := json.Marshal(nonNilAssets(assets))
+	_, err := s.DB.ExecContext(ctx, `UPDATE release_catalog SET assets = $2 WHERE version = $1`, version, string(b))
+	return err
+}
+
 // SetVerified stores a verified manifest.
 func (s *Store) SetVerified(ctx context.Context, version string, v Verified) error {
 	m := v.Manifest

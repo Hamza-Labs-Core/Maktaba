@@ -68,10 +68,14 @@ func (u *Updater) feedReleases(ctx context.Context) ([]ghRelease, error) {
 	if err != nil {
 		return nil, err
 	}
-	f, _, err := releaseverify.VerifyFeed(releaseverify.FeedInput{Data: data, Bundle: bundle, Identity: id,
+	f, signedAt, err := releaseverify.VerifyFeed(releaseverify.FeedInput{Data: data, Bundle: bundle, Identity: id,
 		TrustedMaterial: tm, Channel: ch, Platform: plat, DownloadBase: u.feedDownloadBase()})
 	if err != nil {
 		return nil, err
+	}
+	if u.now().Sub(signedAt) > releaseverify.FeedMaxAge {
+		// an old feed served again: GitHub's list says what there is
+		return nil, fmt.Errorf("%w: %s was signed %s", errFeedUnreachable, path, signedAt.Format("2006-01-02"))
 	}
 	var out []ghRelease
 	for _, r := range f.Releases {

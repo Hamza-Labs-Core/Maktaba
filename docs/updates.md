@@ -55,13 +55,17 @@ past every home's cap, and no home saw a release for a day.
   file a plain name at that release's own GitHub address. The files are still downloaded from
   GitHub Releases and verified as before ([What is verified](#what-is-verified)). The feed only
   says which releases exist.
-- **The home's machines.** The home reads the feed of its own platform and of every platform its
-  machines run, and its catalog keeps those platforms' files. The home's mirror still serves a
-  machine any other file the release's signed `checksums.txt` lists, from beside `checksums.txt`.
+- **The home's machines.** The home reads the feed of its own platform, which says which releases
+  there are, and the feed of every platform its machines run, for their files. A machine's platform
+  with no feed is passed over. Once a release verifies, the catalog also keeps every other file its
+  signed `checksums.txt` lists (packs, first-party plugins, other platforms' files), each from
+  beside `checksums.txt`. So a machine's update and the home's mirror find any of them by name,
+  each checked against `checksums.txt` when it is downloaded.
 - **When the feed is not used.** A feed that cannot be reached (no answer, or a status other
   than 200, a 404 included) is passed over: the home reads GitHub's list instead, in pages of
   10, for that check. So does a feed signed before the last one the home read (maktaba.tv rolled
-  back, or an old feed served again). A feed that is reached but fails its checks is never
+  back, or an old feed served again), or more than 21 days ago (`update-feed.yml` signs it again
+  every week). A feed that is reached but fails its checks is never
   passed over: the check fails with `update feed refused: …`, and nothing of it is used. That
   covers an unsigned feed, a wrong signature, a wrong identity, content that disagrees with the
   request, or a file over 1 MiB. Admin → Updates shows where the last check read
@@ -87,8 +91,9 @@ past every home's cap, and no home saw a release for a day.
    release, the run fails.
 3. It signs every file, then verifies what it signed with the homes' own code
    (`release-feed verify`). It uploads the result as the `update-feed` artifact and starts
-   maktaba.tv's deploy. Every deploy serves the newest `update-feed` artifact of main, or carries
-   over the live feed when there is none, so a deploy of the site never drops it
+   maktaba.tv's deploy. Every deploy serves the artifact of the newest `update-feed.yml` run on
+   main (started by its own triggers, never a pull request's run, and holding only feed files).
+   When there is none, it carries over the live feed, so a deploy of the site never drops it
    (`tools/release/website-feed.sh`).
 4. **The live check:** it reads `https://maktaba.tv/updates/v1` until every platform's feed lists
    the new release, signed and verified as a home verifies it (`release-feed live`). It fails the
