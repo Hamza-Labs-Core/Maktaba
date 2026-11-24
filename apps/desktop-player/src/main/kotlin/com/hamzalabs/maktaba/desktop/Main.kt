@@ -30,10 +30,12 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.MenuBar
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
+import com.hamzalabs.maktaba.desktop.shell.FrameMenu
+import com.hamzalabs.maktaba.desktop.shell.MaktabaAlertDialog
+import com.hamzalabs.maktaba.desktop.shell.PlayerWindow
 import androidx.compose.ui.window.rememberWindowState
 import com.hamzalabs.maktaba.core.api.ClientHeader
 import com.hamzalabs.maktaba.core.api.capabilitiesGate
@@ -123,10 +125,40 @@ fun main(args: Array<String>) {
         val window = rememberWindowState(size = DpSize(1280.dp, 800.dp))
         window.placement = if (big) WindowPlacement.Fullscreen else WindowPlacement.Floating
 
-        Window(
+        val signedInPhase = phase as? AppSession.Phase.SignedIn
+        // story 13.15: the Swing menu bar's items, in the title bar's menu (shell/PlayerFrame.kt)
+        val frameMenu = FrameMenu(
+            signedInLine = signedInPhase?.let { texts["menu.signedInAs", it.user.username, home?.label ?: ""] },
+            approve = signedInPhase?.let { { approving = true } },
+            crashReports = if (signedInPhase != null) home?.let { texts["menu.crashReports", it.label] to crashesOn } else null,
+            onCrashReports = { on ->
+                home?.let { h ->
+                    crashesOn = on
+                    crashConsent.set(on, h)
+                }
+            },
+            signOut = signedInPhase?.let { { session.signOut() } },
+            switchHome = if (phase !is AppSession.Phase.ChoosingHome) ({ session.switchHome() }) else null,
+            big = big,
+            onBig = { big = it },
+            startBig = startBig,
+            onStartBig = {
+                startBig = it
+                stores.settings.put(AppPrefs.KEY_START_BIG, it.toString())
+            },
+            lang = lang,
+            onLang = { prefs.chooseLang(it) },
+            help = { openHelp(home?.url) },
+            updates = { updating = true },
+            reportProblem = signedInPhase?.let { { reporting = true } },
+            myReports = signedInPhase?.let { { myReports = true } },
+        )
+
+        PlayerWindow(
             onCloseRequest = ::exitApplication,
             state = window,
-            title = texts["app.title"],
+            texts = texts,
+            menu = frameMenu,
             onPreviewKeyEvent = { e ->
                 if (e.type == KeyEventType.KeyDown && e.key == Key.F11) {
                     big = !big
@@ -134,43 +166,6 @@ fun main(args: Array<String>) {
                 } else false
             },
         ) {
-            MenuBar {
-                Menu(texts["menu.account"]) {
-                    val signedIn = phase as? AppSession.Phase.SignedIn
-                    if (signedIn != null) {
-                        Item(texts["menu.signedInAs", signedIn.user.username, home?.label ?: ""], enabled = false, onClick = {})
-                        Item(texts["menu.approve"], onClick = { approving = true })
-                        home?.let { h ->
-                            CheckboxItem(texts["menu.crashReports", h.label], checked = crashesOn, onCheckedChange = {
-                                crashesOn = it
-                                crashConsent.set(it, h)
-                            })
-                        }
-                        Item(texts["menu.signOut"], onClick = { session.signOut() })
-                    }
-                    if (phase !is AppSession.Phase.ChoosingHome) Item(texts["menu.switchHome"], onClick = { session.switchHome() })
-                }
-                Menu(texts["menu.bigScreen"]) {
-                    Item(if (big) texts["menu.leaveBigScreen"] else texts["menu.bigScreen"], onClick = { big = !big })
-                    CheckboxItem(texts["menu.startBig"], checked = startBig, onCheckedChange = {
-                        startBig = it
-                        stores.settings.put(AppPrefs.KEY_START_BIG, it.toString())
-                    })
-                }
-                Menu(texts["menu.language"]) {
-                    for (l in Lang.entries) {
-                        RadioButtonItem(if (l == Lang.Ar) "العربية" else "English", selected = lang == l, onClick = { prefs.chooseLang(l) })
-                    }
-                }
-                Menu(texts["menu.help"]) {
-                    Item(texts["menu.help"], onClick = { openHelp(home?.url) })
-                    Item(texts["menu.updates"], onClick = { updating = true })
-                    if (phase is AppSession.Phase.SignedIn) {
-                        Item(texts["menu.reportProblem"], onClick = { reporting = true })
-                        Item(texts["menu.myReports"], onClick = { myReports = true })
-                    }
-                }
-            }
             PlayerTheme(texts, big) {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     // "Report this" on every error box opens the form with that call's reference
@@ -222,7 +217,7 @@ fun main(args: Array<String>) {
                             onDismiss = { reporting = false; reportRef = null })
                     }
                     crashNotice?.let { n ->
-                        androidx.compose.material3.AlertDialog(
+                        MaktabaAlertDialog(
                             onDismissRequest = { crashNotice = null },
                             text = {
                                 Text(if (n == com.hamzalabs.maktaba.core.crash.CrashOutbox.Notice.Sent) texts["crash.lastCrash.sent", signedHome.label]

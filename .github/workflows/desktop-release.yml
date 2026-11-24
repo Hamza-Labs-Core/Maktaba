@@ -641,12 +641,15 @@ jobs:
           - label: windows
             os: windows-latest
             tasks: packageMsi
+            jbr: windows-x64
           - label: linux-x86_64
             os: ubuntu-22.04
             tasks: packageDeb packageRpm
+            jbr: linux-x64
           - label: linux-aarch64
             os: ubuntu-22.04-arm
             tasks: packageDeb packageRpm
+            jbr: linux-aarch64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     env:
@@ -666,6 +669,24 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+
+      # Story 13.15: the JetBrains Runtime the installers' runtime is jlinked from (the Player's
+      # own title bar needs it), pinned in apps/desktop-player/jbr.sh; the cache main's Desktop
+      # Player job saved, read only
+      - name: JBR's cache key
+        id: jbr-pin
+        run: echo "key=$(apps/desktop-player/jbr.sh --key ${{ matrix.jbr }})" >>"$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        with:
+          path: build/ci-pinned/jbr
+          key: ${{ steps.jbr-pin.outputs.key }}
+      - name: JBR, retried
+        id: jbr
+        run: |
+          set -euo pipefail
+          home="$(apps/desktop-player/jbr.sh ${{ matrix.jbr }})"
+          [ "$RUNNER_OS" != Windows ] || home="$(cygpath -w "$home")"
+          echo "home=$home" >>"$GITHUB_OUTPUT"
 
       # Gradle's own cache action, read-only: a tag's entries are seen by that tag alone, and
       # each would push main's out of the repository's 10 GB cache. It restores the Gradle User
@@ -696,13 +717,19 @@ jobs:
         env:
           TAG: ${{ github.ref_name }}
           UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          JBR: ${{ steps.jbr.outputs.home }}
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          args=(-Pmaktaba.version="${TAG#v}")
+          args=(-Pmaktaba.version="${TAG#v}" "-Pmaktaba.jbr=${JBR}")
           [ -z "${UPDATER_PUBKEY}" ] || args+=(-Pmaktaba.updaterPubkey="${UPDATER_PUBKEY}")
           ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} "${args[@]}"
           out=build/compose/binaries/main
+          # the runtime the installers carry is the JetBrains Runtime (story 13.15)
+          release=$(find build/compose/tmp -path '*runtime/release' | head -n 1)
+          if [ -z "$release" ] || ! grep -q 'JetBrains' "$release"; then
+            echo "::error::the installers' runtime is not the JetBrains Runtime (${release:-no runtime/release})"; exit 1
+          fi
           if [ "$RUNNER_OS" = Linux ]; then
             # listed once (grep -q on a pipe ends it early, and tar's write then fails)
             files=$(dpkg-deb -c "$out"/deb/*.deb)

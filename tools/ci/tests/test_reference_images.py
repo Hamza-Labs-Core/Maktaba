@@ -151,3 +151,10 @@ def test_the_workflow_never_cancels_a_run() -> None:
         (Path(__file__).resolve().parents[3] / ".github/workflows/reference-images.yml").read_text()
     )
     assert "concurrency" not in wf
+
+
+def test_the_desktop_players_references_count() -> None:
+    # story 13.15: the Player's title bar, menu and dialog, compared on Linux
+    ref = "apps/desktop-player/src/test/resources/references/player-frame-bar-ar.png"
+    got = mod.changed_references(files(ref, "apps/desktop-player/src/test/kotlin/X.kt"))
+    assert got == [ref]

@@ -118,6 +118,7 @@ _tokens: &tokens
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Tokens.swift'
   - 'apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Tokens.kt'
   - 'apps/tv/roku/components/theme.brs'
+  - 'apps/desktop-player/src/main/kotlin/com/hamzalabs/maktaba/desktop/Tokens.kt'
 
 # node-packaging: the release's node assets (the wheel from the pipeline, the installers,
 # the release tooling that writes release.json)
@@ -987,6 +988,8 @@ desktop_player:
   # the wrapper's jar check and distribution fetch (tools/ci/gradle-wrapper.sh), through fetch-pinned.sh
   - 'tools/ci/gradle-wrapper.sh'
   - 'tools/release/fetch-pinned.sh'
+  # its release legs build what this job builds, on the same pinned JetBrains Runtime (13.15)
+  - '.github/workflows/desktop-release.yml'
 
 # The Apple apps' build job: MaktabaKit's tests, a build of the Remote, the Player (iPhone
 # and Mac) and the TV app, their String Catalogs.

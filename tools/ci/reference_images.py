@@ -34,6 +34,8 @@ import urllib.request
 from collections.abc import Iterable
 
 REFERENCE_DIRS = (
+    # the desktop Player's title bar, menu and dialog (Epic 13 story 13.15, FrameReferencesTest)
+    "apps/desktop-player/src/test/resources/references/",
     "web/packages/website/e2e/__screenshots__/",
     "web/packages/website/static/shots/",
 )
