@@ -228,3 +228,37 @@ func TestClaimOfASuspendedOwnerIsRefused(t *testing.T) {
 		t.Fatalf("suspended meanwhile: %d %s", r.code, r.body)
 	}
 }
+
+// A console plan change that waited for another one records the plan it replaced, not the one
+// its request saw before the wait.
+func TestPlanChangeAuditsThePlanItReplaced(t *testing.T) {
+	e := newPaidEnv(t)
+	admin := e.serviceAdmin("op@example.test")
+	e.registerVerified("audit@example.test")
+	uid := e.userID("audit@example.test")
+	tx, err := e.pool.DB.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`UPDATE users SET plan = 'pro' WHERE id = $1`, uid); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan resp, 1)
+	go func() {
+		done <- admin.do("POST", "/v1/admin/accounts/"+uid+"/plan", map[string]string{"plan": "basic", "reason": "second"})
+	}()
+	if !e.waitBlockedOrDone("%FROM users WHERE id = $1 FOR NO KEY UPDATE%", done) {
+		t.Fatal("the second change did not wait")
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if r := <-done; r.code != http.StatusNoContent {
+		t.Fatalf("%d %s", r.code, r.body)
+	}
+	if n := e.count(`SELECT count(*) FROM audit_log WHERE action = 'admin.account.set_plan' AND target_id = $1
+        AND detail->>'previous_plan' = 'pro' AND detail->>'plan' = 'basic'`, uid); n != 1 {
+		t.Fatal("the audit does not name the plan replaced")
+	}
+}
