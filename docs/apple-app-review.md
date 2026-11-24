@@ -81,9 +81,9 @@ Runtime and no App Review. Two dated changes affect that path:
      `apps/tv/tvos/MaktabaTV/Views/StartViews.swift`). Both fail for a reviewer.
    - A feature that cannot work during review is a 2.1 rejection.
    - **Decided (2026-11-24, decision `apple-cloud-entries`):** Maktaba Cloud launches before
-     the first submission, and both entries stay. The apps are submitted only once
-     `api.maktaba.tv`, `watch.maktaba.tv`, `live.maktaba.tv` and `status.maktaba.tv` answer
-     (owner action 3).
+     the first submission, and **Through Maktaba Cloud** stays. The apps are submitted only once
+     `api.maktaba.tv` and `status.maktaba.tv` answer (owner action 3). **Watch a broadcast** is
+     off while broadcasting is off (risk 3).
 3. **Watch a broadcast has no in-app Report (1.2 user-generated content).**
    - Viewers watch channels other people publish, which is user-generated content.
    - Guideline 1.2 requires "A mechanism to report offensive content and timely responses",
@@ -94,9 +94,15 @@ Runtime and no App Review. Two dated changes affect that path:
      button in the apps' player menu" as not yet built, because the route checks a Turnstile
      token the apps cannot show.
    - **Remove** on a saved broadcast (`GuestViews.swift:123`) serves as block.
-   - *Mitigation:* ship Report in the apps (a route the apps can call, with App Attest or a
-     guest pass in place of Turnstile) before Watch a broadcast is visible on the App Store, or
-     hide it (risk 2).
+   - **Decided (2026-11-24):** broadcasting is **off** for now: no broadcast entry shows in
+     the Apple apps, and nothing about copyright shows anywhere (another change turns it off
+     across the apps and the site). While it is off, risk 3 does not apply and the review notes
+     need no broadcast text.
+   - **If broadcasting comes back:** the block is **Leave channel**, which also stops that
+     friend's invites, and the review notes explain that a channel is invite-only (only the
+     people its publisher invites can watch it). Report still needs a route the apps can call
+     (App Attest or a guest pass in place of Turnstile) before Watch a broadcast is visible on
+     the App Store.
 4. **YouTube and Plex names, and YouTube downloads, in the apps (5.2.1, 5.2.3).**
    - Guideline 5.2.3: "Apps should not facilitate illegal file sharing or include the ability to
      save, convert, or download media from third-party sources (such as Apple Music, YouTube …)
@@ -111,11 +117,10 @@ Runtime and no App Review. Two dated changes affect that path:
      - parental rules can name a YouTube source (`Family.swift:640`).
    - Guideline 4.1(c) also says: "You cannot use another developer's icon, brand, or product
      name in your app's icon or name". Names in the UI are judged under 5.2.1.
-   - *Mitigation:*
-     - the review home has no YouTube or Plex collections and its YouTube component is off;
-     - screenshots and metadata never show either name;
-     - the owner decides whether the Apple apps keep showing YouTube-sourced items and the
-       YouTube queue stage.
+   - **Decided (2026-11-24):** the YouTube and Plex collection badges and tabs are removed from
+     every app (another change). This risk drops from the list once that change is on main.
+   - Meanwhile: the review home has no YouTube or Plex collections and its YouTube component is
+     off, and screenshots and metadata never show either name.
 5. **Separate iPhone and iPad apps of the same app (4.3(a), 2.4.1).**
    - Guideline 4.3(a): "Don't create multiple Bundle IDs of the same app". Guideline 2.4.1:
      "iPhone apps should run on iPad whenever possible."
@@ -131,11 +136,11 @@ Runtime and no App Review. Two dated changes affect that path:
    - https://maktaba.tv/legal/privacy/ (`web/packages/website/copy/legal/privacy.en.md`) says
      "The apps send nothing to us unless you choose to send us a problem report".
    - Signing in through Maktaba Cloud sends the account's email and password, and the cloud
-     keeps the account and its sessions. Watching a broadcast keeps a guest pass and meters
-     playing minutes (`docs/broadcast-edge.md`).
+     keeps the account and its sessions.
    - 5.1.1(i) requires the policy to "identify what data, if any, the app/service collects …
      and all uses of that data", the retention, and how to ask for deletion.
-   - **fixed (text waits for the owner's read):** the site's privacy page gained both, in
+   - **fixed (text waits for the owner's read):** the site's privacy page gained the cloud
+     sign-in (broadcast viewing came out again while broadcasting is off), in
      English and Arabic (`copy/legal/privacy.{en,ar}.md`, "The apps → To Maktaba"). The site's
      build ties that section to `docs/app-privacy.md` (`scripts/legal.mjs`, `apps-source`), so
      the page could not stay behind the label. The Arabic needs the owner's read before merge
@@ -151,8 +156,8 @@ Runtime and no App Review. Two dated changes affect that path:
      (https://developer.apple.com/news/?id=ks775ehf).
    - Two more questions, Shared Location and Dating, must be answered by **12 January 2027**
      (https://developer.apple.com/news/?id=yxkh08us).
-   - The Player and the TV app play anything a home holds, and broadcasts are other people's
-     channels.
+   - The Player and the TV app play anything a home holds. (Broadcasts, other people's
+     channels, are off for now: risk 3.)
    - The description says parental controls exist, and the questionnaire asks about in-app
      controls. The Declared Age Range check (`apps/apple/Player/Parental/DeviceAgeSignal.swift`)
      needs its capability on the Player's App IDs (owner action 6).
@@ -161,7 +166,7 @@ Runtime and no App Review. Two dated changes affect that path:
      | App | Suggested answers |
      |---|---|
      | Remote | No content questions; 4+. |
-     | Player, TV | "User-generated content: yes" (broadcasts), "Parental controls: yes", "Age assurance: yes" once Declared Age Range ships, no ads, no messaging, no unrestricted web access. Expect review to ask; a higher override (16+) is safer but blocks children's devices, which parental controls exist for. |
+     | Player, TV | "User-generated content: no" while broadcasting is off (yes once it returns), "Parental controls: yes", "Age assurance: yes" once Declared Age Range ships, no ads, no messaging, no unrestricted web access. Expect review to ask; a higher override (16+) is safer but blocks children's devices, which parental controls exist for. |
 9. **Dormant Google Cast code (2.5.19, new on 16 October 2026).**
    - Guideline 2.5.19: "Don't include any hidden, dormant, or undocumented features".
    - The Google Cast SDK is linked into the iPhone and iPad Player (`project.yml:28-30`) and
@@ -237,7 +242,7 @@ Runtime and no App Review. Two dated changes affect that path:
 | Background audio for audiobooks, AirPlay and Picture in Picture (2.5.4) | done | `UIBackgroundModes: [audio]` (`project.yml:141,171`), used only for playback |
 | iPad multitasking (Split View, Slide Over) | done | all four orientations (`project.yml:98-99`), no `UIRequiresFullScreen`; the narrow layout is one column (`apps/apple/README.md`) |
 | Parental controls and Declared Age Range | **owner** | the code is behind `canImport(DeclaredAgeRange)` (`Player/Parental/DeviceAgeSignal.swift:5`); the capability must be on the Player App IDs (`docs/testflight.md`) |
-| Watch a broadcast: report and block (1.2) | **risk** | risk 3 |
+| Watch a broadcast: report and block (1.2) | off | broadcasting is off for now (risk 3); "Leave channel" when it returns |
 | Google Cast dormant (2.5.19) | **risk** | risk 9 |
 
 ### Maktaba Player for Mac
@@ -257,7 +262,7 @@ Runtime and no App Review. Two dated changes affect that path:
 |---|---|---|
 | A reviewer can get in (admin only) | **owner** / **risk** | risk 1 (b): the review home has no admin account for App Review |
 | Minimum functionality (4.2) | done | a full admin console (queue, libraries, machines, updates, diagnostics, problem reports) |
-| YouTube stage in the queue (5.2.3) | **risk** | risk 4 |
+| YouTube stage in the queue (5.2.3) | **risk** until removed | risk 4: being removed in every app |
 | Separate iPad app (4.3(a)) | **risk** | risk 5 |
 | iPad name wording | **owner** | risk 10 |
 
@@ -272,8 +277,8 @@ Runtime and no App Review. Two dated changes affect that path:
 | "Available only on Apple TV" wording | **fixed** (draft) | the TV description says so, as the marketing guidelines ask |
 | Local network prompt | done | no local network privacy on tvOS (TN3179); the key is harmless |
 | PLCrashReporter | done | MIT, its own manifest; reports stay on the TV unless sent to the home (`docs/app-privacy.md`) |
-| YouTube and Plex tabs (5.2.1) | **risk** | risk 4 |
-| Cloud code sign-in and Watch a broadcast | **risk** | risk 2: both need the cloud, which is not live |
+| YouTube and Plex tabs (5.2.1) | **risk** until removed | risk 4: being removed in every app |
+| Cloud code sign-in | **owner** | risk 2: the cloud launches before submission. Watch a broadcast is off (risk 3) |
 
 ## App Privacy ("nutrition label") answers
 
@@ -287,7 +292,6 @@ own home is therefore not collected: Maktaba cannot read it.
 |---|---|---|---|---|---|---|
 | Email Address | yes, optional | yes, optional | no | yes | no | App Functionality |
 | User ID | yes, optional | yes, optional | no | yes | no | App Functionality |
-| Product Interaction | yes, optional | no | yes, optional | no | no | App Functionality |
 | Customer Support | yes, optional | yes, optional | yes, optional | no | no | App Functionality |
 | Crash Data | yes, optional | yes, optional | yes, optional | no | no | App Functionality |
 | Other Diagnostic Data | yes, optional | yes, optional | yes, optional | no | no | App Functionality |
@@ -295,7 +299,6 @@ own home is therefore not collected: Maktaba cannot read it.
 Where each comes from:
 
 - **Email Address** and **User ID**: signing in through Maktaba Cloud.
-- **Product Interaction**: a broadcast's playing minutes, metered per guest pass.
 - **Customer Support**: a problem report sent on to Maktaba.
 - **Crash Data**: only with Send crash reports on, then only in a report sent to Maktaba.
 - **Other Diagnostic Data**: a problem report's log.
@@ -316,16 +319,10 @@ below summarise it.
     account's email and password to Maktaba Cloud. Maktaba Cloud keeps your account and the
     devices signed in to it until you delete the account on the web. Deleting the account
     removes them.
-  - *Watching a broadcast.* When you watch a channel someone shares with you, Maktaba Cloud
-    keeps your device's guest pass and counts the minutes you watch for the publisher's
-    limits. It keeps those counts 7 days. It never knows your name or email.
 - **Arabic**
   - *سحابة مكتبة.* إن سجّلتم الدخول عبر سحابة مكتبة في أحد التطبيقات، يرسل التطبيق بريد
     حسابكم وكلمة مروره إلى سحابة مكتبة. وتحتفظ السحابة بحسابكم وبالأجهزة المسجَّل دخولها إليه
     حتى تحذفوا الحساب من الموقع، فيُحذف ذلك كله معه.
-  - *مشاهدة بثّ.* حين تشاهدون قناة يشاركها معكم أحد، تحتفظ سحابة مكتبة بتصريح الضيف الخاص
-    بجهازكم، وتعدّ دقائق المشاهدة لحدود الناشر، وتحتفظ بهذا العدّ 7 أيام. ولا تعرف اسمكم ولا
-    بريدكم.
 
 ## Owner actions
 
@@ -344,9 +341,10 @@ repository; the notes name the secrets.
    throwaway home reset after each round. Put its username and password in the release secrets
    as `REVIEW_HOME_ADMIN_USERNAME` and `REVIEW_HOME_ADMIN_PASSWORD`, and rotate them after each
    round like the viewer's.
-5. **Decide risks 3 and 4** (asked again on the decisions page): Report and Block for
-   broadcasts, and YouTube and Plex in the Apple apps. Risks 2, 5 and 9 were decided on
-   2026-11-24: launch the cloud first, universal apps (#1616), Cast on.
+5. **Approve the privacy wording** (asked again on the decisions page with the final text).
+   Every other decision was made on 2026-11-24: launch the cloud first (risk 2), broadcasting
+   off and "Leave channel" if it returns (risk 3), YouTube and Plex badges removed (risk 4),
+   universal apps (#1616, risk 5), Cast on (risk 9).
 6. **Capabilities and the Cast receiver.**
    - Declared Age Range on the Player's App ID (Certificates, Identifiers & Profiles).
    - Register the Cast receiver in the Google Cast SDK Developer Console (one-time $5), with

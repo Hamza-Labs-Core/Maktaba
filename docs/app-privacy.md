@@ -22,16 +22,12 @@ what an app collects or sends changes this file in the same pull request.
     shows everything it will send first: the app and device, the app's log for the last 30
     minutes (readable in the preview, already scrubbed), the last request ids, the kept
     crashes (a tick box) and a screenshot only when the person ticks it and sees it.
-- **To Maktaba Cloud, when the person uses it** (api.maktaba.tv, watch.maktaba.tv; Maktaba's
-  own servers, so App Store Connect counts it as collected):
+- **To Maktaba Cloud, when the person uses it** (api.maktaba.tv; Maktaba's own servers, so
+  App Store Connect counts it as collected):
   - **Signing in through Maktaba Cloud** (the Player and the Remote, story 42.7): the account's
     email and password go to the cloud, which answers the account's id and the homes it
     reaches; the cloud keeps the account and its sign-in sessions. The account is made and
     deleted on the web, never in the apps.
-  - **Watching a broadcast** (the Player and the Apple TV app, story 50.27): the edge keeps the
-    device's guest pass and meters each channel's playing minutes against the publisher's
-    limits, in 5-minute windows kept 7 days (`docs/broadcast-edge.md`). It holds no name,
-    email or account of the viewer.
 - **Problem reports to Maktaba**: nothing else goes from the apps to Maktaba. A problem report also goes to Maktaba, through
   the home, only when both of these hold (Epic 53 story 53.16):
   - the home's admin turned on **Let people send problem reports to Maktaba** (Settings →
@@ -66,7 +62,6 @@ exception's class and its frames, never its message (it can name a path or a per
 |---|---|---|---|---|
 | Contact Info → **Email Address** | Yes, optional (signing in through Maktaba Cloud; Player, Remote) | Yes | No | App Functionality |
 | Identifiers → **User ID** | Yes, optional (the Maktaba Cloud account's id; Player, Remote) | Yes | No | App Functionality |
-| Usage Data → **Product Interaction** | Yes, optional (a broadcast's playing minutes, metered per guest pass; Player, Apple TV) | No | No | App Functionality |
 | User Content → **Customer Support** | Yes, optional (a problem report sent on to Maktaba) | No | No | App Functionality |
 | Diagnostics → **Crash Data** | Yes, optional (off until the person turns it on) | No | No | App Functionality |
 | Diagnostics → **Other Diagnostic Data** | Yes, optional (a problem report the person sends) | No | No | App Functionality |
@@ -75,7 +70,9 @@ exception's class and its frames, never its message (it can name a path or a per
 Each app's `PrivacyInfo.xcprivacy` (`apps/apple/Player/`, `apps/apple/Remote/`,
 `apps/tv/tvos/MaktabaTV/`) declares the same types, and `tools/ci/tests/test_apple_app_review.py`
 fails when a manifest names a type this table does not. The Mac Player answers as the iPhone
-and iPad Player; the Remote has no broadcasts, the Apple TV app no cloud sign-in by email.
+and iPad Player; the Apple TV app has no cloud sign-in by email. Watching a broadcast is off
+in every app for now; when it comes back, its guest pass and metered playing minutes (Usage
+Data → Product Interaction) come back to this table, the manifests and the privacy page.
 What goes only to the person's own home (their library, what they watch, search, AI search)
 is not collected in App Store Connect's sense: Maktaba cannot read it
 (https://developer.apple.com/app-store/app-privacy-details/: "transmitting data off the device
