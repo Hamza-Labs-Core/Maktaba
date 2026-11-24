@@ -18,7 +18,7 @@ The desktop and mobile apps' own updates (their badge, the signing key, the mobi
 | Installing on the home | In the quiet window, once the release is old enough, with its migrations rehearsed first. | Turning it off, a pin, a deferral, skipping a version, **Update now**. |
 | Installing on the machines | After the home commits the release: downloaded from the home, verified on each machine, switched one at a time. | What a machine's failure does to the others (`node_failure_policy`), when a machine that was offline catches up (`catch_up`). |
 | TV | Plain server installs keep TV playing across the restart; the streaming software then moves to the new release at programme boundaries, without an approval. | The viewers a restart may interrupt (`tv_staging.quiet_max_viewers`, 0) on installs that restart whole. |
-| Going back | A release that does not stay healthy is rolled back: a restart onto the previous release, its database put back first from the dump taken before the failed release's migrations when they ran. Nothing is dumped on the way back. | Rolling back by hand, restoring an older backup. |
+| Going back | A release that does not stay healthy is rolled back: a restart onto the previous release, the failed release's migrations undone first by their Down scripts when they ran (or kept, when they are additive). No backup is put back by itself: when the Down scripts cannot undo them, the update stops and asks. | Rolling back by hand, restoring an older backup. |
 | A desktop app that runs the server (Maktaba.app, the Windows or Linux app) | It downloads and stages the release the home orders, says when it installs, and installs and restarts by itself: for an **Update now** as soon as the home has committed the release, in the window for an automatic update. No click on the machine (decision D1, 2026-10-27). Machines follow once the home commits: while the home updates, the run shows them waiting for it; a home that rolls back orders none (2026-10-28). | The same as any machine. |
 
 Automatic installs are on by default (`rules.updates.auto_install`). With them off (Admin →
@@ -181,8 +181,8 @@ cluster stays where it is until stable passes it.
    migration takes no backup at all: the switch is a restart of seconds. One that adds migrations
    is backed up while the running release keeps serving (`backups/pre-<old>-to-<new>.dump`, checked
    to read back; Admin → Updates shows the **Back up** step and how much it wrote); only the
-   switch waits for it. The new release's start then migrates at once, and puts the backup back if
-   a migration fails. Its health is watched (every role running, the API ready and answering as
+   switch waits for it. The new release's start then migrates at once, and undoes a
+   migration that fails with its Down script. Its health is watched (every role running, the API ready and answering as
    the new version) for 10 minutes, and its TV change goes on the air; then the release is kept
    (committed).
 4. **Every machine follows**, after the home commits: they download and verify in parallel (at
@@ -425,7 +425,7 @@ migration), and that release puts the backup back before anything else runs; the
 replaces is set aside first (`replaced-<version>-<time>.dump`). **Every change made since the
 backup was taken is lost.** It refuses while an update runs, and when no kept release has the
 backup's schema (it names the release to install first). The machines copy the restored database
-anew. The updater itself never runs a down migration.
+anew.
 
 ## Which release is newer
 
