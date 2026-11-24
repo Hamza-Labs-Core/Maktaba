@@ -133,10 +133,11 @@ export function HelpTopic() {
   const known = isHelpTopic(topic);
 
   // An app that opens a topic asks for its own language (?lang=en|ar), as the desktop
-  // Player's Learn more does (story 13.21): the page follows it.
+  // Player's Learn more does (story 13.21): the page follows it for this visit, and the
+  // language this browser keeps for the home's web app stays as it was.
   const asked = params.get("lang");
   useEffect(() => {
-    if ((asked === "en" || asked === "ar") && asked !== locale) setLocale(asked);
+    if ((asked === "en" || asked === "ar") && asked !== locale) setLocale(asked, { keep: false });
     // only when the address asks: a language chosen on the page afterwards stays
   }, [asked]);
 

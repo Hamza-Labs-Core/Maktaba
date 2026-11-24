@@ -104,7 +104,8 @@ describe("help area", () => {
       expect(h).toHaveTextContent(heading);
       expect(h).toHaveClass("mkt-help__h--target");
       expect(document.documentElement.dir).toBe(dir);
-      expect(localStorage.getItem("mkt:locale")).toBe(lang);
+      // this visit only: the web app's kept language is the one it had
+      expect(localStorage.getItem("mkt:locale")).toBe(before);
     }
   );
 
