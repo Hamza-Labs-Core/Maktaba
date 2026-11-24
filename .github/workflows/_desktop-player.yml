@@ -22,12 +22,15 @@ jobs:
             os: ubuntu-22.04
             tasks: packageDeb packageRpm
             jbr: linux-x64
+            mpv: linux-x64
           - label: windows
             os: windows-latest
             tasks: packageMsi
             jbr: windows-x64
+            mpv: windows-x64
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # a libmpv build (on a cache miss, after a change to its pins) takes up to half an hour
+    timeout-minutes: 75
     defaults:
       run:
         shell: bash
@@ -165,13 +168,89 @@ jobs:
           path: build/ci-pinned/wix
           key: ${{ steps.wix-pin.outputs.key }}
 
+      # Story 13.18: the libmpv the Player carries (libmpv/build.sh: LGPL FFmpeg, dav1d,
+      # libplacebo and mpv from the pinned sources in libmpv/pins.env), cached by the script and
+      # its pins and saved from main only; it goes into resources/<system>/, which the
+      # installers carry. The system libraries it uses, and ffmpeg for the test media, are
+      # installed on every run (Windows: MSYS2's, which also builds it there).
+      - name: libmpv's cache key
+        id: mpv-pin
+        working-directory: .
+        run: echo "key=libmpv-${{ matrix.mpv }}-${{ hashFiles('apps/desktop-player/libmpv/**', 'tools/release/fetch-pinned.sh') }}" >>"$GITHUB_OUTPUT"
+      - id: mpv-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: apps/desktop-player/build/libmpv
+          key: ${{ steps.mpv-pin.outputs.key }}
+      - name: libmpv's libraries, ffmpeg for the test media (Linux)
+        if: runner.os == 'Linux'
+        working-directory: .
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          sudo apt-get -o Acquire::Retries=3 update -qq
+          sudo apt-get -o Acquire::Retries=3 install -y -qq ffmpeg libass9 libva2 libva-drm2 libpulse0 libasound2 \
+            nasm ninja-build pkg-config libass-dev libfreetype-dev libfribidi-dev libharfbuzz-dev libasound2-dev \
+            libpulse-dev libva-dev zlib1g-dev
+          pip3 install --user --quiet 'meson==1.6.1'
+          echo "$HOME/.local/bin" >>"$GITHUB_PATH"
+      - name: MSYS2, for libmpv's build and libraries and the test media (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            git curl base-devel
+            mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-meson mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-nasm mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-libass
+            mingw-w64-ucrt-x86_64-ntldd mingw-w64-ucrt-x86_64-zlib mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-ffmpeg
+      - name: Build libmpv (Linux)
+        if: runner.os == 'Linux' && steps.mpv-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 40
+        run: libmpv/build.sh build/libmpv
+      - name: Build libmpv (Windows)
+        if: runner.os == 'Windows' && steps.mpv-cache.outputs.cache-hit != 'true'
+        timeout-minutes: 50
+        shell: msys2 {0}
+        run: libmpv/build.sh build/libmpv
+      - name: Save libmpv
+        if: github.ref == 'refs/heads/main' && steps.mpv-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: apps/desktop-player/build/libmpv
+          key: ${{ steps.mpv-pin.outputs.key }}
+      - name: libmpv into the installers
+        run: |
+          set -euo pipefail
+          mkdir -p "resources/${{ matrix.mpv }}"
+          cp -R build/libmpv/. "resources/${{ matrix.mpv }}/"
+          ls -l "resources/${{ matrix.mpv }}"
+      # T01 and T02's files (MpvRealTest reads them)
+      - name: Test media (story 13.18, Linux)
+        if: runner.os == 'Linux'
+        run: libmpv/test-media.sh build/test-media
+      - name: Test media (story 13.18, Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: libmpv/test-media.sh build/test-media
+
       - name: Tests, installers
         env:
           JBR: ${{ steps.jbr.outputs.home }}
+          MAKTABA_LIBMPV_DIR: ${{ github.workspace }}/apps/desktop-player/build/libmpv
+          MAKTABA_TEST_MEDIA: ${{ github.workspace }}/apps/desktop-player/build/test-media
         run: |
           set -euo pipefail
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} -Pmaktaba.version=0.0.1 "-Pmaktaba.jbr=${JBR}"
+          # the real libmpv's tests ran, not skipped (story 13.18), and what they measured
+          report=(build/test-results/test/TEST-*MpvRealTest.xml)
+          counts=$(grep -m 1 -oE 'tests="[0-9]+" skipped="[0-9]+"' "${report[0]}" || true)
+          echo "MpvRealTest: ${counts}"
+          grep -oE '(T0[0-9][^<]*|mpv-configuration[^<]*)' "${report[0]}" || true
+          grep -q 'skipped="0"' <<<"${counts}" || { echo "::error::MpvRealTest was skipped: no libmpv or no test media"; exit 1; }
 
       # Story 13.15: the Player as packaged, on the JetBrains Runtime, started on a virtual
       # display: it must come up with its own title bar and still be running 25 s later
@@ -223,10 +302,14 @@ jobs:
               # listed once into a variable (grep -q on a pipe ends it early: tar's write fails)
               files=$(dpkg-deb -c "${deb[0]}")
               info=$(rpm -qip "${rpm[0]}")
-              for want in '/bin/maktaba-player$' '/lib/app/.*javafx-media' '/lib/runtime/'; do
+              for want in '/bin/maktaba-player$' '/lib/app/.*javafx-media' '/lib/runtime/' '/lib/app/resources/libmpv\.so\.2$'; do
                 grep -qE "${want}" <<<"${files}" || { echo "::error::the .deb has nothing matching ${want}"; grep -E 'bin/|lib/app/' <<<"${files}" | sed -n 1,40p; exit 1; }
               done
               grep -q '^Name *: maktaba-player' <<<"${info}" || { echo "::error::the .rpm is not maktaba-player"; echo "${info}"; exit 1; }
+              # libmpv's system libraries are the package's dependencies (story 13.18)
+              depends=$(dpkg-deb -f "${deb[0]}" Depends)
+              echo "Depends: ${depends}"
+              grep -q 'libass' <<<"${depends}" || { echo "::error::the .deb does not depend on libass, which libmpv needs"; exit 1; }
               ;;
             Windows)
               msi=("$out"/msi/*.msi)

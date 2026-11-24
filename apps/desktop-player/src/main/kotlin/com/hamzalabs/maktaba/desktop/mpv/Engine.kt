@@ -26,7 +26,8 @@ object Engine {
      * development run, which has no libmpv to miss, or JavaFX chosen on purpose).
      */
     fun noticeReason(): String? = when {
-        System.getProperty("compose.application.resources.dir") == null -> null
+        // only an installed Player (jpackage's launcher sets it), not a development run
+        System.getProperty("jpackage.app-path") == null -> null
         fallbackReason?.startsWith("MAKTABA_PLAYER_ENGINE") == true -> null
         else -> fallbackReason
     }

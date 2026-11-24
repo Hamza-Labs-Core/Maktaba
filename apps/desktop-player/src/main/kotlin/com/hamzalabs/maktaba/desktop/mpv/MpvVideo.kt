@@ -1,25 +1,38 @@
 package com.hamzalabs.maktaba.desktop.mpv
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import com.hamzalabs.maktaba.desktop.AudioOption
 import com.hamzalabs.maktaba.desktop.Players
 import com.hamzalabs.maktaba.desktop.Video
 import com.hamzalabs.maktaba.desktop.VideoEvents
-import com.sun.jna.Native
+import com.sun.jna.Memory
 import com.sun.jna.Pointer
-import java.awt.Canvas
-import java.awt.Color
+import com.sun.jna.ptr.PointerByReference
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
+import org.jetbrains.skia.Image
+import org.jetbrains.skia.ImageInfo
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 /**
- * A video played by libmpv (story 13.18) into a native child window: [canvas], a heavyweight
- * AWT canvas that the watch screen embeds where JavaFX's panel was (the controls stay outside
- * it, as they were). mpv starts once the canvas has its native window (its HWND or X11 window
- * id, mpv's `wid`), and stops, waiting for mpv to let go of the window, before the window goes.
+ * A video played by libmpv (story 13.18). mpv decodes (in hardware where the machine can, its
+ * frames copied back) and draws each frame, the Player's caption included, with its software
+ * renderer into memory the Player owns, at the size the watch screen shows it ([resize]);
+ * Compose draws that frame ([frame]). The surface decision: an LGPL libmpv has no X11 output,
+ * so it cannot draw into a window of the Player's on Linux, and Compose does not share its
+ * OpenGL context; the software renderer works the same on Windows and Linux, at the screen's
+ * size rather than the file's.
  *
- * Every call returns at once: mpv's commands run on this video's own thread, mpv's events are
- * read on another and handed to [events].
+ * Every call returns at once: mpv's commands run on this video's own thread, its events are
+ * read on another, its frames drawn on a third.
  */
 class MpvVideo internal constructor(
     private val lib: LibMpv,
@@ -31,51 +44,53 @@ class MpvVideo internal constructor(
 ) : Video {
     private val lock = Any()
     @Volatile private var ctx: Pointer? = null
+    @Volatile private var render: Pointer? = null
     @Volatile private var closed = false
     private var loop: Thread? = null
+    private var drawer: Thread? = null
+    private val wake = Semaphore(0)
     private val ops = Executors.newSingleThreadExecutor { r -> Thread(r, "mpv-commands").apply { isDaemon = true } }
     @Volatile private var audioIds: List<String> = emptyList()
     @Volatile private var lastCaption: Triple<String?, Boolean, Float>? = null
+    @Volatile private var size: Pair<Int, Int> = 0 to 0
+    // mpv keeps the callback's address: held here for the handle's life
+    private val onUpdate = LibMpv.UpdateCallback { wake.release() }
+
+    /** The frame to draw now (null: none yet), at the size last given to [resize]. */
+    var frame by mutableStateOf<ImageBitmap?>(null)
+        private set
 
     /** The hardware decoder mpv uses now ("no": software), once the picture has started. */
     @Volatile var hwdec: String? = null
         private set
 
-    /** The window mpv draws in. */
-    val canvas: Canvas = object : Canvas() {
-        init {
-            background = Color.BLACK
-        }
-
-        override fun addNotify() {
-            super.addNotify()
-            val wid = Native.getComponentID(this)
-            ops.execute { attach(wid) }
-        }
-
-        override fun removeNotify() {
-            // mpv must be done with the window before it is destroyed
-            close()
-            super.removeNotify()
-        }
+    init {
+        ops.execute(::start)
     }
 
-    private fun attach(wid: Long) {
+    /** The picture's size on screen, in pixels: frames are drawn at it. */
+    fun resize(width: Int, height: Int) {
+        if (width <= 0 || height <= 0 || size == (width to height)) return
+        size = width to height
+        wake.release()
+    }
+
+    private fun start() {
         synchronized(lock) {
-            if (closed || ctx != null) return
+            if (closed) return
             val c = lib.mpv_create() ?: run {
                 events.failed("libmpv could not start.")
                 return
             }
             fun opt(name: String, value: String) = lib.mpv_set_option_string(c, name, value)
-            opt("wid", wid.toString())
-            opt("hwdec", "auto-safe")
+            opt("vo", "libmpv")
+            // a hardware decoder whose frames come back to memory, where the machine has one
+            opt("hwdec", "auto-copy-safe")
             opt("terminal", "no")
             opt("input-default-bindings", "no")
-            opt("input-vo-keyboard", "no")
             opt("osc", "no")
             opt("keep-open", "no")
-            // the Player's own subtitles are drawn as captions; a file's own stay off until chosen
+            // the Player's own subtitles are drawn as captions; a file's own stay off
             opt("sid", "no")
             opt("sub-auto", "no")
             opt("volume", (events.volume * 100).toInt().toString())
@@ -95,16 +110,68 @@ class MpvVideo internal constructor(
                 events.failed("libmpv: " + lib.mpv_error_string(err))
                 return
             }
+            val sw = Memory(4).apply { setString(0, "sw") }
+            val params = params(MpvConst.RENDER_PARAM_API_TYPE to sw)
+            val made = PointerByReference()
+            val rerr = lib.mpv_render_context_create(made, c, params)
+            if (rerr < 0) {
+                lib.mpv_terminate_destroy(c)
+                events.failed("libmpv's renderer: " + lib.mpv_error_string(rerr))
+                return
+            }
+            val r = made.value
+            lib.mpv_render_context_set_update_callback(r, onUpdate, null)
             lib.mpv_observe_property(c, 1, "time-pos", MpvConst.FORMAT_DOUBLE)
             lib.mpv_observe_property(c, 2, "pause", MpvConst.FORMAT_FLAG)
             ctx = c
+            render = r
             loop = Thread({ read(c) }, "mpv-events").apply {
+                isDaemon = true
+                start()
+            }
+            drawer = Thread({ draw(r) }, "mpv-frames").apply {
                 isDaemon = true
                 start()
             }
             lib.mpv_command(c, arrayOf("loadfile", url, null))
             lastCaption?.let { (s, rtl, scale) -> overlay(c, s, rtl, scale) }
         }
+    }
+
+    /** Draws a frame each time mpv has one, into [back], then shows it. */
+    private fun draw(r: Pointer) {
+        var back: Bitmap? = null
+        val sizeArg = Memory(8)
+        val stride = Memory(8)
+        val format = Memory(5).apply { setString(0, "bgr0") }
+        while (!closed) {
+            wake.tryAcquire(250, TimeUnit.MILLISECONDS)
+            if (closed) break
+            val flags = lib.mpv_render_context_update(r)
+            if (flags and MpvConst.RENDER_UPDATE_FRAME == 0L) continue
+            val (w, h) = size
+            if (w <= 0 || h <= 0) continue
+            val b = back?.takeIf { it.width == w && it.height == h } ?: Bitmap().also {
+                back?.close()
+                it.allocPixels(ImageInfo(w, h, ColorType.BGRA_8888, ColorAlphaType.OPAQUE))
+                back = it
+            }
+            val pixels = b.peekPixels() ?: continue
+            sizeArg.setInt(0, w)
+            sizeArg.setInt(4, h)
+            stride.setLong(0, b.rowBytes.toLong())
+            val p = params(
+                MpvConst.RENDER_PARAM_SW_SIZE to sizeArg,
+                MpvConst.RENDER_PARAM_SW_FORMAT to format,
+                MpvConst.RENDER_PARAM_SW_STRIDE to stride,
+                MpvConst.RENDER_PARAM_SW_POINTER to Pointer(pixels.addr),
+            )
+            if (lib.mpv_render_context_render(r, p) < 0) continue
+            b.notifyPixelsChanged()
+            // a copy for Compose: the next frame is drawn into the same memory
+            frame = Image.makeFromBitmap(b).toComposeImageBitmap()
+        }
+        back?.close()
     }
 
     private fun read(c: Pointer) {
@@ -202,18 +269,23 @@ class MpvVideo internal constructor(
         lib.mpv_command(c, arrayOf("osd-overlay", "1", "ass-events", captionAss(text, rtl, scale), "0", "720", "0", "no", null))
     }
 
-    override fun dispose() = close()
-
-    private fun close() {
+    override fun dispose() {
         val c: Pointer?
+        val r: Pointer?
         synchronized(lock) {
             if (closed) return
             closed = true
             c = ctx
+            r = render
             ctx = null
+            render = null
         }
         ops.shutdown()
         ops.awaitTermination(2, TimeUnit.SECONDS)
+        wake.release()
+        drawer?.join(5_000)
+        // the renderer goes before the handle (render.h)
+        if (r != null) lib.mpv_render_context_free(r)
         if (c != null) {
             lib.mpv_command(c, arrayOf("quit", null))
             loop?.join(5_000)
@@ -223,6 +295,18 @@ class MpvVideo internal constructor(
 
     companion object {
         const val CAPTION_FONT = "IBM Plex Sans Arabic"
+
+        /** mpv_render_param[]: each (type, data), then the end. */
+        private fun params(vararg p: Pair<Int, Pointer>): Memory {
+            val m = Memory(16L * (p.size + 1))
+            m.clear()
+            p.forEachIndexed { i, (type, data) ->
+                m.setInt(16L * i, type)
+                m.setPointer(16L * i + 8, data)
+            }
+            m.setInt(16L * p.size, MpvConst.RENDER_PARAM_INVALID)
+            return m
+        }
 
         /**
          * A caption as one ASS event for mpv's OSD: bottom centre, white with an outline, sized

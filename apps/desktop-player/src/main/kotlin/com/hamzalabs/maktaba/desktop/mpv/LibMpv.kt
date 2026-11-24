@@ -1,9 +1,11 @@
 package com.hamzalabs.maktaba.desktop.mpv
 
+import com.sun.jna.Callback
 import com.sun.jna.Library
 import com.sun.jna.Native
 import com.sun.jna.NativeLong
 import com.sun.jna.Pointer
+import com.sun.jna.ptr.PointerByReference
 import java.io.File
 
 /**
@@ -27,6 +29,19 @@ interface LibMpv : Library {
     fun mpv_wait_event(ctx: Pointer, timeout: Double): Pointer
     fun mpv_wakeup(ctx: Pointer)
     fun mpv_error_string(error: Int): String
+
+    // render.h: the software renderer (story 13.18: libmpv draws each frame into the Player's
+    // own memory, which Compose draws; an LGPL libmpv has no X11 window to draw in)
+    fun mpv_render_context_create(res: PointerByReference, mpv: Pointer, params: Pointer): Int
+    fun mpv_render_context_set_update_callback(ctx: Pointer, callback: UpdateCallback?, data: Pointer?)
+    fun mpv_render_context_update(ctx: Pointer): Long
+    fun mpv_render_context_render(ctx: Pointer, params: Pointer): Int
+    fun mpv_render_context_free(ctx: Pointer)
+
+    /** mpv_render_update_fn: a new frame may be drawn (called on one of mpv's threads; it must only signal). */
+    fun interface UpdateCallback : Callback {
+        fun invoke(data: Pointer?)
+    }
 }
 
 /** mpv's numbers the Player reads (client.h). */
@@ -41,6 +56,14 @@ internal object MpvConst {
     const val EVENT_FILE_LOADED = 8
     const val EVENT_PLAYBACK_RESTART = 21
     const val EVENT_PROPERTY_CHANGE = 22
+
+    const val RENDER_PARAM_INVALID = 0
+    const val RENDER_PARAM_API_TYPE = 1
+    const val RENDER_PARAM_SW_SIZE = 17
+    const val RENDER_PARAM_SW_FORMAT = 18
+    const val RENDER_PARAM_SW_STRIDE = 19
+    const val RENDER_PARAM_SW_POINTER = 20
+    const val RENDER_UPDATE_FRAME = 1L
 
     const val END_EOF = 0
     const val END_ERROR = 4

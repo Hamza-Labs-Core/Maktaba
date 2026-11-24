@@ -124,6 +124,10 @@ compose.desktop {
             copyright = "© Hamza Labs"
             // JavaFX on the class path, the stream proxy's HTTP server, TLS: the whole runtime
             includeAllModules = true
+            // story 13.18: the libmpv the Player carries, per system (resources/windows-x64,
+            // linux-x64, linux-arm64), put there by libmpv/build.sh in CI and the release; the
+            // Player finds it through compose.application.resources.dir
+            appResourcesRootDir.set(project.layout.projectDirectory.dir("resources"))
             windows {
                 // its own identity, apart from the server app (com.hamzalabs.maktaba)
                 upgradeUuid = "5d1f6a0c-7c43-4f7e-9f9a-3b0f2a8e4c42"
