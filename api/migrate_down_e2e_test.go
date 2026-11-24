@@ -69,7 +69,7 @@ UNION ALL SELECT 'type ' || t.typname FROM pg_type t WHERE t.typnamespace = 'pub
    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = t.oid AND d.deptype = 'e')
 ORDER BY 1`
 
-func schemaFingerprint(t *testing.T, ctx context.Context, db *sql.DB) []string {
+func schemaFingerprint(ctx context.Context, t *testing.T, db *sql.DB) []string {
 	t.Helper()
 	rows, err := db.QueryContext(ctx, schemaFingerprintSQL)
 	if err != nil {
@@ -262,7 +262,7 @@ func TestMigrationsDownAfterPartialUp(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		before := schemaFingerprint(t, ctx, db)
+		before := schemaFingerprint(ctx, t, db)
 		if noTransactionMigration.Match(raw) {
 			stmts := gooseUpStatements(string(raw))
 			if len(stmts) == 0 {
@@ -289,7 +289,7 @@ func TestMigrationsDownAfterPartialUp(t *testing.T) {
 				if err := runUndoFailed(ctx, db, dir); err != nil {
 					t.Fatalf("%s: its Down script after %d of its %d Up statements: %v", name, k, len(stmts), err)
 				}
-				if d := schemaDiff(before, schemaFingerprint(t, ctx, db)); len(d) > 0 {
+				if d := schemaDiff(before, schemaFingerprint(ctx, t, db)); len(d) > 0 {
 					t.Fatalf("%s: after %d of its %d Up statements, its Down script leaves the schema changed:\n%s",
 						name, k, len(stmts), strings.Join(d, "\n"))
 				}
@@ -303,7 +303,7 @@ func TestMigrationsDownAfterPartialUp(t *testing.T) {
 		if err := goose.DownContext(ctx, db, stage); err != nil {
 			t.Fatalf("%s: its Down script after its whole Up: %v", name, err)
 		}
-		if d := schemaDiff(before, schemaFingerprint(t, ctx, db)); len(d) > 0 {
+		if d := schemaDiff(before, schemaFingerprint(ctx, t, db)); len(d) > 0 {
 			t.Fatalf("%s: after its whole Up, its Down script leaves the schema changed:\n%s", name, strings.Join(d, "\n"))
 		}
 		if err := goose.UpByOneContext(ctx, db, stage); err != nil {
@@ -342,7 +342,7 @@ func TestHomeFailureOf0235UndoneByDownScripts(t *testing.T) {
 	if err := goose.UpToContext(ctx, db, stage, 230); err != nil {
 		t.Fatal(err)
 	}
-	v153 := schemaFingerprint(t, ctx, db)
+	v153 := schemaFingerprint(ctx, t, db)
 	if err := goose.UpToContext(ctx, db, stage, 234); err != nil {
 		t.Fatal(err)
 	}
@@ -368,7 +368,7 @@ func TestHomeFailureOf0235UndoneByDownScripts(t *testing.T) {
 	if err := runGooseDownTo(ctx, db, dir, 230); err != nil {
 		t.Fatalf("down-to 230: %v", err)
 	}
-	if d := schemaDiff(v153, schemaFingerprint(t, ctx, db)); len(d) > 0 {
+	if d := schemaDiff(v153, schemaFingerprint(ctx, t, db)); len(d) > 0 {
 		t.Fatalf("the schema is not 0.3.153's after the Down scripts:\n%s", strings.Join(d, "\n"))
 	}
 	if v, err := goose.GetDBVersionContext(ctx, db); err != nil || v != 230 {
