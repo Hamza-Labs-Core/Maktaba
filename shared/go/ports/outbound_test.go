@@ -13,7 +13,7 @@ import (
 // notCalled are hosts the code names that no process calls: problem types and
 // documents' links, identities checked inside a signature, placeholders.
 var notCalled = map[string]string{
-	"maktaba.tv":                          "problem type URIs and links in answers",
+	"maktaba.tv":                          "problem type URIs and links in answers (the release feed is listed under updates)",
 	"maktaba.dev":                         "links in security.txt",
 	"maktaba.invalid":                     "a placeholder",
 	"token.actions.githubusercontent.com": "the release signature's issuer, checked offline",
@@ -156,4 +156,26 @@ func TestPluginStoreCallsAreListed(t *testing.T) {
 	if len(want) != 0 {
 		t.Fatalf("not listed: %v", want)
 	}
+}
+
+// The update check reads the signed release feed on maktaba.tv first and GitHub's release
+// list when it cannot (docs/updates.md, "How a home finds a release"): both hosts are listed
+// under updates, turned off with the updates.
+func TestUpdatesListsTheReleaseFeed(t *testing.T) {
+	for _, c := range Outbound {
+		if c.Name != "updates" {
+			continue
+		}
+		hosts := strings.Join(c.Hosts, " ")
+		for _, h := range []string{"maktaba.tv", "api.github.com", "github.com"} {
+			if !strings.Contains(" "+hosts+" ", " "+h+" ") {
+				t.Errorf("updates does not list %s: %v", h, c.Hosts)
+			}
+		}
+		if c.Off != "MAKTABA_UPDATE_DISABLE=1" || !strings.Contains(c.What, "release feed") {
+			t.Errorf("updates: %+v", c)
+		}
+		return
+	}
+	t.Fatal("no updates call")
 }

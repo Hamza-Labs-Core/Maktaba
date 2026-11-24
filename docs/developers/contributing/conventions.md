@@ -67,8 +67,11 @@ More in [Security rules for plugins and contributors](../security/conformance.md
   in a `NO TRANSACTION` file. Such a build waits for every older transaction, a machine's copy
   among them. While an update's migrations run, the home ends any session one of them has
   waited on for more than 10 seconds. A build cut short leaves an INVALID index, which the next
-  try drops and builds again. A failed update undoes its migrations without the backup when
-  they are additive or have lossless Down scripts, so write the Down section too.
+  try drops and builds again. A failed update is undone by its migrations' own Down scripts,
+  and the backup goes back only when they fail. So every migration has a Down section. In a
+  `NO TRANSACTION` file each Down statement must work after any part of the Up (`IF EXISTS`
+  guards). An Up that deletes, overwrites or drops data says so (`-- +maktaba down-restores:`
+  or `-- +maktaba lossy-up:`): see the migrations README, rule 6.
 - **Design tokens:** colours, spacing and type come from `web/design-system/tokens/`;
   generated `Tokens.swift` and `Tokens.kt` stay in sync (`make test-tokens`).
 

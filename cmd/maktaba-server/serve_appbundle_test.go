@@ -243,10 +243,14 @@ type fakeDB struct {
 	// restore), backSchema the Down scripts' slot; applied the database's newest migration
 	back       string
 	backSchema int64
+	before     int64 // the schema's version before any migration ran (0: not readable)
 	applied    int64
 	backArgs   []string // the release before's folder, applied, on a kept schema, as each was decided
 	downs      []string // the record's state and the slot as each run of the Down scripts began
 	downErr    error
+	undos      []string // the record's state as each undo of the migration that failed part way began
+	undoErr    error
+	befores    []int64  // the slot before the update, as each was decided
 	drops      []string // the record's state as each drop of the invalid leftovers began
 }
 
@@ -256,26 +260,41 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 	prevD, prevR, prevM, prevA, prevP := dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations
 	prevG := grantWorkersConnect
 	prevFB, prevSV, prevDI, prevMD, prevEB := failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled
+	prevUF := runMigrateUndoFailed
 	t.Cleanup(func() {
 		dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations = prevD, prevR, prevM, prevA, prevP
 		grantWorkersConnect = prevG
 		failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled = prevFB, prevSV, prevDI, prevMD, prevEB
+		runMigrateUndoFailed = prevUF
 	})
-	failedBack = func(from, _ string, applied int64, onKept bool) (string, int64, string) {
+	failedBack = func(from, _ string, applied, before int64, onKept bool) (string, int64, string) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.backArgs = append(f.backArgs, fmt.Sprintf("%s %d %v", filepath.Base(filepath.Dir(from)), applied, onKept))
+		f.befores = append(f.befores, before)
 		switch f.back {
 		case updater.FailedKeep:
 			return f.back, 0, "every migration since it is additive"
 		case updater.FailedDown:
 			return f.back, f.backSchema, "their Down scripts undo them"
+		case updater.FailedRestore:
+			return f.back, 0, "the slot the database was at before the update is not known"
 		}
-		return updater.FailedRestore, 0, "a migration since it drops a column"
+		return updater.FailedLossy, 0, "0232_x.sql loses data (ALTER TABLE t DROP COLUMN c)"
+	}
+	runMigrateUndoFailed = func(context.Context, *exec.Cmd, io.Writer) error {
+		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.undos = append(f.undos, rec.State)
+		return f.undoErr
 	}
 	schemaVersionOf = func(context.Context, *migrationGate) (int64, error) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		if len(f.migrates) == 0 {
+			return f.before, nil
+		}
 		return f.applied, nil
 	}
 	dropInvalidIndexes = func(context.Context, *exec.Cmd, io.Writer) error {
@@ -611,6 +630,10 @@ func TestAppBundleFailedMigrationKeepsAnAdditiveSchema(t *testing.T) {
 	if len(f.drops) != 1 || f.drops[0] != apppayload.DatabaseMigrating {
 		t.Fatalf("the invalid leftovers dropped %v, want once while the record says migrating", f.drops)
 	}
+	// what 0235 made part way is undone by its own Down script, even on a kept schema
+	if len(f.undos) != 1 || f.undos[0] != apppayload.DatabaseMigrating {
+		t.Fatalf("the failed migration undone %v, want once while the record says migrating", f.undos)
+	}
 	rec := recorded(t, cfg)
 	if rec.Version != "v0.3.0" || rec.State != apppayload.DatabaseMigrated || rec.KeptFor != "0.2.0" ||
 		rec.Release != "v0.2.0" || rec.From != "v0.2.0" || rec.Dump == "" || !strings.Contains(rec.KeptReason, "lock timeout") {
@@ -671,10 +694,18 @@ func TestAppBundleFailedMigrationUndoneByItsDownScripts(t *testing.T) {
 	}
 	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
 	f := installFakeDB(t, cfg)
-	f.back, f.backSchema, f.applied = updater.FailedDown, 230, 234
+	f.back, f.backSchema, f.before, f.applied = updater.FailedDown, 230, 230, 234
 	f.migrateErr = errors.New(`migrate: ERROR 0235_search_terms.sql: pq: canceling statement due to lock timeout (55P03)`)
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	// the slot before the update is recorded, and decides the way back
+	if len(f.befores) != 1 || f.befores[0] != 230 {
+		t.Fatalf("decided with the slot before %v, want 230", f.befores)
+	}
+	// 0235, which failed part way, is undone by its own Down script before the others
+	if len(f.undos) != 1 || f.undos[0] != apppayload.DatabaseMigrating {
+		t.Fatalf("the failed migration undone %v", f.undos)
+	}
 	if !supervisor.Halted(err) || supervisor.DetailOf(err).Code != "db_undone" {
 		t.Fatalf("a failed lossless update = %v, want the db_undone halt", err)
 	}
@@ -718,6 +749,30 @@ func TestAppBundleFailedMigrationUndoneByItsDownScripts(t *testing.T) {
 	}
 	if len(f.restores) != 1 {
 		t.Fatalf("restores = %v", f.restores)
+	}
+	// the Updates page says the Down scripts failed: the dump is not the way back
+	if got := attempts.Read(updatesDirOf(cfg, "")); len(got) == 0 || got[0].Code != "db_down_failed" {
+		t.Fatalf("attempts %+v, want db_down_failed", got)
+	}
+	// the undo of the one that failed part way fails: the dump too, said the same
+	f.downErr, f.undoErr = nil, errors.New("migrate: the Down script of 0235_search_terms.sql: boom")
+	newPayload(t, payload, "v0.2.0")
+	f.migrateErr = nil
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("the release before = %v", err)
+	}
+	newPayload(t, payload, "v0.3.0")
+	f.migrateErr = errors.New("migrate: ERROR 0235_search_terms.sql: boom")
+	downs := len(f.downs)
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err = prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || supervisor.DetailOf(err).Code != "db_restored" || len(f.restores) != 2 ||
+		len(f.downs) != downs {
+		t.Fatalf("an undo that fails = %v, restores %v, downs %v", err, f.restores, f.downs)
+	}
+	if got := attempts.Read(updatesDirOf(cfg, "")); len(got) == 0 || got[0].Code != "db_down_failed" {
+		t.Fatalf("attempts %+v, want db_down_failed", got)
 	}
 }
 
@@ -772,6 +827,10 @@ func TestAppBundleFailedMigrationRestoresWhenNeitherIsSafe(t *testing.T) {
 	}
 	if len(f.drops) != 0 || len(f.downs) != 0 {
 		t.Fatalf("drops %v, downs %v before a restore", f.drops, f.downs)
+	}
+	// a migration that ran lost data its Down script cannot give back: the Updates page says so
+	if got := attempts.Read(updatesDirOf(cfg, "")); len(got) == 0 || got[0].Code != "db_restored_lossy" {
+		t.Fatalf("attempts %+v, want db_restored_lossy", got)
 	}
 }
 
@@ -2192,7 +2251,7 @@ func TestAppBundleStartAttempts(t *testing.T) {
 	}
 	got := attempts.Read(dir)
 	if len(got) != 1 || got[0].To != "0.3.0" || got[0].From != "0.2.0" || got[0].Outcome != attempts.PutBack ||
-		got[0].Code != "db_migrate_failed" || got[0].Step != "migrate" || !strings.Contains(got[0].Detail, "videos") ||
+		got[0].Code != "db_restored_lossy" || got[0].Step != "migrate" || !strings.Contains(got[0].Detail, "videos") ||
 		got[0].EndedAt == nil || got[0].Source != attempts.SourceServer {
 		t.Fatalf("after the failed update: %+v", got)
 	}
