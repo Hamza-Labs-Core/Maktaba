@@ -110,26 +110,72 @@ final class PlayerCastUITests: PlayerUITestCase {
         shot("cast-empty")
     }
 
-    /// The real Google Cast SDK, not the fake: set up with Google's public Default Media
-    /// Receiver (`CC1AD845`, the one id every Cast device knows), it starts, discovers after
-    /// the local network screen, and with no TV on the runner's network the picker says none
-    /// was found and suggests AirPlay. What a person sees before their first cast, on the SDK
-    /// the App Store build ships; casting to a TV needs a device (docs/stores/cast.md).
-    func testTheGoogleCastSDKStartsAndSaysWhenNoTVIsFound() {
-        openWatch("en", cast: "real:\(Self.defaultMediaReceiver)")
+    // MARK: the real Google Cast SDK
+
+    /// The real Google Cast SDK, not the fake, as the App Store build ships it: the build's own
+    /// receiver from Info.plist, set up, quiet until the local network screen, then searching
+    /// with its Bonjour services declared. The runner advertises a Cast device (`CastBeacon`),
+    /// and the SDK finds it: no other sign says its search works, since its discovery manager
+    /// says it runs and the list says no TV was found also when iOS refuses the search. The
+    /// receiver is Google's public Default Media Receiver (CI builds with it,
+    /// `_apple-apps.yml`). Casting to a TV needs a device (docs/stores/cast.md).
+    func testTheGoogleCastSDKFindsATVOnTheNetwork() throws {
+        let tv = try CastBeacon(receivers: [Self.defaultMediaReceiver])
+        defer { tv.stop() }
+        openWatch("en", cast: "real")
         tapCast()
         let go = app.buttons["cast.interstitial.continue"]
         XCTAssertTrue(go.waitForExistence(timeout: 10), "the local network screen before the first cast")
+        let before = try sdk()
+        XCTAssertEqual(before.receivers, [Self.defaultMediaReceiver], "set up with the build's receiver")
+        // the failing side of the check below, on the same SDK: set up, and not searching
+        XCTAssertEqual(before.problems(receiver: Self.defaultMediaReceiver), ["discovery is not running"],
+                       "no search before the local network screen's Continue (\(before.text))")
         go.tap()
-        RunLoop.current.run(until: Date().addingTimeInterval(6))
-        let empty = element("cast.picker.empty")
-        XCTAssertTrue(empty.waitForExistence(timeout: 40), "the SDK's search ends with the empty state")
-        XCTAssertTrue(empty.label.contains("AirPlay"))
+        let row = app.buttons["cast.device.\(tv.id)"]
+        let found = row.waitForExistence(timeout: 60)
+        let after = try sdk()
+        XCTAssertEqual(after.problems(receiver: Self.defaultMediaReceiver), [], after.text)
+        XCTAssertTrue(found, "the advertised TV in the list (\(after.text))")
+        XCTAssertTrue(after.devices.contains(tv.id), "the SDK found it (\(after.text))")
+        XCTAssertTrue(row.label.contains(tv.name), row.label)
+        XCTAssertFalse(element("cast.picker.empty").exists)
         XCTAssertTrue(element("player.surface").exists, "the video still plays on the phone")
     }
 
-    /// Google's Default Media Receiver: public, registered by Google, no console needed.
+    func testTheDiscoveryCheckNamesWhatIsWrong() {
+        let id = Self.defaultMediaReceiver
+        func problems(_ s: CastSDKState) -> [String] { s.problems(receiver: id) }
+        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true)), [])
+        XCTAssertEqual(problems(CastSDKState()), ["the SDK is not set up", "discovery is not running"])
+        XCTAssertEqual(problems(CastSDKState(receivers: ["ABCD1234"], running: true)), ["the SDK is set up for ABCD1234, not \(id)"])
+        XCTAssertEqual(problems(CastSDKState(receivers: [id])), ["discovery is not running"])
+        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, errors: [CastSDKState.undeclared])),
+                       ["a Bonjour service is missing from NSBonjourServices (-72008)"])
+        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, errors: [CastSDKState.denied])),
+                       ["local network access is denied (-65570)"])
+        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, errors: [0])), ["a Bonjour search failed (0)"])
+        // the line the SDK logs (4.8.6), and its other lines
+        let line = "Failed to search for net services with error dictionary {\n    NSNetServicesErrorCode = \"-72008\";\n    NSNetServicesErrorDomain = 10;\n}"
+        let function = "-[GCKBonjourServiceBrowser netServiceBrowser:didNotSearch:]"
+        XCTAssertEqual(CastSDKState.searchError(function: function, message: line), CastSDKState.undeclared)
+        XCTAssertEqual(CastSDKState.searchError(function: function, message: "no code"), 0)
+        XCTAssertNil(CastSDKState.searchError(function: "-[GCKDeviceProvider(Protected) notifyDidStartDiscovery]", message: "didStartDiscovery"))
+        for s in [CastSDKState(), CastSDKState(receivers: [id], running: true, errors: [-72008, 0], devices: ["a", "b"])] {
+            XCTAssertEqual(CastSDKState(text: s.text), s)
+        }
+        XCTAssertNil(CastSDKState(text: ""))
+    }
+
+    /// Google's Default Media Receiver: public, registered by Google, no console needed. CI's
+    /// UI-test build names it (`MAKTABA_CAST_APP_ID`, `_apple-apps.yml`).
     static let defaultMediaReceiver = "CC1AD845"
+
+    private func sdk() throws -> CastSDKState {
+        let e = element("cast.sdk")
+        XCTAssertTrue(e.waitForExistence(timeout: 20), "the SDK's state: does the build name a receiver (MAKTABA_CAST_APP_ID)?")
+        return try XCTUnwrap(CastSDKState(text: e.value as? String ?? ""), "\(String(describing: e.value))")
+    }
 
     func testAHomeWithNoAddressTheTVCanReachHasNoCastButton() {
         openWatch("en", discovery: false)
@@ -224,4 +270,36 @@ final class PlayerCastUITests: PlayerUITestCase {
             usleep(250_000)
         }
     }
+}
+
+/// A Cast device on the runner's network, as Bonjour shows one: `_googlecast._tcp` with each
+/// receiver's subtype and the TXT record a Chromecast sends. Nothing listens behind it. Its id
+/// is new each time, since the SDK keeps the devices it found across launches.
+private final class CastBeacon: NSObject, NetServiceDelegate {
+    let id: String
+    let name: String
+    private let service: NetService
+    private var published = false
+    private var failure: [String: NSNumber]?
+
+    init(receivers: [String]) throws {
+        id = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
+        name = "Test TV \(id.prefix(4))"
+        service = NetService(domain: "local.", type: (["_googlecast._tcp"] + receivers.map { "_\($0)" }).joined(separator: ","),
+                             name: "Maktaba-\(id)", port: 8009)
+        super.init()
+        let txt = ["id": id, "cd": id.uppercased(), "ve": "05", "md": "Chromecast", "ic": "/setup/icon.png",
+                   "fn": name, "ca": "4101", "st": "0", "nf": "1"]
+        service.setTXTRecord(NetService.data(fromTXTRecord: txt.mapValues { Data($0.utf8) }))
+        service.delegate = self
+        service.publish()
+        let end = Date().addingTimeInterval(20)
+        while !published, failure == nil, Date() < end { RunLoop.current.run(until: Date().addingTimeInterval(0.1)) }
+        if !published { throw NSError(domain: "CastBeacon", code: failure?["NSNetServicesErrorCode"]?.intValue ?? 0) }
+    }
+
+    func stop() { service.stop() }
+
+    func netServiceDidPublish(_ sender: NetService) { published = true }
+    func netService(_ sender: NetService, didNotPublish errorDict: [String: NSNumber]) { failure = errorDict }
 }

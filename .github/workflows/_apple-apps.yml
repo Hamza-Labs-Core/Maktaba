@@ -126,6 +126,9 @@ jobs:
           build "Maktaba Player" "generic/platform=iOS Simulator"
           build "Maktaba Player Mac" "platform=macOS"
           build "Maktaba TV" "generic/platform=tvOS Simulator"
+          # the Player's Cast receiver and Bonjour services are app.json's, and no other's
+          python3 "$GITHUB_WORKSPACE/tools/apple/cast-app-id.py" --built \
+            "$DERIVED/Build/Products/Debug-iphonesimulator/Maktaba Player.app"
 
       - name: Every string the code uses is in its catalog
         run: python3 tools/apple/check-string-catalogs.py --stringsdata "$DERIVED"
@@ -162,13 +165,22 @@ jobs:
         run: python3 tools/apple/xcode.py select --min 27
 
       # for the runner's own simulators (arm64), with the .xctestrun the shards run from
+      # Cast on, with Google's public Default Media Receiver: PlayerCastUITests runs the real
+      # Google Cast SDK, which iOS lets search only for the Bonjour services in Info.plist. Every
+      # other test starts with Cast off (PlayerUITestCase.launch), and no other build names it:
+      # the TestFlight and App Store builds take app.json's.
       - name: Build the app and its UI tests
         working-directory: apps/apple
+        env:
+          CAST_RECEIVER: CC1AD845
         run: |
           set -euo pipefail
           xcodebuild build-for-testing -project Maktaba.xcodeproj -scheme "${{ matrix.scheme }}" \
             -destination 'generic/platform=iOS Simulator' ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
+            MAKTABA_CAST_APP_ID="$CAST_RECEIVER" MAKTABA_CAST_ENABLED=YES \
             -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO -quiet
+          python3 "$GITHUB_WORKSPACE/tools/apple/cast-app-id.py" --receiver "$CAST_RECEIVER" --built \
+            "$DERIVED/Build/Products/Debug-iphonesimulator/${{ matrix.scheme }}.app"
           # one archive: an artifact keeps no file modes, and the app's binaries need theirs
           tar -C "$DERIVED/Build" -cf "$RUNNER_TEMP/player-ui-build.tar" Products
           ls -la "$RUNNER_TEMP/player-ui-build.tar"

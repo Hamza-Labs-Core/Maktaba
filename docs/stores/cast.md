@@ -97,12 +97,24 @@ services once the ID is set.
 
 **What CI tests.** No runner has a Cast device, so `apps/apple/UITests/PlayerCastUITests.swift`
 drives the Player's Cast screens against a fake Cast context (the cast, the grant, the custom
-data, the mini controller, English and Arabic), and
-`testTheGoogleCastSDKStartsAndSaysWhenNoTVIsFound` runs the **real** Google Cast SDK, set up
-with Google's public Default Media Receiver (`CC1AD845`) through the Debug launch argument
-`-maktaba-cast real:<app id>`: the SDK starts, discovers after the local network screen and,
-with no TV on the runner's network, the picker says so and offers AirPlay. Casting to a real
-TV is the checklist's.
+data, the mini controller, English and Arabic), and `testTheGoogleCastSDKFindsATVOnTheNetwork`
+runs the **real** Google Cast SDK on the iPhone and the iPad:
+
+- CI's UI-test build names Google's public Default Media Receiver
+  (`MAKTABA_CAST_APP_ID=CC1AD845 MAKTABA_CAST_ENABLED=YES`, `_apple-apps.yml`), and
+  `cast-app-id.py --built` checks the built Info.plist: that receiver, `_googlecast._tcp` and
+  `_CC1AD845._googlecast._tcp`. No other build does; the plain build is checked to have no Cast
+  while `shared/cast/app.json` is empty. The other UI tests start with `-maktaba-cast off`.
+- The test starts the app with `-maktaba-cast real` (Debug builds only) and reads the SDK's own
+  state (`CastSDKState`): set up with the build's receiver, not searching before the local
+  network screen's Continue, then searching with no Bonjour error.
+- It advertises a Cast device with Bonjour from the test runner, under a new id each run, and
+  the SDK must find it. Nothing else shows that the search works: in a build without the two
+  services the SDK says that discovery runs and the picker says no TV was found, while iOS
+  refuses each search (`NSNetServicesErrorCode -72008`). The test fails on such a build.
+
+iOS asks for local network access on a device only, so a denied prompt is covered by the state's
+own check (`-65570`), not by a run. Casting to a real TV is the checklist's.
 
 ## Submission notes
 

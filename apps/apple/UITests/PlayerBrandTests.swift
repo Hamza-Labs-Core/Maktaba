@@ -52,7 +52,8 @@ final class PlayerBrandTests: PlayerUITestCase {
     private func launchFirstRun(_ language: String, theme: String?) {
         let locale = language == "ar" ? "ar_JO" : "en_US"
         var args = ["-AppleLanguages", "(\(language))", "-AppleLocale", locale,
-                    "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset"]
+                    "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset",
+                    "-maktaba-cast", "off"]
         if let theme { args += ["-theme", theme] }
         // nothing to standard error, as `PlayerUITestCase.launch` (`ConsoleHook`)
         args.append(ConsoleHook.flag)

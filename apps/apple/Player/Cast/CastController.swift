@@ -82,16 +82,17 @@ final class CastController {
             UserDefaults.standard.removeObject(forKey: interstitialKey)
             return CastController(context: FakeCastContext(empty: fake == "fake-empty"))
         }
+        // `-maktaba-cast off`: no Cast, whatever receiver the build names (CI's UI-test build
+        // names one, for the tests of the SDK itself)
+        if ShellLaunch.value(of: "-maktaba-cast", in: arguments) == "off" { return CastController(context: nil) }
         #if canImport(GoogleCast) && os(iOS)
-        // `-maktaba-cast real:<app id>`: the real Google Cast SDK with that receiver, whatever
-        // the build names, so a UI test drives the SDK itself (its setup, discovery, the
-        // picker) before Maktaba's receiver is registered: CI passes Google's public Default
-        // Media Receiver. Debug builds only; a Release build casts to its own receiver or not
-        // at all
-        if let real = ShellLaunch.value(of: "-maktaba-cast", in: arguments), real.hasPrefix("real:") {
+        // `-maktaba-cast real`: the real Google Cast SDK with the build's receiver, before its
+        // first cast and watched (`CastSDKState`). Debug builds only: a Release build ignores it
+        if ShellLaunch.value(of: "-maktaba-cast", in: arguments) == "real" {
             UserDefaults.standard.removeObject(forKey: interstitialKey)
-            let id = CastConfig(receiverAppID: String(real.dropFirst("real:".count)))
-            if id.isEnabled { return CastController(context: GoogleCastContext.make(appID: id.receiverAppID)) }
+            // the SDK's own note that a person let it search once: it then searches from launch
+            UserDefaults.standard.removeObject(forKey: "kGCKDiscoveryEverStarted")
+            GoogleCastContext.watch = CastSDKWatch()
         }
         #endif
         #endif
@@ -102,6 +103,11 @@ final class CastController {
         #endif
         return CastController(context: nil)
     }
+
+    #if DEBUG
+    /// What the real SDK says of itself, for its UI tests.
+    var sdk: CastSDKState? { context?.sdk }
+    #endif
 
     /// Whether this build casts at all.
     var available: Bool { context != nil }
