@@ -8,21 +8,29 @@ import androidx.activity.ComponentActivity
 import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.Format
@@ -47,9 +55,15 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.hamzalabs.maktaba.core.DemoLibrary
 import com.hamzalabs.maktaba.core.MemoryTokens
 import com.hamzalabs.maktaba.core.api.ApiClient
+import com.hamzalabs.maktaba.core.api.DeviceCode
 import com.hamzalabs.maktaba.core.api.User
 import com.hamzalabs.maktaba.core.jwt
+import com.hamzalabs.maktaba.tv.data.TvApi
 import com.hamzalabs.maktaba.tv.ui.SignedInApp
+import com.hamzalabs.maktaba.tv.ui.components.LibraryBackdrop
+import com.hamzalabs.maktaba.tv.ui.screens.CodeSignInContent
+import com.hamzalabs.maktaba.tv.ui.screens.Gutter
+import com.hamzalabs.maktaba.tv.ui.screens.library.SeriesScreen
 import com.hamzalabs.maktaba.tv.ui.theme.MaktabaTvTheme
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.boolean
@@ -63,6 +77,7 @@ import mockwebserver3.MockWebServer
 import mockwebserver3.RecordedRequest
 import okio.Buffer
 import org.junit.After
+import org.junit.Assume.assumeTrue
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -76,14 +91,21 @@ import java.util.Collections
 import java.util.TimeZone
 
 /**
- * Android TV's product screenshots for maktaba.tv (story 60.09): Home, a library, the player and
- * the live guide on a 1080p TV, in English and Arabic, on the demo library
+ * Android TV's product screenshots for maktaba.tv and the store galleries (stories 60.09 and
+ * 60.14): Home, a library, the player, the live guide, search, a series (Caminandes, the Google
+ * Play build only: Fire TV's gallery shows the library instead) and signing in with a code, on
+ * a 1080p TV, in English and Arabic, on the demo library
  * (`tests/fixtures/demo-library`): every answer and picture comes from its route table, its
  * posters are the films' own art, its times follow the library's pinned clock. Written to
  * `src/test/screenshots/demo/<build>-<screen>-<lang>.png`, `<build>` being `androidtv` for the
  * Google Play build and `firetv` for the Amazon one (story 58.05 T02: the same screens from the
  * Fire TV build); CI's `verifyRoborazziGoogleDebug` and `verifyRoborazziAmazonDebug` fail when
  * one no longer matches.
+ *
+ * Search is the fixture's own query, with its title and the passages that say it. The series is
+ * its page as the app opens it (over the tabs, with nothing else on screen). The code is the
+ * sign-in screen as SignInScreen lays it out, for the demo home, with the code the Remote's demo
+ * shots approve and an approve page at a `.local` name (no address of a real network).
  *
  * The player: Media3 cannot decode a stream on the JVM, so the shot is the TV player's own
  * transport ([PlayerView], set up as `PlayerScreen` sets it up) paused on Curiosity at its resume
@@ -228,6 +250,84 @@ class DemoScreenshotTest {
         player.release()
     }
 
+    /** Search: the fixture's query typed on the Search tab; its title and the passages that say it. */
+    private fun searchScreen() {
+        val library = Json.parseToJsonElement(java.io.File(demo.dir, "library.json").readText()).jsonObject
+        val query = library["search"]!!.jsonObject["query"]!!.jsonObject[lang()]!!.jsonPrimitive.content
+        val found = Json.parseToJsonElement(demo.text("post-search.json")).jsonObject
+        val title = found["videos"]!!.jsonArray.first().jsonObject["video_id"]!!.jsonPrimitive.content
+        val inTranscripts = found["transcript_videos"]!!.jsonArray.map { it.jsonObject["video_id"]!!.jsonPrimitive.content }
+        signedIn()
+        val search = compose.activity.getString(R.string.tab_search)
+        until("the Search tab") { compose.onAllNodes(hasText(search), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+        // a TV tab is chosen when it takes focus (the D-pad)
+        compose.onNode(hasText(search)).performSemanticsAction(SemanticsActions.RequestFocus)
+        until("the search field") { count("tv-search-field") > 0 }
+        val field = compose.onNode(hasSetTextAction())
+        field.performTextInput(query)
+        field.performImeAction()
+        until("the title $title") { count("tv-title-$title") > 0 }
+        // the passages' row is under the titles: down to it, as the D-pad goes
+        compose.onNodeWithTag("tv-search-list").performScrollToNode(hasTestTag("tv-search-transcripts"))
+        until("the passages of $inTranscripts, every poster drawn") {
+            inTranscripts.all { count("tv-transcript-$it") > 0 } && count("poster-shown") >= inTranscripts.size && count("poster-loading") == 0
+        }
+        // the D-pad's focus on the first passage, where OK plays from its moment
+        compose.onNodeWithTag("tv-transcript-${inTranscripts.first()}").performSemanticsAction(SemanticsActions.RequestFocus)
+        until("the passage focused") { count("poster-loading") == 0 }
+        shoot("search")
+    }
+
+    /** Caminandes: the series' page with its seasons and the episodes of the one to go on with. */
+    private fun seriesScreen() {
+        // Fire TV's gallery shows the library in this beat (beats.json): no series shot there
+        assumeTrue("the series is Google TV's shot", BuildConfig.TV_PLATFORM == "androidtv")
+        val client = ApiClient(server.url("/"), MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "refresh"))
+        val api = TvApi(client)
+        compose.setContent {
+            // as SignedInApp shows a pushed screen
+            MaktabaTvTheme {
+                Surface(Modifier.fillMaxSize(), colors = SurfaceDefaults.colors(containerColor = MaterialTheme.colorScheme.background)) {
+                    SeriesScreen(api, CAMINANDES)
+                }
+            }
+        }
+        until("the seasons and the episodes, every poster drawn") {
+            count("season-1") > 0 && count("season-2") > 0 && count("poster-shown") >= 2 && count("poster-loading") == 0
+        }
+        shoot("series")
+    }
+
+    /** Signing in with a code: the TV's code for the demo home, waiting for a phone to approve it. */
+    private fun codeScreen() {
+        compose.setContent {
+            MaktabaTvTheme {
+                // as SignInScreen lays it out
+                LibraryBackdrop {
+                    Column(
+                        Modifier.fillMaxSize().padding(horizontal = Gutter, vertical = 24.dp),
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        CodeSignInContent(
+                            homeName = demo.homeName,
+                            code = DeviceCode(code = CODE, deviceCode = "demo", verifyUrl = APPROVE),
+                            approveUrl = APPROVE,
+                            expiresInSec = 9 * 60 + 58L,
+                            lookedUp = false,
+                            renewed = false,
+                            problem = null,
+                            onNewCode = {},
+                            onPassword = {},
+                            onOtherHome = {},
+                        )
+                    }
+                }
+            }
+        }
+        until("the code") { count("signin-code") > 0 && count("signin-computer") > 0 }
+        shoot("code")
+    }
+
     @Test @Config(qualifiers = TV)
     fun homeEnglish() = homeScreen()
 
@@ -252,9 +352,34 @@ class DemoScreenshotTest {
     @Test @Config(qualifiers = "ar-$TV")
     fun guideArabic() = guideScreen()
 
+    @Test @Config(qualifiers = TV)
+    fun searchEnglish() = searchScreen()
+
+    @Test @Config(qualifiers = "ar-$TV")
+    fun searchArabic() = searchScreen()
+
+    @Test @Config(qualifiers = TV)
+    fun seriesEnglish() = seriesScreen()
+
+    @Test @Config(qualifiers = "ar-$TV")
+    fun seriesArabic() = seriesScreen()
+
+    @Test @Config(qualifiers = TV)
+    fun codeEnglish() = codeScreen()
+
+    @Test @Config(qualifiers = "ar-$TV")
+    fun codeArabic() = codeScreen()
+
     private companion object {
         const val TV = "w960dp-h540dp-land-television-xhdpi"
         const val CURIOSITY = "v-curiosity"
+        const val CAMINANDES = "s-caminandes"
+
+        /** The code the TV shows: the one the Remote's demo shots approve. */
+        const val CODE = "KQ7M4TXP"
+
+        /** The demo home's approve page, at a `.local` name. */
+        const val APPROVE = "http://maktaba.local:8088/pair?code=KQ7M-4TXP"
 
         // text is drawn by the host's font rasteriser: a reference recorded on a Mac still matches
         // on CI's Linux within a small share of pixels
