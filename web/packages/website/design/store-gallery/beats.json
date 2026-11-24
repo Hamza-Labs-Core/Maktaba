@@ -1,0 +1,527 @@
+{
+  "$comment": "Story 60.14: the story beats of each app's gallery, in order, with each shot's caption in English and Arabic (each written on its own, in the voice of ../../copy/voice.md) and the screen it shows on each surface. 'capture' names the screen the full set captures on the new demo library (60.14 part 2; 'new' marks a screen no CI job captures yet). 'standin' is the test-data screen the mockups draw in its place ({lang} is the shot's language, {other} the other one); a beat with no stand-in on a surface is drawn as an empty, labelled panel in the mockups. 'only' limits a beat to some surfaces. 'ui' says which language the screen is in when it is not the shot's own: the Arabic beat shows the Arabic screen in the English set and the English screen in the Arabic set.",
+  "apps": {
+    "player": {
+      "name": { "en": "Maktaba Player", "ar": "مشغل مكتبة" },
+      "beats": [
+        {
+          "id": "library",
+          "en": {
+            "h": "Your own library, on every screen at home.",
+            "sub": "Films, series and lessons, kept on your own computer."
+          },
+          "ar": {
+            "h": "مكتبتكم، على كل شاشة في البيت.",
+            "sub": "أفلامكم ومسلسلاتكم ودروسكم، محفوظة على حاسوبكم أنتم."
+          },
+          "wordmark": true,
+          "capture": {
+            "iphone": "home",
+            "ipad": "home",
+            "mac": "library",
+            "android-phone": "home",
+            "android-tablet": "home new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/player-iphone-home-{lang}.webp",
+            "ipad": "../apps/android/player/src/test/screenshots/home_tablet_dark_{lang}.png",
+            "mac": "packages/devportal/static/assets/apps/desktop-player-home-{lang}.webp",
+            "android-phone": "../apps/android/player/src/test/screenshots/home_phone_dark_{lang}.png",
+            "android-tablet": "../apps/android/player/src/test/screenshots/home_tablet_dark_{lang}.png"
+          }
+        },
+        {
+          "id": "search",
+          "en": {
+            "h": "Search what was said.",
+            "sub": "Type a word in Arabic or English. Maktaba finds the moment it is said."
+          },
+          "ar": {
+            "h": "ابحثوا فيما قيل.",
+            "sub": "اكتبوا كلمة بالعربية أو بالإنجليزية، فيجد البرنامج اللحظة التي قيلت فيها."
+          },
+          "capture": {
+            "iphone": "search new",
+            "ipad": "search new",
+            "mac": "search new",
+            "android-phone": "search new",
+            "android-tablet": "search new"
+          },
+          "standin": {
+            "iphone": "../apps/android/player/src/test/screenshots/search_results_phone_dark_{lang}.png",
+            "ipad": "../apps/android/player/src/test/screenshots/search_results_tablet_dark_{lang}.png",
+            "mac": "../apps/android/player/src/test/screenshots/search_results_tablet_dark_{lang}.png",
+            "android-phone": "../apps/android/player/src/test/screenshots/search_results_phone_dark_{lang}.png",
+            "android-tablet": "../apps/android/player/src/test/screenshots/search_results_tablet_dark_{lang}.png"
+          }
+        },
+        {
+          "id": "subtitles",
+          "en": {
+            "h": "Subtitles, made at home.",
+            "sub": "Maktaba listens to each film and writes its subtitles, in Arabic and English."
+          },
+          "ar": {
+            "h": "ترجماتٌ تُصنع في البيت.",
+            "sub": "يستمع البرنامج إلى كل فيلم ويكتب ترجمته، بالعربية والإنجليزية."
+          },
+          "capture": {
+            "iphone": "player",
+            "ipad": "player",
+            "mac": "player",
+            "android-phone": "player new",
+            "android-tablet": "player new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/player-iphone-watch-{lang}.webp",
+            "ipad": "../apps/android/player/src/test/screenshots/watch_controls_tablet_dark_{lang}.png",
+            "mac": "packages/devportal/static/assets/apps/desktop-player-video-{lang}.webp",
+            "android-phone": "../apps/android/player/src/test/screenshots/watch_tracks_phone_dark_{lang}.png",
+            "android-tablet": "../apps/android/player/src/test/screenshots/watch_controls_tablet_dark_{lang}.png"
+          }
+        },
+        {
+          "id": "series",
+          "en": {
+            "h": "Every series in order, season by season.",
+            "sub": "Each episode joins its season by itself."
+          },
+          "ar": {
+            "h": "كل مسلسلٍ في مواسمه، بترتيبه.",
+            "sub": "وتنضمّ كل حلقةٍ إلى موسمها وحدها."
+          },
+          "capture": {
+            "iphone": "series new",
+            "ipad": "series new",
+            "mac": "series new",
+            "android-phone": "series new",
+            "android-tablet": "series new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/player-iphone-library-{lang}.webp",
+            "ipad": "../apps/android/player/src/test/screenshots/libraries_listdetail_tablet_dark_{lang}.png",
+            "mac": "../apps/android/player/src/test/screenshots/libraries_listdetail_tablet_dark_{lang}.png",
+            "android-phone": "../apps/android/player/src/test/screenshots/libraries_series_phone_dark_{lang}.png",
+            "android-tablet": "../apps/android/player/src/test/screenshots/libraries_listdetail_tablet_dark_{lang}.png"
+          }
+        },
+        {
+          "id": "live",
+          "en": {
+            "h": "Live channels from your own films.",
+            "sub": "With a guide. Tune in and you join whatever is on."
+          },
+          "ar": {
+            "h": "قنواتٌ مباشرة من أفلامكم.",
+            "sub": "ولها دليلها، فإذا فتحتم قناة انضممتم إلى ما يُعرض فيها الآن."
+          },
+          "capture": {
+            "iphone": "live new",
+            "ipad": "live new",
+            "mac": "live new",
+            "android-phone": "live new",
+            "android-tablet": "live new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/player-iphone-live-{lang}.webp",
+            "ipad": "../apps/android/player/src/test/screenshots/live_guide_tablet_dark_{lang}.png",
+            "mac": "packages/devportal/static/assets/apps/desktop-player-live-{lang}.webp",
+            "android-phone": "../apps/android/player/src/test/screenshots/live_guide_phone_dark_{lang}.png",
+            "android-tablet": "../apps/android/player/src/test/screenshots/live_guide_tablet_dark_{lang}.png"
+          }
+        },
+        {
+          "id": "arabic",
+          "ui": "other",
+          "en": {
+            "h": "Arabic, right to left, on every screen.",
+            "sub": "And English too: titles in both sit side by side, and search finds them all."
+          },
+          "ar": {
+            "h": "بالعربية والإنجليزية، في مكتبة واحدة.",
+            "sub": "العناوين باللغتين جنبًا إلى جنب، ويجدها البحث كلها."
+          },
+          "capture": {
+            "iphone": "home",
+            "ipad": "home",
+            "mac": "library",
+            "android-phone": "home",
+            "android-tablet": "home new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/player-iphone-home-{other}.webp",
+            "ipad": "../apps/android/player/src/test/screenshots/home_tablet_dark_{other}.png",
+            "mac": "packages/devportal/static/assets/apps/desktop-player-home-{other}.webp",
+            "android-phone": "../apps/android/player/src/test/screenshots/home_phone_dark_{other}.png",
+            "android-tablet": "../apps/android/player/src/test/screenshots/home_tablet_dark_{other}.png"
+          }
+        },
+        {
+          "id": "family",
+          "only": ["iphone", "ipad", "android-phone", "android-tablet"],
+          "en": {
+            "h": "Each child sees what you allow.",
+            "sub": "Limits you set on your home apply on every screen."
+          },
+          "ar": {
+            "h": "لا يرى الأطفال إلا ما تسمحون به.",
+            "sub": "الحدود التي تضبطونها في البيت تسري على كل شاشة."
+          },
+          "capture": {
+            "iphone": "parental new",
+            "ipad": "parental new",
+            "android-phone": "ask-a-parent new",
+            "android-tablet": "ask-a-parent new"
+          },
+          "standin": {}
+        }
+      ]
+    },
+    "remote": {
+      "name": { "en": "Maktaba Remote", "ar": "ريموت مكتبة" },
+      "beats": [
+        {
+          "id": "glance",
+          "en": {
+            "h": "Your home, at a glance.",
+            "sub": "What it is working on, and anything that needs you."
+          },
+          "ar": {
+            "h": "بيتكم، بنظرة واحدة.",
+            "sub": "ما يعمل عليه الآن، وما يحتاج إليكم."
+          },
+          "wordmark": true,
+          "capture": {
+            "iphone": "dashboards",
+            "ipad": "dashboards new",
+            "android-phone": "dashboards",
+            "android-tablet": "dashboards new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/remote-iphone-dashboards-{lang}.webp",
+            "android-phone": "../apps/android/remote/src/test/screenshots/diagnostics_dashboards_dark_{lang}.png"
+          }
+        },
+        {
+          "id": "attention",
+          "en": {
+            "h": "When something needs you, it says what to do.",
+            "sub": "One plain message, and the steps that fix it."
+          },
+          "ar": {
+            "h": "إن احتاج شيءٌ إليكم، أخبركم بما تفعلون.",
+            "sub": "رسالةٌ واضحة، وخطوات الإصلاح."
+          },
+          "capture": {
+            "iphone": "attention new",
+            "ipad": "attention new",
+            "android-phone": "attention new",
+            "android-tablet": "attention new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/android-remote-attention-{lang}.webp",
+            "android-phone": "packages/devportal/static/assets/apps/android-remote-attention-{lang}.webp"
+          }
+        },
+        {
+          "id": "queue",
+          "en": {
+            "h": "See the work as it happens.",
+            "sub": "Subtitles, conversions and films being added, in one queue."
+          },
+          "ar": {
+            "h": "تابعوا العمل أولًا بأول.",
+            "sub": "الترجمات والتحويلات والأفلام المضافة، في قائمة واحدة."
+          },
+          "capture": {
+            "iphone": "queue new",
+            "ipad": "queue new",
+            "android-phone": "queue new",
+            "android-tablet": "queue new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/remote-iphone-queue-en.webp"
+          },
+          "standinLangs": ["en"]
+        },
+        {
+          "id": "code",
+          "en": {
+            "h": "Sign in a TV with a code.",
+            "sub": "No password typed with the remote."
+          },
+          "ar": {
+            "h": "سجّلوا دخول التلفاز برمز.",
+            "sub": "دون كتابة كلمة مرورٍ بجهاز التحكم."
+          },
+          "capture": {
+            "iphone": "approve-code new",
+            "ipad": "approve-code new",
+            "android-phone": "approve-code new",
+            "android-tablet": "approve-code new"
+          },
+          "standin": {}
+        },
+        {
+          "id": "updates",
+          "en": {
+            "h": "It updates itself, in the quiet hours you choose.",
+            "sub": "If an update can't start, the previous version comes back."
+          },
+          "ar": {
+            "h": "يحدّث نفسه في الساعات الهادئة التي تختارونها.",
+            "sub": "وإن تعذّر تشغيل التحديث، عاد الإصدار السابق."
+          },
+          "capture": {
+            "iphone": "updates",
+            "ipad": "updates new",
+            "android-phone": "updates new",
+            "android-tablet": "updates new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/remote-iphone-updates-{lang}.webp"
+          }
+        },
+        {
+          "id": "arabic",
+          "ui": "other",
+          "en": {
+            "h": "Arabic, right to left, on every screen.",
+            "sub": "And English too, for everyone who runs the home."
+          },
+          "ar": {
+            "h": "بالعربية والإنجليزية.",
+            "sub": "لكل من يدير البيت، باللغة التي يختارها."
+          },
+          "capture": {
+            "iphone": "dashboards",
+            "ipad": "dashboards new",
+            "android-phone": "dashboards",
+            "android-tablet": "dashboards new"
+          },
+          "standin": {
+            "iphone": "packages/devportal/static/assets/apps/remote-iphone-dashboards-{other}.webp",
+            "android-phone": "../apps/android/remote/src/test/screenshots/diagnostics_dashboards_dark_{other}.png"
+          }
+        }
+      ]
+    },
+    "tv": {
+      "name": { "en": "Maktaba", "ar": "مكتبة" },
+      "beats": [
+        {
+          "id": "library",
+          "en": {
+            "h": "Your own library, on every screen at home.",
+            "sub": "Carry on where you stopped, from the sofa."
+          },
+          "ar": {
+            "h": "مكتبتكم، على كل شاشة في البيت.",
+            "sub": "تابعوا من حيث توقفتم، وأنتم على الأريكة."
+          },
+          "wordmark": true,
+          "capture": {
+            "appletv": "home",
+            "androidtv": "home",
+            "firetv": "home",
+            "roku": "home",
+            "samsung": "home new",
+            "lg": "home"
+          },
+          "standin": {
+            "appletv": "packages/devportal/static/assets/apps/appletv-home-{lang}.webp",
+            "androidtv": "packages/devportal/static/assets/apps/appletv-home-{lang}.webp",
+            "firetv": "packages/devportal/static/assets/apps/appletv-home-{lang}.webp",
+            "roku": "packages/devportal/static/assets/apps/roku-home-{lang}.webp",
+            "samsung": "packages/devportal/static/assets/apps/big-home-{lang}.webp",
+            "lg": "packages/devportal/static/assets/apps/big-home-{lang}.webp"
+          }
+        },
+        {
+          "id": "series",
+          "en": {
+            "h": "Every series in order, season by season.",
+            "sub": "Up next plays the following episode."
+          },
+          "ar": {
+            "h": "كل مسلسلٍ في مواسمه، بترتيبه.",
+            "sub": "وتبدأ الحلقة التالية من تلقاء نفسها."
+          },
+          "capture": {
+            "appletv": "series",
+            "androidtv": "series new",
+            "firetv": "library",
+            "roku": "series new",
+            "samsung": "series new",
+            "lg": "series new"
+          },
+          "standin": {
+            "appletv": "packages/devportal/static/assets/apps/tv-series-{lang}.webp",
+            "androidtv": "packages/devportal/static/assets/apps/tv-series-{lang}.webp",
+            "firetv": "packages/devportal/static/assets/apps/tv-series-{lang}.webp",
+            "roku": "packages/devportal/static/assets/apps/roku-library-{lang}.webp",
+            "samsung": "packages/devportal/static/assets/apps/tv-series-{lang}.webp",
+            "lg": "packages/devportal/static/assets/apps/tv-series-{lang}.webp"
+          }
+        },
+        {
+          "id": "subtitles",
+          "en": {
+            "h": "Subtitles, made at home.",
+            "sub": "Arabic drawn right to left, as it should be."
+          },
+          "ar": {
+            "h": "ترجماتٌ تُصنع في البيت.",
+            "sub": "والعربية تُرسم من اليمين إلى اليسار، كما ينبغي."
+          },
+          "capture": {
+            "appletv": "player",
+            "androidtv": "player",
+            "firetv": "player",
+            "roku": "subtitles",
+            "samsung": "player new",
+            "lg": "subtitles"
+          },
+          "standin": {
+            "appletv": "packages/devportal/static/assets/apps/roku-subtitles-{lang}.webp",
+            "androidtv": "packages/devportal/static/assets/apps/roku-subtitles-{lang}.webp",
+            "firetv": "packages/devportal/static/assets/apps/roku-subtitles-{lang}.webp",
+            "roku": "packages/devportal/static/assets/apps/roku-subtitles-{lang}.webp",
+            "samsung": "packages/devportal/static/assets/apps/roku-subtitles-{lang}.webp",
+            "lg": "packages/devportal/static/assets/apps/roku-subtitles-{lang}.webp"
+          }
+        },
+        {
+          "id": "live",
+          "en": {
+            "h": "Live channels from your own films.",
+            "sub": "With a guide, like ordinary TV."
+          },
+          "ar": {
+            "h": "قنواتٌ مباشرة من أفلامكم.",
+            "sub": "ولها دليلها، كالتلفاز تمامًا."
+          },
+          "capture": {
+            "appletv": "guide",
+            "androidtv": "guide",
+            "firetv": "guide",
+            "roku": "guide new",
+            "samsung": "guide new",
+            "lg": "guide new"
+          },
+          "standin": {
+            "appletv": "packages/devportal/static/assets/apps/appletv-live-guide-{lang}.webp",
+            "androidtv": "packages/devportal/static/assets/apps/appletv-live-guide-{lang}.webp",
+            "firetv": "packages/devportal/static/assets/apps/appletv-live-guide-{lang}.webp",
+            "roku": "packages/devportal/static/assets/apps/appletv-live-guide-{lang}.webp",
+            "samsung": "packages/devportal/static/assets/apps/appletv-live-guide-{lang}.webp",
+            "lg": "packages/devportal/static/assets/apps/appletv-live-guide-{lang}.webp"
+          }
+        },
+        {
+          "id": "search",
+          "en": {
+            "h": "Search what was said.",
+            "sub": "Find the moment a word is spoken, and play from there."
+          },
+          "ar": {
+            "h": "ابحثوا فيما قيل.",
+            "sub": "جدوا اللحظة التي قيلت فيها الكلمة، وشاهدوا منها."
+          },
+          "capture": {
+            "appletv": "search new",
+            "androidtv": "search new",
+            "firetv": "search new",
+            "roku": "search",
+            "samsung": "search new",
+            "lg": "search new"
+          },
+          "standin": {
+            "appletv": "packages/devportal/static/assets/apps/roku-search-{lang}.webp",
+            "androidtv": "packages/devportal/static/assets/apps/big-search-{lang}.webp",
+            "firetv": "packages/devportal/static/assets/apps/big-search-{lang}.webp",
+            "roku": "packages/devportal/static/assets/apps/roku-search-{lang}.webp",
+            "samsung": "packages/devportal/static/assets/apps/big-search-{lang}.webp",
+            "lg": "packages/devportal/static/assets/apps/big-search-{lang}.webp"
+          }
+        },
+        {
+          "id": "code",
+          "en": {
+            "h": "Sign in with a code from your phone.",
+            "sub": "No password typed with the remote."
+          },
+          "ar": {
+            "h": "سجّلوا الدخول برمزٍ من هواتفكم.",
+            "sub": "دون كتابة كلمة مرورٍ بجهاز التحكم."
+          },
+          "capture": {
+            "appletv": "code new",
+            "androidtv": "code",
+            "firetv": "code",
+            "roku": "code new",
+            "samsung": "code",
+            "lg": "code"
+          },
+          "standin": {
+            "appletv": "../apps/tv/android/app/src/test/screenshots/signin_code_tv_dark_{lang}.png",
+            "androidtv": "../apps/tv/android/app/src/test/screenshots/signin_code_tv_dark_{lang}.png",
+            "firetv": "packages/devportal/static/assets/apps/firetv-cloud-code-{lang}.webp",
+            "roku": "../apps/tv/android/app/src/test/screenshots/signin_code_tv_dark_{lang}.png",
+            "samsung": "packages/devportal/static/assets/apps/samsung-code-{lang}.webp",
+            "lg": "packages/devportal/static/assets/apps/samsung-code-{lang}.webp"
+          }
+        },
+        {
+          "id": "arabic",
+          "ui": "other",
+          "en": {
+            "h": "Arabic, right to left, on every screen.",
+            "sub": "And English too, in one library."
+          },
+          "ar": {
+            "h": "بالعربية والإنجليزية، في مكتبة واحدة.",
+            "sub": "العناوين باللغتين جنبًا إلى جنب."
+          },
+          "capture": {
+            "appletv": "home",
+            "androidtv": "home",
+            "firetv": "home",
+            "roku": "home",
+            "samsung": "home new",
+            "lg": "home"
+          },
+          "standin": {
+            "appletv": "packages/devportal/static/assets/apps/appletv-home-{other}.webp",
+            "androidtv": "packages/devportal/static/assets/apps/appletv-home-{other}.webp",
+            "firetv": "packages/devportal/static/assets/apps/appletv-home-{other}.webp",
+            "roku": "packages/devportal/static/assets/apps/roku-home-{other}.webp",
+            "samsung": "packages/devportal/static/assets/apps/big-home-{other}.webp",
+            "lg": "packages/devportal/static/assets/apps/big-home-{other}.webp"
+          }
+        }
+      ],
+      "drop": {
+        "$comment": "Beats a per-language set leaves out where the store takes fewer shots: Roku takes up to 6, and each language's set is already in that language.",
+        "roku": ["arabic"]
+      },
+      "singleSet": {
+        "$comment": "Samsung and LG take one set of images for every language: English screens, with the Arabic screen second (Samsung hides number 3 on some TVs).",
+        "samsung": [
+          ["library", "en"],
+          ["arabic", "en"],
+          ["live", "en"],
+          ["subtitles", "en"]
+        ],
+        "lg": [
+          ["library", "en"],
+          ["arabic", "en"],
+          ["series", "en"],
+          ["subtitles", "en"],
+          ["live", "en"],
+          ["code", "en"]
+        ]
+      }
+    }
+  }
+}
