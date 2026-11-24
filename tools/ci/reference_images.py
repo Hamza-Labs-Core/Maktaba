@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """A pull request that changes a reference image lists each one, with why (story 60.04).
 
-maktaba.tv's visual references (web/packages/website/e2e/__screenshots__/) and its product
-screenshots (web/packages/website/static/shots/, story 60.09) are what the site is compared
-against and what it shows. A pull request that adds, changes, renames or removes one needs a
+maktaba.tv's visual references (web/packages/website/e2e/__screenshots__/), its product
+screenshots (web/packages/website/static/shots/, story 60.09) and the desktop app's frame
+references (web/e2e/desktop/__screenshots__/, story 13.10) are what the site and the app are
+compared against and what they show. A pull request that adds, changes, renames or removes one needs a
 `Reference images:` section in its body listing every such file, each with one line on why;
 the reviewing session opens each one before merging. Otherwise this fails, naming the
 unlisted files.
@@ -34,8 +35,12 @@ import urllib.request
 from collections.abc import Iterable
 
 REFERENCE_DIRS = (
+    # the desktop Player's title bar, menu and dialog (Epic 13 story 13.15, FrameReferencesTest)
+    "apps/desktop-player/src/test/resources/references/",
     "web/packages/website/e2e/__screenshots__/",
     "web/packages/website/static/shots/",
+    # the desktop app's own window frame (Epic 13 story 13.10, web/e2e/desktop)
+    "web/e2e/desktop/__screenshots__/",
 )
 
 # the section's heading: "Reference images:" alone on its line, optionally a Markdown

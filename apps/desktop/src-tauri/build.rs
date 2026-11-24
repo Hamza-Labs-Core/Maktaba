@@ -4,8 +4,8 @@
 // capabilities/local-server.json (this Mac's server's web app, Epic 36)
 // gets only app_version and the permissions walkthrough's read-only grant
 // states, its allow-listed System Settings panes and its "seen" flag, and
-// big screen's full screen and start setting (Epic 46) —
-// never the setup commands.
+// big screen's full screen and start setting (Epic 46), and the window's
+// frame (story 13.10) — never the setup commands.
 const COMMANDS: &[&str] = &[
     "app_version",
     "discover_servers",
@@ -28,6 +28,12 @@ const COMMANDS: &[&str] = &[
     // are on (crashes.rs)
     "shell_crashes",
     "shell_crashes_sent",
+    // Epic 13 story 13.10: Maktaba's own window frame (frame.rs): the page claims it, works
+    // its caption buttons and Snap Layouts, and lists and chooses the menu bar's items
+    "frame_claim",
+    "frame_action",
+    "frame_menu_items",
+    "frame_menu",
 ];
 
 fn main() {

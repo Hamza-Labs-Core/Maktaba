@@ -36,6 +36,7 @@ mod autoinstall;
 mod bigscreen;
 mod crashes;
 mod flavour;
+mod frame;
 mod lang;
 mod mode;
 mod permissions;
@@ -218,6 +219,8 @@ pub fn run() {
             let handle = app.handle();
             // Epic 46: big screen's setting, read before the menu shows its mark
             app.manage(bigscreen::BigScreen::new(&shell::state_dir(handle)));
+            // story 13.10: the page's claim on the window's frame (frame.rs)
+            app.manage(frame::Frame::default());
             let menu = build_menu(handle, !keep_in_tray)?;
             app.set_menu(menu)?;
 
@@ -226,37 +229,7 @@ pub fn run() {
             // Predefined items (quit/close/copy/…) are handled natively
             // and never reach here, so this is purely the custom set. The
             // window's Server items (Linux without a tray) act here.
-            app.on_menu_event(|app, event| {
-                let id = event.id().as_ref().to_string();
-                #[cfg(target_os = "linux")]
-                if let Some(tray_id) = id.strip_prefix(tray::WINDOW_PREFIX) {
-                    shell::on_window_menu(app, tray_id);
-                    return;
-                }
-                // Epic 46: Start in Big Screen is the shell's own setting; Big
-                // Screen goes full screen here and the page opens /big on the event
-                if id == bigscreen::START_MENU_ID {
-                    bigscreen::on_start_menu(app);
-                    return;
-                }
-                // Big Screen on a page already in big screen leaves it, so the
-                // one shortcut goes in and out; Leave Big Screen always leaves
-                let id = match bigscreen::leaves(&id, bigscreen::in_big_screen(app)) {
-                    Some(leave) => {
-                        bigscreen::on_leave_menu(app);
-                        leave.to_string()
-                    }
-                    None => {
-                        if id == bigscreen::MENU_ID {
-                            bigscreen::on_menu(app);
-                        }
-                        id
-                    }
-                };
-                if let Err(e) = app.emit("menu", &id) {
-                    applog::warn(&format!("the menu item {id} could not reach the window"), e);
-                }
-            });
+            app.on_menu_event(|app, event| menu_event(app, event.id().as_ref()));
 
             // The window (tauri.conf.json's, made here): on a release's first
             // start its web caches are cleared before it loads (webcache.rs),
@@ -282,13 +255,16 @@ pub fn run() {
             // Linux without a tray: closing it quits.
             if let Some(main) = app.get_webview_window(webcache::MAIN) {
                 let win = main.clone();
-                main.on_window_event(move |event| {
-                    if let WindowEvent::CloseRequested { api, .. } = event {
+                main.on_window_event(move |event| match event {
+                    WindowEvent::CloseRequested { api, .. } => {
                         if keep_in_tray {
                             api.prevent_close();
                             let _ = win.hide();
                         }
                     }
+                    // story 13.10: the title bar's maximize button follows the window
+                    WindowEvent::Resized(_) => frame::on_resized(&win),
+                    _ => {}
                 });
             }
 
@@ -313,6 +289,10 @@ pub fn run() {
             bigscreen::set_big_screen_start,
             crashes::shell_crashes,
             crashes::shell_crashes_sent,
+            frame::frame_claim,
+            frame::frame_action,
+            frame::frame_menu_items,
+            frame::frame_menu,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
@@ -321,6 +301,41 @@ pub fn run() {
             eprintln!("maktaba: {e}");
             std::process::exit(1);
         });
+}
+
+/// A menu item chosen, from the menu bar or from the title bar's menu (frame.rs): the
+/// shell's own items act here, and every other id goes to the window as a `menu` event,
+/// which the web app routes (`resolveMenuAction`).
+pub(crate) fn menu_event(app: &tauri::AppHandle, id: &str) {
+    let id = id.to_string();
+    #[cfg(target_os = "linux")]
+    if let Some(tray_id) = id.strip_prefix(tray::WINDOW_PREFIX) {
+        shell::on_window_menu(app, tray_id);
+        return;
+    }
+    // Epic 46: Start in Big Screen is the shell's own setting; Big
+    // Screen goes full screen here and the page opens /big on the event
+    if id == bigscreen::START_MENU_ID {
+        bigscreen::on_start_menu(app);
+        return;
+    }
+    // Big Screen on a page already in big screen leaves it, so the
+    // one shortcut goes in and out; Leave Big Screen always leaves
+    let id = match bigscreen::leaves(&id, bigscreen::in_big_screen(app)) {
+        Some(leave) => {
+            bigscreen::on_leave_menu(app);
+            leave.to_string()
+        }
+        None => {
+            if id == bigscreen::MENU_ID {
+                bigscreen::on_menu(app);
+            }
+            id
+        }
+    };
+    if let Err(e) = app.emit("menu", &id) {
+        applog::warn(&format!("the menu item {id} could not reach the window"), e);
+    }
 }
 
 /// The window's menu bar. `server_items`: add the tray's server items as a
@@ -333,15 +348,21 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
     // (the authoritative mirror) — a typo on either side silently makes the
     // menu item a dead no-op (`resolveMenuAction` returns `null`).
     //
+    //
+    // The words follow the system's language (lang.rs MenuWords, story 13.10): the Mac's
+    // menu bar, and the title bar's menu on Windows and Linux (frame.rs), which lists these
+    // same items.
+    let lang = lang::Lang::system();
+    let w = lang.menu();
     // Maktaba menu (macOS: appears as the app name; Win/Linux: leftmost)
-    let about = PredefinedMenuItem::about(app, Some("About Maktaba"), None)?;
-    let prefs = MenuItem::with_id(app, "preferences", "Settings…", true, Some("CmdOrCtrl+,"))?;
+    let about = PredefinedMenuItem::about(app, Some(w.about), None)?;
+    let prefs = MenuItem::with_id(app, "preferences", w.settings, true, Some("CmdOrCtrl+,"))?;
     let switch_server =
-        MenuItem::with_id(app, "switch-server", "Switch Server…", true, None::<&str>)?;
-    let quit = PredefinedMenuItem::quit(app, None)?;
+        MenuItem::with_id(app, "switch-server", w.switch_server, true, None::<&str>)?;
+    let quit = PredefinedMenuItem::quit(app, Some(w.quit))?;
     let app_menu = Submenu::with_items(
         app,
-        "Maktaba",
+        w.app,
         true,
         &[
             &about,
@@ -354,60 +375,54 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
     )?;
 
     // File menu — New Window (Cmd+N) + New Private Window (Cmd+Shift+N).
-    let new_window = MenuItem::with_id(app, "new-window", "New Window", true, Some("CmdOrCtrl+N"))?;
+    let new_window = MenuItem::with_id(app, "new-window", w.new_window, true, Some("CmdOrCtrl+N"))?;
     let new_private = MenuItem::with_id(
         app,
         "new-private",
-        "New Private Window",
+        w.new_private,
         true,
         Some("CmdOrCtrl+Shift+N"),
     )?;
-    let close = PredefinedMenuItem::close_window(app, None)?;
-    let file_menu = Submenu::with_items(app, "File", true, &[&new_window, &new_private, &close])?;
+    let close = PredefinedMenuItem::close_window(app, Some(w.close_window))?;
+    let file_menu = Submenu::with_items(app, w.file, true, &[&new_window, &new_private, &close])?;
 
     // Edit menu
     let edit_menu = Submenu::with_items(
         app,
-        "Edit",
+        w.edit,
         true,
         &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::undo(app, Some(w.undo))?,
+            &PredefinedMenuItem::redo(app, Some(w.redo))?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::select_all(app, None)?,
+            &PredefinedMenuItem::cut(app, Some(w.cut))?,
+            &PredefinedMenuItem::copy(app, Some(w.copy))?,
+            &PredefinedMenuItem::paste(app, Some(w.paste))?,
+            &PredefinedMenuItem::select_all(app, Some(w.select_all))?,
         ],
     )?;
 
     // View menu — Find/Focus Search (Cmd+F) + fullscreen.
-    let focus_search = MenuItem::with_id(
-        app,
-        "focus-search",
-        "Find / Search…",
-        true,
-        Some("CmdOrCtrl+F"),
-    )?;
+    let focus_search = MenuItem::with_id(app, "focus-search", w.find, true, Some("CmdOrCtrl+F"))?;
     // Epic 46: big-screen mode, and the app's start in it (bigscreen.rs)
     let big_screen = MenuItem::with_id(
         app,
         bigscreen::MENU_ID,
-        "Big Screen",
+        w.big_screen,
         true,
         Some(bigscreen::ACCELERATOR),
     )?;
     let big_screen_leave = MenuItem::with_id(
         app,
         bigscreen::LEAVE_MENU_ID,
-        "Leave Big Screen",
+        w.leave_big_screen,
         true,
         None::<&str>,
     )?;
     let big_screen_start = CheckMenuItem::with_id(
         app,
         bigscreen::START_MENU_ID,
-        "Start in Big Screen",
+        w.start_big_screen,
         true,
         app.state::<bigscreen::BigScreen>().start(),
         None::<&str>,
@@ -415,11 +430,11 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
     app.manage(bigscreen::StartCheck(big_screen_start.clone()));
     let view_menu = Submenu::with_items(
         app,
-        "View",
+        w.view,
         true,
         &[
             &focus_search,
-            &PredefinedMenuItem::fullscreen(app, None)?,
+            &PredefinedMenuItem::fullscreen(app, Some(w.full_screen))?,
             &PredefinedMenuItem::separator(app)?,
             &big_screen,
             &big_screen_leave,
@@ -432,7 +447,7 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
     let scan = MenuItem::with_id(
         app,
         "scan-library",
-        "Scan Library",
+        w.scan_library,
         true,
         Some("CmdOrCtrl+R"),
     )?;
@@ -441,7 +456,7 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
         lib_items.push(MenuItem::with_id(
             app,
             format!("library-{slot}"),
-            format!("Library {slot}"),
+            lang::fill(w.library_slot, &[("n", &lang.digits(u32::from(slot)))]),
             true,
             Some(format!("CmdOrCtrl+{slot}")),
         )?);
@@ -454,30 +469,24 @@ fn build_menu(app: &tauri::AppHandle, server_items: bool) -> tauri::Result<Menu<
     for it in &lib_items {
         lib_refs.push(it);
     }
-    let lib_menu = Submenu::with_items(app, "Library", true, &lib_refs)?;
+    let lib_menu = Submenu::with_items(app, w.library, true, &lib_refs)?;
 
     // Window menu (macOS gets the system one via predefined items)
     let window_menu = Submenu::with_items(
         app,
-        "Window",
+        w.window,
         true,
         &[
-            &PredefinedMenuItem::minimize(app, None)?,
-            &PredefinedMenuItem::maximize(app, None)?,
+            &PredefinedMenuItem::minimize(app, Some(w.minimize))?,
+            &PredefinedMenuItem::maximize(app, Some(w.zoom))?,
         ],
     )?;
 
     // Help menu
-    let docs = MenuItem::with_id(app, "open-docs", "Documentation", true, None::<&str>)?;
+    let docs = MenuItem::with_id(app, "open-docs", w.documentation, true, None::<&str>)?;
     // Epic 53 story 53.15: the web app's form, to this home's admin
-    let report = MenuItem::with_id(
-        app,
-        "report-problem",
-        "Report a Problem…",
-        true,
-        None::<&str>,
-    )?;
-    let help_menu = Submenu::with_items(app, "Help", true, &[&docs, &report])?;
+    let report = MenuItem::with_id(app, "report-problem", w.report_problem, true, None::<&str>)?;
+    let help_menu = Submenu::with_items(app, w.help, true, &[&docs, &report])?;
 
     let menu = Menu::with_items(
         app,

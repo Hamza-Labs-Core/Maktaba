@@ -114,6 +114,7 @@ object Strings {
 
 
         "menu.account" to "Account",
+        "frame.menu" to "Menu",
         "menu.switchHome" to "Switch home",
         "menu.approve" to "Approve a sign-in",
         "menu.bigScreen" to "Big screen",
@@ -243,6 +244,7 @@ object Strings {
 
 
         "menu.account" to "الحساب",
+        "frame.menu" to "القائمة",
         "menu.switchHome" to "تبديل المنزل",
         "menu.approve" to "الموافقة على تسجيل دخول",
         "menu.bigScreen" to "الشاشة الكبيرة",

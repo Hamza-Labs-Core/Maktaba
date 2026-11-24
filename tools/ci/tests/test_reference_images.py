@@ -39,6 +39,13 @@ def test_only_the_reference_folders_count() -> None:
     ]
 
 
+def test_the_desktop_frame_references_count_too() -> None:
+    # story 13.10: the desktop app's window frame (web/e2e/desktop)
+    frame = "web/e2e/desktop/__screenshots__/frame-header-windows-en.png"
+    got = mod.changed_references(files("web/e2e/desktop/frame.ui.spec.ts", frame))
+    assert got == [frame]
+
+
 # T09: a body with no section while a reference changed fails, naming the file
 def test_t09_no_section_names_the_file() -> None:
     got = mod.problems([SHOT], "Adds the home page.\n\nTests: the e2e run.")
@@ -151,3 +158,10 @@ def test_the_workflow_never_cancels_a_run() -> None:
         (Path(__file__).resolve().parents[3] / ".github/workflows/reference-images.yml").read_text()
     )
     assert "concurrency" not in wf
+
+
+def test_the_desktop_players_references_count() -> None:
+    # story 13.15: the Player's title bar, menu and dialog, compared on Linux
+    ref = "apps/desktop-player/src/test/resources/references/player-frame-bar-ar.png"
+    got = mod.changed_references(files(ref, "apps/desktop-player/src/test/kotlin/X.kt"))
+    assert got == [ref]

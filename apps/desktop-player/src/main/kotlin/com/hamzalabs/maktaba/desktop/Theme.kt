@@ -5,7 +5,6 @@ import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
@@ -14,30 +13,30 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.platform.Font
 import androidx.compose.ui.unit.Density
 
-/** The apps' Ink & Brass, dark: the colours of the Android core's theme (`core/ui/Theme.kt`). */
+/** The apps' Ink & Brass, dark: the token build's colours (Tokens.kt, story 13.15). */
 private val InkAndBrass = darkColorScheme(
-    primary = Color(0xFFE3B252),
-    onPrimary = Color(0xFF1A1408),
-    primaryContainer = Color(0xFF3A3020),
-    onPrimaryContainer = Color(0xFFF3DCA2),
-    secondary = Color(0xFFE3B252),
-    onSecondary = Color(0xFF1A1408),
-    secondaryContainer = Color(0xFF2A2618),
-    onSecondaryContainer = Color(0xFFF3DCA2),
-    background = Color(0xFF0B111C),
-    onBackground = Color(0xFFE8ECF3),
-    surface = Color(0xFF0B111C),
-    onSurface = Color(0xFFE8ECF3),
-    surfaceVariant = Color(0xFF131D2E),
-    onSurfaceVariant = Color(0xFFA9B3C4),
-    surfaceContainerLow = Color(0xFF0F1725),
-    surfaceContainer = Color(0xFF131D2E),
-    surfaceContainerHigh = Color(0xFF18243A),
-    surfaceContainerHighest = Color(0xFF1D2B44),
-    outline = Color(0xFF5A6A86),
-    outlineVariant = Color(0xFF22304A),
-    error = Color(0xFFF0707F),
-    onError = Color(0xFF1A0508),
+    primary = Tokens.Ink.accent,
+    onPrimary = Tokens.Ink.accentFg,
+    primaryContainer = Tokens.Ink.chosen,
+    onPrimaryContainer = Tokens.Brand.brand200,
+    secondary = Tokens.Ink.accent,
+    onSecondary = Tokens.Ink.accentFg,
+    secondaryContainer = Tokens.Ink.chosen,
+    onSecondaryContainer = Tokens.Brand.brand200,
+    background = Tokens.Desktop.window,
+    onBackground = Tokens.Ink.fg,
+    surface = Tokens.Desktop.window,
+    onSurface = Tokens.Ink.fg,
+    surfaceVariant = Tokens.Desktop.subtle,
+    onSurfaceVariant = Tokens.Ink.muted,
+    surfaceContainerLow = Tokens.Desktop.pane,
+    surfaceContainer = Tokens.Desktop.subtle,
+    surfaceContainerHigh = Tokens.Desktop.raised,
+    surfaceContainerHighest = Tokens.Desktop.hover,
+    outline = Tokens.Desktop.control,
+    outlineVariant = Tokens.Desktop.line,
+    error = Tokens.Ink.error,
+    onError = Tokens.Ink.bg,
 )
 
 /** The web's type (IBM Plex Sans Arabic, Amiri for headings): the Android core's font files. */

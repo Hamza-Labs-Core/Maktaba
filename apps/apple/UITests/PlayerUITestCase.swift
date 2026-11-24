@@ -145,6 +145,15 @@ class PlayerUITestCase: XCTestCase {
     /// output, and AVPlayer's time, which follows the sound output, stays put: "the time
     /// moves" timed out 14 s in, with the Player still posting progress (CI run 41521240810).
     override func tearDown() async throws {
+        // a failure from here on is recorded, it does not interrupt the test: with
+        // `continueAfterFailure` false, XCTest answers a failure in an async tearDown (XCUITest's
+        // "Failed to terminate" on `close`) by running the tear-down sequence again from inside
+        // this one, and waits on the main thread for that inner async tearDown, which needs the
+        // main thread: neither ends (PR #1561's run 45302179115, iPad 4/6: the hung test's
+        // spindump has `close` → `terminate` → `record(_:)` → `_interruptTest` →
+        // `_performTearDownSequence…` → `XCTWaiter _synchronouslyWaitForTimeInterval`; twice on
+        // PR #1550, the shard held until the job's 60 minutes ran out)
+        continueAfterFailure = true
         Self.close(app)
         home?.stop()
     }

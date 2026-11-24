@@ -147,6 +147,32 @@ final class TouchWatcher: UIGestureRecognizer, UIGestureRecognizerDelegate {
         for t in touches {
             guard let start = began.removeValue(forKey: ObjectIdentifier(t)) else { continue }
             TouchHook.noteHeld(Self.heldLine(t.timestamp - start, at: t.location(in: nil), cancelled: cancelled))
+            // read now, as the touch ends: the recognizers of the views under the window have
+            // had it first, and all go back to `possible` once the touches are over
+            TouchHook.noteHeld(Self.landedLine(view: t.view, recognizers: t.gestureRecognizers ?? []))
+        }
+    }
+
+    /// Where a touch landed and what each gesture recognizer on it made of it, as the touch
+    /// ends: a tap that reached the window but not its button's action (Search's Filters and
+    /// recent searches on CI, the button left looking pressed) says here whether the button's
+    /// gesture failed, was cancelled, or lost the touch to the list's own recognizers.
+    static func landedLine(view: UIView?, recognizers: [UIGestureRecognizer]) -> String {
+        let on = view.map { String(describing: type(of: $0)) } ?? "no view"
+        let states = recognizers.filter { !($0 is TouchWatcher) }
+            .map { "\(String(describing: type(of: $0)))=\(stateName($0.state))" }
+        return "touch on \(on): " + (states.isEmpty ? "no recognizers" : states.joined(separator: ", "))
+    }
+
+    static func stateName(_ s: UIGestureRecognizer.State) -> String {
+        switch s {
+        case .possible: "possible"
+        case .began: "began"
+        case .changed: "changed"
+        case .ended: "ended"
+        case .cancelled: "cancelled"
+        case .failed: "failed"
+        @unknown default: "unknown"
         }
     }
 

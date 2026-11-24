@@ -183,7 +183,14 @@ pub fn open_main(
     } else {
         app.manage(Gate::open());
     }
-    let window = WebviewWindowBuilder::from_config(app, &config)?.build()?;
+    // story 13.10: each page has CLAIM_WAIT to draw Maktaba's frame, or gets the system's back
+    let window = WebviewWindowBuilder::from_config(app, &config)?
+        .on_page_load(|w, load| {
+            if starts_claim_wait(load.event()) {
+                crate::frame::on_page_load(&w, load.url());
+            }
+        })
+        .build()?;
     keep_on_screen(&window, &config);
     if !start.clear {
         return Ok(());
@@ -199,6 +206,13 @@ pub fn open_main(
     let handle = app.clone();
     start.run(|done| clear(&window, done), move || load_held(&handle));
     Ok(())
+}
+
+/// Story 13.10: a page's wait to claim the window's frame starts when it begins loading, so a
+/// page that never finishes loading (a home that stopped answering) still gets the system's
+/// frame back.
+fn starts_claim_wait(event: tauri::webview::PageLoadEvent) -> bool {
+    event == tauri::webview::PageLoadEvent::Started
 }
 
 /// A rectangle in the screens' physical pixels.
@@ -421,6 +435,12 @@ fn clear(_: &WebviewWindow, done: Done) {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_frame_s_claim_wait_starts_when_a_page_begins_loading() {
+        assert!(starts_claim_wait(tauri::webview::PageLoadEvent::Started));
+        assert!(!starts_claim_wait(tauri::webview::PageLoadEvent::Finished));
+    }
     use super::*;
 
     fn r(x: f64, y: f64, w: f64, h: f64) -> Rect {

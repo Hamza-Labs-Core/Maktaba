@@ -21,6 +21,9 @@ final class PlayerMacMenuUITests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        // a failure here is recorded, not an interruption: one inside an async tearDown hangs
+        // XCTest (`PlayerUITestCase.tearDown`)
+        continueAfterFailure = true
         if app?.state == .runningForeground || app?.state == .runningBackground {
             // never leave a full-screen space behind
             if app.windows.firstMatch.exists, isFullScreen { app.typeKey("f", modifierFlags: [.control, .command]) }
