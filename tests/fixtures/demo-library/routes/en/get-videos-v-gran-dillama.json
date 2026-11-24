@@ -1,6 +1,6 @@
 {
  "id": "v-gran-dillama",
- "library_id": "lib-shorts",
+ "library_id": "lib-kids",
  "path": "",
  "filename": "gran-dillama.mp4",
  "title": "Caminandes: Gran Dillama",
@@ -16,10 +16,5 @@
  "playable": true,
  "tags": [],
  "poster_url": "/api/videos/v-gran-dillama/poster",
- "backdrop_url": "/api/videos/v-gran-dillama/backdrop",
- "playback_state": {
-  "position_sec": 146,
-  "completed": true,
-  "updated_at": "{{now-172800}}"
- }
+ "backdrop_url": "/api/videos/v-gran-dillama/backdrop"
 }

@@ -123,7 +123,32 @@ const (
 	ReasonUpToDate     = "up_to_date"
 	ReasonNoUpgradeFor = "no_upgrade_path" // every candidate needs a newer starting version
 	ReasonHeld         = "needs_approval"  // breaks the previous home release (story 35.3 AC4)
+	// ReasonHeldBack: a newer release failed here, so the older ones are not installed by
+	// themselves, nor the newer ones with the failed release's migrations (HeldBackBy)
+	ReasonHeldBack = "held_back"
 )
+
+// Block reasons (release_catalog.blocked_reason) that say the release failed on this home
+// itself: it rolled back (blocked "rolled_back" whatever undid it), or its migrations failed
+// on a copy of the database ("rehearsal"). Such a release holds back the releases below it
+// and those with its migrations (ChooseTarget).
+const (
+	BlockedRolledBack = "rolled_back"
+	BlockedRehearsal  = "rehearsal"
+)
+
+// failedHere reports whether r failed on this home (BlockedRolledBack, BlockedRehearsal).
+func failedHere(r Release) bool {
+	return r.BlockedReason == BlockedRolledBack || r.BlockedReason == BlockedRehearsal
+}
+
+// migrationSet is r's release.json migrations.set_sha256 ("" when it does not say).
+func (r Release) migrationSet() string {
+	if r.Manifest == nil || r.Manifest.Migrations == nil {
+		return ""
+	}
+	return r.Manifest.Migrations.SetSHA256
+}
 
 // Choice is ChooseTarget's answer.
 type Choice struct {
@@ -139,6 +164,10 @@ type Choice struct {
 	// Newest is the newest candidate whatever its min_upgrade_from (for the page).
 	Newest *Release `json:"newest,omitempty"`
 	Reason string   `json:"reason,omitempty"`
+	// HeldBackBy is the newest release that failed here above the running one (rolled
+	// back, or its migrations failed on a copy): no release below it is installed by
+	// itself, nor one above it with the same migrations ("" when none failed).
+	HeldBackBy string `json:"held_back_by,omitempty"`
 }
 
 // ChooseTarget picks the release to install (design §4; pure, table-tested):
@@ -147,13 +176,38 @@ type Choice struct {
 //	             > watermark (and > current), not skipped, <= pinned_version when set,
 //	             not an older build than the running release (releaseverify.OlderBuild:
 //	             an rc of a version already released, tagged after it, is passed by)
+//	             newer than every release that failed here above the floor (rolled back,
+//	             or its migrations failed on a copy: failedHere), and not carrying the
+//	             migrations of one that did (release.json's migrations.set_sha256)
 //	target     = the highest candidate (numeric semver) whose min_upgrade_from <= current
 //	held       = target.breaks_previous_home and not approved by an admin
 //
 // Switching beta -> stable never selects a lower version: everything at or below the
 // watermark is excluded whatever the channel.
+//
+// A release that failed here holds back the ones below it: they have none of the fixes
+// made after it, and the ones in between share what failed more often than not (v0.3.154 to
+// v0.3.160 all lacked the fix of 0235's lock timeout: on 2026-11-24 a home whose v0.3.158
+// had rolled back the day before chose v0.3.157, and rolled back again, a 3-hour outage,
+// with v0.3.156 and v0.3.155 next). It holds back the newer releases with its migrations
+// too, until one changes them. Only an admin's Update now naming a release, or a retry of
+// the failed one (Unblock), passes it.
 func ChooseTarget(catalog []Release, p Policy, current, watermark string) Choice {
 	floor := maxVersion(NormalizeVersion(current), NormalizeVersion(watermark))
+	failedTop := ""
+	failedSets := map[string]bool{}
+	for _, r := range catalog {
+		if !failedHere(r) || (floor != "" && CompareVersions(r.Version, floor) <= 0) {
+			continue
+		}
+		if failedTop == "" || CompareVersions(r.Version, failedTop) > 0 {
+			failedTop = r.Version
+		}
+		if set := r.migrationSet(); set != "" {
+			failedSets[set] = true
+		}
+	}
+	heldBack := false
 	var cands []Release
 	for _, r := range catalog {
 		switch {
@@ -171,15 +225,21 @@ func ChooseTarget(catalog []Release, p Policy, current, watermark string) Choice
 			continue
 		case olderBuildThan(catalog, r, floor):
 			continue
+		case failedTop != "" && (CompareVersions(r.Version, failedTop) <= 0 || failedSets[r.migrationSet()]):
+			heldBack = true
+			continue
 		}
 		cands = append(cands, r)
 	}
 	if len(cands) == 0 {
-		return Choice{Reason: ReasonUpToDate}
+		if heldBack {
+			return Choice{Reason: ReasonHeldBack, HeldBackBy: failedTop}
+		}
+		return Choice{Reason: ReasonUpToDate, HeldBackBy: failedTop}
 	}
 	sort.SliceStable(cands, func(i, j int) bool { return CompareVersions(cands[i].Version, cands[j].Version) > 0 })
 	newest := cands[0]
-	out := Choice{Newest: &newest}
+	out := Choice{Newest: &newest, HeldBackBy: failedTop}
 	for i := range cands {
 		r := cands[i]
 		if m := r.MinUpgradeFrom(); m != "" && current != "" && CompareVersions(m, current) > 0 {

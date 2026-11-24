@@ -75,7 +75,7 @@ class FakeHome(
     val paths: List<String> get() = requests.map { it.url.encodedPath }
 
     /** Who is signed in. */
-    val user: User get() = demo?.let { User(id = it.userId, username = it.username, isAdmin = it.isAdmin) } ?: User(id = "u1", username = "layla")
+    val user: User get() = demo?.let { User(id = it.userId, username = it.username, isAdmin = it.isAdmin) } ?: User(id = "u1", username = "yusuf")
 
     lateinit var home: PlayerHome
         private set

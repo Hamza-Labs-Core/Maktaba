@@ -232,7 +232,7 @@ class ProfileScreenTest {
         // a session that is signed in to the fake home, as the app's is
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         try {
-            home.answer("/api/auth/me") { json("""{"id":"u1","username":"layla","home_name":"Family home"}""") }
+            home.answer("/api/auth/me") { json("""{"id":"u1","username":"yusuf","home_name":"Family home"}""") }
             val tokens = MemoryTokens(jwt(System.currentTimeMillis() / 1000 + 86_400), "refresh")
             val session = AppSession(MapStore(), scope, { tokens })
             session.use(Home(home.home.client.home.toString().trimEnd('/'), "Family home"))

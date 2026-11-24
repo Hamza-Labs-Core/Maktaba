@@ -1,0 +1,270 @@
+{
+ "library": {
+  "id": "lib-docs",
+  "name": "Documentaries",
+  "videos": 6
+ },
+ "rows": {
+  "continue_watching": [
+   {
+    "id": "v-curiosity",
+    "title": "Curiosity: Landing on Mars",
+    "filename": "curiosity.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 680,
+    "state": "ready",
+    "created_at": "{{now-172800}}",
+    "published_at": "2011-06-01T00:00:00Z",
+    "position_sec": 380,
+    "completed": false,
+    "last_watched_at": "{{now-10800}}"
+   }
+  ],
+  "recently_added": [
+   {
+    "id": "v-saturn-rings",
+    "title": "Along the Rings of Saturn",
+    "filename": "saturn-rings.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 120,
+    "state": "ready",
+    "created_at": "{{now-86400}}",
+    "published_at": "2018-06-01T00:00:00Z"
+   },
+   {
+    "id": "v-curiosity",
+    "title": "Curiosity: Landing on Mars",
+    "filename": "curiosity.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 680,
+    "state": "ready",
+    "created_at": "{{now-172800}}",
+    "published_at": "2011-06-01T00:00:00Z"
+   },
+   {
+    "id": "v-apollo-11-launch",
+    "title": "Apollo 11: The Launch",
+    "filename": "apollo-11-launch.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 496,
+    "state": "ready",
+    "created_at": "{{now-432000}}",
+    "published_at": "1969-06-01T00:00:00Z"
+   },
+   {
+    "id": "v-lake-nasser",
+    "title": "Lake Nasser from Space",
+    "filename": "lake-nasser.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 100,
+    "state": "ready",
+    "created_at": "{{now-777600}}",
+    "published_at": "2025-06-01T00:00:00Z"
+   },
+   {
+    "id": "v-moon-phases",
+    "title": "The Moon's Phases, 2023",
+    "filename": "moon-phases.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 294,
+    "state": "ready",
+    "created_at": "{{now-1209600}}",
+    "published_at": "2022-06-01T00:00:00Z"
+   },
+   {
+    "id": "v-ghost-octopus",
+    "title": "A Ghost Octopus in the Deep",
+    "filename": "ghost-octopus.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 46,
+    "state": "ready",
+    "created_at": "{{now-1814400}}",
+    "published_at": "2016-06-01T00:00:00Z"
+   }
+  ],
+  "recently_watched": [
+   {
+    "id": "v-curiosity",
+    "title": "Curiosity: Landing on Mars",
+    "filename": "curiosity.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 680,
+    "state": "ready",
+    "created_at": "{{now-172800}}",
+    "published_at": "2011-06-01T00:00:00Z",
+    "position_sec": 380,
+    "completed": false,
+    "last_watched_at": "{{now-10800}}"
+   },
+   {
+    "id": "v-apollo-11-launch",
+    "title": "Apollo 11: The Launch",
+    "filename": "apollo-11-launch.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 496,
+    "state": "ready",
+    "created_at": "{{now-432000}}",
+    "published_at": "1969-06-01T00:00:00Z",
+    "position_sec": 496,
+    "completed": true,
+    "last_watched_at": "{{now-108000}}"
+   },
+   {
+    "id": "v-ghost-octopus",
+    "title": "A Ghost Octopus in the Deep",
+    "filename": "ghost-octopus.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 46,
+    "state": "ready",
+    "created_at": "{{now-1814400}}",
+    "published_at": "2016-06-01T00:00:00Z",
+    "position_sec": 46,
+    "completed": true,
+    "last_watched_at": "{{now-345600}}"
+   }
+  ],
+  "most_watched": [
+   {
+    "id": "v-curiosity",
+    "title": "Curiosity: Landing on Mars",
+    "filename": "curiosity.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 680,
+    "state": "ready",
+    "created_at": "{{now-172800}}",
+    "published_at": "2011-06-01T00:00:00Z",
+    "plays": 3
+   },
+   {
+    "id": "v-apollo-11-launch",
+    "title": "Apollo 11: The Launch",
+    "filename": "apollo-11-launch.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 496,
+    "state": "ready",
+    "created_at": "{{now-432000}}",
+    "published_at": "1969-06-01T00:00:00Z",
+    "plays": 3
+   },
+   {
+    "id": "v-ghost-octopus",
+    "title": "A Ghost Octopus in the Deep",
+    "filename": "ghost-octopus.mkv",
+    "library_id": "lib-docs",
+    "duration_sec": 46,
+    "state": "ready",
+    "created_at": "{{now-1814400}}",
+    "published_at": "2016-06-01T00:00:00Z",
+    "plays": 3
+   }
+  ],
+  "series": [],
+  "years": [
+   {
+    "year": 2025,
+    "videos": 1
+   },
+   {
+    "year": 2022,
+    "videos": 1
+   },
+   {
+    "year": 2018,
+    "videos": 1
+   },
+   {
+    "year": 2016,
+    "videos": 1
+   },
+   {
+    "year": 2011,
+    "videos": 1
+   },
+   {
+    "year": 1969,
+    "videos": 1
+   }
+  ],
+  "on_deck": [],
+  "recently_added_grouped": [
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-saturn-rings",
+     "title": "Along the Rings of Saturn",
+     "filename": "saturn-rings.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 120,
+     "state": "ready",
+     "created_at": "{{now-86400}}",
+     "published_at": "2018-06-01T00:00:00Z"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-curiosity",
+     "title": "Curiosity: Landing on Mars",
+     "filename": "curiosity.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 680,
+     "state": "ready",
+     "created_at": "{{now-172800}}",
+     "published_at": "2011-06-01T00:00:00Z"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-apollo-11-launch",
+     "title": "Apollo 11: The Launch",
+     "filename": "apollo-11-launch.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 496,
+     "state": "ready",
+     "created_at": "{{now-432000}}",
+     "published_at": "1969-06-01T00:00:00Z"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-lake-nasser",
+     "title": "Lake Nasser from Space",
+     "filename": "lake-nasser.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 100,
+     "state": "ready",
+     "created_at": "{{now-777600}}",
+     "published_at": "2025-06-01T00:00:00Z"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-moon-phases",
+     "title": "The Moon's Phases, 2023",
+     "filename": "moon-phases.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 294,
+     "state": "ready",
+     "created_at": "{{now-1209600}}",
+     "published_at": "2022-06-01T00:00:00Z"
+    }
+   },
+   {
+    "kind": "video",
+    "video": {
+     "id": "v-ghost-octopus",
+     "title": "A Ghost Octopus in the Deep",
+     "filename": "ghost-octopus.mkv",
+     "library_id": "lib-docs",
+     "duration_sec": 46,
+     "state": "ready",
+     "created_at": "{{now-1814400}}",
+     "published_at": "2016-06-01T00:00:00Z"
+    }
+   }
+  ]
+ }
+}

@@ -1,13 +1,13 @@
 {
  "items": [
   {
-   "id": "s-open-shorts",
-   "name": "حكايات قصيرة",
-   "library_id": "lib-shorts",
+   "id": "s-caminandes",
+   "name": "كاميناندس",
+   "library_id": "lib-kids",
    "year": 2013,
    "numbering": "season",
    "season_count": 2,
-   "episode_count": 4,
+   "episode_count": 3,
    "watched_count": 1,
    "in_progress": 1,
    "poster_video_id": "v-gran-dillama"

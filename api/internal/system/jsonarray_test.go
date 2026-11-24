@@ -163,3 +163,22 @@ func TestFetchReleasesAllocatesLessThanTheList(t *testing.T) {
 		t.Fatalf("read whole, the %d byte list allocated %d bytes: the bound would not tell the readings apart", len(body), w)
 	}
 }
+
+// The check asks for the newest 10 releases: GitHub's 30 (some 190 assets each) passed
+// the 8 MiB cap on 2026-11-23, and every check failed from then on.
+func TestFetchReleasesAsksForTen(t *testing.T) {
+	var query string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.RawQuery
+		_, _ = w.Write(gitHubReleases(10, 3))
+	}))
+	t.Cleanup(srv.Close)
+	u := NewUpdater(UpdaterConfig{CurrentVersion: "v1.0.0", Channel: "stable", APIBaseURL: srv.URL, Now: time.Now})
+	rels, err := u.fetchReleases(context.Background())
+	if err != nil || len(rels) != 10 {
+		t.Fatalf("read %d releases: %v", len(rels), err)
+	}
+	if query != "per_page=10" {
+		t.Fatalf("asked %q, want per_page=10", query)
+	}
+}

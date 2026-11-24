@@ -237,7 +237,8 @@ screenshots at a release change no reference. When a change to a page's look is 
 ## Product screenshots
 
 The home and download pages show the real apps (story 60.09): dark, in English and Arabic, on
-the demo library in `tests/fixtures/demo-library/` (Blender's open movies, credited in its
+the demo library in `tests/fixtures/demo-library/` (public-domain and Creative Commons
+documentaries and children's animation, with no woman or girl in any picture, credited in its
 README; the household is "The Haddad family"). The site's images are in `static/shots/`, made
 by `scripts/shots.mjs`, with each one's sizes in `shots-manifest.json`.
 

@@ -1,11 +1,11 @@
 {
  "video_id": "v-gran-dillama",
- "position_sec": 146,
- "completed": true,
+ "position_sec": 0,
+ "completed": false,
  "favorite": false,
  "playlists": [],
  "series": {
-  "id": "s-open-shorts",
-  "name": "حكايات قصيرة"
+  "id": "s-caminandes",
+  "name": "كاميناندس"
  }
 }
