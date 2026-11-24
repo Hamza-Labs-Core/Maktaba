@@ -196,11 +196,15 @@ func TestBroadcastPublishAndAgreement(t *testing.T) {
 	if st["agreement_accepted"] != true {
 		t.Fatalf("the owner accepted the agreement: %v", st)
 	}
-	// the catalog shows both tiers, prices TBD
+	// broadcasting off (broadcast.enabled, the default): the catalog offers no broadcasting, and
+	// the sign-in providers say it is off, so the web app shows none of its pages
 	cat := e.client().mustStatus(e.client().do("GET", "/v1/billing/plans", nil), http.StatusOK).json(t)
-	b := cat["broadcast"].(map[string]any)["broadcaster"].(map[string]any)
-	if b["max_channels"].(float64) != 3 || b["viewer_hours_per_month"].(float64) != 5000 || b["price_cents"] != nil {
-		t.Fatalf("the catalog's Broadcaster: %v", b)
+	if _, ok := cat["broadcast"]; ok {
+		t.Fatalf("broadcasting off, the catalog still offers it: %v", cat["broadcast"])
+	}
+	prov := e.client().mustStatus(e.client().do("GET", "/v1/auth/providers", nil), http.StatusOK).json(t)
+	if prov["broadcast"] != false {
+		t.Fatalf("broadcasting off, providers: %v", prov)
 	}
 }
 
@@ -214,6 +218,15 @@ func TestBroadcastBillingRolesAndItems(t *testing.T) {
 		c.Broadcast.KeyPath = ingestKeyFile(t) // broadcasting on signs ingest tokens (50.21)
 		c.Broadcast.OpenAccess = true          // open channels (50.26)
 	})
+	// broadcasting on: the catalog shows both tiers, prices TBD, and providers say it is on
+	cat := e.client().mustStatus(e.client().do("GET", "/v1/billing/plans", nil), http.StatusOK).json(t)
+	b := cat["broadcast"].(map[string]any)["broadcaster"].(map[string]any)
+	if b["max_channels"].(float64) != 3 || b["viewer_hours_per_month"].(float64) != 5000 {
+		t.Fatalf("the catalog's Broadcaster: %v", b)
+	}
+	if prov := e.client().mustStatus(e.client().do("GET", "/v1/auth/providers", nil), http.StatusOK).json(t); prov["broadcast"] != true {
+		t.Fatalf("broadcasting on, providers: %v", prov)
+	}
 	owner := e.registerVerified("bowner@example.test")
 	uid := e.userID("bowner@example.test")
 	h := claimHome(e, owner, "bhome")

@@ -344,18 +344,19 @@ func plans(s *stack) {
 
 // ---- broadcast-access (50.26) ------------------------------------------------------------
 
-// access: an invite-only channel and an open one. An invite admits its devices up to its uses
-// (a device again reuses its pass); a short code redeems its invite, 10 tries a minute per
-// network; open sessions start only after Turnstile (good once); the limits (open sessions per
-// network, viewers per channel, daily minutes) refuse new sessions only, never one playing; a
-// revoked pass or invite ends its sessions at their next heartbeat and lets no one new in.
+// access: invitation only (README §14, 2026-11-24). Two channels, one still stored as open: the
+// edge treats both as invite only. An invite admits its devices up to its uses (a device again
+// reuses its pass); a short code redeems its invite, 10 tries a minute per network; nothing plays
+// without a pass, and a Turnstile session opens no channel; the limits (viewers per channel,
+// daily minutes) refuse new sessions only, never one playing; a revoked pass or invite ends its
+// sessions at their next heartbeat and lets no one new in.
 func access(s *stack) {
 	open := newChannel("open")
 	inv := newChannel("inv")
 	s.publish(open)
 	s.waitLive(open)
 	codeInvite := s.invite("inv-code", 5)
-	st := viewers.AccessState{Version: 1, OpenAllowed: true, MaxSessionsPerIP: 2,
+	st := viewers.AccessState{Version: 1,
 		Channels: map[string]viewers.AccessChannel{open: {Access: "open", MaxViewers: 4}, inv: {Access: "invite"}},
 		Codes:    map[string]string{"MK-RH01": codeInvite}}
 	s.installAccess(st)
@@ -376,11 +377,16 @@ func access(s *stack) {
 	other := s.playOn(open, d1.Pass)
 	s.check("a guest pass opens only its invite's channels", other.Code == http.StatusForbidden && other.Error == "not_invited", "play", other.Code, other.Error)
 
-	// no credential
+	// no credential: nothing plays, not even a channel stored as open
 	n1 := s.playOn(inv, "")
 	n2 := s.playOn(open, "")
 	s.check("an invite channel asks for an invite", n1.Code == http.StatusUnauthorized && n1.Error == "invite_required", "access", n1.Code, n1.Error)
-	s.check("an open channel asks for Turnstile", n2.Code == http.StatusForbidden && n2.Error == "turnstile_required", "access", n2.Code, n2.Error)
+	s.check("a channel stored as open asks for an invite too", n2.Code == http.StatusUnauthorized && n2.Error == "invite_required", "access", n2.Code, n2.Error)
+	t := s.watch(http.MethodPost, "/api/v1/open/turnstile", map[string]string{"token": "pass-" + newChannel("t")}, "")
+	if t.Session != "" {
+		o := s.playOn(open, t.Session)
+		s.check("a Turnstile session opens no channel", o.Code != http.StatusOK && o.Error == "invite_required", "access", o.Code, o.Error)
+	}
 
 	// short codes: the code redeems its invite; 10 tries a minute per network
 	c := s.watch(http.MethodPost, "/api/v1/redeem", map[string]string{"publisher": pub, "code": "MK-RH01"}, "")
@@ -398,42 +404,23 @@ func access(s *stack) {
 	s.check("a network's 11th code try in a minute is refused", unknown == 9 && limited == 1, "short_code_tries",
 		fmt.Sprintf("%d unknown, %d rate-limited of 10 wrong tries after one good one", unknown, limited))
 
-	// Turnstile: a bad token fails; a good one is good once
-	bad := s.watch(http.MethodPost, "/api/v1/open/turnstile", map[string]string{"token": "robot"}, "")
-	s.check("a failed Turnstile check opens nothing", bad.Code == http.StatusForbidden && bad.Error == "turnstile_failed", "turnstile", bad.Code, bad.Error)
-	turnstile := func() watchAnswer {
-		return s.watch(http.MethodPost, "/api/v1/open/turnstile", map[string]string{"token": "pass-" + newChannel("t")}, "")
-	}
-	first := s.watch(http.MethodPost, "/api/v1/open/turnstile", map[string]string{"token": "pass-replayed"}, "")
-	replay := s.watch(http.MethodPost, "/api/v1/open/turnstile", map[string]string{"token": "pass-replayed"}, "")
-	s.check("a Turnstile token opens a session once", first.Code == http.StatusOK && first.Session != "" &&
-		replay.Code == http.StatusForbidden && replay.Error == "turnstile_failed", "turnstile", first.Code, first.Error, replay.Code, replay.Error)
-
-	// open sessions: 2 per network, then 4 per channel; the playing ones play on
+	// viewers per channel: 4, then refused; the playing ones play on
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	var ps players
-	admit := func(o watchAnswer, name string) watchAnswer {
-		a := s.playOn(open, o.Session)
+	invO := s.invite("inv-open", 6, open)
+	admit := func(name string) watchAnswer {
+		g := s.redeem(invO, "")
+		a := s.playOn(open, g.Pass)
 		if a.Code == http.StatusOK {
 			ps.start(ctx, s, name, open, a.MasterURL)
 		}
 		return a
 	}
-	o2 := turnstile()
-	a1, a2 := admit(first, "open-1"), admit(o2, "open-2")
-	o3 := turnstile()
-	a3 := admit(o3, "open-3")
-	s.check("open sessions play after Turnstile", a1.Code == http.StatusOK && a2.Code == http.StatusOK, "play", a1.Code, a1.Error, a2.Code, a2.Error)
-	s.check("a network's third open session is refused (2 per network)", a3.Code == http.StatusTooManyRequests && a3.Error == "broadcast_ip_limit",
-		"limit_per_network", a3.Code, a3.Error)
-	time.Sleep(10 * time.Second)
-	st.Version, st.MaxSessionsPerIP = 2, 10
-	s.installAccess(st)
-	a3 = admit(o3, "open-3")
-	a4 := admit(turnstile(), "open-4")
-	a5 := s.playOn(open, turnstile().Session)
-	s.check("a raised network limit admits more", a3.Code == http.StatusOK && a4.Code == http.StatusOK, "limit_per_network", a3.Code, a3.Error, a4.Code, a4.Error)
+	a1, a2, a3, a4 := admit("guest-1"), admit("guest-2"), admit("guest-3"), admit("guest-4")
+	a5 := admit("guest-5")
+	s.check("guests with passes play", a1.Code == http.StatusOK && a2.Code == http.StatusOK && a3.Code == http.StatusOK && a4.Code == http.StatusOK,
+		"play", a1.Code, a2.Code, a3.Code, a4.Code)
 	s.check("a channel's fifth viewer is refused (4 per channel)", a5.Code == http.StatusTooManyRequests && a5.Error == "broadcast_full",
 		"limit_per_channel", a5.Code, a5.Error)
 

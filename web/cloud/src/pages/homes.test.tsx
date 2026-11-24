@@ -57,6 +57,7 @@ describe("your homes", () => {
 
   it("links an owned home's broadcast viewers, and only an owned one's (50.28)", async () => {
     stubFetch({
+      "GET /v1/auth/providers": [200, { broadcast: true }],
       "POST /v1/auth/refresh": session(user()),
       "GET /v1/homes": [200, { homes: [KITCHEN, { ...CABIN, owned: false }] }],
     });

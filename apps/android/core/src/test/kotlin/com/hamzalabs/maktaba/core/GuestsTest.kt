@@ -11,6 +11,20 @@ import java.io.File
 
 /** Story 50.27: Watch a broadcast stays shut on a device under a parental limit; every state has its own words. */
 class GuestsTest {
+    /** Home broadcasting is off for now: the build's switch keeps Watch a broadcast out of every app. */
+    @Test
+    fun broadcastingIsOffInThisBuild() {
+        assertEquals(false, com.hamzalabs.maktaba.core.guest.GuestBroadcast.BUILT)
+        assertEquals(null, com.hamzalabs.maktaba.core.guest.GuestBroadcast.override)
+        assertEquals(false, com.hamzalabs.maktaba.core.guest.GuestBroadcast.ENABLED)
+        try {
+            com.hamzalabs.maktaba.core.guest.GuestBroadcast.override = true
+            assertEquals(true, com.hamzalabs.maktaba.core.guest.GuestBroadcast.ENABLED)
+        } finally {
+            com.hamzalabs.maktaba.core.guest.GuestBroadcast.override = null
+        }
+    }
+
     @Test
     fun theDevicesKeptLimitsAreReadFailingClosed() {
         val dir = kotlin.io.path.createTempDirectory("parental").toFile()

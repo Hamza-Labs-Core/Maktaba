@@ -83,6 +83,8 @@ class TvGuestJourneyTest {
         @JvmStatic
         @BeforeClass
         fun edge() {
+            // broadcasting on for this journey (the build has it off: GuestBroadcast)
+            com.hamzalabs.maktaba.core.guest.GuestBroadcast.override = true
             server.dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest) = route(request)
             }
@@ -96,6 +98,7 @@ class TvGuestJourneyTest {
         @JvmStatic
         @AfterClass
         fun stop() {
+            com.hamzalabs.maktaba.core.guest.GuestBroadcast.override = null
             server.close()
         }
     }

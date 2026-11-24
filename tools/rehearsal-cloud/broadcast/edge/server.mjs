@@ -150,6 +150,8 @@ let vars = {
   VIEWER_TOKEN_KEY: VIEWER_KEY,
   BROADCAST_ENV: "rehearsal",
   BROADCAST_DELIVERY: "r2",
+  // the rehearsal plays viewers: broadcasting on here (wrangler.toml keeps it off)
+  BROADCAST_ENABLED: "1",
   BROADCAST_GLOBAL_OFF: "0",
   BROADCAST_OFF_CHANNELS: "",
   EDGE_VERSION: "1",

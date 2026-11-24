@@ -57,6 +57,9 @@ type Deps struct {
 	// origins (story 50.30 §4; nil: off). TurnstileSiteKey is served to the web pages.
 	Turnstile        *turnstile.Guard
 	TurnstileSiteKey string
+	// BroadcastEnabled is broadcast.enabled: on, Providers says so and the web app shows its
+	// broadcasting pages; off (the default), it shows none
+	BroadcastEnabled bool
 }
 
 // Router is the part of chi.Router Mount needs.
@@ -546,6 +549,8 @@ func (d *Deps) Providers(w http.ResponseWriter, _ *http.Request) {
 	if d.Turnstile != nil && d.Turnstile.Enabled {
 		out["turnstile_site_key"] = d.TurnstileSiteKey
 	}
+	// broadcasting (Epic 50 §14): the web app shows its pages only while it is on
+	out["broadcast"] = d.BroadcastEnabled
 	writeJSON(w, http.StatusOK, out)
 }
 

@@ -219,6 +219,60 @@ func TestNoCopiedTableHasAGeneratedColumnInItsIdentity(t *testing.T) {
 	}
 }
 
+// No copied table with a primary key is at REPLICA IDENTITY FULL (slot 0238), even once a
+// machine's publication is made: its primary key is its identity. FULL writes the whole old
+// row to the WAL with every change, and on PostgreSQL 18 stops every update of a published
+// table that has a generated column (slot 0237). Only a table without a primary key is FULL,
+// which cluster_copy_publication sets so the home can still update it.
+func TestNoCopiedTableWithAPrimaryKeyIsFull(t *testing.T) {
+	if os.Getenv("MAKTABA_TEST_PG_URL") == "" {
+		t.Skip("MAKTABA_TEST_PG_URL unset")
+	}
+	db, _ := clustertest.ScratchDB(t)
+	if _, err := db.Exec(`SELECT cluster_copy_publication('00000000-0000-0000-0000-000000000238'::uuid)`); err != nil {
+		t.Fatalf("a machine's publication: %v", err)
+	}
+	const withKey = `SELECT c::text FROM cluster_copy_tables() c JOIN pg_class k ON k.oid = c
+	    WHERE k.relreplident = 'f'
+	      AND EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c AND i.indisprimary)`
+	const withoutKey = `SELECT c::text FROM cluster_copy_tables() c JOIN pg_class k ON k.oid = c
+	    WHERE k.relreplident = 'f'
+	      AND NOT EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c AND i.indisprimary)`
+	if full := tablesOf(t, db, withKey); len(full) > 0 {
+		t.Fatalf("copied tables with a primary key at REPLICA IDENTITY FULL: %v (their primary key is their identity)", full)
+	}
+	keyless := tablesOf(t, db, withoutKey)
+
+	// a home with them at FULL (as one had on 2026-11-20): slot 0238 gives them their key back,
+	// and leaves the tables without one at FULL
+	if _, err := db.Exec(`DO $$ DECLARE t regclass; BEGIN
+	    FOR t IN SELECT c FROM cluster_copy_tables() c
+	              WHERE EXISTS (SELECT 1 FROM pg_index i WHERE i.indrelid = c AND i.indisprimary) LOOP
+	        EXECUTE format('ALTER TABLE %s REPLICA IDENTITY FULL', t);
+	    END LOOP; END $$`); err != nil {
+		t.Fatal(err)
+	}
+	if len(tablesOf(t, db, withKey)) == 0 {
+		t.Fatal("no copied table with a primary key was made FULL")
+	}
+	up, err := os.ReadFile("../../../shared/db/migrations/0238_replica_identity_default.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	section, _, _ := strings.Cut(string(up), "-- +goose Down")
+	for range 2 { // run again whole, as after a crash part way: nothing left to do
+		if _, err := db.Exec(section); err != nil {
+			t.Fatalf("slot 0238's Up: %v", err)
+		}
+	}
+	if full := tablesOf(t, db, withKey); len(full) > 0 {
+		t.Fatalf("after slot 0238, copied tables with a primary key still FULL: %v", full)
+	}
+	if got := tablesOf(t, db, withoutKey); strings.Join(got, ",") != strings.Join(keyless, ",") {
+		t.Fatalf("the copied tables without a primary key at FULL were %v, after slot 0238 %v", keyless, got)
+	}
+}
+
 func tablesOf(t *testing.T, db *sql.DB, q string) []string {
 	t.Helper()
 	rows, err := db.Query(q)
