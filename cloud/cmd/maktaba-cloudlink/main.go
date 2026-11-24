@@ -204,7 +204,7 @@ func ensureCredentials(ctx context.Context, logger *slog.Logger, cfg config) (cl
 	if cfg.claimCode == "" || cfg.slug == "" {
 		return cloudlink.Credentials{}, errors.New("no stored credentials and MAKTABA_CLAIM_CODE / MAKTABA_SERVER_SLUG not set")
 	}
-	claimer := &cloudlink.Claimer{Endpoint: cfg.cloudAPI}
+	claimer := &cloudlink.Claimer{Endpoint: cfg.cloudAPI, Key: cfg.credKey}
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	creds, err := claimer.Redeem(cctx, cfg.claimCode, cfg.name, cfg.slug, Version, "")

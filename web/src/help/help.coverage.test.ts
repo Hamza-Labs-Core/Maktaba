@@ -18,6 +18,7 @@ import {
   pageHelp,
   ruleHelp,
   stageHelp,
+  BROADCAST_RULE_SECTIONS,
   SYSTEM_HEALTH_KINDS,
   systemHealthHelp,
   tileHealthHelp,
@@ -156,7 +157,9 @@ describe("help links from the app", () => {
       sections: Array<{ key: string }>;
     };
     expect(schema.sections.length).toBeGreaterThan(20);
-    for (const s of schema.sections) expectRef(ruleHelp(s.key), `rules section ${s.key}`);
+    // broadcasting's sections are hidden while broadcasting is off, and so is their help
+    for (const s of schema.sections)
+      if (!BROADCAST_RULE_SECTIONS.has(s.key)) expectRef(ruleHelp(s.key), `rules section ${s.key}`);
   });
 
   it("every failure cause and waiting reason has its entry", () => {

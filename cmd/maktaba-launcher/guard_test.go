@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -305,6 +306,33 @@ func TestGuardCountsRunningTime(t *testing.T) {
 			t.Fatalf("given up on after %s", at)
 		}
 	})
+	t.Run("a clock set forward, nothing pushed since", func(t *testing.T) {
+		g := mk() // 40 minutes: past the 15 of this start
+		stays(t, g, "before it", 5*time.Minute)
+		g.wall = g.wall.Add(365 * 24 * time.Hour)
+		ends(t, "what was left of its deadline", g.runs(2*time.Hour, false), 35*time.Minute)
+	})
+	t.Run("no update run watches it, its launcher started over and over", func(t *testing.T) {
+		g := newGuardTime(time.Hour, 0) // it takes the machine down within its 15 minutes each time
+		for range 5 {
+			if at := g.runs(11*time.Minute, false); at != 0 {
+				t.Fatalf("given up on after %s", at)
+			}
+			g.restart()
+		}
+		ends(t, "what is left of the budget", g.runs(2*time.Hour, false), 5*time.Minute)
+	})
+	t.Run("given up on with nothing to go back to", func(t *testing.T) {
+		g := mk()
+		ends(t, "the deadline", g.runs(2*time.Hour, false), 40*time.Minute)
+		for i := range 9 { // twice as long each time, at most its whole budget
+			g.c.again(g.timeout)
+			want := min(g.timeout<<min(i, 6), budget)
+			ends(t, "once more", g.runs(10*time.Hour, false), want)
+		}
+		g.c.again(g.timeout)
+		stays(t, g, "its budget used, started again", 2*time.Hour)
+	})
 	t.Run("a sleep, where the tick counts it too", func(t *testing.T) {
 		g := mk()
 		stays(t, g, "before it", 5*time.Minute)
@@ -394,7 +422,6 @@ func TestGuardTimeOfEachKind(t *testing.T) {
 						t.Fatalf("start %d: given up on after %s", i+1, tick)
 					}
 				}
-				ln.saveGuardRan()
 			}
 			ln = &launcher{cfg: cfg, l: ln.l}
 			up := false
@@ -404,7 +431,24 @@ func TestGuardTimeOfEachKind(t *testing.T) {
 			if !up {
 				t.Fatalf("its ten minutes used in two starts, the third gave it %s more", tick)
 			}
-			ln.forgetGuard()
+			key, _, _ := ln.pendingGuard("2.0.0")
+			if ln.readGuardRan(key) == 0 || ln.readGuardRan("3.0.0 run-2") != 0 {
+				t.Fatal("the time counted is not that guard's alone")
+			}
+			if name == "app" { // gone back, the next guard's time starts at nothing
+				g, _ := layout.ReadGuard(ln.cfg.Root)
+				prev := t.TempDir()
+				stubPayload(t, prev, "1.0.0")
+				g.PreviousPayload = prev
+				if err := layout.WriteGuard(ln.cfg.Root, *g); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ln.log = newEventLog(filepath.Join(t.TempDir(), "log"), io.Discard, cfg.Now)
+			defer ln.log.Close()
+			if !ln.rollback("2.0.0", "pending_timeout") {
+				t.Fatal("it did not go back")
+			}
 			if _, err := os.Stat(ln.guardRanPath()); err == nil {
 				t.Fatal("the time of a guard that is gone is kept")
 			}
@@ -415,6 +459,56 @@ func TestGuardTimeOfEachKind(t *testing.T) {
 	}
 	if got := layout.GuardBudget(int64(27*time.Hour/time.Second), false); got != 27*time.Hour {
 		t.Fatalf("a large library's: %s", got)
+	}
+}
+
+// A release the guard gives up on with nothing to go back to (its kept copy gone, a full
+// disk) stays up: its time starts again, its budget used up or not. It was stopped at the
+// first look of every start, for good.
+func TestAReleaseWithNothingToGoBackToStays(t *testing.T) {
+	t.Parallel()
+	processTest(t)
+	for name, g := range map[string]layout.Guard{
+		"the deadline passed":   {MaxRunSec: 3 * 3600},
+		"its budget is used up": {MaxRunSec: 60, RunID: "used"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			bundle, root := mkBundle(t, "run")
+			mkPayload(t, bundle, "2.0.0", "run", "new")
+			g.Version, g.Since = "2.0.0", time.Now().Add(-time.Hour)
+			g.Deadline, g.PreviousPayload = time.Now().Add(-time.Minute), filepath.Join(root, "gone")
+			if err := layout.WriteGuard(root, g); err != nil {
+				t.Fatal(err)
+			}
+			cfg := testConfig(root)
+			cfg.Bundle, cfg.PendingTimeout = bundle, time.Second
+			l := layout.New(root)
+			if g.RunID != "" {
+				ln := &launcher{cfg: cfg, l: l}
+				key, _, _ := ln.pendingGuard("2.0.0")
+				ln.clock = guardClock{key: key, ran: time.Hour}
+				ln.saveGuardRan()
+			}
+			stop := startLauncher(t, cfg)
+			waitFor(t, "given up on", func() bool { return len(events(l, "no_previous")) > 0 })
+			time.Sleep(5 * time.Second)
+			// 1 s, then 1, 2, 4: a few starts, never one a look (20 ms)
+			if n := len(events(l, "launcher_pending_timeout")); n > 5 {
+				t.Fatalf("given up on %d times in 5 s", n)
+			}
+			if cur := countAct(readTrace(l), "new", "run"); cur < 2 {
+				t.Fatalf("%d starts", cur)
+			}
+			if err := stop(); err != nil {
+				t.Fatal(err)
+			}
+			// the machine starts again: its time is not used up (only this last start's)
+			ln := &launcher{cfg: cfg, l: l}
+			key, _, _ := ln.pendingGuard("2.0.0")
+			if ran := ln.readGuardRan(key); ran <= 0 || ran > 10*time.Second {
+				t.Fatalf("%s of its time used, as kept for the next start", ran)
+			}
+		})
 	}
 }
 

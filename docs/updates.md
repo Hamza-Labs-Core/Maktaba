@@ -209,7 +209,7 @@ the others go, and it takes its turn once staged, with no click. A run waiting o
 download gives way to a newer release. An app that never stages its order (not running on that
 machine, or its start with the order's link failed, which the run's log now says) ends the order
 `app_no_answer` at the time the run installs by (its window's end), else three hours after the
-order, and never within half an hour of it, nor before the app had half an hour with the machine
+order, and never within 50 minutes of it, nor before the app had 50 minutes with the machine
 awake (since it woke, or the server started); nothing changed. It is the machine's, not the
 release's: it counts no attempt, and the next window tries again. The Linux app's runtime order has
 nothing to stage, so an app that does not answer it within 10 minutes no longer holds the run: it
@@ -384,7 +384,9 @@ since 2026-11-24 within the running time the release that switched gave it in th
 minutes; a day for a guard with none). The launcher counts that time itself while it runs, across
 its starts, and never extends it: a release that hangs with its watch alive is given up on there,
 wherever the clock is set. A machine switched off or asleep, or a clock set forward, is no time the
-release had: a good update is not taken back after a long power cut. A rollback under way has six
+release had: a good update is not taken back after a long power cut. When there is nothing to go back
+to (the kept copy gone, a full disk), the release stays up and its time starts again, twice as long
+each time, so the library and its recovery page are there for a person. A rollback under way has six
 hours more of its own (`rolling_back`), so its Down scripts are not stopped part way. A launcher
 from before it counts nothing; the release stops pushing the deadline itself at the same time.
 
