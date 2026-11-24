@@ -33,3 +33,12 @@ The second build story of the approved desktop design (#1556), D2.
 ## Open
 - Linux has no panel: its StatusNotifier hosts draw their own menu, as decided in 13.9.
 - 13.11 (Maktaba's own error dialog) is stacked on this branch and opens once this merges.
+- Linux's clippy failed at first on the panel's window code, which Linux never builds (it has
+  no panel); e96d2900b marks it unused there rather than compiling it out, so the placement's
+  tests still run on Linux.
+- The Windows app job failed once on this pull request (run 45344363547) in
+  `pgbundle`'s `TestRealMajorUpgrade`: right after the old cluster's fast shutdown, starting it
+  again for recovery said "pre-existing shared memory block is still in use". It passed on the
+  rerun. This pull request touches no server code; Windows may release a stopped postgres's
+  shared memory late, and the upgrade's recovery start may need to wait for it. Not yet looked
+  into.
