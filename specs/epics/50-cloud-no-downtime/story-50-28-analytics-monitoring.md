@@ -18,7 +18,7 @@ The edge writes Workers Analytics Engine events to the dataset `broadcast_events
 
 | Event | Blobs (strings) | Doubles |
 |---|---|---|
-| `play` | publisher, channel, country, device class (web, iOS, tvOS, Android, Android TV, desktop), access (invite or open), mode | startup ms |
+| `play` | publisher, channel, country, device class (web, iOS, tvOS, Android, Android TV, desktop), mode | startup ms |
 | `beat` | publisher, channel, country, device class, rung | minutes = 1, rebuffer ms, bitrate kbps |
 | `switch` | publisher, from, to | switch ms |
 | `error` | publisher, channel, code | — |

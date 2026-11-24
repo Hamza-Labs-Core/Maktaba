@@ -14,7 +14,7 @@ The desktop and mobile apps' own updates (their badge, the signing key, the mobi
 
 | | Automatic | Yours to decide |
 |---|---|---|
-| Finding releases | The home checks GitHub Releases every 6 hours (and when you press **Check now**). | The channel (`stable` or `beta`). |
+| Finding releases | The home reads the signed release feed every 6 hours (and when you press **Check now**): [How a home finds a release](#how-a-home-finds-a-release). | The channel (`stable` or `beta`). |
 | Installing on the home | In the quiet window, once the release is old enough, with its migrations rehearsed first. | Turning it off, a pin, a deferral, skipping a version, **Update now**. |
 | Installing on the machines | After the home commits the release: downloaded from the home, verified on each machine, switched one at a time. | What a machine's failure does to the others (`node_failure_policy`), when a machine that was offline catches up (`catch_up`). |
 | TV | Plain server installs keep TV playing across the restart; the streaming software then moves to the new release at programme boundaries, without an approval. | The viewers a restart may interrupt (`tv_staging.quiet_max_viewers`, 0) on installs that restart whole. |
@@ -24,6 +24,100 @@ The desktop and mobile apps' own updates (their badge, the signing key, the mobi
 Automatic installs are on by default (`rules.updates.auto_install`). With them off (Admin →
 Updates → Pause, or Settings → About) the home only checks and notifies. `MAKTABA_UPDATE_DISABLE=1`
 turns the checks off altogether.
+
+## How a home finds a release
+
+A home reads its **release feed**: one small signed file per channel and platform, which lists
+only the releases a machine of that platform can install. It never reads GitHub's list of every
+release. That list had grown to 10.5 MB for 30 releases of about 190 files each by 2026-11-23,
+past every home's cap, and no home saw a release for a day.
+
+- **Where.** `https://maktaba.tv/updates/v1/<channel>/<platform>.json`, with its Sigstore bundle
+  beside it (`<platform>.json.sigstore.json`), and `<channel>/index.json` listing the channel's
+  platforms. Platforms: `darwin-arm64`, `darwin-amd64`, `linux-amd64`, `linux-arm64`,
+  `windows-amd64` (a NAS's container reads `linux-*`). maktaba.tv's Worker serves them as static
+  files (`web/packages/website`); a cache holds them for a minute.
+- **What it lists.** The newest 10 releases of the channel (`stable`: stable releases only;
+  `beta`: every release), each with only that platform's files: the three signed files, the
+  server archive, the pipeline's wheel and constraints, the migrations, the component index, on
+  Linux the runtime payload, and the apps' `latest.json`. Each file has its download address,
+  size and SHA-256. Each release also has its `checksums.txt` and `release.json` digests, its
+  migration set (`migrations_set_sha256`) and its published time. A pulled release stays listed,
+  marked `withdrawn` with the reason. A 10-release feed is about 25 KB, about 4 KB as served
+  compressed.
+- **Signed like a release.** `update-feed.yml` signs each file keyless with `cosign sign-blob`.
+  A home verifies it with `shared/go/releaseverify` (`VerifyFeed`): the Sigstore bundle against
+  the trusted root, with its Rekor inclusion proof, and the certificate exactly
+  `https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/update-feed.yml@refs/heads/main`.
+  The trigger must be `workflow_run`, `workflow_dispatch` or `schedule`, on a GitHub-hosted
+  runner, with the repository's numeric ids. Then it checks the content: the channel, platform
+  and repository it asked for, valid tags each listed once, no pre-release on stable, and every
+  file a plain name at that release's own GitHub address. The files are still downloaded from
+  GitHub Releases and verified as before ([What is verified](#what-is-verified)). The feed only
+  says which releases exist.
+- **The home's machines.** The home reads the feed of its own platform, which says which releases
+  there are, and the feed of every platform its machines run, for their files. A machine's platform
+  with no feed is passed over. Once a release verifies, the catalog also keeps every other file its
+  signed `checksums.txt` lists (packs, first-party plugins, other platforms' files), each from
+  beside `checksums.txt`. So a machine's update and the home's mirror find any of them by name,
+  each checked against `checksums.txt` when it is downloaded.
+- **When the feed is not used.** A feed that cannot be reached (no answer, or a status other
+  than 200, a 404 included) is passed over: the home reads GitHub's list instead, in pages of
+  10, for that check. So does a feed signed before the last one the home read (maktaba.tv rolled
+  back, or an old feed served again), or more than 21 days ago (`update-feed.yml` signs it again
+  every week). A feed that is reached but fails its checks is never
+  passed over: the check fails with `update feed refused: …`, and nothing of it is used. That
+  covers an unsigned feed, a wrong signature, a wrong identity, content that disagrees with the
+  request, or a file over 1 MiB. Admin → Updates shows where the last check read
+  (`last_check_source`: `feed` or `github`) and why the feed was passed over (`feed_error`).
+- **Who reads it.** The home's catalog, the run's re-check before it starts (a release pulled
+  since is withdrawn), the About page's check and `maktaba-server update` all read it. Homes on
+  v0.3.153–v0.3.161 read GitHub's list as before, and nothing changes for them. A fork
+  (`MAKTABA_UPDATE_REPO`) reads its own GitHub list: maktaba.tv's feed is signed by this
+  repository. `MAKTABA_UPDATE_FEED=off` turns the feed off. The desktop and player apps keep their
+  own updater feeds (`latest.json`, `latest-player.json`), one small file each
+  ([auto-update.md](auto-update.md)).
+
+### When the feed is written
+
+`update-feed.yml` writes the whole feed after each release, once the release is published:
+
+1. It runs when `release.yml` or `desktop-release.yml` completes. The release is published by
+   whichever of them finishes last, so a release still a draft writes nothing, and the other
+   workflow's end runs it again.
+2. It reads the newest 30 published releases (`tools/release/release-feed-inputs.sh`). It
+   verifies each one's signed files as a home does, and writes both channels' feeds
+   (`release-feed generate`). A release that does not verify is left out. When it is the new
+   release, the run fails.
+3. It signs every file, then verifies what it signed with the homes' own code
+   (`release-feed verify`). It uploads the result as the `update-feed` artifact and starts
+   maktaba.tv's deploy. Every deploy serves the artifact of the newest `update-feed.yml` run on
+   main (started by its own triggers, never a pull request's run, and holding only feed files).
+   When there is none, it carries over the live feed, so a deploy of the site never drops it
+   (`tools/release/website-feed.sh`).
+4. **The live check:** it reads `https://maktaba.tv/updates/v1` until every platform's feed lists
+   the new release, signed and verified as a home verifies it (`release-feed live`). It fails the
+   run after 100 minutes.
+
+It also runs every Monday, so the newest artifact (kept 90 days) never expires. No workflow
+pushes tags: the scheduled release session still does ([How a release is made](#how-a-release-is-made)).
+
+### Pulling a release
+
+A bad release is pulled from the feed, not marked as a pre-release on GitHub:
+
+```sh
+tools/release/pull-release.sh 0.3.158 "its migration times out on large databases"
+```
+
+The script adds the release to the repository variable `UPDATE_FEED_WITHDRAWN` (a JSON object of
+version to reason, `{"0.3.158": "…"}`) and starts `update-feed.yml`. The next feed lists the
+release as `withdrawn`. Every home marks it withdrawn at its next check, or at once in the re-check
+before a run, and never installs it. `--restore 0.3.158` takes it back out of the variable, for
+homes that have not seen the pull yet. A home that marked it withdrawn keeps it withdrawn: the next
+release replaces it. Homes before the feed
+(v0.3.153–v0.3.161) still learn of a pull only from GitHub: mark the release a pre-release there
+too while any such home remains.
 
 ## The quiet window, and what holds a release back
 
@@ -206,13 +300,21 @@ the next start from the update's journal (`updates/journal.json`).
 A release that does not stay healthy is **rolled back**: the previous release runs again, at once.
 Nothing is dumped before it starts. When the failed release added no migration, or its migrations
 never ran, that is all: a restart onto the previous release, which knows the database as it is.
-When its migrations ran, the database goes back the cheapest safe way: it stays as they left it
-when every one of them is additive and the previous release runs on a newer schema; else their
-Down scripts undo them when they lose no data; else the backup taken before them is put back
-first (every release refuses a database a newer one migrated), and writes made between that
-backup and the rollback are lost — minutes, inside the window, with the jobs drained — and the
-failed state is not kept. The same three ways, in that order, apply when the migrations
-themselves fail part way (since 2026-11-23; before, that always put the backup back). The release
+When its migrations ran, the database goes back by their own Down scripts: it stays as they
+left it when every one of them is additive and the previous release runs on a newer schema;
+else their Down scripts undo them, the one that failed part way by its own Down script first
+(`maktaba-api migrate undo-failed`), back to the slot the database was at before the update
+(recorded as `schema_before` when the migrations start). The backup taken before them is put
+back only when those Down scripts fail (`db_down_failed`), when a migration that ran deleted or
+overwrote data its Down script cannot give back (`db_restored_lossy`: migration-lint refuses
+such a migration unless it says so), or when the way back cannot be told
+(`db_restored_unknown`). Each is logged at level=error and named on the Updates page, since it
+is not the way back. Writes made between that backup and the rollback are then lost (minutes,
+inside the window, with the jobs drained), and the failed state is not kept. The same applies
+when the migrations themselves fail part way: since 2026-11-24, after the backup went back on
+2026-11-23 (v0.3.158) and 2026-11-24 (v0.3.157), about three hours down each time. The way back
+is the new release's code (its database step runs the migrations and undoes them), so it holds
+for every update to a release that has it, whatever the release before. The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
 again**, or **Update now** naming it). A release that rolled back (or whose migrations failed on
 the rehearsal's copy) also holds back, until an admin retries it, every release below it, and
@@ -248,7 +350,8 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous
   release runs on them), `db_undone` (their Down scripts undid them), or `db_restored` (the
-  backup put back). The update's watch then rolls back to the previous release, and the
+  backup put back, and the update attempt's code says why: `db_down_failed`,
+  `db_restored_lossy` or `db_restored_unknown`). The update's watch then rolls back to the previous release, and the
   release is blocked as above.
 - **The backup is taken on the side.** `pg_dump` reads one snapshot, so the library keeps serving
   while it runs. Writes made between its start and the switch (a minute or two, with the jobs
@@ -545,6 +648,7 @@ TV during updates also reads `tv_staging.quiet_max_viewers` (0) and
 | `MAKTABA_UPDATE_DISABLE` | unset | `1`/`true`: no network checks and no automatic installs at all. |
 | `MAKTABA_UPDATE_REPO` | `Hamza-Labs-Core/Maktaba` | A fork's releases. It changes the expected signing identity too (the fork's own `release.yml`); a startup setting no API field can change. |
 | `MAKTABA_DATA_DIR` | `maktaba-server`'s `data_dir` | The Sigstore trusted root (`sigstore/`), the mirror (`updates/mirror/`), the backups (`backups/`). |
+| `MAKTABA_UPDATE_FEED` | unset | `off`: the home reads GitHub's release list, not the release feed ([How a home finds a release](#how-a-home-finds-a-release)). |
 | `MAKTABA_GITHUB_TOKEN` | unset | Optional; raises the GitHub API rate limit. |
 | `MAKTABA_PIPELINE_PYTHON` | the machine's Python 3.12 | The Python a layout install builds the pipeline's environment with. |
 
@@ -555,6 +659,51 @@ Every release's update paths are rehearsed in CI first: [update-rehearsal.md](up
 does it: migrations, a TV change that waits, rollbacks with and without a restore, a
 restore under logins and killed part way, halted roles, no room, a joined machine). The
 release's tag guard refuses a commit the rehearsal did not pass on.
+
+## The caps on GitHub's release list
+
+A home reads GitHub's releases through its update check (`api/internal/updates/catalog.go`),
+and the server's own updater and the About check read the same list. Each answer is held to a
+cap, so a broken or hostile answer cannot exhaust a home. A cap a real answer grows past stops
+every home's updates: on 2026-11-23 GitHub's list of the newest 30 releases (some 190 assets each)
+passed the 8 MiB a home read, and every check failed for over a day, unnoticed.
+
+| What a home reads | Request | Cap | Real size (2026-11-24) |
+|---|---|---:|---:|
+| The list, 3 pages of 10 releases | `GET /repos/<repo>/releases?per_page=10&page=N` | 16 MiB a page | 3.2 MB a page |
+| One release by its tag (before a run starts) | `GET /repos/<repo>/releases/tags/<tag>` | 8 MiB | 325 KB |
+| `checksums.txt`, its Sigstore bundle, `release.json` | the release's download URLs | 4 MiB each | 15 KB at most |
+
+A home asks unauthenticated, with `Accept: application/vnd.github+json` and
+`X-GitHub-Api-Version: 2022-11-28`; GitHub then answers minified JSON. (Asked with another
+`Accept`, as curl does by default, GitHub pretty-prints the same list, some 23% longer: that is
+not what a home reads. A token with push access lists the drafts first.) Each list page is read
+one release at a time, so its cap bounds the answer, not the memory.
+
+**Three checks keep the caps honest:**
+
+- **The tests** read a real page, recorded as a home asks for it
+  ([`tests/fixtures/github-releases`](../tests/fixtures/github-releases/README.md)): every cap must
+  hold the recorded answers within 70% (`updates.ListHeadroom`), and the worst page the next
+  releases can make (each release twice the largest recorded one, `AssetGrowth`) too. The About
+  check, `selfupdate` and `ghasset` are tested against the same page.
+- **GitHub's release list check** (`api/cmd/release-list-check`, through the home's own code: the same
+  URLs, headers, pages and caps) reads the live list hourly
+  ([`github-release-list.yml`](../.github/workflows/github-release-list.yml), which opens an issue on a failure
+  and closes it once the list reads again), and in each release workflow once it publishes
+  (`tools/release/release-list-check.sh`). It fails when any page or the newest release's own read is over
+  70% of its cap, or when the newest published stable release is not one a home's catalog can
+  select (not in the pages a home reads, a draft or prerelease, or without its signed files).
+- **The update rehearsal**'s scenario 20 serves the list at its real size and shape, twice as
+  large, and then past its cap ([update-rehearsal.md](update-rehearsal.md)).
+
+**When a check fails:** re-record the page (`tests/fixtures/github-releases/record.sh`) and look at
+what grew. Raise the cap or lower `listPerPage` in `catalog.go`, and the matching constants of the
+About check (`api/internal/system/updater.go`) and `selfupdate`, so the tests pass with the new
+page; a release already out reads with its own caps, so the fix ships in the next release. The
+home itself raises a failing check: from two failures in a row the Updates page says "Can't check
+for updates since …" with the reason, System health's **Update check** item turns yellow, and
+admins get the `update.check_failing` notification.
 
 ## How a release is made
 

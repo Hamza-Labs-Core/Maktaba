@@ -243,6 +243,7 @@ func (s *Server) handleGetCapabilities(ctx context.Context, _ map[string]any) (m
 		"transcode_used":       c.TranscodeUsed,
 		"transcode_capacity":   c.TranscodeCapacity,
 		"software_only":        c.SoftwareOnly,
+		"client_profiles":      c.ClientProfiles,
 	}, nil
 }
 

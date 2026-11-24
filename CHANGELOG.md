@@ -14,14 +14,16 @@ build fails when the two differ.
 
 ### Changed
 
-- **No source badge on a collection from a YouTube channel, and no Plex kind.** A YouTube
-  channel's collection no longer carries a "YouTube channel" badge, and no app shows a "Plex
-  collection" badge or a "From Plex" kind any more: collections are no longer read in from Plex,
-  and a home's are from YouTube playlists and channels. The collections show as before, a YouTube
-  playlist's with its badge. In every app: the iPhone, iPad, Mac and Apple TV apps, the Android
-  and Android TV apps, the web app and the big screen. `GET /api/libraries/{id}/collections` no
-  longer has a `plex` kind; an older app's `kind=plex` gets an empty list, not an error. A
-  collection an older release read in from Plex lists as a curated one that an admin can edit.
+- **The Windows and Linux Player plays files as they are.** It now plays with libmpv, which it
+  carries: MKV, WebM, MP4, MOV and TS; H.264, HEVC (10-bit too), VP9, AV1 and MPEG-2; AAC, AC-3,
+  E-AC-3, DTS, FLAC, Opus, Vorbis and MP3, 5.1 and 7.1 included (folded down to stereo
+  speakers), and HDR10 and HLG on any screen. A home that knows the new `desktop-mpv` profile
+  sends such files as they are instead of converting them first, so a film starts sooner and
+  the home's processor rests; an older home converts as before. A file that does not play as it
+  is opens once more converted. Captions are drawn in the Player's own face, right to left in
+  Arabic. If the Player's libmpv cannot load, it says so once and plays as before, and Report a
+  problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
+  knows.
 
 - **The Windows and Linux Player's own title bar.** The Player's window has Maktaba's dark title
   bar in place of the system's frame and its menu bar: the menu button holds Account, Big screen,
@@ -420,6 +422,28 @@ build fails when the two differ.
   second failed probe and Broadcasting shows an outage. It is no longer an expected failure.
 
 ### Fixed
+
+- **The second listen stores its corrections again on PostgreSQL 18.** From the home's move to
+  PostgreSQL 18 on 2026-11-20, every second-listen job failed when it stored its corrected
+  transcript ("cannot update table transcript_segments"): PostgreSQL 18 refuses an update to a
+  table published for a machine's copy when its replica identity holds a generated column the
+  copy is not sent, and the home's transcript lines were set up that way (REPLICA IDENTITY FULL,
+  with the generated search column). A migration (slot 0237) gives such tables their primary key
+  as their identity, without rewriting them; the copy keeps them. The videos left with Whisper's
+  words since then are heard again by themselves, 100 at a time, and their subtitles, search
+  index and tags follow.
+
+- **A home that can't check for updates now says so.** When two checks in a row fail, the Updates
+  page says "Can't check for updates since …" with the reason (GitHub's list is larger than this
+  version reads, GitHub asked to wait, GitHub answered with an error or could not be reached) and
+  what GitHub answered; one failure is a quiet line. System health has a new **Update check** item
+  that turns yellow with the same words, and admins get a notification. Before, a failed check was
+  only written to the log: from 2026-11-23 every home's check failed for over a day and nothing on
+  screen said so. A page of GitHub's list of releases may now be 16 MiB (it is some 3.2 MB today),
+  and the About check and the server's own updater read the list the same way and say "larger than
+  … bytes" instead of failing to decode it. A check in CI reads the real list every hour, and
+  after each release, exactly as a home does, and fails when any answer passes 70% of what a home
+  reads or the newest release is not one a home can pick.
 
 - **A home whose update rolled back no longer installs an older release instead, and it sees new
   releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
@@ -1012,6 +1036,13 @@ build fails when the two differ.
   id first, and anything that isn't one is refused.
 
 ### Security
+
+- **The cloud's sign-in limit holds under a burst.** The shared limit on sign-in, password reset,
+  mail and claim redeem (Epic 50 story 50.17) could let one request past its burst when many
+  arrived at once on several api nodes: a refused request whose database transaction started in
+  the same microsecond as the last allowed one read as allowed. Each request's answer now comes
+  from whether it took a token, and a request that waited on another never refills the same time
+  twice.
 
 - **Watch a broadcast stays closed on Apple devices until a parental limit is ruled out (Epic 50,
   story 50.27; Epic 57).** On Apple TV and in the Player on iPhone, iPad and the Mac, the Watch a
@@ -3825,6 +3856,27 @@ build fails when the two differ.
   screenshots on the Apps pages were retaken on test data with men's names only and on the new
   demo library. In English and Arabic.
 
+- **Homes find updates in Maktaba's own signed release feed.** A home no longer reads GitHub's
+  list of every release, which had grown to 10.5 MB and stopped every home's update check on
+  2026-11-23. It reads one small file for its channel and platform from maktaba.tv
+  (`/updates/v1/<channel>/<platform>.json`, about 4 KB as served). The file lists the newest 10
+  releases with only the files that platform installs. It is signed like a release, and every
+  home checks the signature before using any of it. The home's catalog, the re-check before an
+  update, the About page and `maktaba-server update` all read it. GitHub's list is read only when
+  the feed cannot be reached; a feed that fails its signature check stops the check instead.
+  A bad release is now pulled from the feed (`tools/release/pull-release.sh`), and every home
+  marks it withdrawn. Homes on v0.3.153 to v0.3.161 keep reading GitHub, unchanged.
+  `MAKTABA_UPDATE_FEED=off` turns the feed off.
+
+- **No source badge on a collection from a YouTube channel, and no Plex kind.** A YouTube
+  channel's collection no longer carries a "YouTube channel" badge, and no app shows a "Plex
+  collection" badge or a "From Plex" kind any more: collections are no longer read in from Plex,
+  and a home's are from YouTube playlists and channels. The collections show as before, a YouTube
+  playlist's with its badge. In every app: the iPhone, iPad, Mac and Apple TV apps, the Android
+  and Android TV apps, the web app and the big screen. `GET /api/libraries/{id}/collections` no
+  longer has a `plex` kind; an older app's `kind=plex` gets an empty list, not an error. A
+  collection an older release read in from Plex lists as a curated one that an admin can edit.
+
 ### Fixed
 
 - **A TV held on its old streaming software stays there through schedule and settings
@@ -4483,6 +4535,20 @@ build fails when the two differ.
   migrations still fail part way, nothing is put back if what they changed is additive and the
   release before runs on it. Otherwise their own Down scripts undo them when they lose no data,
   in seconds. Only failing both does the backup go back, as before.
+
+- **A failed update is undone by its own Down scripts, not by putting the whole backup back.**
+  On 2026-11-23 and 2026-11-24 an update's migration (0235's index build, cancelled by its lock
+  timeout) failed part way, and the update put the whole 34 GB library database back from its
+  backup, about three hours down each time, though the migrations' Down scripts undo them in
+  seconds. The database step now undoes the migration that failed part way with its own Down
+  script (`maktaba-api migrate undo-failed`), drops the INVALID indexes it left, and runs the
+  Down scripts of the ones that ran, back to the slot the database was at before the update. It
+  puts the backup back only when those Down scripts fail, or when a migration that ran had
+  deleted data they cannot bring back. That is logged at level=error, and the Updates page says
+  why, in English and Arabic. migration-lint now requires a Down script in every migration, one
+  that works after any part of a NO TRANSACTION migration's Up, and an Up that loses no data or
+  says so. The update rehearsal runs every new migration's Down script after each partial Up on
+  the bundled PostgreSQL.
 
 ## [0.2.0] - 2026-10-19
 

@@ -114,3 +114,53 @@ func (id Identity) certificateIdentity(tag string) (verify.CertificateIdentity, 
 		RunnerEnvironment: RunnerEnvironment,
 	})
 }
+
+// The release feed's signer (feed.go): update-feed.yml of the pinned repository, on main,
+// started by a release run's end (workflow_run), by hand (workflow_dispatch, a release
+// pulled) or by its weekly schedule. A branch, a fork, a pull request or another workflow
+// cannot sign a feed a machine reads.
+const (
+	FeedWorkflowPath = ".github/workflows/update-feed.yml"
+	FeedRef          = "refs/heads/main"
+)
+
+// FeedTriggers are the events whose update-feed.yml run may sign a feed.
+var FeedTriggers = []string{"workflow_run", "workflow_dispatch", "schedule"}
+
+// FeedSAN is the exact certificate subject update-feed.yml on main gets.
+func (id Identity) FeedSAN() string {
+	return id.RepoURI() + "/" + FeedWorkflowPath + "@" + FeedRef
+}
+
+// feedIdentities are the certificate identities a feed's bundle may carry: FeedSAN under
+// each of FeedTriggers, with the repository pinned as for a release.
+func (id Identity) feedIdentities() ([]verify.CertificateIdentity, error) {
+	san, err := verify.NewSANMatcher(id.FeedSAN(), "")
+	if err != nil {
+		return nil, err
+	}
+	iss, err := verify.NewIssuerMatcher(Issuer, "")
+	if err != nil {
+		return nil, err
+	}
+	repoID, ownerID := id.ids()
+	owner, _, _ := strings.Cut(id.Repo(), "/")
+	out := make([]verify.CertificateIdentity, 0, len(FeedTriggers))
+	for _, trigger := range FeedTriggers {
+		ci, err := verify.NewCertificateIdentity(san, iss, certificate.Extensions{
+			SourceRepositoryURI:             id.RepoURI(),
+			SourceRepositoryRef:             FeedRef,
+			SourceRepositoryOwnerURI:        "https://github.com/" + owner,
+			SourceRepositoryIdentifier:      repoID,
+			SourceRepositoryOwnerIdentifier: ownerID,
+			BuildConfigURI:                  id.FeedSAN(),
+			BuildTrigger:                    trigger,
+			RunnerEnvironment:               RunnerEnvironment,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ci)
+	}
+	return out, nil
+}

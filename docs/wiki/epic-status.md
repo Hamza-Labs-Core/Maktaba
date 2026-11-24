@@ -4,7 +4,7 @@
 > The specs and epic pages don't record a status; this page does. Update the row when a story changes.
 > **Change a story's row (and its "What is left" entry), then run `python3 docs/wiki/db/epic_status.py`; never edit the counts by hand.** CI fails on stale counts (`--check`).
 
-**Not every epic is done.** Of 774 stories across all 60 epics, 714 are done, 40 are partial, 11 are not started, and 9 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 12 stories of fifteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
+**Not every epic is done.** Of 775 stories across all 60 epics, 713 are done, 40 are partial, 12 are not started, and 10 were deferred or removed on purpose. The largest open pieces are Epic 49 (Search, 12 stories of fifteen done), Epic 34 (the TV public site, a first slice only) and Epic 54 Phase 5 (Plugins).
 
 ## How this was checked
 
@@ -73,7 +73,7 @@
 | 47 Offline convert / dedup | 11 | 3 | 0 | 0 | **Partial** |
 | 48 Native players | 36 | 1 | 0 | 0 | **Partial** |
 | 49 Search | 12 | 2 | 1 | 0 | **Partial** |
-| 50 Cloud with no downtime | 35 | 0 | 0 | 0 | Done (live SLOs not checked) |
+| 50 Cloud with no downtime | 34 | 0 | 1 | 1 | Done (live SLOs not checked) |
 | 51 Configurable components | 19 | 0 | 0 | 0 | Done |
 | 52 Transcript word review | 13 | 3 | 0 | 1 | **Partial** |
 | 53 Logs, errors and reports | 18 | 0 | 0 | 0 | Done (open issue #1064) |
@@ -84,7 +84,7 @@
 | 58 Smart TV platforms | 17 | 0 | 0 | 1 | Done (58.18 Vega OS deferred) |
 | 59 NAS | 16 | 0 | 0 | 0 | Done (device results not checked) |
 | 60 Website | 11 | 1 | 0 | 1 | **Partial** |
-| **Total** | **714** | **40** | **11** | **9** | **Not all done** |
+| **Total** | **713** | **40** | **12** | **10** | **Not all done** |
 
 `*` sampled, see [How this was checked](#how-this-was-checked).
 
@@ -98,6 +98,7 @@
 - **34.10 Deployment pipeline** — manual `wrangler.toml` exists, but no release artifact pipeline or home-driven deploy/promote/rollback implementation.
 - **43.6 Measured on the home Mac** — PR #319 explicitly excludes the 13.9M-row p50/p95, disk and recall measurement; no later merged measurement was found.
 - **49.13 Remove the stopgap** — the Epic 49 document path does not exist, so its removal is not started either.
+- **50.36 Close the open links** — broadcasting became invite-only (2026-11-24); the `open` access mode, its Turnstile and app-attestation sessions, and the watch pages that render without a pass are still in the code.
 - **54.47–54.51, Epic 54 Phase 5:** plugin updates, preinstalled plugins and migration, offline homes, release variants and variant updates. Each spec says "Not built". (54.45 and 54.46 are partial, below.)
 
 ### Partial
@@ -157,6 +158,7 @@
 | 56.07 Plex collections | Removed by #969; the apps no longer show a Plex collection's badge or a Plex kind, and the browse API has no `plex` kind (an older client's `kind=plex` gets an empty list). The spec still describes the import. |
 | 57.16 Home rules through Screen Time | Waits for Apple's Family Controls entitlement. |
 | 58.18 Vega OS | Waits for Vega devices to be a real share of TVs. |
+| 50.24 Takedown, reports, repeat infringers | Deferred on 2026-11-24 with broadcasting, which stays off; its code is built and dormant, and nothing about copyright is shown. |
 | 60.13 Pricing | No page until plans and prices are decided. |
 
 ## Open issues
@@ -1075,7 +1077,7 @@ Stories are the fifteen numbered rows in `specs/epics/49-search/README.md` §6 (
 
 ### Epic 50 — Cloud with no downtime
 
-All 35 stories have current implementation and test evidence. This is a code/history verdict, **not** evidence that two production nodes, paid billing, Cloudflare rules, or the availability SLOs are operating successfully.
+34 of its 36 stories have current implementation and test evidence; 50.24 is deferred with broadcasting (off since 2026-11-24); 50.36 (closing the open links, after broadcasting became invite-only on 2026-11-24) is not started. This is a code/history verdict, **not** evidence that two production nodes, paid billing, Cloudflare rules, or the availability SLOs are operating successfully.
 
 | Story | Status | Evidence (merged PRs; current code/tests) |
 |---|---|---|
@@ -1102,7 +1104,7 @@ All 35 stories have current implementation and test evidence. This is a code/his
 | 50.21 Broadcast edge | Done | #1242, #1257, #1373, #1385, #1399; `web/packages/broadcast-edge/src/ingest.ts`; `test/ingest.test.ts`, `live.test.ts` |
 | 50.22 Home broadcaster | Done | #1263, #1373; `streaming/internal/broadcast/ctl.go`; `ctl_test.go`, `uploader_test.go`; `api/internal/broadcast/service_pg_test.go` |
 | 50.23 Publishable sources/geo | Done | #1274, #1393; `api/internal/broadcast/publishable.go`, `publishable_pg_test.go`; `pipeline/tests/channels/test_publishable_only.py` |
-| 50.24 Takedown/reports | Done | #1284, #1389; `cloud/internal/moderation/decisions.go`; `cloud/cmd/maktaba-cloud/moderation_integration_test.go` |
+| 50.24 Takedown/reports | **Deferred** | Built (#1284, #1389; `cloud/internal/moderation/decisions.go`) but deferred on 2026-11-24 with broadcasting, which stays off: nothing about copyright is shown anywhere, and the code is dormant behind the broadcast flag. |
 | 50.25 Kill switch | Done | #1270; `cloud/internal/broadcast/revocation_store.go`; `web/packages/broadcast-edge/test/revocations.test.ts` |
 | 50.26 Viewer access | Done | #1266; `web/packages/broadcast-edge/src/access.ts`; `test/access.test.ts`; `cloud/cmd/maktaba-cloud/viewer_access_integration_test.go` |
 | 50.27 Guest viewers/apps | Done | #1279, #1389, #1400, #1408; `web/packages/broadcast-edge/src/play.ts`, `test/site.test.ts`; Apple `PlayerGuestUITests.swift`, Android guest tests |
@@ -1114,6 +1116,7 @@ All 35 stories have current implementation and test evidence. This is a code/his
 | 50.33 Staff auth | Done | #1027, #1067; `cloud/internal/handlers/staff/staff.go`; `cloud/cmd/maktaba-cloud/staff_integration_test.go`, `staff_passkey_integration_test.go` |
 | 50.34 Cloudflare deploys | Done | #867; `tools/cloudflare/cf.mjs`; `token-check.test.mjs`, `smoke.test.mjs`; CI workflow |
 | 50.35 Remote-access capability | Done | #825; `shared/components/catalog.go`; `api/internal/components/features_test.go`; `handlers/components/capabilities_test.go` |
+| 50.36 Close open links | **Not started** | Spec only. The `open` access mode built by 50.26 and 50.27 is still on main: `web/packages/broadcast-edge/src/access.ts` (`openChannels`), `src/site/routes.ts` (`lineup` with no pass), `cloud/internal/billing/broadcast_catalog.go` (`AccessOpen`), `cloud/migrations/00500017_broadcast_plans.sql`. |
 
 ### Epic 51 — Configurable components
 
@@ -1371,7 +1374,7 @@ The site, build/deploy tooling, quality gates, content, and screenshots exist. 6
 | 60.04 Quality gates | Done | #1160, #1171; `.github/workflows/_website.yml`, `website-nightly.yml`; `tools/ci/tests/test_website_deploy.py`; Lighthouse/axe/link/visual checks |
 | 60.05 Install guides | Done | #1175; `web/packages/website/scripts/build.mjs`; install chooser/guides and build/e2e tests |
 | 60.06 Problems | Done | #1162, #1180; `api/internal/httperror/registry.go`, `registry_test.go`, `literal_test.go`; website problem pages/tests. Open **#1172** reports wrong statuses for some registered types and a possible plugin-refusal 500; registry/site deliverables exist despite that defect. |
-| 60.07 Legal | Done | #1175; `web/packages/website/scripts/legal.mjs`, `legal.test.mjs`; `e2e/legal.spec.ts`; copyright/privacy generation |
+| 60.07 Legal | Done | #1175; `web/packages/website/scripts/legal.mjs`, `legal.test.mjs`; `e2e/legal.spec.ts`; privacy and terms. The copyright page was removed on 2026-11-24 (it redirects to the terms page) while 50.24 is deferred. |
 | 60.08 Link integrity | Done | #1160; `web/packages/website/scripts/links.mjs`, `links.test.mjs`; CI link and public-image checks |
 | 60.09 Product imagery | **partial** | #1186; `tests/fixtures/demo-library/`, `web/packages/website/scripts/shots.mjs`, `shots.test.mjs`, `shots-manifest.json`, real WebP/AVIF shots and app capture tests exist. Missing the iPad Remote capture/CI job. Open **#1198** says Arabic Mac imagery is not shown because of RTL/truncation defects; **#1199** says the Arabic Android TV player shot is withheld. Required “every named app/screen, in the page's language” coverage is not met. |
 | 60.10 Home page | Done | #1208, #1215; `web/packages/website/scripts/home.mjs`, `home.test.mjs`; `e2e/home.spec.ts`; bilingual page/tests |
