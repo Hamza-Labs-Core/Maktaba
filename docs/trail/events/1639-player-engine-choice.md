@@ -27,6 +27,7 @@ Story 13.21, after 13.18 (#1591): Profile → Playback gets **Video engine**, wi
 - **The web app's `setLocale` persists to `localStorage`.** A link that asks for a language must not change what the person chose for every later visit.
 - **The home's help page had no URL-driven language** before this. Any app that wants help in its own language now passes `?lang=en|ar`.
 - **Choosing an engine per video, not per process,** turns `Engine` from a lazy singleton into `Engines` with injected env, load and players. That made the four states (variable, setting, loaded, missing) unit-testable without a library.
+- **The probe (13.19) and the engine setting meet in `Engine.kt`**: the probe runs only while videos play with libmpv, and the problem report lists it only once it has started.
 
 ## Keep doing
 - Taking maktaba.dev screenshots from an uncommitted off-screen Compose test with invented data, as the devportal README says.
