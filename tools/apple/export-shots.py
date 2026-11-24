@@ -24,8 +24,9 @@ import subprocess
 import sys
 import tempfile
 
-# the attachment's own name, before the suffix xcresulttool adds
-NAME = re.compile(r"^shot-([a-z]+-[a-z0-9]+-[a-z]{2})(?=[_.]|$)")
+# the attachment's own name, before the suffix xcresulttool adds; a screen's name may have
+# parts of its own (`shot-iphone-remote-approve-code-en`, story 60.14)
+NAME = re.compile(r"^shot-([a-z]+(?:-[a-z0-9]+)+-[a-z]{2})(?=[_.]|$)")
 
 
 def shots(manifest: list[dict]) -> dict[str, str]:
@@ -70,11 +71,17 @@ def self_test() -> None:
             {"exportedFileName": "e.jpeg", "suggestedHumanReadableName": "shot-appletv-guide-ar.jpeg", "timestamp": 5},
             {"exportedFileName": "f.png", "suggestedHumanReadableName": "shot-appletv-guide-ar_1_2.png", "timestamp": 6},
         ]},
+        {"testIdentifier": "RemoteDemoShotsUITests/testApproveCode()", "attachments": [
+            {"exportedFileName": "g.png", "suggestedHumanReadableName": "shot-ipad-remote-approve-code-ar_0_9A8B.png", "timestamp": 7},
+            {"exportedFileName": "h.png", "suggestedHumanReadableName": "shot-iphone-remote-en_0_7C6D.png", "timestamp": 8},
+        ]},
     ]
     got = shots(manifest)
-    want = {"iphone-home-en": "a.png", "iphone-home-ar": "b.png", "appletv-guide-ar": "f.png"}
+    want = {"iphone-home-en": "a.png", "iphone-home-ar": "b.png", "appletv-guide-ar": "f.png",
+            "ipad-remote-approve-code-ar": "g.png", "iphone-remote-en": "h.png"}
     assert got == want, got
     assert not NAME.match("shot-iphone-home-english"), "a language is two letters"
+    assert not NAME.match("shot-iphone-en"), "a device and a screen before the language"
     print("export-shots self-test: ok")
 
 
