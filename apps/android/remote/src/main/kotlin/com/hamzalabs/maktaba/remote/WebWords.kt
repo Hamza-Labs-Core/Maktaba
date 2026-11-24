@@ -246,6 +246,7 @@ internal object WebWords {
         "recent_crash" to R.string.w_updates_blocker_recent_crash,
         "supervisor_unreachable" to R.string.w_updates_blocker_supervisor_unreachable,
         "switchover_open" to R.string.w_updates_blocker_switchover_open,
+        "machine_copying" to R.string.w_updates_blocker_machine_copying,
     )
 
     /** `queue.waiting.*` */

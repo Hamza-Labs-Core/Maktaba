@@ -412,6 +412,15 @@ build fails when the two differ.
 
 ### Fixed
 
+- **An update's migrations no longer fight the machines' copies of the home's database.** An
+  automatic update waits while a machine is still making its copy of a table, and the
+  migrations wait up to 10 minutes for such copies, then pause the machines' copies until they
+  are done, so a copy no longer comes straight back or holds an index build up. Since the
+  migrations run with the library stopped, their index builds now run plainly: they wait for no
+  older session and leave no half-built index behind. The machines go on from where they
+  stopped. The Updates page says when an update waits for a machine's copy, in English and
+  Arabic.
+
 - **A home whose update rolled back no longer installs an older release instead, and it sees new
   releases again.** Since 2026-11-23 GitHub's list of the newest 30 releases has been larger than
   the 8 MiB a home reads, so every check for updates failed and homes stopped learning of new

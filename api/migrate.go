@@ -239,6 +239,17 @@ func runGooseUp(ctx context.Context, db *sql.DB, dir string) error {
 	if err := repairInvalidIndexes(ctx, db, stage); err != nil {
 		return fmt.Errorf("the invalid indexes a cancelled migration left: %w", err)
 	}
+	if migrateOffline() {
+		// nothing else uses the database (the server's database step, the library stopped):
+		// the index builds run plainly (migrate_offline.go)
+		n, err := plainIndexBuildsIn(stage)
+		if err != nil {
+			return fmt.Errorf("the migrations' index builds: %w", err)
+		}
+		if n > 0 {
+			fmt.Fprintf(os.Stderr, "migrate: the library is stopped: %d index builds run plainly, not CONCURRENTLY\n", n)
+		}
+	}
 	if err := goose.UpContext(ctx, db, stage); err != nil {
 		return err
 	}

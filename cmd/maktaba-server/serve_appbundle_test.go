@@ -84,7 +84,8 @@ func init() {
 	}
 	switch mode {
 	case "ok":
-		fmt.Println("migrate: applying migrations")
+		// the library is stopped: the index builds run plainly (api/migrate_offline.go)
+		fmt.Printf("migrate: applying migrations (offline %s)\n", os.Getenv(envMigrateOffline))
 		os.Exit(0)
 	case "fail":
 		fmt.Fprintln(os.Stderr, "migrate: applying migrations\n2026/10/21 OK   0143_queue_health.sql\n"+
@@ -248,6 +249,11 @@ type fakeDB struct {
 	downs      []string // the record's state and the slot as each run of the Down scripts began
 	downErr    error
 	drops      []string // the record's state as each drop of the invalid leftovers began
+	// syncs is what each count of the machines' table syncs says (then 0); replicaRoles the
+	// machines' replication roles; copies what was paused and resumed, in order
+	syncs        []int
+	replicaRoles []string
+	copies       []string
 }
 
 func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
@@ -256,11 +262,40 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 	prevD, prevR, prevM, prevA, prevP := dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations
 	prevG := grantWorkersConnect
 	prevFB, prevSV, prevDI, prevMD, prevEB := failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled
+	prevTS, prevRL, prevPC, prevRC := tableSyncsBundled, replicaLoginsBundled, pauseCopiesBundled, resumeCopiesBundled
 	t.Cleanup(func() {
+		tableSyncsBundled, replicaLoginsBundled, pauseCopiesBundled, resumeCopiesBundled = prevTS, prevRL, prevPC, prevRC
 		dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations = prevD, prevR, prevM, prevA, prevP
 		grantWorkersConnect = prevG
 		failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled = prevFB, prevSV, prevDI, prevMD, prevEB
 	})
+	tableSyncsBundled = func(context.Context, pgbundle.Bundle) (int, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		n := 0
+		if len(f.syncs) > 0 {
+			n, f.syncs = f.syncs[0], f.syncs[1:]
+		}
+		return n, nil
+	}
+	replicaLoginsBundled = func(context.Context, pgbundle.Bundle) ([]string, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.replicaRoles, nil
+	}
+	pauseCopiesBundled = func(_ context.Context, _ pgbundle.Bundle, roles []string) (int, error) {
+		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.copies = append(f.copies, "pause "+strings.Join(roles, ",")+" "+rec.State)
+		return len(roles), nil
+	}
+	resumeCopiesBundled = func(_ context.Context, _ pgbundle.Bundle, roles []string) error {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.copies = append(f.copies, "resume "+strings.Join(roles, ","))
+		return nil
+	}
 	failedBack = func(from, _ string, applied int64, onKept bool) (string, int64, string) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -1932,7 +1967,8 @@ func TestRunMigrateUp(t *testing.T) {
 		return c
 	}
 	var log strings.Builder
-	if err := runMigrateUp(context.Background(), api("ok"), &log); err != nil || !strings.Contains(log.String(), "applying") {
+	if err := runMigrateUp(context.Background(), api("ok"), &log); err != nil || !strings.Contains(log.String(), "applying") ||
+		!strings.Contains(log.String(), "(offline 1)") {
 		t.Fatalf("ok = %v, log %q", err, log.String())
 	}
 	err = runMigrateUp(context.Background(), api("fail"), io.Discard)
@@ -2348,5 +2384,83 @@ func TestAppBundleVenvRemovesTheWheelhouse(t *testing.T) {
 	}
 	if _, err := os.Stat(wh); err == nil {
 		t.Fatal("the wheelhouse was kept after the venv was built")
+	}
+}
+
+// Research item 5 (E4, E8): an update's migrations wait for the machines' table syncs to
+// end, pause the machines' copies (their replication roles may not log in, their
+// walsenders ended) while they run, and let them log in again after, whether they worked
+// or failed; a server stopped meanwhile lets them back in at its next start.
+func TestAppBundleMigrationsPauseTheMachinesCopies(t *testing.T) {
+	prevW, prevE := copySyncWait, copySyncEvery
+	t.Cleanup(func() { copySyncWait, copySyncEvery = prevW, prevE })
+	copySyncWait, copySyncEvery = time.Minute, time.Millisecond
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f := installFakeDB(t, cfg)
+	f.syncs, f.replicaRoles = []int{2, 1, 0}, []string{"maktaba_rep_a", "maktaba_rep_b"}
+	var buf strings.Builder
+	log := lockedWriter{mu: &sync.Mutex{}, w: &buf}
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), log)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	copies, syncs := append([]string(nil), f.copies...), len(f.syncs)
+	f.mu.Unlock()
+	if want := []string{"pause maktaba_rep_a,maktaba_rep_b migrating", "resume maktaba_rep_a,maktaba_rep_b"}; strings.Join(copies, "|") != strings.Join(want, "|") {
+		t.Fatalf("copies %v, want %v", copies, want)
+	}
+	if syncs != 0 {
+		t.Fatalf("the table syncs were not waited out (%d counts left)", syncs)
+	}
+	if _, err := os.Stat(copiesPausedPath(cfg.StateDir())); err == nil {
+		t.Fatal("the paused roles' record is left")
+	}
+	log.mu.Lock()
+	said := buf.String()
+	log.mu.Unlock()
+	for _, want := range []string{"2 of the machines' table syncs run", "the machines' table syncs ended",
+		"the machines' copies are paused for the migrations (maktaba_rep_a, maktaba_rep_b",
+		"the machines' copies may log in again"} {
+		if !strings.Contains(said, want) {
+			t.Errorf("the log lacks %q:\n%s", want, said)
+		}
+	}
+
+	// failed migrations let the copies back in too
+	cfg, payload = appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated})
+	f = installFakeDB(t, cfg)
+	f.replicaRoles = []string{"maktaba_rep_a"}
+	f.migrateErr = errors.New("ERROR 0144_x.sql")
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	_ = prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	f.mu.Lock()
+	copies = append([]string(nil), f.copies...)
+	f.mu.Unlock()
+	if len(copies) < 2 || copies[0] != "pause maktaba_rep_a migrating" || copies[1] != "resume maktaba_rep_a" {
+		t.Fatalf("after failed migrations: %v", copies)
+	}
+
+	// a server stopped during the migrations: its next start lets them back in first
+	cfg, payload = appEnv(t, "v0.3.0", "")
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+	f = installFakeDB(t, cfg)
+	if err := writeCopiesPaused(cfg.StateDir(), []string{"maktaba_rep_c"}); err != nil {
+		t.Fatal(err)
+	}
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	copies = append([]string(nil), f.copies...)
+	f.mu.Unlock()
+	if strings.Join(copies, "|") != "resume maktaba_rep_c" {
+		t.Fatalf("a start after a stop mid-migration: %v", copies)
+	}
+	if _, err := os.Stat(copiesPausedPath(cfg.StateDir())); err == nil {
+		t.Fatal("the paused roles' record is left")
 	}
 }

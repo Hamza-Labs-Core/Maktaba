@@ -220,6 +220,7 @@
     <string name="w_updates_blocker_recent_crash">a part of the home\'s server crashed in the last ten minutes</string>
     <string name="w_updates_blocker_supervisor_unreachable">the home\'s supervisor does not answer</string>
     <string name="w_updates_blocker_switchover_open">the home is being switched to another machine</string>
+    <string name="w_updates_blocker_machine_copying">a machine is copying the home\'s database: the update starts once its copy is done</string>
     <string name="w_queue_waiting_paused">Paused</string>
     <string name="w_queue_waiting_paused_all">Everything is paused</string>
     <string name="w_queue_waiting_pool_full">Waiting for a free worker</string>

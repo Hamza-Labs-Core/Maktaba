@@ -746,6 +746,11 @@ func (g *migrationGate) migrate(ctx context.Context, cur string, update bool, re
 			report(detail("db_migrating", fmt.Sprintf("Updating the library database for %s (%d migrations done)", cur, n), cur))
 		}}
 	}
+	if update {
+		// the machines' copies wait out their table syncs, then pause until this is done
+		resume := g.pauseCopies(ctx)
+		defer resume()
+	}
 	for try := 1; ; try++ {
 		if update {
 			g.endSessions(ctx)
@@ -882,9 +887,13 @@ const migrateLockTimeout = "2m"
 // bounds an update's: updater.pendingCap), but none waits on another session's lock
 // longer than migrateLockTimeout. Their output goes to the server's log; an error
 // carries their last lines.
+//
+// The library is stopped while they run (this step runs before any role), so they build
+// their indexes plainly, not CONCURRENTLY (MAKTABA_MIGRATE_OFFLINE: api/migrate_offline.go):
+// a plain build waits for no older snapshot and leaves no INVALID index when it is cut short.
 func runMigrateUp(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout, "up")
-	cmd.Env, cmd.Dir = api.Env, api.Dir
+	cmd.Env, cmd.Dir = append(envOrOS(api.Env), envMigrateOffline+"=1"), api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
 	cmd.Stderr = cmd.Stdout
@@ -901,6 +910,19 @@ func runMigrateUp(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 		return fmt.Errorf("%w: %s", errSchemaAhead, msg)
 	}
 	return errors.New(msg)
+}
+
+// envMigrateOffline tells `maktaba-api migrate up` that nothing else uses the database
+// (api/migrate_offline.go): its CREATE INDEX CONCURRENTLY statements run as plain builds.
+const envMigrateOffline = "MAKTABA_MIGRATE_OFFLINE"
+
+// envOrOS is env, or this process's environment when env is nil (exec.Cmd's own rule),
+// copied so an append never writes into the caller's.
+func envOrOS(env []string) []string {
+	if env == nil {
+		return os.Environ()
+	}
+	return append([]string(nil), env...)
 }
 
 // runDropInvalid is `maktaba-api migrate drop-invalid` with the api's binary and
@@ -1030,6 +1052,8 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		}
 		return nil
 	}
+	// the machines' copies left paused by migrations that did not finish log in again
+	g.resumeLeftCopies()
 	// a start of another release that never finished (stopped during its dump, or the
 	// launcher went back from it) ends failed: this start is cur's
 	if n, err := attempts.SettleStale(g.updates, cur); err != nil {

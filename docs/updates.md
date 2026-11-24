@@ -245,6 +245,22 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
   three tries running, and the update put a 35 GB backup back (2 h 44 min). An index build cut
   short leaves an INVALID index; the next try drops it and builds it again, where `IF NOT
   EXISTS` had taken it for done.
+- **The machines' copies wait, then pause (since 2026-11-24).** An automatic update does not
+  start while a machine is copying a table of the home's database (its first copy, or one made
+  anew: `machine_copying` on Admin → Updates); **Update now** does not wait. Before the
+  migrations the home waits up to 10 minutes for the table syncs still running, then pauses the
+  machines' copies: each machine's replication role may not log in, and its walsender is ended,
+  so nothing of theirs runs or comes straight back while the schema changes. After the
+  migrations, failed or not, they log in again and go on from where they stopped (each one's slot
+  kept the changes, under the home's cap). A home stopped in the middle lets them back in at its
+  next start.
+- **Index builds are plain while the library is stopped (since 2026-11-24).** The migrations
+  run before any role starts, so their `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
+  run without `CONCURRENTLY` (`MAKTABA_MIGRATE_OFFLINE=1`, set by the database step and the
+  rehearsal on a copy). A plain build takes a lock that only holds writes back, which the
+  stopped library makes none of, waits for no older transaction, and rolls back whole: it leaves
+  no INVALID index. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
+  left as it is.
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous
   release runs on them), `db_undone` (their Down scripts undid them), or `db_restored` (the
