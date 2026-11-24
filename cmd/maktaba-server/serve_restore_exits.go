@@ -17,8 +17,9 @@ package main
 // failed one, and before a way out that needs it, so a release that keeps no track of the
 // data (one from before 2026-11-25 that tried in between), a crash, or a Postgres that made
 // the database again empty cannot be taken for it. A restore asked on such a release has no
-// identity: its database is the one from before when its schema is another than the
-// backup's, else that is not known.
+// identity: its database is the one from before when its schema is another than that of every
+// backup that may have been put back since (the one asked, and those asked before it:
+// MaybeSchemas), else that is not known.
 //
 // One lock (restoreGuard) covers asking for a restore, giving one up, and the start's own
 // try, in the one process that does all three (the supervisor; offline, `maktaba-server
@@ -29,6 +30,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -173,11 +175,18 @@ func settleData(ctx context.Context, rec apppayload.Database, p dataProbe) (appp
 		rec.DataID = id
 	case rec.Data == apppayload.DataUnknown && p.backupSchema != nil:
 		// asked on a release that kept no track of it: every release's restore makes the
-		// database (or its schema) afresh, so one with another schema than the backup's is
-		// the one from before it
-		if want := p.backupSchema(cctx, rec); want > 0 && want != schema {
+		// database (or its schema) afresh, so one with another schema than every backup's that
+		// was asked since is the one from before them all
+		other := true
+		for _, want := range append([]int64{p.backupSchema(cctx, rec)}, rec.MaybeSchemas...) {
+			other = other && want > 0 && want != schema
+		}
+		if other {
 			rec.Data, rec.DataID = apppayload.DataUntouched, id
 		}
+	}
+	if rec.Data != apppayload.DataUnknown {
+		rec.MaybeSchemas = nil
 	}
 	return rec, nil
 }
@@ -243,16 +252,26 @@ func waitsOn(rec apppayload.Database) string {
 	return rec.Ran()
 }
 
+// before is the record the restore rec replaced: what it says, else (asked on a release from
+// before 2026-11-25) the release that ran on its database last, which is all that is known: a
+// newer one updates it, from a backup of its own.
+func before(rec apppayload.Database) apppayload.Database {
+	if rec.Before != nil {
+		return *rec.Before
+	}
+	return apppayload.Database{Version: rec.Version, State: apppayload.DatabaseMigrated}
+}
+
 // leftBehind is the record the restore replaced, when release cur goes on from it: cur is a
 // newer release a person installed since the restore failed. It is not the release whose
 // try failed (a plain restart tries again), nor the one the restore is for, and the data is
 // what it was (rec is settled).
 func leftBehind(rec apppayload.Database, cur string) (apppayload.Database, bool) {
-	if !asked(rec) || rec.Data != apppayload.DataUntouched || rec.Before == nil || rec.TriedBy == "" ||
-		sameRelease(rec.TriedBy, cur) || sameRelease(rec.From, cur) || !newerThan(cur, waitsOn(*rec.Before)) {
+	if !asked(rec) || rec.Data != apppayload.DataUntouched || rec.TriedBy == "" ||
+		sameRelease(rec.TriedBy, cur) || sameRelease(rec.From, cur) || !newerThan(cur, waitsOn(before(rec))) {
 		return rec, false
 	}
-	return *rec.Before, true
+	return before(rec), true
 }
 
 // giveUpTo is what giving the restore rec up leaves while release running runs: the record,
@@ -261,15 +280,13 @@ func leftBehind(rec apppayload.Database, cur string) (apppayload.Database, bool)
 // a newer release that can go on from it.
 func giveUpTo(rec apppayload.Database, running string) (base apppayload.Database, release string, ok bool) {
 	target := sameRelease(rec.From, running)
+	base = before(rec)
 	if rec.Before == nil {
-		// the release that ran on it last is all that is known: a newer one updates it, from
-		// a backup of its own
 		if target || !newerThan(running, rec.Version) {
 			return rec, "", false
 		}
-		return apppayload.Database{Version: rec.Version, State: apppayload.DatabaseMigrated}, "", true
+		return base, "", true
 	}
-	base = *rec.Before
 	ran := base.Ran()
 	if base.State == apppayload.DatabaseHeld || ran == "" || sameRelease(ran, running) || (!target && newerThan(running, ran)) {
 		// a held update waits for a person whichever release starts
@@ -278,9 +295,13 @@ func giveUpTo(rec apppayload.Database, running string) (base apppayload.Database
 	return base, ran, true
 }
 
-// canGiveUp is giveUpTo's ok for the record as it says it is.
-func canGiveUp(rec apppayload.Database, running string) bool {
-	_, _, ok := giveUpTo(rec, running)
+// canGiveUp says whether the restore rec can be given up, as the record says it is: the data
+// is what it was, and the release that would have to start on it is kept.
+func (r *restorer) canGiveUp(rec apppayload.Database) bool {
+	_, release, ok := giveUpTo(rec, r.running())
+	if ok && release != "" {
+		_, ok = r.keptRelease(release)
+	}
 	return ok && rec.Data == apppayload.DataUntouched
 }
 
@@ -315,7 +336,7 @@ func (r *restorer) abandon(ctx context.Context, by string) error {
 	}
 	// the record of a try under way says what the try did so far
 	stop := func() string {
-		if rec, err := read(); err != nil || !canGiveUp(rec, r.running()) {
+		if rec, err := read(); err != nil || !r.canGiveUp(rec) {
 			return ""
 		}
 		return "stopped by " + by
@@ -332,7 +353,7 @@ func (r *restorer) abandon(ctx context.Context, by string) error {
 		}
 		if settled.Data != rec.Data || settled.DataID != rec.DataID {
 			rec = settled
-			if err := apppayload.WriteDatabase(r.stateDir, rec); err != nil {
+			if err := writeRecord(r.stateDir, rec); err != nil {
 				return false, err
 			}
 		}
@@ -371,10 +392,17 @@ func (r *restorer) leaveFor(ctx context.Context, rec apppayload.Database, old *a
 				"this home keeps runs", release)
 		}
 	}
+	// what puts the record back, made now: a disk with no room for another copy of it then is
+	// what a switch may fail on
+	undo, err := stashRecord(r.stateDir, old != nil)
+	if err != nil {
+		return fmt.Errorf("the database's record cannot be copied before it is changed (nothing was): %w", err)
+	}
 	if err := r.holdFor(rec); err != nil {
+		undo.forget()
 		return err
 	}
-	err := apppayload.WriteDatabase(r.stateDir, rec)
+	err = writeRecord(r.stateDir, rec)
 	if err == nil && release != "" {
 		// a client that goes away does not cut the switch
 		if err = r.inst.(updater.Keeper).RunKept(context.WithoutCancel(ctx), target); err != nil {
@@ -382,18 +410,94 @@ func (r *restorer) leaveFor(ctx context.Context, rec apppayload.Database, old *a
 		}
 	}
 	if err == nil {
+		undo.forget()
 		return nil
 	}
 	// nothing is restarted: the record goes back to how it was, so no start acts on it
+	if uerr := undo.back(); uerr != nil {
+		return fmt.Errorf("%w (and the database's record could not be put back, so the next start acts on what was asked: %v)", err, uerr)
+	}
 	back := apppayload.Database{}
 	if old != nil {
 		back = *old
-		_ = apppayload.WriteDatabase(r.stateDir, back)
-	} else {
-		_ = os.Remove(apppayload.DatabasePath(r.stateDir))
 	}
 	_ = r.holdFor(back)
 	return err
+}
+
+// writeRecord is apppayload.WriteDatabase (tests replace it).
+var writeRecord = apppayload.WriteDatabase
+
+// recordUndo puts the database's record back as it was when it was stashed.
+type recordUndo struct {
+	path, copy string // copy "": there was none
+}
+
+// stashRecord keeps a copy of the record beside it (had false: there is none to keep).
+func stashRecord(stateDir string, had bool) (recordUndo, error) {
+	u := recordUndo{path: apppayload.DatabasePath(stateDir)}
+	if !had {
+		return u, nil
+	}
+	raw, err := os.ReadFile(u.path)
+	if err != nil {
+		return u, err
+	}
+	u.copy = u.path + ".undo"
+	return u, layout.WriteFileAtomic(u.copy, raw, 0o644)
+}
+
+// back takes no room: a rename, or a removal.
+func (u recordUndo) back() error {
+	if u.copy == "" {
+		if err := os.Remove(u.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	return os.Rename(u.copy, u.path)
+}
+
+func (u recordUndo) forget() {
+	if u.copy != "" {
+		_ = os.Remove(u.copy)
+	}
+}
+
+// copyError is a copy of the database a restore replaces that could not be kept.
+type copyError struct{ err error }
+
+func (e *copyError) Error() string { return e.err.Error() }
+func (e *copyError) Unwrap() error { return e.err }
+
+// asideKeeps are the backups that stay when room is made for the copy of the database the
+// restore rec replaces: the one it puts back, the copy itself, and the one the record before
+// it names.
+func asideKeeps(rec apppayload.Database) []string {
+	var names []string
+	for _, p := range []string{rec.Dump, rec.Aside, before(rec).Dump} {
+		if p != "" {
+			names = append(names, filepath.Base(p))
+		}
+	}
+	return names
+}
+
+// copyRoom says why no copy of the database a restore of the backup name replaces could be
+// kept now (nil: it can, or none is needed: one is there already, or the database is another
+// since).
+func (r *restorer) copyRoom(name string) error {
+	if r.db == nil {
+		return nil
+	}
+	rec := apppayload.Database{}
+	if old, had, err := apppayload.ReadDatabase(r.stateDir); err == nil && had {
+		rec = old
+		if asked(old) && (old.Aside != "" || old.Data == apppayload.DataReplaced || old.Data == apppayload.DataGone) {
+			return nil
+		}
+	}
+	return roomKeeping(r.db.Backups, r.room, append(asideKeeps(rec), name)...)
 }
 
 // holdFor holds the backups while rec is a restore that is not done, and releases them
@@ -431,24 +535,25 @@ func (r *restorer) restart() {
 }
 
 // stuckOf is the restore a person asked for that is not done, nil when none: the recovery
-// page's ways out of it (running: the release that runs).
-func stuckOf(stateDir, running string) *recovery.Stuck {
-	rec, ok, err := apppayload.ReadDatabase(stateDir)
+// page's ways out of it.
+func stuckOf(r *restorer) *recovery.Stuck {
+	rec, ok, err := apppayload.ReadDatabase(r.stateDir)
 	if err != nil || !ok || !asked(rec) {
 		return nil
 	}
 	s := &recovery.Stuck{Backup: filepath.Base(rec.Dump), Why: rec.RestoreError, Data: rec.Data,
-		Running: restoreGuardOf(stateDir).tryRuns(), CanGiveUp: canGiveUp(rec, running)}
+		Running: restoreGuardOf(r.stateDir).tryRuns(), CanGiveUp: r.canGiveUp(rec)}
 	if s.Data == apppayload.DataUnknown {
 		s.Data = apppayload.DataReplaced // what can be done is the same
 	}
+	s.NoCopy = rec.CopyError != ""
 	if !s.Running && s.Why == "" {
 		return nil // not tried yet: the restart that was asked does
 	}
 	if s.CanGiveUp {
-		base, release, _ := giveUpTo(rec, running)
+		base, release, _ := giveUpTo(rec, r.running())
 		if release == "" && base.State != apppayload.DatabaseHeld {
-			release = running
+			release = r.running()
 		}
 		s.Release = layout.NormalizeVersion(release)
 	}

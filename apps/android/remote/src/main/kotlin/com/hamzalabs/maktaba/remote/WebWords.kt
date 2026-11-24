@@ -354,6 +354,7 @@ internal object WebWords {
         "db_restore_backup_failed" to Template(R.string.w_setup_starting_detail_db_restore_backup_failed, listOf("dump")),
         "db_restore_backup_part" to Template(R.string.w_setup_starting_detail_db_restore_backup_part, listOf("dump")),
         "db_restore_backup_gone" to Template(R.string.w_setup_starting_detail_db_restore_backup_gone, listOf("dump")),
+        "db_restore_no_copy" to Template(R.string.w_setup_starting_detail_db_restore_no_copy, listOf("dump")),
         "db_no_cluster" to Template(R.string.w_setup_starting_detail_db_no_cluster, listOf("failed", "dump")),
         "db_record_failed" to Template(R.string.w_setup_starting_detail_db_record_failed, listOf("path")),
         "pg_unreadable" to Template(R.string.w_setup_starting_detail_pg_unreadable, listOf("path")),

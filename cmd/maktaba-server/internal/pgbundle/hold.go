@@ -10,7 +10,7 @@ import (
 // holdFile in a backups folder says a restore a person asked for is not done: every dump
 // there may be the one it puts back, or the next one tried, so nothing removes any of them
 // by itself (PruneBackups, MakeRoom, the scheduled dumps and their pruning), whichever
-// process runs it. What a person deletes by name goes all the same.
+// process runs it; but the room for the copy of the database it replaces (MakeRoomKeeping). What a person deletes by name goes all the same.
 const holdFile = "restore-hold"
 
 // HoldBackups keeps every dump in dir until ReleaseBackups.

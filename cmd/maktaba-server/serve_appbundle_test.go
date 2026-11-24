@@ -1956,6 +1956,7 @@ func TestDetailCodesAreAFixedList(t *testing.T) {
 		"db_restore_backup_failed": "dump error",
 		"db_restore_backup_part":   "dump error",
 		"db_restore_backup_gone":   "dump error",
+		"db_restore_no_copy":       "dump error",
 		"db_no_cluster":            "failed error dump",
 		"db_record_failed":         "path error",
 		"pg_unreadable":            "path error",

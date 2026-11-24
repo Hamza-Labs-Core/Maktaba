@@ -64,7 +64,7 @@ func (o RestoreOptions) before(step string) error {
 		return nil
 	}
 	if err := o.Before(step); err != nil {
-		return fmt.Errorf("nothing was done to the database: %w", err)
+		return fmt.Errorf("the restore stopped before its next step: %w", err)
 	}
 	return nil
 }

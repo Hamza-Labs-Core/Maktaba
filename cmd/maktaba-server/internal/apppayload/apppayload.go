@@ -146,12 +146,20 @@ type Database struct {
 	// or refused by them alone (serve_restore_exits.go). Aside is the dump the replaced
 	// database was set aside in (once for a restore, however often it is tried),
 	// RestoreError why its last try failed and TriedBy the release that tried.
-	Before       *Database `json:"before,omitempty"`
-	Data         string    `json:"data,omitempty"`
-	DataID       string    `json:"data_id,omitempty"`
-	Aside        string    `json:"aside,omitempty"`
-	RestoreError string    `json:"restore_error,omitempty"`
-	TriedBy      string    `json:"tried_by,omitempty"`
+	Before *Database `json:"before,omitempty"`
+	Data   string    `json:"data,omitempty"`
+	DataID string    `json:"data_id,omitempty"`
+	// MaybeSchemas are the schemas of the backups asked before this one while the data was not
+	// known (0: one whose schema cannot be told): any of them may be what is there.
+	MaybeSchemas []int64 `json:"maybe_schemas,omitempty"`
+	Aside        string  `json:"aside,omitempty"`
+	// NoCopy: the person confirmed a restore with no copy kept of the database it replaces,
+	// when there is no room for one; CopyError why its last try could not keep one (that try
+	// stopped before it touched anything).
+	NoCopy       bool   `json:"no_copy,omitempty"`
+	CopyError    string `json:"copy_error,omitempty"`
+	RestoreError string `json:"restore_error,omitempty"`
+	TriedBy      string `json:"tried_by,omitempty"`
 	// KeptFor is the older release a rollback left this database for with nothing put
 	// back (layout.MarkRecordKept): Version's migrations were all rollback-safe, so KeptFor
 	// starts on the newer schema (its api told it may: MAKTABA_SCHEMA_AHEAD_OK), and

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
@@ -41,6 +43,10 @@ func newExitsRig(t *testing.T) *exitsRig {
 	prevRoom := makeRoom
 	t.Cleanup(func() { makeRoom = prevRoom })
 	makeRoom = func(string, pgbundle.RoomPolicy) error { return nil }
+	prevKeeping, prevCheck := makeRoomKeeping, roomKeeping
+	t.Cleanup(func() { makeRoomKeeping, roomKeeping = prevKeeping, prevCheck })
+	makeRoomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return nil }
+	roomKeeping = makeRoomKeeping
 	rig := newRestoreRig(t, map[string]int64{firstBackup: 140, otherBackup: 140})
 	e := &exitsRig{restoreRig: rig, t: t, f: installFakeDB(t, cfg), log: &syncBuf{}, dir: cfg.StateDir()}
 	rig.r.stateDir = e.dir
@@ -114,12 +120,14 @@ func TestWaysOutByTheData(t *testing.T) {
 			{"never tried, a newer release", "v0.2.0", "", "v0.3.1", held, true, false, ""},
 			{"not recorded, the target runs", "v0.2.0", "v0.2.0", "v0.2.0", nil, false, false, ""},
 			{"not recorded, the release that ran", "v0.2.0", "v0.3.0", "v0.3.0", nil, false, false, ""},
-			{"not recorded, a newer release", "v0.2.0", "v0.2.0", "v0.4.0", nil, true, false, ""},
+			{"not recorded, a newer release", "v0.2.0", "v0.2.0", "v0.4.0", nil, true, true, ""},
+			{"not recorded, the newer release's own try failed", "v0.2.0", "v0.4.0", "v0.4.0", nil, true, false, ""},
 			{"not recorded, a newer target", "v0.4.0", "v0.4.0", "v0.4.0", nil, false, false, ""},
 		} {
 			rec := apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, By: "admin", From: c.from,
 				TriedBy: c.tried, Before: c.before, Data: data}
-			if got := canGiveUp(rec, c.running); got != (c.giveUp && ok) {
+			inst := &keepInstaller{running: c.running, kept: []updater.KeptRelease{{Version: "0.2.0"}, {Version: "0.3.0"}}}
+			if got := (&restorer{inst: inst}).canGiveUp(rec); got != (c.giveUp && ok) {
 				t.Errorf("%q, %s: give up %v, want %v", data, c.name, got, c.giveUp && ok)
 			}
 			if _, release, gave := giveUpTo(rec, c.running); gave && release != c.release {
@@ -276,7 +284,7 @@ func TestARestoreAskedOnAnOlderReleaseHasAWayOut(t *testing.T) {
 			if rec := e.rec(); rec.Data != c.data || rec.TriedBy != "v0.4.0" {
 				t.Fatalf("record %+v", rec)
 			}
-			s := stuckOf(e.dir, "0.4.0")
+			s := stuckOf(e.r)
 			if s == nil || s.CanGiveUp != (c.data == apppayload.DataUntouched) {
 				t.Fatalf("stuck %+v", s)
 			}
@@ -511,7 +519,7 @@ func TestGivingUpStopsATryThatHangs(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- e.start("v0.2.0") }()
 	<-started
-	if s := stuckOf(e.dir, "0.2.0"); s == nil || !s.Running || !s.CanGiveUp {
+	if s := stuckOf(e.r); s == nil || !s.Running || !s.CanGiveUp {
 		t.Fatalf("stuck %+v", s)
 	}
 	if _, err := e.r.restore(context.Background(), otherBackup, "admin", true, false); restoreCode(err) != "restore_under_way" {
@@ -633,5 +641,344 @@ func TestAbandonEndpoint(t *testing.T) {
 	e.fresh()
 	if w := post(`{"by":"x","confirm":true}`); w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "restore_none") {
 		t.Fatalf("none waits: %d %s", w.Code, w.Body)
+	}
+}
+
+// The review of 2b54a1565, 1: a restore of A asked on a shipped release, half done and not
+// known; another backup, B, at another schema, asked after it, which fails. That the database
+// is not at B's schema says nothing: it may hold A's data. It is never taken for the one from
+// before, whichever backup is asked then, in whatever order.
+func TestAnEarlierTrysDataIsNeverTakenForTheOneFromBefore(t *testing.T) {
+	e := newExitsRig(t)
+	const aside = "replaced-v0.3.0-20261120T000000.dump"
+	if err := os.WriteFile(filepath.Join(e.backups, aside), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	schemas := map[string]int64{firstBackup: 140, otherBackup: 140, aside: 149}
+	e.r.schema = func(_ context.Context, p string) (int64, error) { return schemas[filepath.Base(p)], nil }
+	e.f.schema, e.f.restoreErr = 140, errors.New("no such file") // the database holds A, in part or whole
+	e.inst.running = "0.4.0"
+	e.write(apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0", By: "admin",
+		Dump: filepath.Join(e.backups, firstBackup), Error: "restore asked by admin"})
+	kept := t.TempDir()
+	for v, s := range map[string]string{"0.2.0": "0140_m.sql", "0.2.1": "0140_m.sql", "0.3.0": "0149_m.sql"} {
+		if err := os.MkdirAll(filepath.Join(kept, v), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(kept, v, s), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	start := func(version string) error {
+		e.fresh()
+		g := &migrationGate{stateDir: e.dir, version: version, pg: &pgbundle.Bundle{Backups: e.backups},
+			api: exec.Command("maktaba-api"), keep: 3, log: e.log, prev: func(v string) string {
+				return existingDir(filepath.Join(kept, layout.NormalizeVersion(v)))
+			}}
+		return g.run(context.Background(), noReport)
+	}
+	ask := func(name string) {
+		t.Helper()
+		e.fresh()
+		if _, err := e.r.restore(context.Background(), name, "admin", true, false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	never := func(when string) {
+		t.Helper()
+		if rec := e.rec(); rec.Data == apppayload.DataUntouched || rec.DataID != "" {
+			t.Fatalf("%s: %+v", when, rec)
+		}
+		e.fresh()
+		if s := stuckOf(e.r); s != nil && s.CanGiveUp {
+			t.Fatalf("%s: stuck %+v", when, s)
+		}
+		if err := e.r.abandon(context.Background(), "admin"); restoreCode(err) != "restore_data_changed" {
+			t.Fatalf("%s: given up: %v", when, err)
+		}
+	}
+	for _, v := range []string{"v0.4.0"} {
+		if code := haltCode(t, start(v)); code != "db_restore_backup_part" {
+			t.Fatal(code)
+		}
+	}
+	never("A, tried")
+	ask(aside)
+	never("B, asked")
+	for _, v := range []string{"v0.3.0", "v0.4.0"} {
+		if code := haltCode(t, start(v)); code != "db_restore_backup_part" {
+			t.Fatalf("B on %s: %s", v, code)
+		}
+		never("B, tried on " + v)
+	}
+	ask(otherBackup) // A's schema again
+	_ = start("v0.4.0")
+	ask(aside)
+	_ = start("v0.4.0")
+	never("B again")
+	if rec := e.rec(); !slices.Equal(rec.MaybeSchemas, []int64{140, 149}) {
+		t.Fatalf("%+v", rec)
+	}
+}
+
+// A backup whose schema cannot be told, asked before, may have made any: nothing is known by
+// its schema after it.
+func TestABackupOfNoSchemaLeavesTheDataUnknown(t *testing.T) {
+	e := newExitsRig(t)
+	e.r.schema = func(_ context.Context, p string) (int64, error) {
+		if filepath.Base(p) == otherBackup {
+			return 140, nil
+		}
+		return 0, errors.New("lost")
+	}
+	e.f.schema, e.f.restoreErr = 777, errors.New("disk full")
+	e.inst.running = "0.4.0"
+	e.write(apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.1.0", By: "admin",
+		Dump: filepath.Join(e.backups, firstBackup), Error: "restore asked by admin"})
+	if _, err := e.r.restore(context.Background(), otherBackup, "admin", true, false); err != nil {
+		t.Fatal(err)
+	}
+	e.fresh()
+	if err := e.r.abandon(context.Background(), "admin"); restoreCode(err) != "restore_data_changed" {
+		t.Fatal(err)
+	}
+	if rec := e.rec(); rec.Data != apppayload.DataUnknown || !slices.Equal(rec.MaybeSchemas, []int64{0}) {
+		t.Fatalf("%+v", rec)
+	}
+}
+
+// ... and a database at another schema than every backup tried is the one from before, however
+// many were.
+func TestTheOneFromBeforeIsStillKnownAfterAnotherBackup(t *testing.T) {
+	e := newExitsRig(t)
+	e.r.schema = func(context.Context, string) (int64, error) { return 140, nil }
+	e.f.schema, e.f.restoreErr = 149, errors.New("disk full")
+	e.inst.running = "0.4.0"
+	e.write(apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0", By: "admin",
+		Dump: filepath.Join(e.backups, firstBackup), Error: "restore asked by admin"})
+	e.f.idErr = errors.New("connection refused") // asked offline: nothing can be looked at
+	if _, err := e.r.restore(context.Background(), otherBackup, "admin", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.rec(); rec.Data != apppayload.DataUnknown {
+		t.Fatalf("%+v", rec)
+	}
+	e.f.idErr = nil
+	e.fresh()
+	if err := e.r.abandon(context.Background(), "admin"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The review of 2b54a1565, 5: what the page says of a newer release, for a restore asked on a
+// shipped release too: it goes on from the library as it was, and never puts the backup back.
+func TestANewerReleaseGoesOnAfterAShippedAsk(t *testing.T) {
+	e := newExitsRig(t)
+	e.r.schema = func(context.Context, string) (int64, error) { return 140, nil }
+	e.f.schema, e.f.restoreErr = 149, errors.New("no space left on device")
+	e.inst.running, e.f.known, e.f.pending = "0.4.0", true, 1
+	e.write(apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0", By: "admin",
+		Dump: filepath.Join(e.backups, firstBackup), Error: "restore asked by admin", Data: apppayload.DataUntouched, DataID: "1/2/3"})
+	if code := haltCode(t, e.start("v0.4.0")); code != "db_restore_backup_failed" {
+		t.Fatal(code)
+	}
+	e.f.restoreErr = nil // there is room now
+	e.fresh()
+	if err := e.start("v0.4.0"); err != nil { // a plain restart does what was asked
+		t.Fatal(err)
+	}
+	if _, _, r := e.f.counts(); r != 2 {
+		t.Fatalf("%d restores", r)
+	}
+	// a newer one goes on
+	e2 := newExitsRig(t)
+	e2.f.schema, e2.f.restoreErr = 149, errors.New("no space left on device")
+	e2.f.known, e2.f.pending = true, 1
+	e2.write(apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0", By: "admin",
+		Dump: filepath.Join(e2.backups, firstBackup), Error: "restore asked by admin", Data: apppayload.DataUntouched, DataID: "1/2/3"})
+	_ = haltCode(t, e2.start("v0.4.0"))
+	e2.f.restoreErr = nil
+	e2.fresh()
+	if err := e2.start("v0.5.0"); err != nil {
+		t.Fatal(err)
+	}
+	if d, m, r := e2.f.counts(); d != 1 || m != 1 || r != 1 {
+		t.Fatalf("%d dumps, %d migrations, %d restores", d, m, r)
+	}
+	if rec := e2.rec(); rec.Version != "v0.5.0" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("%+v", rec)
+	}
+}
+
+// Through the admin port, as the command line asks: past its token and its router.
+func TestAbandonThroughTheAdminPort(t *testing.T) {
+	e := newExitsRig(t)
+	rec := e.asked()
+	rec.RestoreError, rec.TriedBy = "disk full", "v0.2.0"
+	e.write(rec)
+	e.inst.running = "0.2.0"
+	u := &updates{r: e.r}
+	srv := httptest.NewServer(u.adminHandler(http.NotFoundHandler(), "tok"))
+	defer srv.Close()
+	var out bytes.Buffer
+	if err := abandonThroughServer(context.Background(), &out, &restoreAsker{base: srv.URL, token: "wrong", http: srv.Client()}); err == nil {
+		t.Fatal("given up with a wrong token")
+	}
+	if err := abandonThroughServer(context.Background(), &out, &restoreAsker{base: srv.URL, token: "tok", http: srv.Client()}); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.rec(); got.State != apppayload.DatabaseHeld || !strings.Contains(out.String(), "given up") {
+		t.Fatalf("record %+v, said %q", got, out.String())
+	}
+}
+
+// A try is stopped only for a give up that can be done: the release that has to run is kept.
+func TestATryIsNotStoppedForAGiveUpThatCannotBeDone(t *testing.T) {
+	e := newExitsRig(t)
+	rec := e.asked()
+	rec.Before = &apppayload.Database{Version: "0.2.5", State: apppayload.DatabaseMigrated} // no longer kept
+	e.write(rec)
+	e.inst.running = "0.2.0"
+	started, free := make(chan struct{}), make(chan struct{})
+	e.f.onRestore = func(ctx context.Context) error {
+		close(started)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-free:
+			return nil
+		}
+	}
+	done := make(chan error, 1)
+	go func() { done <- e.start("v0.2.0") }()
+	<-started
+	if s := stuckOf(e.r); s == nil || !s.Running || s.CanGiveUp {
+		t.Fatalf("stuck %+v", s)
+	}
+	if err := e.r.abandon(context.Background(), "admin"); restoreCode(err) != "restore_under_way" {
+		t.Fatal(err)
+	}
+	close(free)
+	if err := <-done; err != nil {
+		t.Fatalf("the try: %v", err)
+	}
+	if got := e.rec(); got.Version != "v0.2.0" || got.State != apppayload.DatabaseMigrated {
+		t.Fatalf("%+v", got)
+	}
+}
+
+// A switch that fails leaves the record as it was, on a disk with no room for another copy of
+// it; when even that cannot be done, it is said.
+func TestARecordGoesBackOnAFullDisk(t *testing.T) {
+	e := newExitsRig(t)
+	e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated, Error: "as it was"})
+	before, err := os.ReadFile(apppayload.DatabasePath(e.dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev := writeRecord
+	t.Cleanup(func() { writeRecord = prev })
+	writes := 0
+	writeRecord = func(dir string, rec apppayload.Database) error {
+		if writes++; writes > 1 {
+			return errors.New("no space left on device")
+		}
+		return prev(dir, rec)
+	}
+	e.inst.runErr = errors.New("no space left on device")
+	if _, err := e.r.restore(context.Background(), firstBackup, "admin", true, false); restoreCode(err) != "restore_switch_failed" {
+		t.Fatal(err)
+	}
+	if now, err := os.ReadFile(apppayload.DatabasePath(e.dir)); err != nil || !bytes.Equal(now, before) {
+		t.Fatalf("the record (%v):\n%s\nit was\n%s", err, now, before)
+	}
+	if ents, _ := filepath.Glob(apppayload.DatabasePath(e.dir) + "*"); len(ents) != 1 {
+		t.Fatalf("left behind: %v", ents)
+	}
+	// with no room for its copy, nothing is changed at all
+	if err := os.Mkdir(apppayload.DatabasePath(e.dir)+".undo", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writes = 0
+	if _, err := e.r.restore(context.Background(), firstBackup, "admin", true, false); err == nil || writes != 0 {
+		t.Fatalf("%v after %d writes", err, writes)
+	}
+}
+
+// Stopped while the database is set aside, before the restore began: nothing is restored, and
+// nothing says it was.
+func TestStoppedBeforeTheRestoreBegan(t *testing.T) {
+	e := newExitsRig(t)
+	e.write(e.asked())
+	prev := dumpAsideBundled
+	t.Cleanup(func() { dumpAsideBundled = prev })
+	started := make(chan struct{})
+	dumpAsideBundled = func(ctx context.Context, b pgbundle.Bundle, path string) error {
+		close(started)
+		<-ctx.Done()
+		return prev(context.WithoutCancel(ctx), b, path) // it ended all the same
+	}
+	done := make(chan error, 1)
+	go func() { done <- e.start("v0.2.0") }()
+	<-started
+	e.inst.running = "0.2.0"
+	if err := e.r.abandon(context.Background(), "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; !supervisor.Halted(err) || !strings.Contains(err.Error(), "stopped by admin") {
+		t.Fatalf("the step: %v", err)
+	}
+	if _, _, r := e.f.counts(); r != 0 || e.rec().State != apppayload.DatabaseHeld {
+		t.Fatalf("%d restores, record %+v", r, e.rec())
+	}
+}
+
+// Once a restore was asked or given up the process leaves: a step of it that comes to its try
+// then does nothing.
+func TestNoTryOnceTheProcessLeaves(t *testing.T) {
+	e := newExitsRig(t)
+	e.write(e.asked())
+	if _, err := e.r.restore(context.Background(), otherBackup, "admin", true, false); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	g := &migrationGate{stateDir: e.dir, version: "v0.2.0", pg: &pgbundle.Bundle{Backups: e.backups}, api: exec.Command("maktaba-api"),
+		keep: 3, log: e.log}
+	if err := g.run(ctx, noReport); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal(err)
+	}
+	if _, _, r := e.f.counts(); r != 0 {
+		t.Fatalf("%d restores", r)
+	}
+}
+
+// What settles the data: a schema that cannot be read now says nothing, what is known needs no
+// list of what may be there, and asking for another backup looks first.
+func TestSettlingTheData(t *testing.T) {
+	probe := func(id string, schema int64) dataProbe {
+		return dataProbe{identity: func(context.Context) (string, int64, error) { return id, schema, nil },
+			backupSchema: func(context.Context, apppayload.Database) int64 { return 140 }}
+	}
+	ctx := context.Background()
+	known := apppayload.Database{Data: apppayload.DataUntouched, DataID: "1/2/3"}
+	if rec, err := settleData(ctx, known, probe("9/9/9", -1)); err == nil || rec.Data != apppayload.DataUntouched {
+		t.Errorf("a schema that cannot be read: %+v %v", rec, err)
+	}
+	if rec, err := settleData(ctx, known, probe("1/2/3", -1)); err != nil || rec.Data != apppayload.DataUntouched {
+		t.Errorf("the same database, its schema not read: %+v %v", rec, err)
+	}
+	rec, err := settleData(ctx, apppayload.Database{MaybeSchemas: []int64{150}}, probe("1/2/3", 149))
+	if err != nil || rec.Data != apppayload.DataUntouched || rec.MaybeSchemas != nil || rec.DataID != "1/2/3" {
+		t.Errorf("known: %+v %v", rec, err)
+	}
+	e := newExitsRig(t)
+	e.write(e.asked()) // untouched, it says
+	e.f.id, e.f.schema = "9/9/9", 140
+	if _, err := e.r.restore(ctx, otherBackup, "admin", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.rec(); rec.Data != apppayload.DataReplaced {
+		t.Errorf("asked over another database: %+v", rec)
 	}
 }

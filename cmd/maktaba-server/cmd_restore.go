@@ -29,6 +29,7 @@ func newRestoreCmd() *cobra.Command {
 		backup  string
 		confirm bool
 		abandon bool
+		noCopy  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "restore",
@@ -37,7 +38,9 @@ func newRestoreCmd() *cobra.Command {
 (a dump in the home's backups folder: the one an update took before its
 migrations, the daily one of the bundled PostgreSQL, the database a failed
 update or a restore replaced). Every change made since the backup was taken is
-lost; the database it replaces is set aside first.
+lost; the database it replaces is set aside first (older backups make room for it,
+never the one restored or the newest of each kind). When there is no room for that
+copy it stops, unless --without-copy says to go on with none.
 
 Without --backup it lists the backups. With --backup and without --confirm it
 says what the restore would do. With --confirm the home restarts on the kept
@@ -59,11 +62,12 @@ next start of the server does it (an install with a launcher only).`,
 			if abandon {
 				return runAbandon(cmd.Context(), cmd.OutOrStdout(), cfg, confirm)
 			}
-			return runRestore(cmd.Context(), cmd.OutOrStdout(), cfg, backup, confirm)
+			return runRestore(cmd.Context(), cmd.OutOrStdout(), cfg, backup, confirm, noCopy)
 		},
 	}
 	cmd.Flags().StringVar(&backup, "backup", "", "the backup's file name (in the home's backups folder), or its path there")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "restore it: every change since the backup was taken is lost")
+	cmd.Flags().BoolVar(&noCopy, "without-copy", false, "with --confirm: restore it though there is no room to keep a copy of the library as it is now, which is lost for good")
 	cmd.Flags().BoolVar(&abandon, "abandon", false, "give up a restore that is not done, when the library database is as it was before it (with --confirm)")
 	return cmd
 }
@@ -78,6 +82,10 @@ func runAbandon(ctx context.Context, out io.Writer, cfg config.Config, confirm b
 	if a == nil {
 		return errors.New("no Maktaba server answered here: start it (it stops on the restore), then run this again")
 	}
+	return abandonThroughServer(ctx, out, a)
+}
+
+func abandonThroughServer(ctx context.Context, out io.Writer, a *restoreAsker) error {
 	if _, _, err := a.do(ctx, http.MethodPost, "/update/restore-abandon", restoreRequest{By: "the command line", Confirm: true}); err != nil {
 		return err
 	}
@@ -142,24 +150,24 @@ func (a *restoreAsker) do(ctx context.Context, method, path string, body any) (m
 }
 
 // runRestore is the command: the running server's restore, else this install's own.
-func runRestore(ctx context.Context, out io.Writer, cfg config.Config, backup string, confirm bool) error {
+func runRestore(ctx context.Context, out io.Writer, cfg config.Config, backup string, confirm, noCopy bool) error {
 	if n, err := supervisor.NodeOf(cfg); err == nil && n.Joined() {
 		return errors.New("this machine is a node of a home: the library database is the home's, restored on the home")
 	}
 	name := filepath.Base(strings.TrimSpace(backup))
 	if a := supervisorAsker(cfg); a != nil {
-		return restoreThroughServer(ctx, out, a, name, confirm)
+		return restoreThroughServer(ctx, out, a, name, confirm, noCopy)
 	}
 	r, l, err := offlineRestorer(cfg)
 	if err != nil {
 		return err
 	}
-	return restoreOffline(ctx, out, r, l, name, confirm)
+	return restoreOffline(ctx, out, r, l, name, confirm, noCopy)
 }
 
 // restoreOffline is the command when no server answered: this install's own restorer
 // over its layout l (the next start does the restore), refused while a server runs.
-func restoreOffline(ctx context.Context, out io.Writer, r *restorer, l layout.Layout, name string, confirm bool) error {
+func restoreOffline(ctx context.Context, out io.Writer, r *restorer, l layout.Layout, name string, confirm, noCopy bool) error {
 	// no server answered: one may run all the same (its admin not up yet during a long
 	// database step, or busy): its launcher holds the install's lock for its life
 	lk, err := l.Lock()
@@ -187,7 +195,7 @@ func restoreOffline(ctx context.Context, out io.Writer, r *restorer, l layout.La
 		printPlan(out, pl, false)
 		return errors.New("not restored: run it again with --confirm")
 	}
-	if _, err := r.restore(ctx, name, "the command line", true, false); err != nil {
+	if _, err := r.restoreAs(ctx, name, "the command line", restoreAsk{confirm: true, withoutCopy: noCopy}); err != nil {
 		return err
 	}
 	printPlan(out, pl, true)
@@ -195,7 +203,7 @@ func restoreOffline(ctx context.Context, out io.Writer, r *restorer, l layout.La
 	return nil
 }
 
-func restoreThroughServer(ctx context.Context, out io.Writer, a *restoreAsker, name string, confirm bool) error {
+func restoreThroughServer(ctx context.Context, out io.Writer, a *restoreAsker, name string, confirm, noCopy bool) error {
 	if name == "" || name == "." {
 		doc, _, err := a.do(ctx, http.MethodGet, "/update/backups", nil)
 		if err != nil {
@@ -218,7 +226,7 @@ func restoreThroughServer(ctx context.Context, out io.Writer, a *restoreAsker, n
 		printPlan(out, pl, false)
 		return errors.New("not restored: run it again with --confirm")
 	}
-	doc, _, err := a.do(ctx, http.MethodPost, "/update/restore", restoreRequest{Backup: name, By: "the command line", Confirm: true})
+	doc, _, err := a.do(ctx, http.MethodPost, "/update/restore", restoreRequest{Backup: name, By: "the command line", Confirm: true, WithoutCopy: noCopy})
 	if err != nil {
 		return err
 	}
@@ -295,6 +303,13 @@ func printPlan(out io.Writer, pl restorePlan, done bool) {
 		pl.At.Local().Format("2006-01-02 15:04"))
 	fmt.Fprintf(out, "Restoring it restarts the home on %s (it runs %s now) and loses every change made since.\n",
 		pl.Release, orUnknown(pl.Running))
+	if pl.NoCopy != "" {
+		fmt.Fprintf(out, "No copy of the library as it is now can be kept: %s. Free some space, or delete backups you no "+
+			"longer need; or add --without-copy to --confirm, and the library as it is now is lost for good.\n", pl.NoCopy)
+		return
+	}
+	fmt.Fprintln(out, "The library as it is now is set aside first; older backups may be removed to make room for it "+
+		"(never this one, nor the newest of each kind).")
 }
 
 func sizeOf(n int64) string {

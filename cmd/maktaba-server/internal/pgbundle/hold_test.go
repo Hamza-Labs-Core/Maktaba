@@ -79,3 +79,56 @@ func TestHeldBackupsStay(t *testing.T) {
 		t.Fatalf("%d dumps left once released", n)
 	}
 }
+
+// The room for the copy of the database a restore replaces: made from the older dumps, held or
+// not, never the newest of each kind nor those named; a look removes nothing.
+func TestRoomKeeping(t *testing.T) {
+	dir := t.TempDir()
+	old := time.Now().Add(-24 * time.Hour)
+	for i, n := range []string{"maktaba-20260101-030000.dump", "maktaba-20260102-030000.dump", "maktaba-20260103-030000.dump",
+		"pre-v1-to-v2.dump", "pre-v2-to-v3.dump", "replaced-v1-x.dump"} {
+		p := filepath.Join(dir, n)
+		if err := os.WriteFile(p, make([]byte, 1000), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, old.Add(time.Duration(i)*time.Minute), old.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := HoldBackups(dir); err != nil {
+		t.Fatal(err)
+	}
+	prev := diskSpace
+	t.Cleanup(func() { diskSpace = prev })
+	left := func() string {
+		var names []string
+		ents, _ := os.ReadDir(dir)
+		for _, e := range ents {
+			if isDump(e) {
+				names = append(names, e.Name())
+			}
+		}
+		return strings.Join(names, " ")
+	}
+	all := left()
+	// 500 free, 1250 needed for the copy (the newest dump and a quarter)
+	diskSpace = func(string) (uint64, uint64, error) { return 500, 1 << 30, nil }
+	p := RoomPolicy{MaxShare: 1}
+	if err := RoomKeeping(dir, p, "pre-v1-to-v2.dump"); err != nil || left() != all {
+		t.Fatalf("%v, left %s", err, left())
+	}
+	var no *NoRoomError
+	if err := RoomKeeping(dir, p, "pre-v1-to-v2.dump", "maktaba-20260101-030000.dump", "maktaba-20260102-030000.dump"); !errors.As(err, &no) ||
+		no.Free != 500 || no.Need != 1250 || left() != all {
+		t.Fatalf("%v, left %s", err, left())
+	}
+	if err := MakeRoomWith(dir, p); !errors.As(err, &no) || left() != all {
+		t.Fatalf("held: %v, left %s", err, left())
+	}
+	if err := MakeRoomKeeping(dir, p, "maktaba-20260101-030000.dump"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := left(), strings.Replace(all, "maktaba-20260102-030000.dump ", "", 1); got != want {
+		t.Fatalf("left %s\nwant %s", got, want)
+	}
+}

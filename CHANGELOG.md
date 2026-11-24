@@ -439,8 +439,10 @@ build fails when the two differ.
   of the backup, or gone. You can try again, put another backup back, or, while nothing was changed,
   give the restore up (the recovery page, or `maktaba-server restore --abandon --confirm`): Maktaba
   runs again on the library as it was before it. A newer release installed meanwhile goes on from
-  there too. A restore that hangs can be stopped. The database it replaces is set aside once,
-  however often it is tried, and no backup is removed until it is done. In English and Arabic.
+  there too. A restore that hangs can be stopped. The library as it is now is set aside first, once,
+  and no backup is removed until the restore is done but to make room for that copy. With no room for
+  it the restore stops before it touches anything and says the space it needs; it goes on without a
+  copy only when you agree to that. In English and Arabic.
 
 - **Less to write for every change on a home with a machine's copy.** Most of the library's
   tables on the home moved to PostgreSQL 18 on 2026-11-20 had every change logged with the whole

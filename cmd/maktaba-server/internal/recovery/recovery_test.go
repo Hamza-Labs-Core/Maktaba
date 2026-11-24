@@ -152,7 +152,7 @@ func newHandler(t *testing.T, k *rsa.PrivateKey) (*Handler, *fakeActions) {
 			RestartComponent: func(id string) int { fa.restarted = append(fa.restarted, id); return 1 },
 			RestartAll:       func() { fa.all++ },
 			SafeMode:         func(on bool) error { fa.safe = append(fa.safe, on); return nil },
-			Restore:          func(name, _ string) error { fa.restored = name; return nil },
+			Restore:          func(name, _ string, _ bool) error { fa.restored = name; return nil },
 			Backups: func() ([]Backup, error) {
 				return []Backup{{Name: "maktaba-20261106-030000.dump", At: t0.Add(-24 * time.Hour), Size: 73400320}}, nil
 			},
@@ -444,7 +444,8 @@ func TestARestoreThatIsNotDoneIsShownWithItsWaysOut(t *testing.T) {
 	}
 	for _, lang := range []string{"en", "ar"} {
 		page := do(h, http.MethodGet, "/recovery", "", admin, map[string]string{"Accept-Language": lang}).Body.String()
-		for _, k := range []string{"running", "untouched", "replaced", "gone", "retry", "other", "giveUp", "giveUpHeld", "stop", "newer"} {
+		for _, k := range []string{"running", "untouched", "replaced", "gone", "retry", "other", "giveUp", "giveUpHeld", "stop", "newer",
+			"noCopy", "withoutCopy"} {
 			k = "recovery.stuck." + k
 			if !strings.Contains(page, `"`+k+`":`) || !strings.Contains(page, jsonText(T(lang, k))) {
 				t.Errorf("%s: the page lacks %s", lang, k)
@@ -464,3 +465,41 @@ func TestARestoreThatIsNotDoneIsShownWithItsWaysOut(t *testing.T) {
 		t.Fatal("a state with no restore")
 	}
 }
+
+// A restore with no room for a copy of the library as it is now: refused with its code, and
+// done only when that is asked too.
+func TestRestoreWithoutACopyIsAskedFor(t *testing.T) {
+	k := newKey(t)
+	h, _ := newHandler(t, k)
+	var got []string
+	h.Actions.Restore = func(name, _ string, withoutCopy bool) error {
+		if !withoutCopy {
+			return codedError("restore_no_copy")
+		}
+		got = append(got, name)
+		return nil
+	}
+	admin := &http.Cookie{Name: CookiePass, Value: sign(t, k, pass("a1", true, AudienceRecovery, t0, t0.Add(time.Hour)))}
+	hdr := map[string]string{"X-Maktaba-Recovery": "1"}
+	w := do(h, http.MethodPost, "/recovery/api/action", `{"action":"restore","backup":"a.dump","confirm":2}`, admin, hdr)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), `"code":"restore_no_copy"`) || len(got) != 0 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if w := do(h, http.MethodPost, "/recovery/api/action", `{"action":"restore","backup":"a.dump","without_copy":true,"confirm":1}`, admin, hdr); w.Code != http.StatusPreconditionRequired {
+		t.Fatalf("with one confirmation: %d", w.Code)
+	}
+	if w := do(h, http.MethodPost, "/recovery/api/action", `{"action":"restore","backup":"a.dump","without_copy":true,"confirm":2}`, admin, hdr); w.Code != http.StatusOK || len(got) != 1 {
+		t.Fatalf("%d %s %v", w.Code, w.Body, got)
+	}
+	for _, lang := range []string{"en", "ar"} {
+		page := do(h, http.MethodGet, "/recovery", "", admin, map[string]string{"Accept-Language": lang}).Body.String()
+		if !strings.Contains(page, jsonText(T(lang, "recovery.restore.noCopy"))) {
+			t.Errorf("%s: the page does not say it", lang)
+		}
+	}
+}
+
+type codedError string
+
+func (e codedError) Error() string       { return "refused: " + string(e) }
+func (e codedError) RestoreCode() string { return string(e) }

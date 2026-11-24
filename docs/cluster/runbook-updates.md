@@ -81,7 +81,14 @@ or a release you rolled back by hand that refuses the newer schema.
   `maktaba-server restore --backup <name>` (what it would do), `... --confirm` (do it).
 - **What happens**: the home restarts on the kept release whose schema is the backup's, and that
   release puts the backup back before anything else runs. The database it replaces is set aside
-  as `backups/replaced-<version>-<time>.dump` (restore that one to undo). The machines copy the
+  first, as `backups/replaced-<version>-<time>.dump` (restore that one to undo). Older backups are
+  removed to make room for it when they must be: never the one put back, the one a stopped update
+  names, or the newest of each kind.
+- **No room for that copy** (`restore_no_copy` when you ask, `db_restore_no_copy` at the start): it
+  stops before it touches anything, and says how much is free and how much is needed. Free some space
+  on the backups' disk, or delete backups you no longer need, and try again. Or agree to go on without
+  a copy (the Updates page, the recovery page, `--without-copy`): the library as it is now is then
+  lost for good. The machines copy the
   restored database anew.
 - **What it loses**: every change made since the backup was taken — added videos, watch history,
   settings, jobs done. A `pre-<from>-to-<to>.dump` is from right before that update's switch.

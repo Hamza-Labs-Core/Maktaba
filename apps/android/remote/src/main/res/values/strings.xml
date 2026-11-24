@@ -294,9 +294,10 @@
     <string name="w_setup_starting_detail_db_restore_failed">The update to %1$s could not change the library database, and putting it back from %2$s failed too. Maktaba stays stopped; its next start tries again.</string>
     <string name="w_setup_starting_detail_db_restore_unfinished">The library database is being put back as it was before the update to %1$s (from %2$s): start the whole server to finish it.</string>
     <string name="w_setup_starting_detail_db_restoring_backup">Putting the library database back from the backup %1$s, as %2$s asked.</string>
-    <string name="w_setup_starting_detail_db_restore_backup_failed">Putting the library database back from the backup %1$s failed. Nothing was changed. Maktaba stays stopped; its next start tries again. On the recovery page you can put another backup back, or give this restore up.</string>
+    <string name="w_setup_starting_detail_db_restore_backup_failed">Putting the library database back from the backup %1$s failed. Nothing was changed. Maktaba stays stopped; its next start tries again. The recovery page shows what else you can do.</string>
     <string name="w_setup_starting_detail_db_restore_backup_part">Putting the library database back from the backup %1$s failed, and the database may hold a part of it. Maktaba stays stopped; its next start tries again. On the recovery page you can put another backup back.</string>
     <string name="w_setup_starting_detail_db_restore_backup_gone">Putting the library database back from the backup %1$s failed, and the database is gone. Maktaba stays stopped; its next start tries again. On the recovery page you can put another backup back.</string>
+    <string name="w_setup_starting_detail_db_restore_no_copy">The restore of the backup %1$s stopped: no copy of the library as it is now could be kept. Nothing was changed. Free some space on the backups\' disk and restart, or choose on the recovery page.</string>
     <string name="w_setup_starting_detail_db_no_cluster">The update to %1$s could not change the library database, and this Maktaba runs no database of its own to put %2$s back into.</string>
     <string name="w_setup_starting_detail_db_record_failed">The library database\'s record (%1$s) cannot be read or saved.</string>
     <string name="w_setup_starting_detail_pg_unreadable">The library database (%1$s) cannot be read.</string>

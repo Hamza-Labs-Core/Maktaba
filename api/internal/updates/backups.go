@@ -63,6 +63,12 @@ type RestorePlan struct {
 	Release string    `json:"release"`
 	Running string    `json:"running"`
 	At      time.Time `json:"at"`
+	// NoCopy is why no copy of the library database as it is now can be kept ("": it can);
+	// CopyFree bytes are free for one, CopyNeed needed. It is then restored only with the
+	// admin's word that none is (without_copy).
+	NoCopy   string `json:"no_copy,omitempty"`
+	CopyFree uint64 `json:"copy_free,omitempty"`
+	CopyNeed uint64 `json:"copy_need,omitempty"`
 }
 
 // RestoreRefused is the supervisor's refusal of a restore, with its code.
@@ -78,7 +84,9 @@ func (e *RestoreRefused) Error() string { return e.Detail }
 type BackupKeeper interface {
 	Backups(ctx context.Context) (*Backups, error)
 	RestorePlan(ctx context.Context, name string) (*RestorePlan, error)
-	Restore(ctx context.Context, name, by string) (*RestorePlan, error)
+	// Restore: withoutCopy when the admin agreed that no copy of the database it replaces is
+	// kept, when there is no room for one
+	Restore(ctx context.Context, name, by string, withoutCopy bool) (*RestorePlan, error)
 }
 
 // Backups implements BackupKeeper.
@@ -107,12 +115,15 @@ func (c *SupervisorClient) RestorePlan(ctx context.Context, name string) (*Resto
 }
 
 // Restore implements BackupKeeper.
-func (c *SupervisorClient) Restore(ctx context.Context, name, by string) (*RestorePlan, error) {
+func (c *SupervisorClient) Restore(ctx context.Context, name, by string, withoutCopy bool) (*RestorePlan, error) {
 	var out struct {
 		Plan *RestorePlan `json:"plan"`
 	}
 	// page: the API audits it and tells the machines (Restore); the supervisor does not
 	body := map[string]any{"backup": name, "by": by, "confirm": true, "page": true}
+	if withoutCopy {
+		body["without_copy"] = true
+	}
 	if err := c.restoreCall(ctx, http.MethodPost, "/update/restore", body, &out); err != nil {
 		return nil, err
 	}
@@ -234,9 +245,10 @@ func (h *Handler) RestorePlanView(w http.ResponseWriter, r *http.Request) {
 	common.WriteJSON(w, r, http.StatusOK, pl)
 }
 
-// Restore serves POST /api/cluster/updates/backups/{name}/restore {confirm: "<name>"}:
-// the admin types the backup's name (every change since it is lost); audited; the
-// machines are told the home goes away for it.
+// Restore serves POST /api/cluster/updates/backups/{name}/restore {confirm: "<name>",
+// without_copy}: the admin types the backup's name (every change since it is lost), and agrees
+// to no copy of the library as it is now when there is no room for one; audited; the machines
+// are told the home goes away for it.
 func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
 	p := admin(w, r)
 	if p == nil {
@@ -244,7 +256,8 @@ func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
 	}
 	name := chi.URLParam(r, "name")
 	var req struct {
-		Confirm string `json:"confirm"`
+		Confirm     string `json:"confirm"`
+		WithoutCopy bool   `json:"without_copy"`
 	}
 	if e := common.ReadJSON(r, &req, maxBody); e != nil {
 		httperror.Write(w, r, e)
@@ -259,13 +272,13 @@ func (h *Handler) Restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	by := h.Svc.Store.username(r.Context(), p.UserID)
-	pl, err := k.Restore(r.Context(), name, by)
+	pl, err := k.Restore(r.Context(), name, by, req.WithoutCopy)
 	if err != nil {
 		writeRestoreErr(w, r, err)
 		return
 	}
 	h.Svc.Store.Audit(r.Context(), p.UserID, "admin", "update.restore", name, map[string]any{
-		"release": pl.Release, "schema": pl.Schema, "running": pl.Running, "backup_at": pl.At})
+		"release": pl.Release, "schema": pl.Schema, "running": pl.Running, "backup_at": pl.At, "without_copy": req.WithoutCopy})
 	if h.Driver != nil && h.Driver.Cluster != nil {
 		ctx := context.WithoutCancel(r.Context())
 		safego.Go(h.Driver.log(), "update_disconnect_machines", func() { h.Driver.disconnectMachines(ctx, "home_restore") })

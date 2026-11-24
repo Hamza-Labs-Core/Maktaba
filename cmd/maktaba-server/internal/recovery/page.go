@@ -44,6 +44,8 @@ function act(body,need){
    .then(function(r){return r.json().then(function(j){return {r:r,j:j}})})
    .then(function(x){
      if(x.r.status===428){body.confirm=0;return act(body,x.j.confirm)}
+     if(x.j.code==='restore_no_copy'&&!body.without_copy){say(x.j.error);
+       if(confirm(t('recovery.restore.noCopy',{reason:x.j.error})))act({action:'restore',backup:body.backup,without_copy:true},2);return}
      say(x.r.ok?t('recovery.action.done'):t('recovery.action.failed',{reason:x.j.error||x.r.status}));load()})
    .catch(function(e){say(t('recovery.action.failed',{reason:String(e)}))})}
 function load(){
@@ -58,14 +60,15 @@ function load(){
       hd.appendChild(el('p',t('recovery.held.newer',hv)))}
     var sd=document.getElementById('stuck');sd.textContent='';sd.hidden=!s.stuck;
     if(s.stuck){var k=s.stuck,sv={backup:k.backup,why:k.why||'?',release:k.release||''};
-      sd.appendChild(el('p',t(k.running?'recovery.stuck.running':'recovery.stuck.'+k.data,sv)));
+      sd.appendChild(el('p',t(k.running?'recovery.stuck.running':'recovery.stuck.'+(k.no_copy?'noCopy':k.data),sv)));
       var sa=el('div',null,'actions');sd.appendChild(sa);
       function sb(key,f){var b=el('button',t(key,sv));b.onclick=f;sa.appendChild(b)}
       if(!k.running){sb('recovery.stuck.retry',function(){act({action:'restore',backup:k.backup},2)});
-        sb('recovery.stuck.other',restore)}
+        sb('recovery.stuck.other',restore);
+        if(k.no_copy)sb('recovery.stuck.withoutCopy',function(){act({action:'restore',backup:k.backup,without_copy:true},2)})}
       if(k.can_give_up)sb(k.running?'recovery.stuck.stop':(k.release?'recovery.stuck.giveUp':'recovery.stuck.giveUpHeld'),
         function(){act({action:'give_up_restore'},2)});
-      if(k.can_give_up&&!k.running)sd.appendChild(el('p',t('recovery.stuck.newer',sv)))}
+      if(k.data==='untouched'&&!k.running)sd.appendChild(el('p',t('recovery.stuck.newer',sv)))}
     document.getElementById('well').hidden=st.overall!=='ok';
     var gl=document.getElementById('groups');gl.textContent='';
     Object.keys(g).forEach(function(k){var li=el('li');li.appendChild(el('span',t('status.group.'+k)+': '));

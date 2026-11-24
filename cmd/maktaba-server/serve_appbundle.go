@@ -468,6 +468,9 @@ var (
 	// the room a dump makes on its disk first (old dumps removed, pgbundle.MakeRoomWith):
 	// it reads this machine's disk, which tests replace
 	makeRoom = pgbundle.MakeRoomWith
+	// the same for the copy of the database a restore replaces (MakeRoomKeeping), and whether
+	// it would be made (RoomKeeping)
+	makeRoomKeeping, roomKeeping = pgbundle.MakeRoomKeeping, pgbundle.RoomKeeping
 	// the other sessions on the database, ended before an update's migrations
 	endSessionsBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.EndSessions(ctx) }
 	endSessionsExternal = func(ctx context.Context, t dbsafe.Target) (int, error) { return t.EndSessions(ctx) }
@@ -625,12 +628,13 @@ func (g *migrationGate) backups() string {
 // setAsideReplaced dumps the database a restore by hand replaces
 // (replaced-<version>-<utc>.dump beside the backups), once for a restore however often it
 // is tried (the record's Aside; its path, "" when it could not): it holds every change made
-// since the backup, which the person chose to put back. No backup is removed to make room
-// for it (they are held: one of them may be needed next). Best effort: the putting back
-// goes on either way (D2). An update's rollback sets nothing aside: the
+// since the backup, which the person chose to put back. Room is made for it from the older
+// backups, never the one put back, those kept for this restore, or the newest of each kind
+// (asideKeeps). One that cannot be kept is an error: the restore stops there, unless the
+// person confirmed it goes on without (restoreAsked). An update's rollback sets nothing aside: the
 // release before starts at once, from the dump taken before the failed release's
 // migrations when they ran.
-func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Database) string {
+func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Database) (string, error) {
 	dir := g.backups()
 	prefix, since := pgbundle.ReplacedDumpPrefix+rec.Version+"-", rec.At
 	if ents, err := os.ReadDir(dir); err == nil && rec.Data == apppayload.DataUnknown {
@@ -638,12 +642,12 @@ func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Dat
 		for _, e := range ents {
 			if info, err := e.Info(); err == nil && strings.HasPrefix(e.Name(), prefix) &&
 				strings.HasSuffix(e.Name(), ".dump") && !info.ModTime().Before(since) {
-				return filepath.Join(dir, e.Name())
+				return filepath.Join(dir, e.Name()), nil
 			}
 		}
 	}
 	path := filepath.Join(dir, prefix+time.Now().UTC().Format("20060102T150405")+".dump")
-	err := makeRoom(dir, g.room)
+	err := makeRoomKeeping(dir, g.room, asideKeeps(rec)...)
 	if err == nil {
 		if g.pg != nil {
 			err = dumpAsideBundled(ctx, *g.pg, path)
@@ -652,12 +656,10 @@ func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Dat
 		}
 	}
 	if err != nil {
-		fmt.Fprintf(g.log, "[serve] level=warn could not set the library database aside before the restore "+
-			"(it is put back all the same): %v\n", err)
-		return ""
+		return "", err
 	}
 	fmt.Fprintf(g.log, "[serve] the library database the restore replaces is in %s\n", path)
-	return path
+	return path, nil
 }
 
 // keeps reports whether the gate dumps and puts back (a bundled or an external one).
@@ -1635,7 +1637,14 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 	report(detail("db_restoring_backup", fmt.Sprintf("Putting the library database back from %s, as %s asked",
 		rec.Dump, rec.By), rec.Dump, rec.By))
 	if rec.Aside == "" && rec.Data != apppayload.DataReplaced && rec.Data != apppayload.DataGone {
-		rec.Aside = g.setAsideReplaced(tctx, rec)
+		if rec.Aside, err = g.setAsideReplaced(tctx, rec); err != nil && ctx.Err() == nil && tctx.Err() == nil {
+			if !rec.NoCopy {
+				// the only copy of the newest data: never lost unasked
+				return rec, g.restoreFailed(ctx, rec, &copyError{err})
+			}
+			fmt.Fprintf(g.log, "[serve] level=warn no copy is kept of the library database the restore replaces, as %s "+
+				"confirmed: %v\n", rec.By, err)
+		}
 	}
 	fmt.Fprintf(g.log, "[serve] restore asked by %s: putting %s back for %s\n", rec.By, rec.Dump, orUnknown(rec.From))
 	if err = g.save(rec); err == nil && tctx.Err() == nil {
@@ -1688,27 +1697,39 @@ func (g *migrationGate) restoreFailed(ctx context.Context, rec apppayload.Databa
 	if settled, err := settleData(context.WithoutCancel(ctx), rec, g.probe()); err == nil {
 		rec = settled
 	}
-	rec.RestoreError, rec.TriedBy = cause.Error(), g.version
+	rec.RestoreError, rec.TriedBy, rec.CopyError = cause.Error(), g.version, ""
+	var noCopy *copyError
+	if errors.As(cause, &noCopy) {
+		rec.CopyError = cause.Error()
+	}
 	if err := g.save(rec); err != nil {
 		fmt.Fprintf(g.log, "[serve] level=warn the failed restore cannot be recorded: %v\n", err)
 	}
 	const ways = "Maktaba stays stopped. Its next start tries again; on the recovery page (/recovery) or with " +
 		"`maktaba-server restore` you can put another backup back"
 	code, text := "db_restore_backup_failed", "putting the library database back from %s failed: %v. Nothing was "+
-		"changed. "+ways+" or give this restore up, and a newer release installed now goes on from the database as it is"
-	switch rec.Data {
-	case apppayload.DataUntouched:
-	case apppayload.DataGone:
+		"changed. "+ways+", and a newer release installed now goes on from the database as it is"
+	if _, _, ok := giveUpTo(rec, g.version); ok {
+		text += ". You can also give this restore up there"
+	}
+	switch {
+	case noCopy != nil:
+		code, text = "db_restore_no_copy", "the library database was not put back from %s: no copy of it as it is now "+
+			"could be kept (%v). Nothing was changed. Free some space on the backups' disk, or delete backups you no longer "+
+			"need. "+ways+", or put this one back without keeping a copy (--without-copy)"
+	case rec.Data == apppayload.DataUntouched:
+	case rec.Data == apppayload.DataGone:
 		code, text = "db_restore_backup_gone", "putting the library database back from %s failed: %v. The library "+
 			"database is gone, so only a backup brings it back. "+ways
 	default:
 		code, text = "db_restore_backup_part", "putting the library database back from %s failed: %v. The library "+
 			"database may hold that backup in part, so only a backup puts it right. "+ways
 	}
+	said := fmt.Sprintf(text, rec.Dump, cause)
 	if rec.Aside != "" {
-		text += " (the database it replaces is in " + rec.Aside + ")"
+		said += " (the database it replaces is in " + rec.Aside + ")"
 	}
-	return supervisor.Halt(detailErr(code, fmt.Sprintf(text, rec.Dump, cause), rec.Dump, cause.Error()))
+	return supervisor.Halt(detailErr(code, said, rec.Dump, cause.Error()))
 }
 
 // heldUpdate is the detail of an update that stopped with nothing put back by itself

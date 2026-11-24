@@ -3726,13 +3726,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Putting the library database back from the backup {dump} failed. Nothing was changed. Maktaba stays stopped; its next start tries again. On the recovery page you can put another backup back, or give this restore up."
+            "value" : "Putting the library database back from the backup {dump} failed. Nothing was changed. Maktaba stays stopped; its next start tries again. The recovery page shows what else you can do."
           }
         },
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية {dump}. لم يتغيّر شيء. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة. ويمكنك في صفحة الاستعادة إعادة نسخة احتياطية أخرى أو التخلي عن هذه الإعادة."
+            "value" : "فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية {dump}. لم يتغيّر شيء. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة. وتعرض صفحة الاستعادة ما يمكنك فعله غير ذلك."
           }
         }
       }
@@ -3767,6 +3767,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية {dump}، ولم تعد القاعدة موجودة. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة. ويمكنك في صفحة الاستعادة إعادة نسخة احتياطية أخرى."
+          }
+        }
+      }
+    },
+    "setup.starting.detail.db_restore_no_copy" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The restore of the backup {dump} stopped: no copy of the library as it is now could be kept. Nothing was changed. Free some space on the backups' disk and restart, or choose on the recovery page."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقفت إعادة النسخة الاحتياطية {dump}: تعذّر الاحتفاظ بنسخة من المكتبة كما هي الآن. لم يتغيّر شيء. حرّر مساحة على قرص النسخ الاحتياطية ثم أعِد التشغيل، أو اختر من صفحة الاستعادة."
           }
         }
       }

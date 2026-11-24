@@ -33,7 +33,9 @@ type Actions struct {
 	// Backups lists the backups on the data disk; Restore restores one (it replaces the
 	// database: asked twice).
 	Backups func() ([]Backup, error)
-	Restore func(name, by string) error
+	// withoutCopy: confirmed that no copy is kept of the database it replaces, when there is
+	// no room for one (else refused: an error whose RestoreCode is restore_no_copy).
+	Restore func(name, by string, withoutCopy bool) error
 	// Held is the update that stopped and waits for a person (the database record is held:
 	// nothing was put back by itself), nil when none: the page says what happened and the
 	// choices, the backup to put back among them.
@@ -55,7 +57,9 @@ type Stuck struct {
 	Data      string `json:"data"`
 	Running   bool   `json:"running,omitempty"`
 	CanGiveUp bool   `json:"can_give_up,omitempty"`
-	Release   string `json:"release,omitempty"`
+	// NoCopy: that try stopped because no copy of the database could be kept
+	NoCopy  bool   `json:"no_copy,omitempty"`
+	Release string `json:"release,omitempty"`
 }
 
 // Held is an update that stopped with nothing put back by itself: the release that
@@ -416,6 +420,8 @@ type actionRequest struct {
 	// Confirm counts the person's confirmations: 1 for most actions, 2 for restore and
 	// rollback, and for every action that comes through the relay.
 	Confirm int `json:"confirm"`
+	// WithoutCopy: a restore goes on with no copy kept of the database it replaces
+	WithoutCopy bool `json:"without_copy"`
 }
 
 func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
@@ -482,7 +488,10 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
 			break
 		}
 		detail = req.Backup
-		err = h.Actions.Restore(req.Backup, who.by())
+		err = h.Actions.Restore(req.Backup, who.by(), req.WithoutCopy)
+		if req.WithoutCopy {
+			detail += " (without keeping a copy)"
+		}
 	case "give_up_restore":
 		if h.Actions.GiveUp == nil {
 			err = errors.New("restore is not available here")
@@ -495,7 +504,12 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
 	}
 	if err != nil {
 		h.Record(who, req.Action, detail+": refused: "+err.Error())
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		doc := map[string]string{"error": err.Error()}
+		var coded interface{ RestoreCode() string }
+		if errors.As(err, &coded) {
+			doc["code"] = coded.RestoreCode()
+		}
+		writeJSON(w, http.StatusConflict, doc)
 		return
 	}
 	h.Record(who, req.Action, detail)
