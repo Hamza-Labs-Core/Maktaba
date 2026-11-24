@@ -1050,7 +1050,7 @@ def backup_and_check() -> str:
     (shim / "docker").chmod(0o755)
     had = dumps()
     code, said_ = rc(f"PATH={shim}:$PATH DEPLOY_DIR={DEPLOY} {DEPLOY}/ops/backup.sh")
-    assert code != 0 and dumps() == had, f"half a dump was kept: {code} {said_}"
+    assert code != 0 and dumps() == had and "cut short" in said_, f"a dump without its end: {code} {said_}"
     sh("systemctl start maktaba-cloud-backup.service")
     out = sh(f"DEPLOY_DIR={DEPLOY} {DEPLOY}/ops/backup.sh --check")
     newest = sorted(Path("/var/backups/maktaba-cloud").glob("db-*.dump"))[-1]
