@@ -28,7 +28,8 @@ mkdir -p "$OUT"
 env_in() { grep -E "^$2=" "$1" | sed -n 1p | cut -d= -f2- || true; }
 PGU="$(env_in .env POSTGRES_USER)"; PGU="${PGU:-maktaba}"
 PGD="$(env_in .env POSTGRES_DB)"; PGD="${PGD:-maktaba}"
-dc() { docker compose --env-file .env "$@"; }
+# the stack as its own .env has it, whatever is in this environment
+dc() { env -i PATH="$PATH" HOME="${HOME:-/root}" docker compose --env-file .env "$@"; }
 pg() { dc exec -T postgres "$@"; }
 die() { echo "backup: $*" >&2; exit 1; }
 

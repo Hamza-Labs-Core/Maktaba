@@ -40,7 +40,9 @@ log() { printf '[rollout] %s\n' "$*"; }
 err() { printf '[rollout:error] %s\n' "$*" >&2; }
 die() { err "$*"; exit 1; }
 
-dc() { (cd "$DEPLOY_DIR" && docker compose --env-file .env "$@"); }
+# the stack as its own .env has it: a variable in this script's environment (the new release's tag,
+# in begin) would win over the file, and restoring would start the wrong release
+dc() { (cd "$DEPLOY_DIR" && env -i PATH="$PATH" HOME="${HOME:-/root}" docker compose --env-file .env "$@"); }
 env_of() { grep -E "^$1=" "$DEPLOY_DIR/.env" 2>/dev/null | sed -n 1p | cut -d= -f2- || true; }
 
 running() { [ -f "$DEPLOY_DIR/.env" ] && [ -f "$DEPLOY_DIR/docker-compose.yml" ] && dc ps --status running --services 2>/dev/null | grep -x "$1" >/dev/null; }
@@ -105,7 +107,7 @@ cmd_begin() {
 
 	rm -rf "$STATE/pending.new"
 	(umask 077; mkdir -p "$STATE/pending.new/set")
-	cp /proc/sys/kernel/random/boot_id "$STATE/pending.new/boot_id"
+	cat /proc/sys/kernel/random/boot_id > "$STATE/pending.new/boot_id"
 	if first_deploy; then
 		touch "$STATE/pending.new/first"
 		log "a first deploy: nothing to go back to"
@@ -306,7 +308,7 @@ cmd_boot() {
 	fi
 	[ -d "$STATE/pending" ] || exit 0
 	# the unit started again in the same boot (docker restarted by setup.sh): the deploy goes on
-	if cmp -s "$STATE/pending/boot_id" /proc/sys/kernel/random/boot_id; then exit 0; fi
+	if [ "$(cat "$STATE/pending/boot_id")" = "$(cat /proc/sys/kernel/random/boot_id)" ]; then exit 0; fi
 	log "the node rebooted during a deploy"
 	restore "the node rebooted during the deploy" || exit 1
 	exit 0
