@@ -2,7 +2,7 @@
 // (grid, channel, guide, legal, the language), T01 the guest states and their words, T07 the
 // no-directory rule, T08 every new string in English and Arabic, the apps' lineup and guide
 // reads, and TV pairing (the QR flow's long-poll).
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { advanceClock, now, resetClock } from "../src/clock";
 import type { Env } from "../src/env";
 import { MAX_GUIDE_BYTES, nowNext, validGuide } from "../src/guide";
@@ -309,6 +309,14 @@ describe("T08 strings", () => {
 });
 
 describe("the watch pages", () => {
+  // Midday UTC: the pages list today's programmes (the UTC day, `today` in src/guide.ts), and
+  // a guide made at `now()` has its next programme 30 minutes on, tomorrow after 23:30 UTC
+  // (main's CI run 45292196113 at 23:51 UTC: "Cartoons next" and its CC BY credit missing).
+  beforeEach(() => {
+    const d = new Date(now());
+    advanceClock(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12) - now());
+  });
+
   it("an invite opened on a phone: redeemed, then the grid in Arabic, right to left", async () => {
     const s = await setup();
     const tok = await invite({ pub: s.pub });

@@ -115,6 +115,14 @@ _tokens: &tokens
   - 'web/packages/website/static/fonts/**'
   - 'web/packages/website/copy/**'
   - 'web/public/icons/icon-192.png'
+  # the store gallery mockups' stand-in screens and art (story 60.14): the check that each
+  # still exists and is not from the old demo library
+  - 'web/packages/devportal/static/assets/apps/**'
+  - 'apps/android/player/src/test/screenshots/*.png'
+  - 'apps/android/remote/src/test/screenshots/*.png'
+  - 'apps/tv/android/app/src/test/screenshots/*.png'
+  - 'web/public/art/library/**'
+  - 'tools/icons/source/maktaba-icon.png'
   - 'apps/apple/MaktabaKit/Sources/MaktabaKit/Tokens.swift'
   - 'apps/android/core/src/main/kotlin/com/hamzalabs/maktaba/core/ui/Tokens.kt'
   - 'apps/tv/roku/components/theme.brs'
@@ -790,6 +798,7 @@ mac_app:
   - *ci
   - 'tools/release/mac-app/**'
   - 'tools/release/pg18-check.sh'
+  - 'tools/release/free-ports.sh'
   # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
   - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'tools/release/bundle-size/**'
@@ -832,6 +841,7 @@ win_app:
   - *ci
   - 'tools/release/win-app/**'
   - 'tools/release/pg18-check.sh'
+  - 'tools/release/free-ports.sh'
   # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
   - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'apps/desktop/**'
@@ -854,6 +864,7 @@ linux_app:
   - *ci
   - 'tools/release/linux-app/**'
   - 'tools/release/pg18-check.sh'
+  - 'tools/release/free-ports.sh'
   # the bundled Postgres each app runs, and its major's upgrade (Epic 49)
   - 'cmd/maktaba-server/internal/pgbundle/**'
   - 'apps/desktop/**'
