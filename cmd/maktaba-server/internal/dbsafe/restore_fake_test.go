@@ -30,6 +30,11 @@ func fakeProgram(args []string) {
 			os.Exit(3)
 		}
 	}
+	for _, a := range args {
+		if a == "-l" {
+			return // a dump with nothing in it
+		}
+	}
 	line := []byte("INSERT INTO videos VALUES (1, 'x');\n")
 	for {
 		if _, err := os.Stdout.Write(line); err != nil {
