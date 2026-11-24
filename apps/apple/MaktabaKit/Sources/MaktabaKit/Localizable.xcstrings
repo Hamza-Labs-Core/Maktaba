@@ -3584,6 +3584,23 @@
         }
       }
     },
+    "setup.starting.detail.db_held" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The update to {failed} stopped: it could not change the library database, and its own Down scripts could not take it back. Nothing was put back by itself, and Maktaba stays stopped until you choose: put back the backup taken before the update ({dump}) on the recovery page, which brings {release} back and loses the changes made since that backup; or install a release newer than {failed} that fixes this, which goes on from here."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف التحديث إلى {failed}: لم يتمكن من تعديل قاعدة بيانات المكتبة، ولم تستطع نصوص التراجع الخاصة به إرجاعها. لم يُرجَع شيء تلقائيًا، وتبقى مكتبة متوقفة حتى تختار: أعِد النسخة الاحتياطية المأخوذة قبل التحديث ({dump}) من صفحة الاستعادة، فيعود {release} وتضيع التغييرات التي جرت بعد تلك النسخة؛ أو ثبّت إصدارًا أحدث من {failed} يصلح هذا، فيُكمل من هنا."
+          }
+        }
+      }
+    },
     "setup.starting.detail.db_kept" : {
       "extractionState" : "manual",
       "localizations" : {

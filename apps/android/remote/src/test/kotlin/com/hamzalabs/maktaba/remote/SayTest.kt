@@ -136,10 +136,12 @@ class SayTest {
         )
         assertEquals("something new", en.processDetail(ProcessStatus(role = "pipeline", detailCode = "brand_new", detail = "something new")))
         // a failed update whose database was kept, or undone by its Down scripts (#1538)
-        val versions = buildJsonObject { put("failed", "0.3.158"); put("release", "0.3.153") }
+        val versions = buildJsonObject { put("failed", "0.3.158"); put("release", "0.3.153"); put("dump", "pre-0.3.153-to-0.3.158.dump") }
         for ((code, en1, ar1) in listOf(
             Triple("db_kept", "Nothing had to be put back", "لم يلزم إرجاع شيء"),
             Triple("db_undone", "undone by its own Down scripts", "أُلغيت تغييراته بنصوص التراجع"),
+            // the update stopped and asks: nothing put back by itself, the choices named
+            Triple("db_held", "Nothing was put back by itself", "لم يُرجَع شيء تلقائيًا"),
         )) {
             val st = ProcessStatus(role = "api", detailCode = code, detail = "english from the server", detailParams = versions)
             val e = en.processDetail(st).orEmpty()

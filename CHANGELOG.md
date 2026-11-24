@@ -412,6 +412,18 @@ build fails when the two differ.
 
 ### Fixed
 
+- **A failed update never puts the whole backup back by itself: it stops and asks.** Until now,
+  when an update's Down scripts could not take the library database back (they failed, a change
+  had deleted data they cannot bring back, or the way back could not be told), or when the
+  launcher's guard gave up on a new release after its migrations ran, the whole backup taken
+  before the update went back by itself: hours with the library stopped on a large home, and the
+  writes since that backup lost. Now the update stops there and the database stays as it is.
+  The previous release is switched back in and stops on it too, and the start page, the recovery
+  page (`/recovery`) and the Updates page say what happened and the two choices: put back the
+  backup taken before the update (**Restore** on the recovery page, which names it), or install
+  a newer release that fixes the update, which goes on from where it stopped. A restore mark
+  written by an older release or its launcher is held the same way. In English and Arabic.
+
 - **A failed update is undone by its own Down scripts, not by putting the whole backup back.**
   On 2026-11-23 and 2026-11-24 an update's migration (0235's index build, cancelled by its lock
   timeout) failed part way, and the update put the whole 34 GB library database back from its

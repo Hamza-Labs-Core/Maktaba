@@ -228,14 +228,16 @@ func backupsFolderProblem(dir string, cfg config.Config) string {
 }
 
 // deleteBackup removes one dump of the server.toml at path's backups folder, never the
-// one the database step may still put back (an update's migrations not finished).
+// one the database step may still put back (an update's migrations not finished, or a
+// held update's: a person's way back).
 func deleteBackup(path, name string) error {
 	cfg, _, err := config.LoadFrom(path)
 	if err != nil {
 		return err
 	}
 	if rec, ok, _ := apppayload.ReadDatabase(cfg.StateDir()); ok && filepath.Base(rec.Dump) == name &&
-		(rec.State == apppayload.DatabaseMigrating || rec.State == apppayload.DatabaseRestoring) {
+		(rec.State == apppayload.DatabaseMigrating || rec.State == apppayload.DatabaseRestoring ||
+			rec.State == apppayload.DatabaseHeld) {
 		return fmt.Errorf("%w: %s is the way back from the update under way", errDumpInUse, name)
 	}
 	return pgbundle.DeleteDump(backupsDirOf(cfg), name)

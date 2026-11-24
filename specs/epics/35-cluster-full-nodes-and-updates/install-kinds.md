@@ -312,6 +312,12 @@ updated its runtime) offers its own update for its window and tray.
    grants) was gone too. And 0.3.41's own code did that restore: the rollback marked the record
    and the release before put the dump back at its start.
 
+   **Since 2026-11-24 no dump is put back by itself** (the update's `held` record: a failed
+   update stops and asks, and a person chooses the backup or a newer release; the launcher's
+   guard and the update's watch mark the record `held`, never `restoring`, and
+   `updater.Machine.RestoreBack` is gone). What follows is how the automatic restore worked
+   from 2026-10-28 until then; it still runs on a restore a person asks for.
+
    Now **the new release puts the dump back itself, before it switches back** (review of #433:
    `updater.Machine.RestoreBack`, after the TV change is taken back): the record marked
    `restoring` first, the roles that use the database stopped (the api, the pipeline, the

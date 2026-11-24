@@ -336,6 +336,7 @@ internal object WebWords {
         "db_restored" to Template(R.string.w_setup_starting_detail_db_restored, listOf("failed", "dump", "release")),
         "db_kept" to Template(R.string.w_setup_starting_detail_db_kept, listOf("failed", "release")),
         "db_undone" to Template(R.string.w_setup_starting_detail_db_undone, listOf("failed", "release")),
+        "db_held" to Template(R.string.w_setup_starting_detail_db_held, listOf("failed", "dump", "release")),
         "db_refused_older" to Template(R.string.w_setup_starting_detail_db_refused_older, listOf("release", "needed")),
         "db_ahead" to Template(R.string.w_setup_starting_detail_db_ahead, listOf("release")),
         "db_dump_failed" to Template(R.string.w_setup_starting_detail_db_dump_failed, listOf("to")),

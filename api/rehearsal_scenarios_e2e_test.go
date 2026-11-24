@@ -482,7 +482,8 @@ func TestUpdateRehearsal03bRollbackDownScripts(t *testing.T) {
 func layoutVersion(v string) string { return strings.TrimPrefix(v, "v") }
 
 // =====================================================================================
-// 04 A rollback after a destructive migration puts the dump back, whole.
+// 04 A rollback after a destructive migration stops and asks; the dump a person puts back is
+//    whole.
 // =====================================================================================
 
 func TestUpdateRehearsal04RollbackDestructive(t *testing.T) {
@@ -507,9 +508,9 @@ func TestUpdateRehearsal05RestoreUnderLogins(t *testing.T) {
 // 06 The restore killed part way.
 // =====================================================================================
 
-// kill -9 of the server (and its pg_restore) while the dump is put back: the library
-// database in place must be untouched, and the site must come back by itself (the next
-// start finishes or redoes the restore), with nothing done by hand.
+// kill -9 of the server (and its pg_restore) while the dump a person asked for is put back:
+// the library database in place must be untouched, and the site must come back by itself
+// (the next start finishes or redoes the restore), with nothing more done by hand.
 func TestUpdateRehearsal06RestoreKilled(t *testing.T) {
 	r := newRehearsal(t)
 	r.destructiveRollback(destructiveOptions{kill: true})
@@ -531,15 +532,36 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 	if o.logins {
 		logins = home.machineLogins(seed.Machines, db)
 	}
+	run, mon, states := r.update(home, k.nextDestructiveFailing(), 40*time.Minute)
+	if run.State != "rolled_back" {
+		t.Errorf("the update to %s ended %s, want rolled_back: %s", k.next, run.State, run.Error)
+	}
+	// no automatic restore: the update stops and asks. The record is held (the failed
+	// release's version), the release before runs again and stops on it (db_held, or
+	// db_refused_older for a release from before the held record), and nothing is put back
+	// until a person chooses
+	var held dbRecord
+	waitFor(t, "the home stopped on the held database", 15*time.Minute, func() bool {
+		held, _ = home.record()
+		switchedBack := strings.TrimSpace(home.readFile(filepath.Join("updates", "payload-override"))) != ""
+		return held.State == "held" && switchedBack && strings.Contains(home.log.String(), "cannot start:")
+	})
+	if home.ready() {
+		t.Error("the API serves on a held database")
+	}
+	for _, s := range states.recordStates() {
+		if s == "restoring" || s == "restored" {
+			t.Errorf("a restore ran by itself: the database's record went %v", states.recordStates())
+			break
+		}
+	}
+	r.logf("held: %+v; a person puts the backup back", held)
 	var killed chan string
 	if o.kill {
 		killed = make(chan string, 1)
 		go func() { killed <- home.killDuringRestore(40 * time.Minute) }()
 	}
-	run, mon, states := r.update(home, k.nextDestructiveFailing(), 40*time.Minute)
-	if run.State != "rolled_back" {
-		t.Errorf("the update to %s ended %s, want rolled_back: %s", k.next, run.State, run.Error)
-	}
+	home.restoreByHand(filepath.Base(held.Dump))
 	if o.kill {
 		select {
 		case what := <-killed:
@@ -551,7 +573,7 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 			t.Fatal("no restore was seen to kill")
 		}
 	}
-	// the site comes back by itself, on the previous release, with the dump put back
+	// the site comes back, on the previous release, with the dump put back
 	// (the record says restored once the dump is back, then migrated once the previous
 	// release's database step checked it; a release from before 2026-10-28 goes from
 	// restoring to migrated): whether the dump came back whole, the fingerprint says
@@ -564,7 +586,7 @@ func (r *rehearsal) destructiveRollback(o destructiveOptions) {
 	if o.kill {
 		budget = 20 * time.Minute
 	}
-	r.budget(mon, "a rollback that puts the dump back", budget)
+	r.budget(mon, "a rollback that stops and asks, then the restore asked by hand", budget)
 	if logins != nil {
 		logins.end(r)
 	}
