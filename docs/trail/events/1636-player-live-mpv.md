@@ -22,6 +22,13 @@ Part one of story 13.22, on top of 13.18 (#1591). Part two (JavaFX leaves) is ga
   4. The stall clock started at `ready()`, before any frame.
   5. JavaFX players could leak: overlapping shows, a hide during a suspended open, a cancelled caller.
   It also found that T03's `frame != null` could never fail and that both test channels served the same picture.
+- **CI, first run (f4a3dabba), failed on Linux and Windows alike:**
+  - The "first frame" at 20 ms was a black frame mpv draws before any picture, so T03 compared the held frame with black, and the stalled-home test never started its stall clock. Fixed in c0bb53c87: no frame is shown until the stream's playback restarts, for the first stream too. The real-library tests now write mpv's log per handle into `build/reports/mpv-logs` (uploaded with the job's reports on failure) and print mpv's state when a wait runs out.
+  - The playlist-end test then showed Try again: mpv's log said `finished playback, audio output initialization failed (reason 4)`. The runners have no sound card, and mpv ends a file that played video only with `AO_INIT_FAILED`. Fixed in 8c953f51e: `audio-fallback-to-null=yes`, and an `AO_INIT_FAILED` end of an entry whose picture started counts as its end.
+- **Measured (CI run 45431639078, the real library, 5 tests, none skipped on either):**
+  - Linux: first frame 262 ms; next channel 171 ms in the same handle, channel one's frame held meanwhile; Back to live 129 ms from the live edge; playlist end → ended 889 ms after; 404 → failed 55 ms (open) and 51 ms (loaded into the handle); a home that stops answering → failed after 17.9 s.
+  - Windows Server 2025: 284 ms; 148 ms; 176 ms; 892 ms; 23 and 88 ms; 17.9 s.
+  - 13.18's T01 now measures the real first frame too: 398 ms on Linux, 353 ms on Windows (the 226 ms recorded for #1591 was the black frame).
 
 ## What we learned
 - **A reused mpv handle hears the replaced stream.** `loadfile … replace` ends the old entry with `STOP`, but an error, an EOF or a position already on its way still arrives after the load. Read `playlist/0/id` right after each `loadfile` (the command returns once the playlist holds the entry) and count only that entry's `end-file` (`playlist_entry_id` at offset 8), `start-file`, `file-loaded`, `playback-restart` and `time-pos`. Ends heard before the id is read are kept and checked once it is.
@@ -29,16 +36,20 @@ Part one of story 13.22, on top of 13.18 (#1591). Part two (JavaFX leaves) is ga
 - **Holding a frame with a pool of bitmaps:** while a load waits for its first frame, keep rendering (mpv waits for the render) into the same slot, never the one on screen, and publish nothing.
 - **A test that proves a held frame needs pictures that differ:** two solid colours and the centre pixel tell the channels apart; a non-null check proves nothing when the frame never goes null.
 - **The Desktop Player job read only the first matching report** (`report[0]` of `TEST-*MpvRealTest.xml`): a second report would have hidden the first. It now checks every report and that both exist.
+- **mpv's software renderer draws a black frame before the picture starts.** A frame existing is not a picture: wait for `playback-restart` before showing or timing one.
+- **No audio device is not "no playback":** mpv plays the picture and then reports the file's end as `AO_INIT_FAILED`. `audio-fallback-to-null=yes` keeps the timing and the end clean; CI runners have no sound card, and some users' machines (remote desktops) neither.
+- **mpv's `log-file` is the fastest way to read a CI-only failure:** one option, set from a system property the tests own, gave the cause on the first look.
 - **`withContext(NonCancellable)` throws on return when the caller was cancelled:** decide inside the block whether the made player is shown or disposed, or it leaks.
 
 ## Keep doing
 - Wire the screen and the real-library test through the same function (`channelPlayback`), so CI tests the screen's own wiring.
 - Make fakes of native libraries (a Kotlin `LibMpv` with JNA `Memory` events) to test event ordering that a real library rarely shows.
 - Give each channel or file in a real-media test something the test can see.
+- Make real-library tests leave the library's own log in the uploaded reports and say the library's state when a wait times out.
 
 ## Stop doing
 - Checking only the first file a glob matches in CI.
-- Asserting "a frame exists" where the question is "which frame".
+- Asserting "a frame exists" where the question is "which frame", or timing a first frame without knowing it is the picture's.
 
 ## Open
 - **A 404 in the middle of a playing stream reads as the channel ended, not Try again:** FFmpeg's HLS demuxer ends on a failed playlist reload and mpv reports `end-file` with reason EOF, the same as a playlist with `#EXT-X-ENDLIST`. Telling them apart needs the last playlist's end tag, or a check with the home before saying it ended.
