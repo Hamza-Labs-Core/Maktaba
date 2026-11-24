@@ -200,17 +200,31 @@ func markRecordFailed(path, failed, reason, state string) (bool, error) {
 		return false, fmt.Errorf("%s: %w", path, err)
 	}
 	str := func(k string) string { s, _ := rec[k].(string); return s }
-	if NormalizeVersion(str("version")) != NormalizeVersion(failed) || str("dump") == "" {
+	dump := str("dump")
+	if state == "held" && dump == "" {
+		// the dump an unconfirmed update's record withholds from older code
+		// (apppayload.Database.Unconfirmed); restoring is what that older code marks
+		dump = str("dump_unconfirmed")
+	}
+	if NormalizeVersion(str("version")) != NormalizeVersion(failed) || dump == "" {
 		return false, nil
 	}
 	switch str("state") {
 	case "migrated", "migrating":
-	case "restoring", "held":
+	case "held":
 		return true, nil // marked already
+	case "restoring":
+		if state != "held" || str("by") != "" {
+			return true, nil // marked already (a person's restore is theirs)
+		}
+		// an older launcher or release marked it, with no person asking: held instead
 	default:
 		return false, nil
 	}
 	rec["state"], rec["failed"], rec["error"] = state, str("version"), reason
+	// held is left alone by older code: it names its backup where every release reads it
+	rec["dump"] = dump
+	delete(rec, "dump_unconfirmed")
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	out, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -258,10 +272,43 @@ func ExtendGuard(root, runID string, until time.Time) (bool, error) {
 	return true, WriteGuard(root, *g)
 }
 
-// UnmarkRecordRestoring takes back MarkRecordRestoring or MarkRecordHeld when the switch
-// back to the release before failed: failed (still running) keeps the database its
-// migrations made, so the record says migrated again and no start puts the dump back or
-// stops on it. It reports whether it changed the record.
+// ConfirmRecord says the update to version is confirmed (its watch passed): the record
+// names its backup where every release reads it. One that is not version's, migrated, or
+// withholds no backup, is left alone.
+func ConfirmRecord(path, version string) (bool, error) {
+	if path == "" {
+		return false, nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	str := func(k string) string { s, _ := rec[k].(string); return s }
+	if NormalizeVersion(str("version")) != NormalizeVersion(version) || str("state") != "migrated" || str("dump_unconfirmed") == "" {
+		return false, nil
+	}
+	rec["dump"], rec["confirmed"] = str("dump_unconfirmed"), true
+	delete(rec, "dump_unconfirmed")
+	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
+}
+
+// UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the release
+// before failed: failed (still running) keeps the database its migrations made, so the
+// record says migrated again and no start puts the dump back. A held record stays held: its
+// Down scripts may have run in part, and the failed release must not migrate and start on
+// that by itself (a person chooses). It reports whether it changed the record.
 func UnmarkRecordRestoring(path, failed string) (bool, error) {
 	if path == "" {
 		return false, nil
@@ -278,7 +325,7 @@ func UnmarkRecordRestoring(path, failed string) (bool, error) {
 		return false, fmt.Errorf("%s: %w", path, err)
 	}
 	str := func(k string) string { s, _ := rec[k].(string); return s }
-	if (str("state") != "restoring" && str("state") != "held") || NormalizeVersion(str("failed")) != NormalizeVersion(failed) {
+	if str("state") != "restoring" || NormalizeVersion(str("failed")) != NormalizeVersion(failed) {
 		return false, nil
 	}
 	rec["state"] = "migrated"
@@ -413,10 +460,39 @@ func RecordMigrated(path, version string) bool {
 	return NormalizeVersion(rec.Version) == NormalizeVersion(version) && (rec.State == "migrated" || rec.State == "migrating")
 }
 
+// RecordSchemaBefore is the slot the database was at before version's migrations
+// (schema_before; 0: not recorded) and whether it was then a newer release's schema, kept
+// for the release before (dump_kept_for; kept_for: version's own start ran no migration on
+// it). A record that is not version's says neither.
+func RecordSchemaBefore(path, version string) (slot int64, onKept bool, err error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	var rec struct {
+		Version      string `json:"version"`
+		SchemaBefore int64  `json:"schema_before"`
+		KeptFor      string `json:"kept_for"`
+		DumpKeptFor  string `json:"dump_kept_for"`
+	}
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return 0, false, fmt.Errorf("%s: %w", path, err)
+	}
+	if NormalizeVersion(rec.Version) != NormalizeVersion(version) {
+		return 0, false, nil
+	}
+	return rec.SchemaBefore, rec.KeptFor != "" || rec.DumpKeptFor != "", nil
+}
+
 // MarkRecordDown says the database is back on from's schema: failed's Down scripts undid
 // its migrations (a rollback that undoes only what the release changed). The record
 // becomes from's, migrated, as if failed had never migrated it; down_from names failed.
-// It reports whether it changed the record (one that is not failed's, migrated, stays).
+// A database that was a newer schema kept for from before failed's update (dump_kept_for)
+// is that again: kept_for from, which would else refuse it as ahead of its own. It reports
+// whether it changed the record (one that is not failed's, migrated, stays).
 func MarkRecordDown(path, failed, from, reason string) (bool, error) {
 	if path == "" || from == "" {
 		return false, nil
@@ -443,9 +519,14 @@ func MarkRecordDown(path, failed, from, reason string) (bool, error) {
 	}
 	rec["down_from"], rec["down_reason"] = str("version"), reason
 	rec["version"] = back
+	onKept := str("dump_kept_for") != ""
 	// from starts on it as on its own: the release that ran last is from
-	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for"} {
+	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for", "schema_before"} {
 		delete(rec, k)
+	}
+	if onKept {
+		rec["kept_for"] = NormalizeVersion(from)
+		rec["kept_reason"] = "kept before the update to " + failed + ", which was undone"
 	}
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	out, err := json.MarshalIndent(rec, "", "  ")

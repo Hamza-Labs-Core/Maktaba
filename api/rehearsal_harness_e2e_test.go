@@ -186,6 +186,9 @@ type payloadSpec struct {
 	variant string // prev, cur, next
 	version string
 	extra   map[string]string // more migrations (name -> SQL)
+	// launcher is the variant whose launcher it ships ("": its own): an update leaves the
+	// launcher of a layout install, a container's or the Linux app's as it was
+	launcher string
 	// pg18 puts the kit's PostgreSQL 18 in postgres-18/ (a release of Epic 49 story 49.2)
 	pg18 bool
 }
@@ -199,7 +202,11 @@ func (k *rehearsalKit) makePayload(t *testing.T, dst string, p payloadSpec) {
 		t.Fatal(err)
 	}
 	for _, b := range []string{"maktaba-server", "maktaba-api", "maktaba-streaming", "maktaba-launcher"} {
-		if err := copyFileMode(filepath.Join(src, b), filepath.Join(dst, "bin", b), 0o755); err != nil {
+		from := src
+		if b == "maktaba-launcher" && p.launcher != "" {
+			from = filepath.Join(k.dir, p.launcher)
+		}
+		if err := copyFileMode(filepath.Join(from, b), filepath.Join(dst, "bin", b), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}

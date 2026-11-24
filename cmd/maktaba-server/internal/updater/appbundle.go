@@ -211,7 +211,7 @@ func (ai *AppInstaller) KeepsSchema(j *Journal) (bool, string) {
 
 // DownTo implements SchemaReverter: the new payload's Down scripts above the kept payload
 // of the release before (schemadown.go).
-func (ai *AppInstaller) DownTo(j *Journal) (int64, bool, string) {
+func (ai *AppInstaller) DownTo(j *Journal, before int64, onKept bool) (int64, bool, string) {
 	from := j.FromRef
 	if from == "" && j.From != "" {
 		from = ai.keptDir(j.From)
@@ -219,7 +219,7 @@ func (ai *AppInstaller) DownTo(j *Journal) (int64, bool, string) {
 	if from == "" || ai.Payload == "" {
 		return 0, false, "the payloads' migrations are not known"
 	}
-	return DownToFrom(filepath.Join(from, "migrations"), filepath.Join(ai.Payload, "migrations"))
+	return DownToFrom(filepath.Join(from, "migrations"), filepath.Join(ai.Payload, "migrations"), before, onKept)
 }
 
 // Kind implements Installer.

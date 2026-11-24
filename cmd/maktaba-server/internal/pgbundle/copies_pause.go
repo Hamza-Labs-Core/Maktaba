@@ -2,68 +2,75 @@ package pgbundle
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/lib/pq"
+	"time"
 )
 
 // The machines' copies of the home's database (Epic 37: logical replication, each
-// machine's own replication role a member of ReplicaGroup) during an update's
-// migrations (research item 5, E4 and E8). Before the migrations the database step waits
-// for every table sync to end (a machine's first copy of a table, or one made anew: its
-// walsender holds one snapshot for the whole COPY, which an index build waits on, and
-// ending it makes the machine copy the table again), then stops the copies from logging
-// in (NOLOGIN on each machine's replication role) and ends their walsenders, so nothing
-// of theirs runs or comes straight back while the schema changes; after the migrations
-// it lets them log in again. Each machine's slot keeps the home's changes meanwhile,
-// under the home's cap (rules.cluster.replica_wal_keep_gb), and its copy goes on from
-// where it stopped.
+// machine's own replication role maktaba_rep_<id>) during an update's migrations (research
+// item 5, E4 and E8). Before the migrations the database step waits for every table sync to
+// end (a machine's first copy of a table, or one made anew: its walsender holds one snapshot
+// for the whole COPY, which an index build waits on, and ending it makes the machine copy
+// the table again), then keeps the copies out until the schema is settled: pg_hba.conf
+// rejects their roles, and their sessions are ended.
+//
+// It is pg_hba.conf, not the roles: a machine asks for its copy again and again
+// (cluster_node_replica_grant, slot 0147), which sets LOGIN on its role, and no released
+// home or machine can be told not to. A grant cannot undo a reject. The pause is a marker
+// in the data directory that hbaConf follows, so it outlives a kill of the server; and it
+// dies with the file where nothing knows the marker: every release writes pg_hba.conf at
+// every start (Prepare), and one from before the marker writes it without the rejects, so a
+// rollback to such a release leaves no copy paused. Each machine's slot keeps the home's
+// changes meanwhile, under the home's cap (rules.cluster.replica_wal_keep_gb), and its copy
+// goes on from where it stopped.
 
-// TableSyncsSQL counts the table syncs streaming from the app database: their slots are
-// pg_<subscription>_sync_<table>_<system>.
+// copiesPausedMarker marks the machines' copies kept out (PauseCopies).
+const copiesPausedMarker = "maktaba-copies-paused"
+
+// replicaRoles is every machine's replication role in pg_hba.conf: a regular expression
+// (PostgreSQL 16), so a role made or altered meanwhile is kept out too, and one dropped
+// changes nothing. Never +maktaba_replicas: the app role, which the migrations log in as, is
+// a member of that group (it made it). Neither it nor the superuser has this prefix.
+const replicaRoles = "/^maktaba_rep_"
+
+// replicaRolesSQL is the same roles in SQL.
+const replicaRolesSQL = `LIKE 'maktaba\_rep\_%'`
+
+// pausedHBA are the lines that keep the copies out, before every other (the first line
+// that matches decides); "" while they are not paused.
+func (b Bundle) pausedHBA() string {
+	if !b.CopiesPaused() {
+		return ""
+	}
+	return "# The machines' copies wait for the home's migrations (" + copiesPausedMarker + ").\n" +
+		fmt.Sprintf("%-7s %-12s %-16s %-15s reject\n", "local", "all", replicaRoles, "") +
+		fmt.Sprintf("%-7s %-12s %-16s %-15s reject\n", "host", "all", replicaRoles, "all")
+}
+
+// TableSyncsSQL counts the table syncs that stream from the app database now: their slots
+// are pg_<subscription>_sync_<table>_<system>. Only the active ones: such a slot is
+// permanent, and one whose machine is gone stays, inactive, until the home drops it (its
+// WAL is past the home's cap, or lost: api/internal/cluster's copies beat) or its machine
+// comes back and ends its copy. It holds no snapshot and nothing waits on it.
 const TableSyncsSQL = `SELECT count(*) FROM pg_replication_slots
-    WHERE slot_type = 'logical' AND database = '` + AppDatabase + `'
+    WHERE slot_type = 'logical' AND active AND database = '` + AppDatabase + `'
       AND slot_name ~ '^pg_[0-9]+_sync_[0-9]+_[0-9]+$'`
 
-// ReplicaLoginsSQL selects the machines' replication roles that may log in now: the
-// members of ReplicaGroup named maktaba_rep_<machine> (slot 0147's
-// cluster_node_replica_grant makes them). Never the app role, nor a superuser: the app
-// role is a member of the group too (it made it), and the migrations log in as it.
-const ReplicaLoginsSQL = `SELECT m.rolname FROM pg_roles m
-    JOIN pg_auth_members am ON am.member = m.oid
-    JOIN pg_roles g ON g.oid = am.roleid AND g.rolname = '` + ReplicaGroup + `'
-    WHERE m.rolcanlogin AND NOT m.rolsuper AND m.rolname LIKE 'maktaba\_rep\_%'
-      AND m.rolname NOT IN ('` + AppRole + `', '` + SuperUser + `') AND m.rolname <> current_user
-    ORDER BY 1`
+// endCopiesSQL ends the sessions of the machines' replication roles and counts those that
+// were there (a walsender takes a moment to go).
+const endCopiesSQL = `SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+    WHERE usename ` + replicaRolesSQL + ` AND pid <> pg_backend_pid()) e`
 
-// PauseCopiesSQL stops roles from logging in (each machine's replication role).
-func PauseCopiesSQL(roles []string) string {
-	var s strings.Builder
-	for _, r := range roles {
-		s.WriteString("ALTER ROLE " + pq.QuoteIdentifier(r) + " NOLOGIN;\n")
-	}
-	return s.String()
-}
-
-// EndCopiesSQL ends the sessions of roles (their walsenders) and counts them.
-func EndCopiesSQL(roles []string) string {
-	q := make([]string, len(roles))
-	for i, r := range roles {
-		q[i] = pq.QuoteLiteral(r)
-	}
-	return `SELECT count(*) FROM (SELECT pg_terminate_backend(pid) AS ended FROM pg_stat_activity
-    WHERE usename IN (` + strings.Join(q, ", ") + `) AND pid <> pg_backend_pid()) e WHERE e.ended`
-}
-
-// ResumeCopiesSQL lets roles log in again.
-func ResumeCopiesSQL(roles []string) string {
-	var s strings.Builder
-	for _, r := range roles {
-		s.WriteString("ALTER ROLE " + pq.QuoteIdentifier(r) + " LOGIN;\n")
-	}
-	return s.String()
-}
+// pauseQuery bounds one question of a pause (a server that does not answer is no reason to
+// wait without end).
+const pauseQuery = 15 * time.Second
 
 // TableSyncs counts the table syncs streaming from the app database (TableSyncsSQL).
 func (b Bundle) TableSyncs(ctx context.Context) (int, error) {
@@ -71,60 +78,177 @@ func (b Bundle) TableSyncs(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	rows, err := q.Query(ctx, "postgres", TableSyncsSQL)
-	if err != nil || len(rows) == 0 {
+	s, err := askOne(ctx, q, TableSyncsSQL)
+	if err != nil {
 		return 0, err
 	}
-	return strconv.Atoi(strings.TrimSpace(rows[0]))
+	return strconv.Atoi(s)
 }
 
-// ReplicaLogins is the machines' replication roles that may log in now (ReplicaLoginsSQL).
-func (b Bundle) ReplicaLogins(ctx context.Context) ([]string, error) {
+// askOne asks for one value, pauseQuery at most.
+func askOne(ctx context.Context, q asker, sql string) (string, error) {
+	qctx, cancel := context.WithTimeout(ctx, pauseQuery)
+	defer cancel()
+	rows, err := q.Query(qctx, "postgres", sql)
+	if err != nil {
+		return "", err
+	}
+	if len(rows) != 1 {
+		return "", fmt.Errorf("%d rows, not 1", len(rows))
+	}
+	return strings.TrimSpace(rows[0]), nil
+}
+
+// CopiesPaused reports whether the machines' copies are kept out (PauseCopies).
+func (b Bundle) CopiesPaused() bool {
+	_, err := os.Stat(filepath.Join(b.Data, copiesPausedMarker))
+	return err == nil
+}
+
+// PauseCopies keeps the machines' copies out of the running server until ResumeCopies: it
+// rejects their roles in pg_hba.conf, waits until the server goes by it, then ends their
+// sessions until none is left; it returns how many it ended. All of it or nothing: when it
+// cannot, the copies are let in again and err says why. Safe to repeat.
+func (b Bundle) PauseCopies(ctx context.Context) (ended int, err error) {
 	q, err := b.NewQuerier()
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	rows, err := q.Query(ctx, "postgres", ReplicaLoginsSQL)
+	ver, err := askOne(ctx, q, `SELECT current_setting('server_version_num')`)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	var out []string
-	for _, r := range rows {
-		if r = strings.TrimSpace(r); r != "" {
-			out = append(out, r)
+	if n, _ := strconv.Atoi(ver); n < 160000 {
+		return 0, fmt.Errorf("PostgreSQL %s cannot reject the machines' roles by name (16 can)", ver)
+	}
+	before, err := askOne(ctx, q, `SELECT pg_conf_load_time()`)
+	if err != nil {
+		return 0, err
+	}
+	if err := os.WriteFile(filepath.Join(b.Data, copiesPausedMarker),
+		[]byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+		return 0, err
+	}
+	defer func() {
+		if err != nil && ctx.Err() == nil {
+			if rerr := b.ResumeCopies(ctx); rerr != nil {
+				err = errors.Join(err, fmt.Errorf("and they could not be let in again: %w", rerr))
+			}
 		}
+	}()
+	if err := b.writeHBA(); err != nil {
+		return 0, fmt.Errorf("pg_hba.conf: %w", err)
 	}
-	return out, nil
+	if err := reloadConf(ctx, q); err != nil {
+		return 0, err
+	}
+	// in force: every session that starts from now on was let in by the new lines
+	inForce := `SELECT (pg_conf_load_time() > '` + before + `'::timestamptz)
+	    AND NOT EXISTS (SELECT 1 FROM pg_hba_file_rules WHERE error IS NOT NULL)
+	    AND EXISTS (SELECT 1 FROM pg_hba_file_rules WHERE auth_method = 'reject' AND '` + replicaRoles + `' = ANY (user_name))`
+	if err := until(ctx, pauseQuery, func() (bool, error) {
+		s, err := askOne(ctx, q, inForce)
+		return s == "t", err
+	}); err != nil {
+		return 0, fmt.Errorf("pg_hba.conf's rejects are not in force: %w", err)
+	}
+	// one that was signing in meanwhile is found by the next look: none on two in a row
+	quiet := 0
+	if err := until(ctx, 2*pauseQuery, func() (bool, error) {
+		s, err := askOne(ctx, q, endCopiesSQL)
+		if err != nil {
+			return false, err
+		}
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return false, err
+		}
+		if quiet++; n > 0 {
+			quiet, ended = 0, max(ended, n)
+		}
+		return quiet >= 2, nil
+	}); err != nil {
+		return ended, fmt.Errorf("the copies' sessions do not end: %w", err)
+	}
+	return ended, nil
 }
 
-// PauseCopies stops roles from logging in and ends their sessions; it returns how many
-// it ended.
-func (b Bundle) PauseCopies(ctx context.Context, roles []string) (int, error) {
-	if len(roles) == 0 {
-		return 0, nil
+// ResumeCopies lets the machines' copies in again. When the server cannot be told, the
+// marker stays: WatchCopies, or the next start's database step, tries again.
+func (b Bundle) ResumeCopies(ctx context.Context) error {
+	marker := filepath.Join(b.Data, copiesPausedMarker)
+	was, rerr := os.ReadFile(marker)
+	if rerr != nil && !errors.Is(rerr, fs.ErrNotExist) {
+		return rerr
 	}
-	q, err := b.NewQuerier()
-	if err != nil {
-		return 0, err
-	}
-	if err := q.Exec(ctx, "postgres", PauseCopiesSQL(roles)); err != nil {
-		return 0, err
-	}
-	rows, err := q.Query(ctx, "postgres", EndCopiesSQL(roles))
-	if err != nil || len(rows) == 0 {
-		return 0, err
-	}
-	return strconv.Atoi(strings.TrimSpace(rows[0]))
-}
-
-// ResumeCopies lets roles log in again.
-func (b Bundle) ResumeCopies(ctx context.Context, roles []string) error {
-	if len(roles) == 0 {
-		return nil
-	}
-	q, err := b.NewQuerier()
-	if err != nil {
+	if err := os.Remove(marker); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	return q.Exec(ctx, "postgres", ResumeCopiesSQL(roles))
+	err := b.writeHBA()
+	if err == nil {
+		var q Querier
+		if q, err = b.NewQuerier(); err == nil {
+			err = reloadConf(ctx, q)
+		}
+	}
+	if err != nil && rerr == nil {
+		if werr := os.WriteFile(marker, was, 0o600); werr != nil {
+			err = errors.Join(err, werr)
+		}
+	}
+	return err
+}
+
+func reloadConf(ctx context.Context, q asker) error {
+	s, err := askOne(ctx, q, `SELECT pg_reload_conf()`)
+	if err == nil && s != "t" {
+		err = errors.New("the server did not reload its configuration")
+	}
+	return err
+}
+
+// until asks every half second until done says so, most at most.
+func until(ctx context.Context, most time.Duration, done func() (bool, error)) error {
+	ctx, cancel := context.WithTimeout(ctx, most)
+	defer cancel()
+	for {
+		ok, err := done()
+		if err != nil || ok {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
+// CopiesEvery is how often WatchCopies looks.
+const CopiesEvery = time.Minute
+
+// WatchCopies lets the machines' copies in again when they are still kept out with the
+// schema settled (settled: the database's record says no migration, restore or held update
+// is under way) and no maintenance running (Hold): a resume the server did not take, or a
+// rollback whose switch back failed, never leaves them out for good.
+func (b Bundle) WatchCopies(ctx context.Context, every time.Duration, settled func() bool, log io.Writer) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if !b.CopiesPaused() || maintenance.Load() > 0 || !settled() {
+			continue
+		}
+		if err := b.ResumeCopies(ctx); err != nil {
+			if ctx.Err() == nil {
+				fmt.Fprintf(log, "[postgres] level=error the machines' copies could not be let in again (trying again): %v\n", err)
+			}
+			continue
+		}
+		fmt.Fprintln(log, "[postgres] the machines' copies may log in again")
+	}
 }

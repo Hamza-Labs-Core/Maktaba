@@ -2,8 +2,10 @@ package updater
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -11,6 +13,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // world is what a machine's disk holds across its restarts: the release the next start
@@ -32,6 +36,13 @@ type world struct {
 	installBy *time.Time // when the order says the app installs
 	answerErr error
 	extends   int // the launcher's guard pushed on (Extender)
+	// what the record says of the database before the update (SchemaBeforeRecords), and
+	// what DownTo was asked with
+	before     int64
+	onKept     bool
+	beforeErr  error
+	downBefore int64
+	downOnKept bool
 }
 
 // app answers the order like the desktop app.
@@ -94,7 +105,10 @@ type fakeInst struct {
 }
 
 // DownTo implements SchemaReverter.
-func (f *fakeInst) DownTo(*Journal) (int64, bool, string) {
+func (f *fakeInst) DownTo(_ *Journal, before int64, onKept bool) (int64, bool, string) {
+	f.w.mu.Lock()
+	f.w.downBefore, f.w.downOnKept = before, onKept
+	f.w.mu.Unlock()
 	if f.reverts {
 		return 191, true, "the fake's migrations lose no data"
 	}
@@ -222,6 +236,11 @@ func (r fakeRecords) Unmark(string) error {
 	defer r.w.mu.Unlock()
 	r.w.marked, r.w.kept = false, false
 	return nil
+}
+func (r fakeRecords) SchemaBefore(string) (int64, bool, error) {
+	r.w.mu.Lock()
+	defer r.w.mu.Unlock()
+	return r.w.before, r.w.onKept, r.w.beforeErr
 }
 func (r fakeRecords) MarkDown(_, _, _ string) (bool, error) {
 	r.w.mu.Lock()
@@ -909,8 +928,11 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 		reverts bool
 		fails   bool
 		down    bool // the Down scripts are what put it back
+		// the record of the database before the update cannot be read: no Down script runs
+		unread bool
 	}{
 		"down":       {reverts: true, down: true},
+		"unread":     {reverts: true, unread: true},
 		"down fails": {reverts: true, fails: true},
 		"loses data": {reverts: false},
 	} {
@@ -922,6 +944,10 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 			_ = r.m.Apply("run-1")
 			r.waitExit()
 			w.migrated = true
+			w.before, w.onKept = 191, true
+			if c.unread {
+				w.beforeErr = errors.New("database.json: unexpected end of JSON input")
+			}
 			r.stop()
 			n := startRig(t, r.dir, w, Verdict{Why: "api /readyz 503"})
 			n.inst.reverts = c.reverts
@@ -942,7 +968,13 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 			w.mu.Lock()
 			marked, down, next := w.marked, w.down, w.next
 			w.mu.Unlock()
-			if want := int32(map[bool]int{true: 1}[c.reverts]); ran.Load() != want {
+			w.mu.Lock()
+			askedBefore, askedKept := w.downBefore, w.downOnKept
+			w.mu.Unlock()
+			if !c.unread && (askedBefore != 191 || !askedKept) {
+				t.Fatalf("DownTo asked with the slot before %d, kept %v", askedBefore, askedKept)
+			}
+			if want := int32(map[bool]int{true: 1}[c.reverts && !c.unread]); ran.Load() != want {
 				t.Fatalf("the Down scripts ran %d times, want %d", ran.Load(), want)
 			}
 			if down != c.down || marked == c.down {
@@ -952,5 +984,88 @@ func TestRollbackRunsTheDownScriptsBeforeAnyDump(t *testing.T) {
 				t.Fatalf("switched back to %s", next)
 			}
 		})
+	}
+}
+
+// fileRecords is the home's record in a file, as serve's is (recordFile).
+type fileRecords string
+
+func (r fileRecords) Migrated(v string) bool { return layout.RecordMigrated(string(r), v) }
+func (r fileRecords) MarkHeld(v, _, why string) (bool, error) {
+	return layout.MarkRecordHeld(string(r), v, why)
+}
+func (r fileRecords) MarkDown(v, from, why string) (bool, error) {
+	return layout.MarkRecordDown(string(r), v, from, why)
+}
+func (r fileRecords) SchemaBefore(v string) (int64, bool, error) {
+	return layout.RecordSchemaBefore(string(r), v)
+}
+func (r fileRecords) Confirm(v string) error {
+	_, err := layout.ConfirmRecord(string(r), v)
+	return err
+}
+func (r fileRecords) Unmark(v string) error {
+	if _, err := layout.UnmarkRecordKept(string(r), v); err != nil {
+		return err
+	}
+	_, err := layout.UnmarkRecordRestoring(string(r), v)
+	return err
+}
+
+// A NO TRANSACTION Down script that fails part way holds the record; when the switch back
+// then fails too, it stays held (the failed release must not migrate and run on a schema
+// part way by itself), with its backup named and the run failed. A release that commits
+// names its backup where every release reads it.
+func TestFailedSwitchBackLeavesAHeldRecordHeld(t *testing.T) {
+	rec := func(t *testing.T, path string) map[string]any {
+		t.Helper()
+		var m map[string]any
+		b, err := os.ReadFile(path)
+		if err != nil || json.Unmarshal(b, &m) != nil {
+			t.Fatalf("%v: %s", err, b)
+		}
+		return m
+	}
+	run := func(t *testing.T, health Verdict, set func(*rig)) (*rig, *world, string) {
+		w := newWorld("1.4.0")
+		r := startRig(t, t.TempDir(), w, healthy)
+		_ = r.m.Prepare(homeJob())
+		r.waitState(StatePrepared)
+		_ = r.m.Apply("run-1")
+		r.waitExit()
+		r.stop()
+		path := filepath.Join(t.TempDir(), "database.json")
+		if err := os.WriteFile(path, []byte(`{"version":"1.5.0","state":"migrated","from":"1.4.0","schema_before":191,`+
+			`"dump_unconfirmed":"/b/pre-1.4.0-to-1.5.0.dump"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		n := startRig(t, r.dir, w, health)
+		n.m.Records = fileRecords(path)
+		set(n)
+		n.m.Resume()
+		return n, w, path
+	}
+
+	n, w, path := run(t, Verdict{Why: "api /readyz 503"}, func(n *rig) {
+		n.inst.reverts, n.inst.failAt = true, "revert"
+		n.m.MigrateDown = func(context.Context, *Journal, int64) error { return errors.New("0005_x.sql: half undone") }
+	})
+	n.waitState(StateFailed)
+	got := rec(t, path)
+	if got["state"] != "held" || got["failed"] != "1.5.0" || got["dump"] != "/b/pre-1.4.0-to-1.5.0.dump" {
+		t.Fatalf("record after a switch back that failed: %v", got)
+	}
+	if w.next != "1.5.0" {
+		t.Fatalf("switched to %s", w.next)
+	}
+	// started again, it is still held: nothing says its migrations may go on
+	if (fileRecords(path)).Migrated("1.5.0") {
+		t.Fatal("a held record says migrated")
+	}
+
+	n, _, path = run(t, healthy, func(*rig) {})
+	n.waitState(StateCommitted)
+	if got := rec(t, path); got["dump"] != "/b/pre-1.4.0-to-1.5.0.dump" || got["confirmed"] != true || got["state"] != "migrated" {
+		t.Fatalf("record after the commit: %v", got)
 	}
 }
