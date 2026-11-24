@@ -67,7 +67,7 @@ class ParentalScreensTest {
     @Before
     fun routes() {
         compose.registerIdlingResource(home.idling)
-        home.answer("/api/me/parental/guardians") { FakeHome.json("""{"guardians":[{"id":"g1","username":"huda"}]}""") }
+        home.answer("/api/me/parental/guardians") { FakeHome.json("""{"guardians":[{"id":"g1","username":"khalid"}]}""") }
     }
 
     private fun show(content: @Composable () -> Unit) {

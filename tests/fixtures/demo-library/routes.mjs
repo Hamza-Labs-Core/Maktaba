@@ -489,8 +489,16 @@ export function buildRoutes(lang, lib = loadLibrary()) {
     total: titleHits.length,
     items: titleHits,
   });
+  // plain texts for an older reader, and `items` with their kinds (story 49.8): a recent search,
+  // the word, and each title that matches
+  const suggestItems = [
+    { text: q, kind: "history" },
+    { text: q, kind: "term" },
+    ...lib.search.titles.map((id) => ({ text: L(byId.get(id).title), kind: "title", video_id: id })),
+  ];
   add("GET", "/api/search/suggest", {
     suggestions: [q, ...lib.search.titles.map((id) => L(byId.get(id).title))],
+    items: suggestItems,
   });
   add("GET", "/api/search/recent", {
     items: [

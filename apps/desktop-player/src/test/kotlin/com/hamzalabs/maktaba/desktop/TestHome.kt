@@ -107,7 +107,7 @@ class TestHome : AutoCloseable {
     val prefs = AppPrefs(MapStore())
 
     fun home(admin: Boolean = false): DesktopHome = DesktopHome(
-        User("u1", "amina", isAdmin = admin), client, "Kitchen", prefs,
+        User("u1", "idris", isAdmin = admin), client, "Kitchen", prefs,
         background,
         capabilities = features,
         posters = Posters(null),

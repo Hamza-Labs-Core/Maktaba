@@ -45,7 +45,7 @@ class FakeRemoteHome : ExternalResource() {
     private val recorded = mutableListOf<RecordedRequest>()
     private val calls = CallDispatcher()
 
-    val user = User(id = "u1", username = "layla", isAdmin = true)
+    val user = User(id = "u1", username = "yusuf", isAdmin = true)
     lateinit var remote: Remote
         private set
     lateinit var session: AppSession

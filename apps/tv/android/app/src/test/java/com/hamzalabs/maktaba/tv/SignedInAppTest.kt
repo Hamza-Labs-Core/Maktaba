@@ -105,7 +105,7 @@ class SignedInAppTest {
         val app = ApplicationProvider.getApplicationContext<MaktabaTVApp>()
         val client = client()
         compose.setContent {
-            MaktabaTvTheme { SignedInApp(app, User(id = "u1", username = "layla"), client, features) }
+            MaktabaTvTheme { SignedInApp(app, User(id = "u1", username = "yusuf"), client, features) }
         }
     }
 

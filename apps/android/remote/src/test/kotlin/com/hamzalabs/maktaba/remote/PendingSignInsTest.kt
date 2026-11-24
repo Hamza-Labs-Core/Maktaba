@@ -78,7 +78,7 @@ class PendingSignInsTest {
         assertFalse(compose.has("pending-banner"))
         waiting = TWO
         compose.settledUntil { compose.has("pending-banner") }
-        assertEquals(compose.activity.getString(CoreR.string.pending_device_named, "Sara's iPhone"), text())
+        assertEquals(compose.activity.getString(CoreR.string.pending_device_named, "Bilal's iPhone"), text())
     }
 
     @Test @Config(qualifiers = "w393dp-h916dp-440dpi")
@@ -186,7 +186,7 @@ class PendingSignInsTest {
     private companion object {
         val options = RoborazziOptions(compareOptions = RoborazziOptions.CompareOptions(changeThreshold = 0.02f))
         const val TV = """{"count":1,"requests":[{"id":"r1","client_app":"tv","platform":"android","device":"tv","device_label":"Living room TV","created_at":"2026-11-03T10:00:00Z","expires_at":"2026-11-03T10:10:00Z"}]}"""
-        const val TWO = """{"count":2,"requests":[{"id":"r2","client_app":"player","platform":"ios","device":"phone","device_label":"Sara's iPhone","created_at":"2026-11-03T10:01:00Z","expires_at":"2026-11-03T10:11:00Z"},{"id":"r1","client_app":"tv","platform":"android","device":"tv","device_label":"Living room TV","created_at":"2026-11-03T10:00:00Z","expires_at":"2026-11-03T10:10:00Z"}]}"""
+        const val TWO = """{"count":2,"requests":[{"id":"r2","client_app":"player","platform":"ios","device":"phone","device_label":"Bilal's iPhone","created_at":"2026-11-03T10:01:00Z","expires_at":"2026-11-03T10:11:00Z"},{"id":"r1","client_app":"tv","platform":"android","device":"tv","device_label":"Living room TV","created_at":"2026-11-03T10:00:00Z","expires_at":"2026-11-03T10:10:00Z"}]}"""
         const val NONE = """{"count":0,"requests":[]}"""
     }
 }
