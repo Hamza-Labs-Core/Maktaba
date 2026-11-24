@@ -136,8 +136,11 @@ Runtime and no App Review. Two dated changes affect that path:
      playing minutes (`docs/broadcast-edge.md`).
    - 5.1.1(i) requires the policy to "identify what data, if any, the app/service collects …
      and all uses of that data", the retention, and how to ask for deletion.
-   - *Mitigation:* owner-approved text for both, in English and Arabic (owner action 9; a draft
-     is below).
+   - **fixed (text waits for the owner's read):** the site's privacy page gained both, in
+     English and Arabic (`copy/legal/privacy.{en,ar}.md`, "The apps → To Maktaba"). The site's
+     build ties that section to `docs/app-privacy.md` (`scripts/legal.mjs`, `apps-source`), so
+     the page could not stay behind the label. The Arabic needs the owner's read before merge
+     (owner action 9).
 7. **The support URL has no contact information (App Store Connect).**
    - App Store Connect requires a support URL that "must lead to actual contact information"
      (https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information).
@@ -210,7 +213,7 @@ Runtime and no App Review. Two dated changes affect that path:
 | IPv6-only networks (2.5.5) | done | `URLSession` and `Network.framework` with host names; the only IPv4 literal is the loopback `StreamProxy` (`127.0.0.1`), which exists on IPv6-only networks too |
 | Starts with no home and no network | done | the start screen is the home picker; `ConnectUITests.testTheCloudDownShowsTheSavedHomes` and `PermissionsUITests.testFirstRunAsksThenStaysClosed` start the apps with no home on CI |
 | App icon: 1024 px, no alpha | **fixed** | `Shared/Assets.xcassets/RemoteIcon.appiconset/icon-1024.png` had an alpha channel (all opaque), now removed with identical pixels; `AppIcon` had none. Checked by the test |
-| Privacy policy URL (5.1.1(i)) | done (URL) / **owner** (text) | https://maktaba.tv/legal/privacy/ and `/ar/legal/privacy/` answer 200. The text misses the cloud account and broadcasts (risk 6). The apps link to it from the descriptions; an in-app link is also required ("within the app") and the apps have none yet (owner action 10) |
+| Privacy policy URL (5.1.1(i)) | done (URL) / **fixed** (text, owner's read) | https://maktaba.tv/legal/privacy/ and `/ar/legal/privacy/` answer 200. The text now covers the cloud account and broadcasts (risk 6). The apps link to it from the descriptions; an in-app link is also required ("within the app") and the apps have none yet (owner action 10) |
 | Support URL with contact information | **owner** | https://maktaba.tv/help/ answers 200 but has no contact (risk 7) |
 | Marketing URL | done | https://maktaba.tv/ and `/ar/` answer 200 |
 | Name, subtitle, description, keywords, promotional text in English and Arabic | **fixed** (drafts) | `apps/apple/AppStore/<app>/metadata/{en-US,ar-SA}/`, within App Store Connect's limits (checked by the test); owner approval before use |
@@ -294,10 +297,12 @@ If the Google Cast SDK is turned on (risk 9), add what its manifest declares for
 and iPad Player: Device ID, Product Interaction and Other Diagnostic Data, not linked, for
 Analytics and App Functionality.
 
-## A draft for the privacy policy (for owner approval)
+## The privacy policy's new parts (for owner approval)
 
-The two missing parts of https://maktaba.tv/legal/privacy/, under **The apps → To Maktaba**.
-The Arabic was written in the site's voice (`web/packages/website/copy/voice.md`).
+What this pull request adds to https://maktaba.tv/legal/privacy/, under **The apps → To Maktaba**
+(`web/packages/website/copy/legal/privacy.{en,ar}.md`). The Arabic follows the site's voice
+(`web/packages/website/copy/voice.md`); the shipped wording is in those files, and the bullets
+below summarise it.
 
 - **English**
   - *Maktaba Cloud.* If you sign in through Maktaba Cloud in an app, the app sends your
@@ -346,8 +351,8 @@ repository; the notes name the secrets.
    each record's Arabic localization from `apps/apple/AppStore/`.
 8. **A support contact on maktaba.tv/help/**, in English and Arabic: a mailbox (for example
    `support@maktaba.tv`) or a contact form. App Store Connect's Support URL must show it.
-9. **Approve and publish the privacy policy text** above (English and Arabic; the site's copy
-   needs the owner's read).
+9. **Read and approve the privacy policy's new text** (English and Arabic, in this pull request;
+   the site's copy needs the owner's read). It publishes when the pull request merges.
 10. **In-app links** (a small app change, for a design story): a Privacy policy link in each
     app (5.1.1(i) asks for one "within the app"). Once the cloud is live, a Manage or delete
     your account link in the cloud sheet.

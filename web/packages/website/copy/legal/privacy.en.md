@@ -1,11 +1,11 @@
 ---
 title: Privacy
 description: What Maktaba's website, apps and cloud do with your information, in plain words: no cookies, no analytics, and your library stays in your home.
-updated: 2026-11-11
-apps-source: sha256:4b4400ce620949688eeb8c7e01408b5a2290cba96ea4622277e763c89da525a8
+updated: 2026-11-24
+apps-source: sha256:6f994751f1c2dedd96f86d8c9834ea71160cb5df2970fb6c271108005ec1d0f0
 ---
 
-Maktaba runs in your home, and your films, series and recordings stay there. This website sets no cookies and counts no visitors. The apps send nothing to us unless you choose to send us a problem report. Maktaba Cloud keeps only anonymous totals, and deletes them after 90 days.
+Maktaba runs in your home, and your films, series and recordings stay there. This website sets no cookies and counts no visitors. The apps send nothing to us unless you choose to: a problem report, signing in through Maktaba Cloud, or watching a broadcast. Maktaba Cloud keeps only anonymous totals, and deletes them after 90 days.
 
 ## This website {#website}
 
@@ -24,9 +24,12 @@ What Maktaba's apps send, and to whom:
   - **Crash reports** go to your home only when you turn on **Send crash reports**. It is off until you turn it on, and you can turn it off at any time.
   - **Problem reports** go to your home only when you send one from **Report a problem**. The form shows you everything it will send first.
   - Before anything is sent, the apps mask sign-in tokens, email addresses, home folder names, card numbers and network addresses in it. No videos, messages or file contents are sent.
-- **To Maktaba.** Nothing comes to us from the apps directly. A problem report reaches us, through your home, only when both of these are true:
-  - your home's admin turned on **Let people send problem reports to Maktaba** (it is off until they do);
-  - you ticked **Also send to Maktaba** on the form (it is unticked until you do).
+- **To Maktaba.** Only when you use something of ours:
+  - **Signing in through Maktaba Cloud.** The app sends your account's email and password to Maktaba Cloud, which answers with the homes your account reaches. Maktaba Cloud keeps your account and the devices signed in to it until you delete the account.
+  - **Watching a broadcast.** When you watch a channel someone shares with you, Maktaba Cloud keeps your device's guest pass and counts the minutes you watch, for the publisher's limits. It keeps those counts 7 days, and never knows your name or email.
+  - **A problem report** reaches us, through your home, only when both of these are true:
+    - your home's admin turned on **Let people send problem reports to Maktaba** (it is off until they do);
+    - you ticked **Also send to Maktaba** on the form (it is unticked until you do).
 - **To anyone else.** Nothing. No analytics or crash-reporting service is built into the apps.
 
 When a problem report does come to us: before it leaves your home, names, titles, file names, folders and network addresses are removed, and you appear only as `user-1`. We see which home sent it, so we can answer, never who you are. We keep it for 90 days, and your home's admin can delete every report of the home at any time, with **Delete what Maktaba has**.

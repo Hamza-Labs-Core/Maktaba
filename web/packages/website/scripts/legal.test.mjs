@@ -116,7 +116,7 @@ test("the page's date follows the policy's when the policy is newer", () => {
     legalDoc("privacy", "en", { sources: sources({ policy: later }) }).updated,
     "2099-01-02"
   );
-  assert.equal(legalDoc("privacy", "en", { sources: sources() }).updated, "2026-11-11");
+  assert.equal(legalDoc("privacy", "en", { sources: sources() }).updated, "2026-11-24");
 });
 
 test("T02: docs/app-privacy.md changed without the page fails the build, naming the section", () => {
