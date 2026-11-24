@@ -119,7 +119,9 @@ describe("the built site (dist/)", () => {
 
   it("broadcasting is off (2026-11-24): no Broadcast access help page, and the help index doesn't list it", () => {
     for (const pre of ["", "ar/"]) {
-      expect(fs.existsSync(path.join(DIST, `${pre}help/broadcast-access/index.html`)), pre).toBe(false);
+      expect(fs.existsSync(path.join(DIST, `${pre}help/broadcast-access/index.html`)), pre).toBe(
+        false
+      );
       expect(read(`${pre}help/index.html`), pre).not.toContain("/help/broadcast-access");
     }
   });
