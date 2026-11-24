@@ -2,7 +2,7 @@
 // Story 60.03 T01–T04: the Worker's redirects, headers, 404 pages and caching, over a fake of
 // the assets binding (what wrangler's [assets] serves from dist/).
 import { describe, expect, it } from "vitest";
-import { CSP_COPYRIGHT, CSP_DEFAULT, REDIRECTS, cacheControl, cspFor } from "./headers";
+import { CSP_DEFAULT, REDIRECTS, cacheControl } from "./headers";
 import worker, { type Env } from "./worker";
 
 const HTML = "text/html; charset=utf-8";
@@ -105,6 +105,23 @@ describe("redirects (T01, T04)", () => {
     }
   });
 
+  it("60.07: the copyright page's old address goes to the terms page with a 301, in each language", async () => {
+    for (const [from, to] of [
+      ["/legal/copyright", "/legal/terms/"],
+      ["/legal/copyright/", "/legal/terms/"],
+      ["/ar/legal/copyright", "/ar/legal/terms/"],
+      ["/ar/legal/copyright/", "/ar/legal/terms/"],
+    ]) {
+      const env = fakeEnv();
+      const res = await get(`https://maktaba.tv${from}`, env);
+      expect(res.status, from).toBe(301);
+      expect(res.headers.get("Location"), from).toBe(to);
+      expect(res.headers.get("Content-Security-Policy"), from).toBe(CSP_DEFAULT);
+      // answered by the Worker, never looked up in the assets
+      expect(env.seen, from).toEqual([]);
+    }
+  });
+
   it("serves every redirect of src/redirects.json, the table the link check reads", async () => {
     const sources = Object.keys(REDIRECTS);
     expect(sources.length).toBeGreaterThan(0);
@@ -149,40 +166,16 @@ describe("headers (T02)", () => {
     }
   });
 
-  it("names no other origin outside the copyright page", () => {
+  it("names no other origin, on any path", () => {
     expect(CSP_DEFAULT).not.toMatch(/https?:\/\//);
     expect(CSP_DEFAULT).not.toMatch(/unsafe-inline|unsafe-eval/);
-    for (const p of ["/", "/ar/", "/install/docker/", "/legal/privacy/", "/legal/copyright/x"])
-      expect(cspFor(p), p).toBe(CSP_DEFAULT);
-  });
-
-  it("lets the copyright page reach Turnstile and the cloud API, and nothing else", () => {
-    for (const p of ["/legal/copyright/", "/legal/copyright", "/ar/legal/copyright/"])
-      expect(cspFor(p), p).toBe(CSP_COPYRIGHT);
-    const origins = new Set(CSP_COPYRIGHT.match(/https:\/\/[^\s;]+/g));
-    expect([...origins].sort()).toEqual([
-      "https://api.maktaba.tv",
-      "https://challenges.cloudflare.com",
-    ]);
-    expect(CSP_COPYRIGHT).toContain("frame-ancestors 'none'");
-    // T05: each directive names exactly what the form needs
-    expect(CSP_COPYRIGHT).toContain("script-src 'self' https://challenges.cloudflare.com;");
-    expect(CSP_COPYRIGHT).toContain("frame-src https://challenges.cloudflare.com;");
-    expect(CSP_COPYRIGHT).toContain("connect-src 'self' https://api.maktaba.tv;");
-    expect(CSP_COPYRIGHT).toContain("form-action https://api.maktaba.tv;");
     expect(CSP_DEFAULT).toContain("form-action 'none'");
   });
 
-  it("T05: the Worker sends the copyright CSP on the copyright page, in both languages, only", async () => {
-    for (const [p, want] of [
-      ["/legal/copyright/", CSP_COPYRIGHT],
-      ["/ar/legal/copyright/", CSP_COPYRIGHT],
-      ["/legal/privacy/", CSP_DEFAULT],
-      ["/ar/legal/terms/", CSP_DEFAULT],
-      ["/", CSP_DEFAULT],
-    ] as const) {
+  it("T05: the Worker sends the one policy on every page, in both languages", async () => {
+    for (const p of ["/", "/ar/", "/install/docker/", "/legal/privacy/", "/ar/legal/terms/"]) {
       const res = await get(`https://maktaba.tv${p}`);
-      expect(res.headers.get("Content-Security-Policy"), p).toBe(want);
+      expect(res.headers.get("Content-Security-Policy"), p).toBe(CSP_DEFAULT);
     }
   });
 });
@@ -239,5 +232,15 @@ describe("caching", () => {
     expect(cacheControl("/assets/site.css", "text/css", 200)).not.toMatch(/immutable/);
     expect(cacheControl("/install/docker/", HTML, 200)).toBe("public, max-age=0, must-revalidate");
     expect(cacheControl("/x", HTML, 404)).toBe("no-store");
+    // the release feed: a minute, so a release or a pull reaches homes at once
+    expect(cacheControl("/updates/v1/stable/linux-amd64.json", "application/json", 200)).toBe(
+      "public, max-age=60, must-revalidate"
+    );
+    expect(
+      cacheControl("/updates/v1/stable/linux-amd64.json.sigstore.json", "application/json", 200)
+    ).toBe("public, max-age=60, must-revalidate");
+    expect(cacheControl("/updates/v1/stable/linux-amd64.json", "application/json", 404)).toBe(
+      "no-store"
+    );
   });
 });

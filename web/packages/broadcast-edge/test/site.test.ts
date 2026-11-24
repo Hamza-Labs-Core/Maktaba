@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { advanceClock, now, resetClock } from "../src/clock";
 import type { Env } from "../src/env";
 import { MAX_GUIDE_BYTES, nowNext, validGuide } from "../src/guide";
-import { INVITE_DOMAIN, INVITE_PREFIX, readOpen, type InviteClaims } from "../src/invites";
+import { INVITE_DOMAIN, INVITE_PREFIX, type InviteClaims } from "../src/invites";
 import { WATCH_ROUTES } from "../src/play";
 import { forgetRevocations } from "../src/revocations";
 import { clientJS } from "../src/site/client";
@@ -14,7 +14,7 @@ import { HLS_INTEGRITY, HLS_SRC } from "../src/site/pages";
 import { inviteToken } from "../src/site/routes";
 import { viewerState } from "../src/site/states";
 import { ERROR_KEYS, STRINGS } from "../src/strings";
-import { call, cloudKid, control, E, INGEST, ingestToken, newChannel, signCloud } from "./helpers";
+import { call, cloudKid, control, INGEST, ingestToken, newChannel, signCloud } from "./helpers";
 
 afterEach(() => {
   resetClock();
@@ -460,20 +460,29 @@ describe("the watch pages", () => {
     expect(js).toContain(".reset(");
   });
 
-  it("an open channel the publisher lets search engines index drops noindex", async () => {
+  it("a channel stored as open and indexable is invite only and never indexed", async () => {
     const s = await setup();
-    const r = await get(`/en/${s.pub}/${s.ch2}`);
+    // no pass: nothing about the channel
+    const anon = await get(`/en/${s.pub}/${s.ch2}`);
+    expect(anon.status).toBe(404);
+    expect(await anon.text()).not.toContain("Cartoons");
+    // a pass: the page plays, still noindex
+    const pass = await passFor(s);
+    const r = await get(`/en/${s.pub}/${s.ch2}`, { Cookie: `mkp_${s.pub}=${pass}` });
     expect(r.status).toBe(200);
-    expect(r.headers.get("X-Robots-Tag")).toBeNull();
-    expect(await r.text()).not.toContain('content="noindex"');
+    expect(r.headers.get("X-Robots-Tag")).toBe("noindex");
+    expect(await r.text()).toContain('content="noindex"');
   });
 
-  it("without a credential only open channels show; a pass for one channel shows that one", async () => {
+  it("without a credential no channel shows (invitation only); a pass for one channel shows that one", async () => {
     const s = await setup();
     const anon = await (await get(`/en/${s.pub}`)).text();
-    expect(anon).toContain("Cartoons");
+    expect(anon).not.toContain("Cartoons");
     expect(anon).not.toContain(">Family<");
     expect((await get(`/en/${s.pub}/${s.ch}`)).status).toBe(404);
+    expect((await get(`/en/${s.pub}/${s.ch2}`)).status).toBe(404);
+    expect((await get(`/en/${s.pub}/guide`)).status).not.toBe(500);
+    expect(await (await get(`/en/${s.pub}/guide`)).text()).not.toContain("Cartoons");
     const one = await passFor(s, { chs: [s.ch] });
     const cookie = { Cookie: `mkp_${s.pub}=${one}` };
     const html = await (await get(`/en/${s.pub}`, cookie)).text();
@@ -585,19 +594,20 @@ describe("the apps' reads", () => {
     const b = await setup();
     const pass = await passFor(a, { chs: [a.ch] });
     const auth = { Authorization: `Bearer ${pass}` };
-    // another publisher's lineup with this pass: its open channel only, none of its invite ones
+    // another publisher's lineup with this pass: nothing (invitation only)
     const other = (await (await get(`/api/v1/lineup?publisher=${b.pub}`, auth)).json()) as {
       channels: { id: string }[];
     };
-    expect(other.channels.map((c) => c.id)).toEqual([b.ch2]);
+    expect(other.channels.map((c) => c.id)).toEqual([]);
     expect((await get(`/api/v1/guide?publisher=${b.pub}&channel=${b.ch}`, auth)).status).toBe(403);
     const play = await postJSON("/api/v1/play", { publisher: b.pub, channel: b.ch }, auth);
     expect(play.status).toBe(401);
-    // no credential at all: the open channel, nothing of an invite one
+    // no credential at all: no channel, not even one stored as open; no guide
     const none = (await (await get(`/api/v1/lineup?publisher=${a.pub}`)).json()) as {
       channels: { id: string }[];
     };
-    expect(none.channels.map((c) => c.id)).toEqual([a.ch2]);
+    expect(none.channels.map((c) => c.id)).toEqual([]);
+    expect((await get(`/api/v1/guide?publisher=${a.pub}&channel=${a.ch2}`)).status).toBe(403);
     expect((await postJSON("/api/v1/play", { publisher: a.pub, channel: a.ch })).status).toBe(401);
     // a forged pass (another key) is no pass
     const forged = `${pass.slice(0, -4)}AAAA`;
@@ -694,34 +704,17 @@ describe("TV pairing", () => {
     expect((await poll(p)).status).toBe(200);
   });
 
-  it("the TV gets a token of the phone's open session: same id, same expiry", async () => {
+  it("an open session can't pair a TV: invitation only", async () => {
     const s = await setup();
     const ts = await postJSON("/api/v1/open/turnstile", { token: `good-${Math.random()}` });
-    expect(ts.status).toBe(200);
     const session = ((await ts.json()) as { session: string }).session;
     const p = await open();
-    const refused = await postJSON(`/api/v1/pair/${p.nonce}`, { publisher: s.pub, open: true });
-    expect(refused.status).toBe(403);
     const sent = await postJSON(
       `/api/v1/pair/${p.nonce}`,
       { publisher: s.pub, open: true },
       { Cookie: `mko=${session}` }
     );
-    expect(sent.status).toBe(200);
-    const h = (await (await poll(p)).json()) as {
-      credential: string;
-      kind: string;
-      channels: string[];
-    };
-    expect(h.kind).toBe("open");
-    // the phone's cookie value stays on the phone; the TV's token is of the same session (the
-    // same id and expiry), so it shares the phone's limits and Turnstile check
-    expect(h.credential).not.toBe(session);
-    const tv = await readOpen(h.credential, E.VIEWER_TOKEN_KEY, now());
-    const phone = await readOpen(session, E.VIEWER_TOKEN_KEY, now());
-    expect(tv?.id).toBe(phone?.id);
-    expect(tv?.exp).toBe(phone?.exp);
-    expect(h.channels).toEqual([s.ch2]);
+    expect(sent.status).toBe(403);
   });
 
   it("a pairing ends after 10 minutes; a wrong nonce is gone", async () => {
@@ -758,5 +751,38 @@ describe("TV pairing", () => {
   it("an invite link or a bare token", () => {
     expect(inviteToken("https://watch.maktaba.tv/i/mkbn1.abc.def?x=1")).toBe("mkbn1.abc.def");
     expect(inviteToken(" mkbn1.abc.def ")).toBe("mkbn1.abc.def");
+  });
+});
+
+// Broadcasting is off (2026-11-24): with BROADCAST_ENABLED unset or "0", watch and live serve
+// nothing at all, not even to a guest with a pass
+describe("broadcasting off", () => {
+  it("watch and live answer 404 to everything, with no channel data", async () => {
+    const s = await setup();
+    const pass = await passFor(s);
+    const off = { BROADCAST_ENABLED: "0" };
+    for (const path of [
+      "/",
+      `/en/${s.pub}`,
+      `/en/${s.pub}/${s.ch}`,
+      `/en/${s.pub}/guide`,
+      `/api/v1/lineup?publisher=${s.pub}`,
+      `/api/v1/guide?publisher=${s.pub}&channel=${s.ch}`,
+      "/pair",
+      "/en/legal/copyright",
+    ]) {
+      const r = await get(path, { Cookie: `mkp_${s.pub}=${pass}` }, off);
+      expect(r.status, path).toBe(404);
+      expect(r.headers.get("X-Robots-Tag"), path).toContain("noindex");
+      const body = await r.text();
+      expect(body, path).not.toContain("Cartoons");
+      expect(body, path).not.toContain("Family");
+    }
+    const unset = await get(
+      `/api/v1/lineup?publisher=${s.pub}`,
+      {},
+      { BROADCAST_ENABLED: undefined }
+    );
+    expect(unset.status).toBe(404);
   });
 });

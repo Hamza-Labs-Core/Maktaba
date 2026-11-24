@@ -1,5 +1,5 @@
 {
-  "$comment": "The Worker's redirects (src/worker.ts): a source path, the path it sends to (301). The link check (scripts/links.mjs) reads this table too: a link to a source passes when its target opens a page. /docs is the address apps and old links print: it goes to the help pages (60.12). A help topic whose id changes keeps its old path here, sent to the new one (/help/<old>/ and /ar/help/<old>/). /install/ was the install guides' chooser (60.05): it is the download page now, which lists every guide (60.11); the guides themselves stay at /install/<guide>/. /help/broadcast-access/ was the Broadcast access topic: broadcasting is off (2026-11-24), so the topic is gone and its address opens the help index.",
+  "$comment": "The Worker's redirects (src/worker.ts): a source path, the path it sends to (301). The link check (scripts/links.mjs) reads this table too: a link to a source passes when its target opens a page. /docs is the address apps and old links print: it goes to the help pages (60.12). A help topic whose id changes keeps its old path here, sent to the new one (/help/<old>/ and /ar/help/<old>/). /install/ was the install guides' chooser (60.05): it is the download page now, which lists every guide (60.11); the guides themselves stay at /install/<guide>/. /help/broadcast-access/ was the Broadcast access topic: broadcasting is off (2026-11-24), so the topic is gone and its address opens the help index. /legal/copyright/ was a legal page (60.07) the site no longer publishes: its address goes to the terms page, so a link printed elsewhere still opens a page.",
   "/docs": "/help/",
   "/docs/": "/help/",
   "/ar/docs": "/ar/help/",
@@ -8,6 +8,10 @@
   "/install/": "/download/",
   "/ar/install": "/ar/download/",
   "/ar/install/": "/ar/download/",
+  "/legal/copyright": "/legal/terms/",
+  "/legal/copyright/": "/legal/terms/",
+  "/ar/legal/copyright": "/ar/legal/terms/",
+  "/ar/legal/copyright/": "/ar/legal/terms/",
   "/help/broadcast-access": "/help/",
   "/help/broadcast-access/": "/help/",
   "/ar/help/broadcast-access": "/ar/help/",

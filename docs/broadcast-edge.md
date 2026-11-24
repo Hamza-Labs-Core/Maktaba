@@ -386,6 +386,7 @@ into `broadcast_usage_hourly` and folds counts under 5 into "other" when a publi
 | `TURNSTILE_API`, `ATTEST_API` | service bindings | optional: Turnstile's siteverify (else the public one) and the app-attestation verifier (50.27; unbound, attestation answers `503`) |
 | `BROADCAST_ENV` | var | `staging` or `production`: the R2 keys' first part |
 | `BROADCAST_DELIVERY` | var | `r2` (default) or `stream` |
+| `BROADCAST_ENABLED` | var | `1` or `true`: watch and live serve viewers. Anything else (the default, and `0` in `wrangler.toml` while broadcasting is off, 2026-11-24): watch and live answer `404` to every request, with no channel data. Ingest is unaffected. The tests and rehearsals set it to `1`. |
 | `BROADCAST_GLOBAL_OFF` | var | `1` stops every broadcast (50.25's break-glass) |
 | `BROADCAST_OFF_CHANNELS` | var | comma-separated edge channel ids stopped at once (50.25's break-glass) |
 | cron `* * * * *` | trigger | pulls the revocation list from `API_ORIGIN` (50.25) |

@@ -116,7 +116,7 @@ test("the page's date follows the policy's when the policy is newer", () => {
     legalDoc("privacy", "en", { sources: sources({ policy: later }) }).updated,
     "2099-01-02"
   );
-  assert.equal(legalDoc("privacy", "en", { sources: sources() }).updated, "2026-11-11");
+  assert.equal(legalDoc("privacy", "en", { sources: sources() }).updated, "2026-11-24");
 });
 
 test("T02: docs/app-privacy.md changed without the page fails the build, naming the section", () => {
@@ -151,38 +151,22 @@ test("terms: LICENSE names the licence, and another licence fails the build", ()
   );
 });
 
-test("copyright: the agent's email and the notice's contents, no postal line, and no form without the endpoint", () => {
-  for (const lang of ["en", "ar"]) {
-    const html = renderLegal(legalDoc("copyright", lang, { sources: sources() }));
-    assert.ok(html.includes('href="mailto:copyright@maktaba.tv"'), lang);
-    assert.equal(
-      (html.match(/<ol>/g) ?? []).length,
-      2,
-      `${lang}: the contents list and the table of contents`
-    );
-    assert.ok(!html.includes("<form"), `${lang}: a form without the endpoint`);
-    assert.ok(!/postal address:|العنوان البريدي:/i.test(html), `${lang}: a postal line before A4`);
-    assert.match(
-      html,
-      /<a href="https:\/\/app\.maktaba\.tv\/">/,
-      `${lang}: the counter-notice's link`
-    );
-    assert.ok(html.includes("12"), `${lang}: the repeat-infringer window`);
-  }
-});
-
-test("copyright: with the endpoint configured, the form is in the notice section", () => {
-  const notice = { endpoint: "https://api.maktaba.tv/v1/moderation/notices", sitekey: "0x4AAA" };
-  const doc = legalDoc("copyright", "en", {
-    sources: sources(),
-    notice,
-    noticeScript: "/assets/copyright-form-x.js",
-  });
-  const html = doc.sections.find((s) => s.id === "notice").html;
-  assert.ok(html.includes('<form id="notice-form"'));
-  assert.ok(html.includes('action="https://api.maktaba.tv/v1/moderation/notices"'));
-  assert.ok(html.includes('data-sitekey="0x4AAA"'));
-  assert.ok(html.includes('src="/assets/copyright-form-x.js"'));
+test("the legal pages are privacy and terms only, and none names a copyright page or its address", () => {
+  assert.deepEqual(LEGAL, ["privacy", "terms"]);
+  for (const name of LEGAL)
+    for (const lang of ["en", "ar"]) {
+      const doc = legalDoc(name, lang, { sources: sources() });
+      const html = renderLegal(doc);
+      assert.ok(
+        !html.includes("/legal/copyright"),
+        `${name}.${lang}: a link to the copyright page`
+      );
+      assert.ok(!html.includes("copyright@"), `${name}.${lang}: the copyright address`);
+      assert.ok(
+        !doc.sections.some((s) => s.id === "copyright"),
+        `${name}.${lang}: a copyright section`
+      );
+    }
 });
 
 test("the copy's Markdown", () => {

@@ -85,6 +85,8 @@ export default defineConfig({
         bindings: {
           BROADCAST_ENV: "test",
           BROADCAST_DELIVERY: "r2",
+          // the viewer paths are under test: broadcasting on (wrangler.toml keeps it off)
+          BROADCAST_ENABLED: "1",
           BROADCAST_GLOBAL_OFF: "0",
           CLOUD_PUBKEYS: (JSON.parse(vectors) as { cloud_pubkeys: string }).cloud_pubkeys,
           // a TEST value: 32 bytes, base64url
