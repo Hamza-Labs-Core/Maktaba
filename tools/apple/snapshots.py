@@ -8,10 +8,10 @@ compares with. Read them before committing: a reference is what the page is mean
 and say.
 
     tools/apple/snapshots.py <run id>           # downloads player-ui-tests-mac with gh
-    tools/apple/snapshots.py <path/to/mac.xcresult>
+    tools/apple/snapshots.py <path/to/mac.xcresult>       (or mac-ar.xcresult: Profile in Arabic)
     tools/apple/snapshots.py --self-test
 
-Only names PageSnapshots makes are copied (<page>-<panels>-<lang>[-ax3].png or .txt, the
+Only names PageSnapshots and ProfileSnapshots make are copied (<page>-<panels>-<lang>[-ax3].png or .txt, the
 Apple TV form's tv-panel-<lang>.png or .txt, and story 13.16's Mac sidebar and Profile,
 sidebar-<lang> and profile-<lang>).
 """
@@ -43,9 +43,8 @@ def pick(manifest: list[dict]) -> dict[str, str]:
     """Exported file -> reference name, for PageSnapshots' attachments only."""
     out: dict[str, str] = {}
     for test in manifest:
-        if "PageSnapshots" not in str(test.get("testIdentifier", "")) and "pageMatchesItsReference" not in str(
-            test.get("testIdentifier", "")
-        ):
+        ident = str(test.get("testIdentifier", ""))
+        if not any(n in ident for n in ("PageSnapshots", "pageMatchesItsReference", "ProfileSnapshots")):
             continue
         for a in test.get("attachments", []):
             ref = reference_name(str(a.get("suggestedHumanReadableName", "")))
@@ -75,11 +74,12 @@ def export(xcresult: Path) -> int:
 def from_run(run: str) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(["gh", "run", "download", run, "--name", "player-ui-tests-mac", "--dir", tmp], check=True)
-        found = sorted(Path(tmp).rglob("mac.xcresult"))
+        # mac-ar: Profile with the host in Arabic
+        found = sorted(Path(tmp).rglob("mac*.xcresult"))
         if not found:
             print("no mac.xcresult in run", run, file=sys.stderr)
             return 1
-        return export(found[0])
+        return max(export(f) for f in found)
 
 
 def self_test() -> int:
@@ -107,6 +107,9 @@ def self_test() -> int:
         {"testIdentifier": "PageSnapshots/tvPanelMatchesItsReference(_:)", "attachments": [
             {"exportedFileName": "e.png", "suggestedHumanReadableName": "tv-panel-ar.png"},
         ]},
+        {"testIdentifier": "ProfileSnapshots/profileMatchesItsReference()", "attachments": [
+            {"exportedFileName": "f.png", "suggestedHumanReadableName": "profile-ar_0_9C.png"},
+        ]},
         {"testIdentifier": "PlayerMenus/x()", "attachments": [
             {"exportedFileName": "c.png", "suggestedHumanReadableName": "library-none-ar.png"},
         ]},
@@ -115,6 +118,7 @@ def self_test() -> int:
         "a.png": "library-none-en.png",
         "d.txt": "library-none-en.txt",
         "e.png": "tv-panel-ar.png",
+        "f.png": "profile-ar.png",
     }
     print("snapshots.py: self-test passed")
     return 0

@@ -106,8 +106,8 @@ import MaktabaKit
 }
 
 /// Story 13.16's references, beside the pages' (`PageSnapshots`, the same tolerance and the
-/// same way to make or change a reference: `tools/apple/snapshots.py`): the sidebar and
-/// Profile, in English and Arabic (right to left).
+/// same way to make or change a reference: `tools/apple/snapshots.py`): the sidebar, in English
+/// and Arabic (right to left); Profile's are in `ProfileSnapshots`.
 extension PageSnapshots {
     /// The sidebar column, Libraries chosen: brass symbols, the chosen row on the brass fill,
     /// Profile at the bottom. In Arabic the rows mirror; the window puts the column at the
@@ -125,32 +125,6 @@ extension PageSnapshots {
         #expect(text.contains(lang == "ar" ? "Outline: الأقسام" : "Outline: Sections"), "VoiceOver's name for the sidebar: \(text)")
         #expect(text.contains(lang == "ar" ? "المكتبات" : "Libraries"), "the sections by name: \(text)")
         try Self.compare("sidebar-\(lang)", image: image, text: text)
-    }
-
-    /// Profile in the apps' row style: full-width rows, brass symbols, the group heads muted,
-    /// the Language row's English and العربية. MaktabaKit's own words (Approve a TV or device,
-    /// Report a problem) and the Language row's choice follow the test host's language, as the
-    /// app's follow its own: English on both pages.
-    @Test(arguments: ["en", "ar"]) func profileMatchesItsReference(_ lang: String) async throws {
-        let home = try MockHome()
-        home.clock = Self.clock
-        try home.start()
-        let url = try #require(URL(string: home.url))
-        let client = APIClient(home: url, tokens: TokenStore(app: "test.mac.snapshots", home: url))
-        let defaults = try #require(UserDefaults(suiteName: "test.mac.snapshots.profile-\(lang)"))
-        let session = AppSession(app: "test.mac.snapshots", defaults: defaults, asksHomes: false)
-        let user = try JSONDecoder().decode(User.self, from: Data(#"{"id":"u1","username":"viewer","is_admin":false}"#.utf8))
-        let context = PlayerContext(session: session, user: user, client: client)
-        let size = CGSize(width: 760, height: 1400)
-        let root = NavigationStack { ProfileScreen(context: context) }
-            .environment(\.locale, Locale(identifier: lang))
-            .environment(\.layoutDirection, lang == "ar" ? .rightToLeft : .leftToRight)
-            .preferredColorScheme(.dark)
-            .tint(.brass)
-            .frame(width: size.width, height: size.height)
-        let (image, text) = try await Self.render(root, size: size, quiet: home)
-        #expect(text.contains(lang == "ar" ? "سجل المشاهدة" : "Watch history"), "Profile's rows: \(text)")
-        try Self.compare("profile-\(lang)", image: image, text: text)
     }
 
     /// A view drawn once `home` (if any) has had no request for a second (15 s at most), and its
@@ -246,4 +220,43 @@ extension PageSnapshots {
 
 /// This test bundle, where the references are.
 private final class MacSnapshotBundle {}
+
+/// Story 13.16's Profile reference, in its own suite: it is drawn in the language the test host
+/// runs in, so its words are the app's own (MaktabaKit's, the theme's and the language's choices
+/// among them) and AppKit's parts are laid out as in the app. CI's Mac job runs it twice, with
+/// every other test (English) and again with the host in Arabic (`-testLanguage ar`).
+@MainActor @Suite(.serialized) struct ProfileSnapshots {
+    /// The language the host was started in, as the app picks it.
+    static let lang = LanguageChoice.isRightToLeft() ? "ar" : "en"
+
+    /// Profile in the apps' row style: full-width rows, brass symbols, the group heads muted,
+    /// the Language row's English and العربية.
+    @Test func profileMatchesItsReference() async throws {
+        let lang = Self.lang
+        let home = try MockHome()
+        home.clock = PageSnapshots.clock
+        try home.start()
+        let url = try #require(URL(string: home.url))
+        let client = APIClient(home: url, tokens: TokenStore(app: "test.mac.snapshots", home: url))
+        let defaults = try #require(UserDefaults(suiteName: "test.mac.snapshots.profile-\(lang)"))
+        let session = AppSession(app: "test.mac.snapshots", defaults: defaults, asksHomes: false)
+        let user = try JSONDecoder().decode(User.self, from: Data(#"{"id":"u1","username":"viewer","is_admin":false}"#.utf8))
+        let context = PlayerContext(session: session, user: user, client: client)
+        let size = CGSize(width: 760, height: 1400)
+        let root = NavigationStack { ProfileScreen(context: context) }
+            .environment(\.locale, AppLanguage.locale)
+            .environment(\.layoutDirection, lang == "ar" ? .rightToLeft : .leftToRight)
+            .preferredColorScheme(.dark)
+            .tint(.brass)
+            .frame(width: size.width, height: size.height)
+        let (image, text) = try await PageSnapshots.render(root, size: size, quiet: home)
+        #expect(text.contains(lang == "ar" ? "سجل المشاهدة" : "Watch history"), "Profile's rows: \(text)")
+        if lang == "ar" {
+            for english in ["Approve a TV", "Report a problem", "My reports", "Dark", "Light", "System"] {
+                #expect(!text.contains(english), "\(english) in Arabic: \(text)")
+            }
+        }
+        try PageSnapshots.compare("profile-\(lang)", image: image, text: text)
+    }
+}
 #endif
