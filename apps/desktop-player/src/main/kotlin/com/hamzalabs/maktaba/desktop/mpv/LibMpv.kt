@@ -103,9 +103,7 @@ sealed interface MpvLoad {
             val file = File(dir, fileName())
             if (!file.isFile) return Missing("${file.name} is not in ${file.parent}")
             return try {
-                // RTLD_LOCAL (no RTLD_GLOBAL): FFmpeg's symbols inside libmpv stay out of the
-                // process's namespace, where JavaFX's media plugin finds the system's FFmpeg
-                val lib = Native.load(file.absolutePath, LibMpv::class.java, mapOf(Library.OPTION_OPEN_FLAGS to MpvConst.RTLD_LAZY_FLAG))
+                val lib = Native.load(file.absolutePath, LibMpv::class.java, openOptions())
                 val major = lib.mpv_client_api_version().toLong() ushr 16
                 if (major != MpvConst.API_MAJOR) Missing("libmpv's client API is $major, the Player's ${MpvConst.API_MAJOR}")
                 else Loaded(lib, file)
@@ -113,6 +111,16 @@ sealed interface MpvLoad {
                 Missing("${file.name} did not load: ${e.message}")
             }
         }
+
+        /**
+         * On Linux, RTLD_LOCAL (no RTLD_GLOBAL): FFmpeg's symbols inside libmpv stay out of the
+         * process's namespace, where JavaFX's media plugin finds the system's FFmpeg. Nowhere
+         * else: on Windows the same option is LoadLibraryEx's flags, where 1 is
+         * DONT_RESOLVE_DLL_REFERENCES (the DLL loads without its imports, and its first real
+         * call crashes).
+         */
+        fun openOptions(os: String = System.getProperty("os.name").orEmpty()): Map<String, Any> =
+            if (os.startsWith("Linux")) mapOf(Library.OPTION_OPEN_FLAGS to MpvConst.RTLD_LAZY_FLAG) else emptyMap()
 
         /** The packaged Player's libmpv, looked for once. */
         val current: MpvLoad by lazy { from(System.getProperty("compose.application.resources.dir")) }

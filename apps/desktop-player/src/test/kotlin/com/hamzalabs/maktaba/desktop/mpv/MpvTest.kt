@@ -24,6 +24,13 @@ class MpvTest {
     }
 
     @Test
+    fun onlyLinuxLoadsItLocally() {
+        // Windows reads the same option as LoadLibraryEx's flags: 1 would load it without its imports
+        assertEquals(emptyMap<String, Any>(), MpvLoad.openOptions("Windows Server 2025"))
+        assertEquals(mapOf(com.sun.jna.Library.OPTION_OPEN_FLAGS to 1), MpvLoad.openOptions("Linux"))
+    }
+
+    @Test
     fun aFileThatIsNotALibraryIsReportedNotLoaded() {
         tmp.newFile(MpvLoad.fileName()).writeText("not a library")
         val why = reason(MpvLoad.from(tmp.root.absolutePath, emptyMap()))
