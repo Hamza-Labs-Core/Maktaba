@@ -1,0 +1,119 @@
+# The store listing images (story 60.14 part 2), by hand: every app's gallery for every store
+# it ships to (web/packages/website/design/store-gallery/stores.json), composed from a run's
+# captures on the demo library and checked against the store's sizes, formats and counts.
+# The images are an artifact, `store-gallery-<sha>`, laid out for fastlane deliver and supply
+# (apple/, google/) and for the other stores' upload forms. Nothing is committed and nothing
+# is uploaded to a store: that is an owner action.
+#
+#   gh workflow run store-gallery.yml --ref main -f run_id=<a ci.yml or product-shots.yml run>
+#
+# The run's product-shots-* and store-shots-* artifacts hold the Apple captures; the Android
+# and TV ones are the Roborazzi `demo/` references in the checkout. With allow_missing, a beat
+# no capture exists for yet is left out and listed in the artifact's report.json.
+
+name: Store gallery
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "A run whose product-shots-* and store-shots-* artifacts hold the captures"
+        required: true
+        type: string
+      allow_missing:
+        description: "Leave out the images whose capture is missing (listed in report.json)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read # the captures are another run's artifacts
+
+concurrency:
+  group: store-gallery-${{ github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  compose:
+    name: compose the store galleries
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    # the Playwright image: the same fonts on every run, and the browser compose.mjs draws with
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --ipc=host --init
+    defaults:
+      run:
+        working-directory: web/packages/website
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # the run's product-shots-* and store-shots-* (each download tried three times)
+      - name: Download *-shots-*
+        id: artifact-shots
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: "*-shots-*"
+          path: ${{ runner.temp }}/captures
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Wait 15s to retry the download of *-shots-*
+        if: steps.artifact-shots.outcome == 'failure'
+        shell: bash
+        run: sleep 15
+      - name: Download *-shots-* (attempt 2)
+        id: artifact-shots-2
+        if: steps.artifact-shots.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: "*-shots-*"
+          path: ${{ runner.temp }}/captures
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Wait 45s to retry the download of *-shots-*
+        if: steps.artifact-shots-2.outcome == 'failure'
+        shell: bash
+        run: sleep 45
+      - name: Download *-shots-* (attempt 3)
+        id: artifact-shots-3
+        if: steps.artifact-shots-2.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          pattern: "*-shots-*"
+          path: ${{ runner.temp }}/captures
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+      - name: Check *-shots-* downloaded
+        id: artifact-shots-check
+        if: steps.artifact-shots-3.outcome == 'failure'
+        shell: bash
+        env:
+          ARTIFACT: "*-shots-*"
+        run: |
+          echo "::error::the artifact $ARTIFACT never downloaded after 3 attempts"
+          exit 1
+
+      - name: Compose and check every image
+        env:
+          CAPTURES: ${{ runner.temp }}/captures
+          OUT: ${{ runner.temp }}/store-gallery
+          ALLOW_MISSING: ${{ inputs.allow_missing && '--allow-missing' || '' }}
+        run: |
+          # shellcheck disable=SC2086 # ALLOW_MISSING is one flag or nothing
+          node design/store-gallery/compose.mjs --captures "$CAPTURES" --out "$OUT" $ALLOW_MISSING
+
+      - name: Upload the galleries
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: store-gallery-${{ github.sha }}
+          path: ${{ runner.temp }}/store-gallery
+          if-no-files-found: error
+          retention-days: 30

@@ -623,10 +623,12 @@ fn slow(iterations: u64, filler: usize) -> Vec<u8> {
 
 /// 54.02 §5: compiling a package the host had not loaded is not the job's time. The guest's
 /// work is timed first (a package without filler, already loaded); the job's limit is four
-/// times that (a shared CI runner's noise once took a run past twice), still far under the
-/// compile, which is checked. The package under test has filler compiled with it but never instantiated, so its
-/// compile takes longer than the whole limit: the stage still runs, and the compile is
-/// reported on its own.
+/// times that (a shared CI runner's noise once took a run past twice). The package under test
+/// has filler compiled with it but never instantiated, so its compile takes longer than the
+/// whole limit: the stage still runs, and the compile is reported on its own. On a loaded
+/// runner the guest's time, and so the limit, can grow past one filler's compile (a macOS
+/// runner timed the guest at about 850 ms, a 3392 ms limit, against a 2455 ms compile): the
+/// filler then doubles, in a fresh host so nothing is cached, until the compile is the longer.
 #[test]
 fn a_compile_is_not_the_jobs_time() {
     let f = Fixture::new(false);
@@ -638,12 +640,19 @@ fn a_compile_is_not_the_jobs_time() {
     assert_eq!(solo.outcome, Outcome::Ok, "{solo:?}");
     let timeout_ms = (solo.wall_ms * 4).max(300);
 
-    let g = Fixture::new(false);
-    let p = g.package("slowcompile", &slow(iterations, 80_000), &[]);
-    let r = g.run(&p, "x", &[], Limits { timeout_ms, fuel, ..Default::default() });
+    let mut filler = 80_000;
+    let r = loop {
+        let g = Fixture::new(false);
+        let p = g.package("slowcompile", &slow(iterations, filler), &[]);
+        let r = g.run(&p, "x", &[], Limits { timeout_ms, fuel, ..Default::default() });
+        if r.compile_ms > timeout_ms || filler >= 320_000 {
+            break r;
+        }
+        filler *= 2;
+    };
     assert!(
         r.compile_ms > timeout_ms,
-        "the compile took {} ms, not more than the job's {timeout_ms} ms: add filler",
+        "the compile took {} ms with {filler} functions of filler, not more than the job's {timeout_ms} ms",
         r.compile_ms
     );
     assert_eq!(r.outcome, Outcome::Ok, "a limit of {timeout_ms} ms (the guest alone took {} ms): {r:?}", solo.wall_ms);

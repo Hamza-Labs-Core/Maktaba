@@ -81,8 +81,6 @@ export const PAGES = [
   { home: true, lang: "ar", path: "/", out: "ar/index.html" },
   { src: "404.html", lang: "en", path: null, out: "404.html" },
   { src: "ar/404.html", lang: "ar", path: null, out: "ar/404.html" },
-  { src: "install/index.html", lang: "en", path: "/install/", out: "install/index.html" },
-  { src: "ar/install/index.html", lang: "ar", path: "/install/", out: "ar/install/index.html" },
   // a TV's QR (story 58.03): the page forwards the code to Maktaba Cloud (src/tv.ts)
   { src: "tv/index.html", lang: "en", path: "/tv/", out: "tv/index.html", script: "tv.ts" },
   { src: "ar/tv/index.html", lang: "ar", path: "/tv/", out: "ar/tv/index.html", script: "tv.ts" },
@@ -369,7 +367,7 @@ export async function build({
   }
 
   // 3. the hand-made pages, and the legal pages from their copy (legal.mjs), every one in part
-  // B's shell (Epic 60 Phase 3: the 404, the install chooser and the legal pages moved with
+  // B's shell (Epic 60 Phase 3: the 404 and the legal pages moved with
   // 60.05, 60.07). The copyright page's notice form is there only when its endpoint is
   // configured (copyright-form.ts).
   let noticeScript = "";

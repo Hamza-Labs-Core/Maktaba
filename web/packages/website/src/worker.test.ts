@@ -74,6 +74,24 @@ describe("redirects (T01, T04)", () => {
     expect((await get("https://maktaba.tv/docs/x")).status).toBe(404);
   });
 
+  it("60.05, 60.11: the install guides' old index goes to the download page with a 301, the guides stay", async () => {
+    for (const [from, to] of [
+      ["/install", "/download/"],
+      ["/install/", "/download/"],
+      ["/ar/install", "/ar/download/"],
+      ["/ar/install/", "/ar/download/"],
+    ]) {
+      const res = await get(`https://maktaba.tv${from}`);
+      expect(res.status, from).toBe(301);
+      expect(res.headers.get("Location"), from).toBe(to);
+    }
+    // a guide is not a redirect: it is served from the assets as before
+    const env = fakeEnv();
+    await get("https://maktaba.tv/install/synology/", env);
+    await get("https://maktaba.tv/ar/install/nas/", env);
+    expect(env.seen).toEqual(["/install/synology/", "/404", "/ar/install/nas/", "/ar/404"]);
+  });
+
   it("serves every redirect of src/redirects.json, the table the link check reads", async () => {
     const sources = Object.keys(REDIRECTS);
     expect(sources.length).toBeGreaterThan(0);
