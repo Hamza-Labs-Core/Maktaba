@@ -57,6 +57,24 @@ class ProfileScreenTest {
         }
     }
 
+    // story 13.21: Playback has the Video engine row, with the home's engines' state
+    @Test
+    fun playbackHasTheVideoEngineRow() = TestHome().use { f ->
+        val engines = com.hamzalabs.maktaba.desktop.mpv.Engines(emptyMap(), load = { com.hamzalabs.maktaba.desktop.mpv.MpvLoad.Missing("no app resources folder") })
+        val home = DesktopHome(
+            com.hamzalabs.maktaba.core.api.User("u1", "haddad"), f.client, "Kitchen", f.prefs,
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO),
+            posters = com.hamzalabs.maktaba.desktop.Posters(null),
+            engines = engines,
+        )
+        val nav = ProfileNav().apply { group = ProfileGroup.Playback }
+        runComposeUiTest {
+            setContent { InPlayer(home) { Box(Modifier.size(1200.dp, 1200.dp)) { ProfileContent(ProfileState(f.client), home, nav) } } }
+            onNodeWithText("Video engine").assertExists()
+            onNodeWithText("The new engine could not start: no app resources folder.").assertExists()
+        }
+    }
+
     @Test
     fun languageSwitchesAtOnceAndIsKept() = TestHome().use { f ->
         val home = f.home()

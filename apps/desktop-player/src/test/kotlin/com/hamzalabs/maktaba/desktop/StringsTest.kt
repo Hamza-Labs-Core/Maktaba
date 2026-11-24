@@ -108,5 +108,8 @@ class StringsTest {
             val s = Texts(lang)["engine.fallback", "libmpv-2.dll is not in C:\\Maktaba"]
             assertTrue(s, s.contains("libmpv-2.dll is not in") && !s.contains("{0}"))
         }
+        // story 13.21: the notice and the Video engine row's Learn more
+        assertEquals("Learn more", Texts(Lang.En)["engine.learnMore"])
+        assertEquals("اعرف المزيد", Texts(Lang.Ar)["engine.learnMore"])
     }
 }
