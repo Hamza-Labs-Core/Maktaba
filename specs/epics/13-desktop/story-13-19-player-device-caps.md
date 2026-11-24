@@ -28,8 +28,9 @@ forced one, a bitrate cap over the relay) folds the sound to stereo even when th
 - **Hardware:** with `hwdec=auto-copy-safe` (13.18's setting), each clip's `hwdec-current`
   after its first `playback-restart` says whether a hardware decoder took it. Anything but
   `no` is hardware.
-- **Software speed:** each codec the hardware does not take is decoded again with `hwdec=no`,
-  timed from the first `playback-restart` to `end-file`. The frames per second at 2160p give
+- **Software speed:** each codec the hardware does not take is timed from the first
+  `playback-restart` of its play (software from its first picture) to `end-file`, after one
+  untimed warm-up of libmpv; a clip is played once. The frames per second at 2160p give
   the tallest picture it plays smoothly, scaled by pixel count: 2160 when software decodes
   2160p at 45 fps or more (1.5 times 30 fps), else 1440 at 45 fps scaled by 9/16, else 1080
   at 45 fps scaled by 1/4, else 720.
@@ -38,8 +39,9 @@ forced one, a bitrate cap over the relay) folds the sound to stereo even when th
   driver's version on Windows; `/sys/class/drm/card*/device` vendor and device ids and the
   loaded kernel driver's version on Linux), the CPU model and libmpv's version. A key that
   changed (another GPU, a new driver, a new libmpv in an update) probes again. The probe
-  takes under 5 s on the CI runners and is bounded at 20 s (past that, what it has is kept
-  and the rest left out).
+  takes under 5 s on the CI runners and is bounded at 20 s: a clip out of time counts as
+  software at 720p, codecs not reached are listed without limits, and an incomplete probe is
+  retried after a back-off.
 - A video opened before the probe ends opens with the profile alone, as 13.18 does.
 
 **The audio device's channels.** Measured with a 0.3 s silent 7.1 clip played to the system's
@@ -77,7 +79,9 @@ passes the report through the same call and gets the same behaviour: no new code
   the key (`ParseDeviceCaps` ignores keys it does not know).
 - **Channels in a transcode.** A transcode or audio re-encode for a `desktop-mpv` session keeps
   up to the report's channels: 6 or more give E-AC-3 5.1 at 640 kbit/s (as `hlsremux.go` does
-  for the TV profiles), fewer give stereo AAC at 192 kbit/s; no report gives stereo, as today.
+  for the TV profiles), fewer give stereo AAC at 192 kbit/s; no report (or no channel count) keeps every
+  transcode's audio as it is today, the encoder's AAC at the source's channels; E-AC-3 only for
+  a source of 6 or more channels.
   Direct play is never narrowed by channels: mpv folds 5.1 and 7.1 down for stereo speakers.
 - OpenAPI (`device_caps`' `VideoCap`, English and Arabic) documents `hardware` and that
   `desktop-mpv` takes a report.
@@ -117,7 +121,7 @@ what the machine plays smoothly, in English and Arabic (no new screenshot: no sc
 | T06 | unit (`PlaybackMpvTest`) | the fake home lists `desktop-mpv` | open a video | the session body carries `device_caps`; not on the `force_transcode` reopen; not with `desktop-player` |
 | T07 | unit (`ApiClientTest`) | the fake home answers 400 `unknown field "device_caps"` | open twice | the first open retries without it and plays; the second sends none |
 | T08 | unit (Go) | `desktop_mpv_test.go`: `Apply` with a report of AV1 up to 1080 | decide a 2160p AV1 file; a 1080p one | transcode, its reason naming software AV1; direct |
-| T09 | unit (Go) | a `desktop-mpv` transcode with reports of 6 and of 2 channels, and none | build the ffmpeg arguments | E-AC-3 6 channels 640k; AAC 2 channels; AAC 2 channels |
+| T09 | unit (Go) | a `desktop-mpv` transcode with reports of 6 and of 2 channels, and none | build the ffmpeg arguments | E-AC-3 6 channels 640k; AAC 2 channels; the default AAC with no `-ac` |
 | T10 | unit (Go) | `ParseDeviceCaps` with `hardware` | parse, `Key` | read; a report differing only in `hardware` has another key |
 | T11 | unit | the problem report with a probe | build it | the codecs' results, the channels and the cache key in its log |
 
