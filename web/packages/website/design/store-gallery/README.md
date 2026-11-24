@@ -158,12 +158,20 @@ gh workflow run store-gallery.yml --ref main -f run_id=<run>     # in CI, as an 
 
 ### Captures
 
-92 distinct screens make the 260 images. 18 are captured today on the demo library:
+92 distinct screens make the 260 images. These are captured today on the demo library:
 
 - iPhone, iPad: home and player;
 - Mac: library and player;
 - Apple TV, Android TV and Fire TV: home, the series or library, player and guide;
-- Android phone: home.
+- Android phone: home;
+- Roku: home, the series, the player with its Arabic line, search and the code screen, in
+  English and Arabic (`apps/tv/roku/tests/demo/`, brs-engine at 1920 × 1080; references in
+  `apps/tv/roku/tests/screenshots/demo/`, compared on every run like the channel's other
+  screens). brs-engine draws no video picture: the player is its overlay and the subtitle line
+  on black;
+- Samsung and LG: every screen their sets show, from the TV web UI the launchers open (`/tv/`)
+  and the launcher's cloud code screen (`scripts/capture-tvweb.mjs`, in `_website.yml`'s shots
+  job, uploaded as `store-shots-tvweb`).
 
 `node -e` over `plan()` lists the rest. Each is a shot test to add on the new demo library:
 
@@ -175,5 +183,4 @@ gh workflow run store-gallery.yml --ref main -f run_id=<run>     # in CI, as an 
 | Android phone, 7" and 10" tablet (Player) | search, series, live, player, ask-a-parent (and every screen on the 7" and 10" tablets) |
 | Android phone and tablets (Remote)        | dashboards, attention, queue, approve-code, updates                                     |
 | Apple TV, Android TV, Fire TV             | search and code (and the series on Android TV)                                          |
-| Roku                                      | every screen (its screen tests on the demo library)                                     |
-| Samsung, LG                               | every screen (the TV web UI the launchers open, captured by the web shots job)          |
+| Roku                                      | guide: the channel has no Live TV screen yet                                            |
