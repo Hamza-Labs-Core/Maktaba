@@ -466,13 +466,8 @@ export const APPS = [
               ],
               rows: [
                 [
-                  t("iPhone", "آيفون"),
-                  t("Maktaba Player", "المشغّل"),
-                  t("TestFlight", "‏TestFlight"),
-                ],
-                [
-                  t("iPad", "آيباد"),
-                  t("Maktaba Player for iPad", "المشغّل لآيباد"),
+                  t("iPhone and iPad", "آيفون وآيباد"),
+                  t("Maktaba Player (one app for both)", "المشغّل (تطبيق واحد للجهازين)"),
                   t("TestFlight", "‏TestFlight"),
                 ],
                 [
@@ -747,7 +742,10 @@ export const APPS = [
             table: {
               head: [t("Platform", "المنصة"), t("How to get it", "طريقة الحصول عليه")],
               rows: [
-                [t("iPhone", "آيفون"), t("TestFlight", "‏TestFlight")],
+                [
+                  t("iPhone and iPad (one app)", "آيفون وآيباد (تطبيق واحد)"),
+                  t("TestFlight", "‏TestFlight"),
+                ],
                 [
                   t(
                     "Android phones, foldables and tablets (Android 8 or later)",
@@ -760,8 +758,8 @@ export const APPS = [
           },
           {
             p: t(
-              "The project also has an iPad build of the Remote, with a sidebar, but it is not uploaded to TestFlight yet. There is no Remote for the Mac: on a computer, the web app does all of this and more.",
-              "وفي المشروع أيضًا نسخة من هذا التطبيق لآيباد بشريط جانبي، لكنها لم تُرفع إلى TestFlight بعد. ولا توجد نسخة للماك: فعلى الحاسوب يؤدي تطبيق الويب هذا كله وأكثر."
+              "On an iPad the same app shows a sidebar, and on a wide screen a stage's page beside the queue. There is no Remote for the Mac: on a computer, the web app does all of this and more.",
+              "وعلى آيباد يعرض التطبيق نفسه شريطًا جانبيًا، وعلى الشاشة العريضة صفحة المرحلة بجانب قائمة الانتظار. ولا توجد نسخة للماك: فعلى الحاسوب يؤدي تطبيق الويب هذا كله وأكثر."
             ),
           },
         ],

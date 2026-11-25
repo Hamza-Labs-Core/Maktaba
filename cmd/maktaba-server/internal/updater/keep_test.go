@@ -51,6 +51,28 @@ func TestReleaseSchema(t *testing.T) {
 	}
 }
 
+// The newest slot of a migrations folder, whatever else is in it, and none for a folder that is
+// not there: what the restore's look at the database takes for the schema of the release it goes
+// back to.
+func TestNewestMigration(t *testing.T) {
+	dir := t.TempDir()
+	m := filepath.Join(dir, "migrations")
+	for _, d := range []string{"", m} {
+		if got := NewestMigration(d); got != 0 {
+			t.Fatalf("%q: %d", d, got)
+		}
+	}
+	writeMigrations(t, dir, "0239", "0001", "0238")
+	for _, n := range []string{"0300_x.sqlite.sql", "README.md", "x_0400.sql", "0500_x.txt"} {
+		if err := os.WriteFile(filepath.Join(m, n), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := NewestMigration(m); got != 239 {
+		t.Fatalf("%d, want 239", got)
+	}
+}
+
 // The plain layout keeps every valid release, each with its signed schema; running one
 // again points current at it, with no guard (a restore starts it on purpose).
 func TestKeptLayoutReleases(t *testing.T) {

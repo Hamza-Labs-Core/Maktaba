@@ -72,8 +72,9 @@ func staleAfter(every time.Duration) time.Duration {
 // catalogStale says why the list of releases is too old to install from by itself without
 // reading it again ("": fresh enough): its last good read is older than staleAfter, or in the
 // future (the clock was ahead then: how old it is cannot be told), or every check so far
-// failed. It holds an install only once the list could not be read again (catalogOld). Not for a home that never checked (what its catalog holds came from no check), nor
-// one whose background checks are off (every is 0: what an admin's check found installs).
+// failed. It holds an install only once the list could not be read again (catalogOld). Not for
+// a home that never checked (what its catalog holds came from no check), nor one whose
+// background checks are off (every is 0: what an admin's check found installs).
 func catalogStale(st State, now time.Time, every time.Duration) string {
 	if every <= 0 {
 		return ""

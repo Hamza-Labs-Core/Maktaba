@@ -33,11 +33,35 @@ type Actions struct {
 	// Backups lists the backups on the data disk; Restore restores one (it replaces the
 	// database: asked twice).
 	Backups func() ([]Backup, error)
-	Restore func(name, by string) error
+	// withoutCopy: confirmed that no copy is kept of the database it replaces, when there is
+	// no room for one (else refused: an error whose RestoreCode is restore_no_copy).
+	Restore func(name, by string, withoutCopy bool) error
 	// Held is the update that stopped and waits for a person (the database record is held:
 	// nothing was put back by itself), nil when none: the page says what happened and the
 	// choices, the backup to put back among them.
 	Held func() *Held
+	// Stuck is a restore a person asked for that is not done (its try failed, or runs), nil
+	// when none; GiveUp gives it up (asked twice): the library database stays as it was
+	// before it.
+	Stuck  func() *Stuck
+	GiveUp func(by string) error
+}
+
+// Stuck is a restore that is not done: its backup (file name), why its last try failed,
+// what the library database is since (untouched, replaced: that backup in part, gone),
+// whether a try runs now, and whether it can be given up, and for which release ("": the
+// held update waits again).
+type Stuck struct {
+	Backup    string `json:"backup"`
+	Why       string `json:"why,omitempty"`
+	Data      string `json:"data"`
+	Running   bool   `json:"running,omitempty"`
+	CanGiveUp bool   `json:"can_give_up,omitempty"`
+	// NoCopy: that try stopped because no copy of the database could be kept
+	NoCopy bool `json:"no_copy,omitempty"`
+	// WithoutCopy: and it may be put back without one
+	WithoutCopy bool   `json:"without_copy,omitempty"`
+	Release     string `json:"release,omitempty"`
 }
 
 // Held is an update that stopped with nothing put back by itself: the release that
@@ -203,6 +227,7 @@ type State struct {
 	Rollback   string               `json:"rollback,omitempty"`
 	SafeMode   bool                 `json:"safe_mode"`
 	Held       *Held                `json:"held,omitempty"`
+	Stuck      *Stuck               `json:"stuck,omitempty"`
 }
 
 func (h *Handler) state() State {
@@ -273,6 +298,9 @@ func (h *Handler) state() State {
 	}
 	if h.Actions.Held != nil {
 		st.Held = h.Actions.Held()
+	}
+	if h.Actions.Stuck != nil {
+		st.Stuck = h.Actions.Stuck()
 	}
 	return st
 }
@@ -394,6 +422,8 @@ type actionRequest struct {
 	// Confirm counts the person's confirmations: 1 for most actions, 2 for restore and
 	// rollback, and for every action that comes through the relay.
 	Confirm int `json:"confirm"`
+	// WithoutCopy: a restore goes on with no copy kept of the database it replaces
+	WithoutCopy bool `json:"without_copy"`
 }
 
 func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
@@ -408,7 +438,7 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
 		return
 	}
 	need := 1
-	if req.Action == "restore" || req.Action == "rollback" || r.Header.Get("X-Maktaba-Via") != "" {
+	if req.Action == "restore" || req.Action == "give_up_restore" || req.Action == "rollback" || r.Header.Get("X-Maktaba-Via") != "" {
 		need = 2
 	}
 	if req.Confirm < need {
@@ -460,22 +490,40 @@ func (h *Handler) action(w http.ResponseWriter, r *http.Request, who Who) {
 			break
 		}
 		detail = req.Backup
-		by := "the recovery console"
-		if who.UserID != "" {
-			by += " (" + who.UserID + ")"
+		err = h.Actions.Restore(req.Backup, who.by(), req.WithoutCopy)
+		if req.WithoutCopy {
+			detail += " (without keeping a copy)"
 		}
-		err = h.Actions.Restore(req.Backup, by)
+	case "give_up_restore":
+		if h.Actions.GiveUp == nil {
+			err = errors.New("restore is not available here")
+			break
+		}
+		err = h.Actions.GiveUp(who.by())
 	default:
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "no such action"})
 		return
 	}
 	if err != nil {
 		h.Record(who, req.Action, detail+": refused: "+err.Error())
-		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		doc := map[string]string{"error": err.Error()}
+		var coded interface{ RestoreCode() string }
+		if errors.As(err, &coded) {
+			doc["code"] = coded.RestoreCode()
+		}
+		writeJSON(w, http.StatusConflict, doc)
 		return
 	}
 	h.Record(who, req.Action, detail)
 	writeJSON(w, http.StatusOK, map[string]string{"result": "ok"})
+}
+
+// by is who asked, as a restore's record names them.
+func (w Who) by() string {
+	if w.UserID != "" {
+		return "the recovery console (" + w.UserID + ")"
+	}
+	return "the recovery console"
 }
 
 // diagnostics is a .tar.gz of the last 2 hours of every service's segments, the status,

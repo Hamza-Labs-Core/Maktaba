@@ -8,12 +8,26 @@ also be run by hand from the Actions tab (*TestFlight* → *Run workflow*).
 
 | App | Scheme | Bundle ID |
 |---|---|---|
-| Maktaba Player (iPhone) | `Maktaba Player` | `com.hamzalabs.maktaba.player` |
-| Maktaba Player for iPad | `Maktaba Player iPad` | `com.hamzalabs.maktaba.player.tablet` |
+| Maktaba Player (iPhone and iPad) | `Maktaba Player` | `com.hamzalabs.maktaba.player` |
 | Maktaba Player for Mac (Mac App Store) | `Maktaba Player Mac` | `com.hamzalabs.maktaba.player.mac` |
-| Maktaba Remote (iPhone) | `Maktaba Remote` | `com.hamzalabs.maktaba.remote` |
-| Maktaba Remote iPad | `Maktaba Remote iPad` | `com.hamzalabs.maktaba.remote.tablet` |
+| Maktaba Remote (iPhone and iPad) | `Maktaba Remote` | `com.hamzalabs.maktaba.remote` |
 | Maktaba TV (Apple TV) | `Maktaba TV` | `com.hamzalabs.maktaba.tv` |
+
+The Player and the Remote are each **one universal app** for iPhone and iPad (App Review
+4.3(a): no second bundle ID for the same app). The iPad-only apps they replace, Maktaba Player
+for iPad (`com.hamzalabs.maktaba.player.tablet`) and Maktaba Remote iPad
+(`com.hamzalabs.maktaba.remote.tablet`), get no new builds. In App Store Connect their records
+stay as they are, never submitted for review. Their App IDs can be removed once no tester has a
+build of them (a build expires 90 days after its upload).
+
+On an iPad with one of the old apps:
+
+1. Install Maktaba Player or Maktaba Remote from TestFlight, add the home and sign in again.
+   **Nothing carries over:** the old app's saved homes and their names, its sign-in, its theme
+   and its playback settings stay with it, since one app can't read another's data. There is no
+   migration. What the home keeps (progress, lists, profiles) is there after signing in.
+2. **Delete the old app.** Both answer `maktaba://` links, and until the old one is gone iOS may
+   open a link in it.
 
 Each app is its own job (`fail-fast: false`): if one upload fails, for example because its
 App Store Connect record doesn't exist yet, the other apps still upload.
@@ -68,21 +82,18 @@ App records can't be created through the API, so the first upload fails until th
 (`Error Downloading App Information`, `missingApp(bundleId: …)` in the log).
 
 1. In [App Store Connect](https://appstoreconnect.apple.com) → **Apps** → **+** → **New App**,
-   create the six apps:
+   create the four apps:
 
    | Platform | Name | Primary language | Bundle ID | SKU |
    |---|---|---|---|---|
    | iOS | Maktaba Player | English | `com.hamzalabs.maktaba.player` | `maktaba-player-ios` |
-   | iOS | Maktaba Player for iPad | English | `com.hamzalabs.maktaba.player.tablet` | `maktaba-player-ipad` |
    | macOS | Maktaba Player for Mac | English | `com.hamzalabs.maktaba.player.mac` | `maktaba-player-mac` |
    | iOS | Maktaba Remote | English | `com.hamzalabs.maktaba.remote` | `maktaba-remote-ios` |
-   | iOS | Maktaba Remote iPad | English (U.S.) | `com.hamzalabs.maktaba.remote.tablet` | `com.hamzalabs.maktaba.remote.tablet` |
    | tvOS | Maktaba TV | English | `com.hamzalabs.maktaba.tv` | `maktaba-tv-tvos` |
 
    For the Mac app pick the **macOS** platform, and for the Apple TV app **tvOS**, in the
-   New App form. The iPad, Mac and Apple TV apps each have their own bundle ID, so each needs
-   its own record. The Maktaba Remote iPad record already exists (made on 2026-11-03, with its
-   first build, 0.3.73, uploaded from Xcode): its SKU is its bundle ID. If the name
+   New App form. The Mac and Apple TV apps each have their own bundle ID, so each needs its
+   own record; the iPhone and iPad share the Player's record and the Remote's. If the name
    "Maktaba TV" is taken, pick another that starts with Maktaba.
 
    If a bundle ID isn't in the list, register it first: Certificates, Identifiers & Profiles →
@@ -102,7 +113,7 @@ Then run the workflow by hand, or push the next tag.
 ## Age rating and parental controls (owner, Epic 57)
 
 With the release that carries Epic 57 (parental controls), in App Store Connect for **Maktaba
-Player** and **Maktaba Player for iPad** (the two apps that read Apple's signals), by hand:
+Player** (the app that reads Apple's signals, on iPhone and iPad), by hand:
 
 - [ ] **Keep the current age rating.** An age-rating change counts as a significant change
       under the Texas law's tools (`AppStore.ageRatingCode`, PermissionKit's
@@ -110,7 +121,7 @@ Player** and **Maktaba Player for iPad** (the two apps that read Apple's signals
 - [ ] In the age-rating questionnaire's **In-App Controls**, answer **Parental Controls: Yes**
       and **Age Assurance: Yes** (the Player reads Declared Age Range).
 - [ ] **Declared Age Range capability.** The Player asks Apple for the age range only once the
-      App IDs `com.hamzalabs.maktaba.player` and `com.hamzalabs.maktaba.player.tablet` have the
+      App ID `com.hamzalabs.maktaba.player` has the
       **Declared Age Range** capability (Certificates, Identifiers & Profiles → Identifiers; no
       approval form) and the targets carry `com.apple.developer.declared-age-range` in an
       entitlements file (`apps/apple/project.yml`). Until then the system answers "not
@@ -228,8 +239,8 @@ refused from then on (401).
 
 1. Install **TestFlight** from the App Store.
 2. Open it with the Apple ID that is an internal tester. Maktaba Player and Maktaba Remote
-   show up there (the iPad apps, Maktaba Player for iPad and Maktaba Remote iPad, in
-   TestFlight on the iPad, the Mac app in TestFlight for Mac,
+   show up there, on the iPhone and on the iPad (one app each for both), the Mac app in
+   TestFlight for Mac,
    Maktaba TV in the TestFlight app on the Apple TV) once App Store Connect has processed a
    build (usually 5–30 minutes after the upload). The apps declare that they use only standard encryption
    (`ITSAppUsesNonExemptEncryption` is `NO`), so App Store Connect doesn't ask the

@@ -28,8 +28,8 @@ update, and attaches the installable files to the
 
 | App | Platform | How to get it | Built by |
 |---|---|---|---|
-| **Maktaba Player** (watch) | iPhone · iPad (*Maktaba Player for iPad*) · Mac, macOS 15+ (*Maktaba Player for Mac*) | TestFlight | [`testflight.yml`](../.github/workflows/testflight.yml) |
-| **Maktaba Remote** (run the home; admins only) | iPhone · iPad (*Maktaba Remote iPad*) | TestFlight | [`testflight.yml`](../.github/workflows/testflight.yml) |
+| **Maktaba Player** (watch) | iPhone and iPad (one app) · Mac, macOS 15+ (*Maktaba Player for Mac*) | TestFlight | [`testflight.yml`](../.github/workflows/testflight.yml) |
+| **Maktaba Remote** (run the home; admins only) | iPhone and iPad (one app) | TestFlight | [`testflight.yml`](../.github/workflows/testflight.yml) |
 | **Maktaba TV** | Apple TV (tvOS 27) | TestFlight on the Apple TV | [`testflight.yml`](../.github/workflows/testflight.yml) |
 | **Maktaba Player** and **Maktaba Remote** | Android phones, foldables and tablets | Google Play internal testing (`maktaba-player-<version>.aab`, `maktaba-remote-<version>.aab`, signed with the Play upload key) | [`play-bundles.yml`](../.github/workflows/play-bundles.yml) |
 | **Maktaba TV** | Android TV and Google TV | Google Play internal testing (`maktaba-tv-<version>.aab`); or sideload `maktaba-tv-<version>.apk` when a release carries it (only signed builds are attached) | [`play-bundles.yml`](../.github/workflows/play-bundles.yml), [`tv-release.yml`](../.github/workflows/tv-release.yml) |
@@ -100,8 +100,8 @@ To build any client package locally, mirror CI with the `make package-*` targets
 The wrappers expect `web/dist/` to exist; their build scripts call
 `pnpm --filter maktaba-web build` to produce it before bundling.
 
-The native apps use `com.hamzalabs.maktaba.player` (`.player.tablet` on iPad, `.player.mac` on
-the Mac), `com.hamzalabs.maktaba.remote` (`.remote.tablet` on iPad) and
+The native apps use `com.hamzalabs.maktaba.player` (iPhone and iPad; `.player.mac` on the
+Mac), `com.hamzalabs.maktaba.remote` (iPhone and iPad) and
 `com.hamzalabs.maktaba.tv`; the Capacitor and Tauri wrappers share `com.hamzalabs.maktaba`. All
 take `maktaba://connect` links. Generated native projects (`apps/mobile/{ios,android}`,
 `apps/desktop/src-tauri/{target,gen}`, the TV build outputs) and signing material are not

@@ -59,14 +59,14 @@ const (
 func FailedBack(from, to string, applied, before int64, onKept bool) (how string, schema int64, why string) {
 	toSchema := int64(0)
 	if to != "" {
-		toSchema = newestMigration(to)
+		toSchema = NewestMigration(to)
 	}
 	if toSchema == 0 {
 		return FailedRestore, 0, "this release's migrations are not known"
 	}
 	fromSchema := int64(0)
 	if from != "" {
-		fromSchema = newestMigration(from)
+		fromSchema = NewestMigration(from)
 	}
 	keepWhy := ""
 	switch {

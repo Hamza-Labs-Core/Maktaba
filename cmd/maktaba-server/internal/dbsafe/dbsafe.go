@@ -24,13 +24,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dsn"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/hostinfo"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
-	_ "github.com/lib/pq" // the postgres driver
+	"github.com/lib/pq" // the postgres driver
 )
 
 // Target is one Postgres database.
@@ -310,6 +312,86 @@ func (t Target) EndBlockers(ctx context.Context, grace time.Duration) ([]pgbundl
 		rows = append(rows, s)
 	}
 	return pgbundle.ParseEndedSessions(rows), rs.Err()
+}
+
+// Identity names the data the database holds: its cluster, the database and its public
+// schema (their oids). Whatever puts a dump back makes another database, or another public
+// schema, so the same identity is the same database that a restore found there. A session a
+// restore cut short left (its program killed: the server goes on with what it was sent, and
+// may still commit it) is ended first, and none is left when it answers. "" when
+// there is none (dropped). schema is the newest migration it records (0: none; -1: it cannot
+// be read now, a session holding its table).
+func (t Target) Identity(ctx context.Context) (id string, schema int64, err error) {
+	d, err := t.open(ctx, "")
+	var pe *pq.Error
+	if t.Data != "" && errors.As(err, &pe) && pe.Code == "55000" {
+		// the bundled Postgres's: a restore stopped hard between closing it to new sessions and
+		// putting another in its place left it closed
+		if oerr := t.reopen(ctx); oerr != nil {
+			return "", 0, oerr
+		}
+		d, err = t.open(ctx, "")
+	}
+	if err != nil {
+		if errors.As(err, &pe) && pe.Code == "3D000" { // the database does not exist
+			return "", 0, nil
+		}
+		return "", 0, err
+	}
+	defer d.Close()
+	if err := endRestores(ctx, d); err != nil {
+		return "", 0, err
+	}
+	var db, ns string
+	if err := d.QueryRowContext(ctx, `SELECT d.oid::text, coalesce((SELECT n.oid::text FROM pg_namespace n WHERE n.nspname = 'public'), '')
+		FROM pg_database d WHERE d.datname = current_database()`).Scan(&db, &ns); err != nil {
+		return "", 0, err
+	}
+	if ns == "" {
+		return "", 0, nil
+	}
+	var sys string // not every operator's server lets its roles read it
+	_ = d.QueryRowContext(ctx, `SELECT system_identifier::text FROM pg_control_system()`).Scan(&sys)
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if schema, err = appliedVersion(cctx, d); err != nil {
+		schema = -1
+	}
+	return sys + "/" + db + "/" + ns, schema, ctx.Err()
+}
+
+// reopen lets sessions into the database again.
+func (t Target) reopen(ctx context.Context) error {
+	d, err := t.open(ctx, "postgres")
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	if err := endRestores(ctx, d); err != nil {
+		return err
+	}
+	_, err = d.ExecContext(ctx, `ALTER DATABASE `+pq.QuoteIdentifier(t.Database())+` ALLOW_CONNECTIONS true`)
+	return err
+}
+
+// endRestores ends what restores cut short left on d's database (the bundled one's swap runs
+// in postgres), and waits until it is gone.
+func endRestores(ctx context.Context, d *sql.DB) error {
+	for i := 0; ; i++ {
+		var n int
+		if err := d.QueryRowContext(ctx, `SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+			WHERE application_name = $1 AND datname IN (current_database(), 'postgres') AND pid <> pg_backend_pid()) e`, pgbundle.RestoreApp).Scan(&n); err != nil || n == 0 {
+			return err
+		}
+		if i == 100 {
+			return errors.New("a session of a restore that was cut short does not end")
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // SchemaVersion is the newest migration goose records as applied on the database (0:
@@ -603,6 +685,18 @@ func validIdent(s string) bool { return identRe.MatchString(s) }
 // Postgres the home does not bundle (the bundled one is restored by
 // pgbundle.RestoreRunning).
 func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
+	return t.RestoreWith(ctx, dump, nil, log)
+}
+
+// RestoreWith is Restore, with before called before each step that destroys or replaces
+// the database (pgbundle.RestoreOptions.Before; nil: nothing to tell).
+func (t Target) RestoreWith(ctx context.Context, dump string, before func(step string) error, log io.Writer) error {
+	tell := func(step string) error {
+		if before == nil {
+			return nil
+		}
+		return before(step)
+	}
 	if _, err := os.Stat(dump); err != nil {
 		return err
 	}
@@ -631,7 +725,7 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	_, _ = d.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 		WHERE datname = current_database() AND pid <> pg_backend_pid()`)
 	if havePSQL(t.bin("psql")) {
-		if err := t.restoreAtomic(ctx, dump, list, log); err != nil {
+		if err := t.restoreAtomic(ctx, dump, list, tell, log); err != nil {
 			return err
 		}
 		_, _ = d.ExecContext(ctx, `ANALYZE`)
@@ -641,12 +735,18 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 		return fmt.Errorf("restore %s: its vectors are binary chunks that psql loads, and there is no psql beside "+
 			"pg_restore (install the PostgreSQL client programs, or set MAKTABA_PG_BIN): nothing was changed", dump)
 	}
+	if err := tell(pgbundle.StepGone); err != nil {
+		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
+	}
 	if _, err := d.ExecContext(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
 		return fmt.Errorf("make the public schema afresh: %w", err)
 	}
 	cmd, err := t.command(ctx, "pg_restore", "", "--no-owner", "--no-publications", "--exit-on-error", "--single-transaction", dump)
 	if err != nil {
 		return err
+	}
+	if err := tell(pgbundle.StepReplaced); err != nil {
+		return fmt.Errorf("restore %s: %w", dump, err)
 	}
 	var out bytes.Buffer
 	cmd.Stdout = io.MultiWriter(&out, orDiscard(log))
@@ -656,6 +756,125 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	}
 	_, _ = d.ExecContext(ctx, `ANALYZE`)
 	return t.verifyRestore(ctx, d, dump)
+}
+
+// psqlLookEvery is how often a restore looks at its psql's session (tests look more often),
+// and psqlLooks how many looks in a row that say its transaction is over end it.
+var psqlLookEvery = time.Second
+
+const psqlLooks = 5
+
+// psqlSession is the session psql's script says it runs in: a line of word, the backend's pid,
+// and when its server started. It is a writer (psql's own output).
+type psqlSession struct {
+	word string
+
+	mu          sync.Mutex
+	last        []byte
+	pid, server string
+}
+
+func (s *psqlSession) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.pid != "" {
+		return len(p), nil
+	}
+	s.last = append(s.last, p...)
+	if i := bytes.Index(s.last, []byte(s.word)); i >= 0 {
+		if line, _, whole := bytes.Cut(s.last[i:], []byte("\n")); whole {
+			if f := strings.Fields(string(line)); len(f) == 3 {
+				s.pid, s.server = f[1], f[2]
+			}
+			s.last = nil
+		}
+	} else if n := len(s.word); len(s.last) > n {
+		s.last = append([]byte(nil), s.last[len(s.last)-n:]...)
+	}
+	return len(p), nil
+}
+
+func (s *psqlSession) said() (pid, server string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pid, s.server
+}
+
+// watchSession calls stuck, once, when the session at says is over while psql still runs: its
+// transaction failed, or it is there no more on the server it ran on, at psqlLooks looks in a
+// row. What cannot be seen (no answer, another server, a state its role may not see) says
+// nothing.
+func (t Target) watchSession(ctx context.Context, at *psqlSession, stuck func(state string)) {
+	tick := time.NewTicker(psqlLookEvery)
+	defer tick.Stop()
+	for over := 0; ; {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		pid, server := at.said()
+		if pid == "" {
+			continue
+		}
+		state, there, known := t.session(ctx, pid, server)
+		if !known || (there && state != "idle in transaction (aborted)") {
+			over = 0
+			continue
+		}
+		if !there {
+			state = "gone"
+		}
+		if over++; over >= psqlLooks {
+			stuck(state)
+			return
+		}
+	}
+}
+
+// session is what the backend pid of the server started at server does (pg_stat_activity's
+// state), and whether it is there. known false: it cannot be told (no answer, or the look
+// reached another server).
+func (t Target) session(ctx context.Context, pid, server string) (state string, there, known bool) {
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	d, err := t.open(cctx, "")
+	if err != nil {
+		return "", false, false
+	}
+	defer d.Close()
+	var on string
+	var n int
+	if err := d.QueryRowContext(cctx, `SELECT extract(epoch FROM pg_postmaster_start_time())::text,
+		(SELECT count(*) FROM pg_stat_activity WHERE pid = $1::int),
+		coalesce((SELECT state FROM pg_stat_activity WHERE pid = $1::int), '')`, pid).Scan(&on, &n, &state); err != nil {
+		return "", false, false
+	}
+	return state, n > 0, on == server
+}
+
+// signal is a writer that closes seen once word was written to it.
+type signal struct {
+	word string
+	seen chan struct{}
+	last []byte
+	done bool
+}
+
+func newSignal(word string) *signal { return &signal{word: word, seen: make(chan struct{})} }
+
+func (s *signal) Write(p []byte) (int, error) {
+	if s.done {
+		return len(p), nil
+	}
+	s.last = append(s.last, p...)
+	if bytes.Contains(s.last, []byte(s.word)) {
+		s.done, s.last = true, nil
+		close(s.seen)
+	} else if n := len(s.word); len(s.last) > n {
+		s.last = append([]byte(nil), s.last[len(s.last)-n:]...)
+	}
+	return len(p), nil
 }
 
 // verifyRestore checks the database put back against the dump (pgbundle.VerifyRestore:
@@ -710,18 +929,18 @@ var havePSQL = func(psql string) bool {
 // runs it after BEGIN and the schema's drop and creation, stopping at the first error (the
 // transaction rolls back: the database stays as it was). Nothing is written to disk (a plain
 // script is several times the dump's size, which the space check does not count). COMMIT is
-// the script's own last line, written once pg_restore wrote all of it: an end of psql's input
-// before that (a pg_restore that fails part way, this process killed) commits nothing. Until
-// 2026-11-24 it was psql's --single-transaction, which commits at the end of its input,
-// wherever that is: a server killed in the middle of a restore left a part of the dump
-// committed in place of the library. A psql that stops first (an
+// the script's own last line, written once psql ran all of it (tell first): an end of
+// psql's input before that (a pg_restore that fails part way, this process killed) commits
+// nothing. Until 2026-11-25 it was psql's --single-transaction, which commits at the end of
+// its input, wherever that is: a server killed in the middle of a restore left a part of it
+// committed. A psql that stops first (an
 // SQL error, ON_ERROR_STOP) stops pg_restore too (it would write into a pipe nobody reads
 // for ever), and its own words are the error. The dump is streamed
 // in three parts: its tables and their rows (copyScan reads them too: one whose rows are cut
 // short goes no further), a \copy of each chunk of its chunked tables (pgbundle.Chunked;
 // CheckChunks refused a damaged one before), with every table's rows counted, and its indexes
 // and constraints.
-func (t Target) restoreAtomic(ctx context.Context, dump, list string, log io.Writer) error {
+func (t Target) restoreAtomic(ctx context.Context, dump, list string, tell func(step string) error, log io.Writer) error {
 	pctx, kill := context.WithCancel(ctx)
 	defer kill()
 	counts, err := pgbundle.CountsScript(dump, list)
@@ -744,24 +963,51 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, log io.Wri
 	if err != nil {
 		return err
 	}
-	var out bytes.Buffer
-	cmd.Stdout = io.MultiWriter(&out, orDiscard(log))
-	cmd.Stderr = cmd.Stdout
+	var out bytes.Buffer // read once psql ended
+	word := "maktaba-restore-" + randHex(8)
+	ran, at := newSignal(word+"-ran"), &psqlSession{word: word + "-session"}
 	cmd.WaitDelay = 10 * time.Second // its output pipe, should a child outlive it
+	cmd.Stdout = io.MultiWriter(&out, orDiscard(log), ran, at)
+	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("psql: %w", err)
 	}
-	stopped := func(copyErr error) error {
-		// psql stopped reading (its own error says why, its transaction rolled back): say
-		// what psql said
+	var werr error
+	ended := make(chan struct{})
+	go func() {
+		werr = cmd.Wait()
+		close(ended)
+	}()
+	// a psql whose transaction failed and that neither ends nor reads would be waited for for
+	// ever, writing its script or after it
+	var stuck atomic.Pointer[string]
+	go t.watchSession(pctx, at, func(state string) {
+		stuck.Store(&state)
 		kill()
-		werr := cmd.Wait()
-		if werr == nil {
-			werr = copyErr
+	})
+	// stopped ends psql (the server rolls its transaction back) and says why, why when psql
+	// itself says nothing.
+	stopped := func(why error) error {
+		kill()
+		<-ended
+		if state := stuck.Load(); state != nil {
+			return fmt.Errorf("restore %s (nothing changed: one transaction): psql failed and did not end (its session: %s): %s",
+				dump, *state, tail(out.Bytes()))
 		}
-		return fmt.Errorf("restore %s (nothing changed: one transaction): psql stopped: %v: %s", dump, werr, tail(out.Bytes()))
+		if werr != nil {
+			why = werr
+		}
+		return fmt.Errorf("restore %s (nothing changed: one transaction): psql stopped: %v: %s", dump, why, tail(out.Bytes()))
 	}
-	if _, err := io.WriteString(in, "BEGIN;\nDROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"); err != nil {
+	write := func(sql string) error {
+		_, err := io.WriteString(in, sql)
+		return err
+	}
+	// its session, for the watch; its name, for Identity (the connection's own name, from its
+	// URL or a pooler, is another)
+	if err := write("BEGIN;\nSET LOCAL application_name = '" + pgbundle.RestoreApp + "';\n" +
+		"SELECT pg_catalog.pg_backend_pid() AS mk_pid, extract(epoch FROM pg_catalog.pg_postmaster_start_time()) AS mk_server \\gset\n" +
+		"\\warn " + at.word + " :mk_pid :mk_server\nDROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"); err != nil {
 		return stopped(err)
 	}
 	for part := dataPart; part <= postPart; part++ {
@@ -769,7 +1015,7 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, log io.Wri
 		switch part {
 		case chunkPart:
 			// the chunks, then every table's rows counted, before the indexes are built
-			if _, err := io.WriteString(in, pgbundle.CopyScript(pgbundle.Chunks(dump))+counts); err != nil {
+			if err := write(pgbundle.CopyScript(pgbundle.Chunks(dump)) + counts); err != nil {
 				return stopped(err)
 			}
 			continue
@@ -779,17 +1025,13 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, log io.Wri
 		gen := exec.CommandContext(pctx, t.bin("pg_restore"), args...)
 		script, err := gen.StdoutPipe()
 		if err != nil {
-			kill()
-			_ = cmd.Wait()
-			return err
+			return stopped(err)
 		}
 		var genErr bytes.Buffer
 		gen.Stderr = &genErr
 		gen.WaitDelay = 10 * time.Second // as psql's
 		if err := gen.Start(); err != nil {
-			kill()
-			_ = cmd.Wait()
-			return fmt.Errorf("pg_restore: %w", err)
+			return stopped(fmt.Errorf("pg_restore: %w", err))
 		}
 		var scan copyScan
 		if _, copyErr := io.Copy(io.MultiWriter(in, &scan), script); copyErr != nil {
@@ -802,25 +1044,38 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, log io.Wri
 		if err := gen.Wait(); err != nil {
 			// the script is not whole: psql ends before its input does, with no commit
 			kill()
-			_ = cmd.Wait()
+			<-ended
 			return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
 		}
 		if part == dataPart {
 			if err := scan.whole(tables); err != nil {
 				// psql takes what comes next for rows: nothing more goes to it
 				kill()
-				_ = cmd.Wait()
+				<-ended
 				return fmt.Errorf("restore %s (nothing changed: one transaction): %w", dump, err)
 			}
 		}
 	}
-	// the whole script: its last line
-	if _, err := io.WriteString(in, "\nCOMMIT;\n"); err != nil {
+	// the whole script: once psql ran all of it (it says so), the commit, its last line
+	if err := write("\n\\warn " + ran.word + "\n"); err != nil {
+		return stopped(err)
+	}
+	select {
+	case <-ran.seen:
+	case <-ended:
+		return stopped(nil)
+	}
+	if err := tell(pgbundle.StepReplaced); err != nil {
+		kill()
+		<-ended
+		return fmt.Errorf("restore %s (nothing changed: one transaction): %w", dump, err)
+	}
+	if err := write("COMMIT;\n"); err != nil {
 		return stopped(err)
 	}
 	_ = in.Close()
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(out.Bytes()))
+	if <-ended; werr != nil {
+		return fmt.Errorf("restore %s (one transaction, not known to be committed): %v: %s", dump, werr, tail(out.Bytes()))
 	}
 	return nil
 }

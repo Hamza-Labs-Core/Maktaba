@@ -261,6 +261,13 @@ type fakeDB struct {
 	paused    bool
 	pauseErr  error
 	resumeErr error
+	// the database's identity and schema (or that it does not answer), the steps a restore
+	// takes before it ends, and what it does then
+	id        string
+	schema    int64
+	idErr     error
+	steps     []string
+	onRestore func(ctx context.Context) error
 	// onMigrate runs as the migrations start (the server stopped then, say)
 	onMigrate func()
 }
@@ -272,8 +279,9 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 	prevG := grantWorkersConnect
 	prevFB, prevSV, prevDI, prevMD, prevEB := failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled
 	prevTS, prevCP, prevPC, prevRC := tableSyncsBundled, copiesPausedBundled, pauseCopiesBundled, resumeCopiesBundled
-	prevUF, prevAt := runMigrateUndoFailed, schemaVersionAt
+	prevUF, prevAt, prevID := runMigrateUndoFailed, schemaVersionAt, dataIdentity
 	t.Cleanup(func() {
+		dataIdentity = prevID
 		schemaVersionAt = prevAt
 		tableSyncsBundled, copiesPausedBundled, pauseCopiesBundled, resumeCopiesBundled = prevTS, prevCP, prevPC, prevRC
 		dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations = prevD, prevR, prevM, prevA, prevP
@@ -419,10 +427,38 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 		}
 		return err
 	}
-	restoreDump = func(_ context.Context, _ pgbundle.Bundle, dump string, _ io.Writer) error {
+	f.id, f.schema = "1/2/3", 149
+	dataIdentity = func(context.Context, *migrationGate) (string, int64, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.id, f.schema, f.idErr
+	}
+	restoreDump = func(ctx context.Context, _ pgbundle.Bundle, dump string, before func(string) error, _ io.Writer) error {
 		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
 		f.mu.Lock()
 		defer f.mu.Unlock()
+		for _, step := range f.steps {
+			// told before it is done
+			f.mu.Unlock()
+			err := before(step)
+			f.mu.Lock()
+			if err != nil {
+				return err
+			}
+			if step == pgbundle.StepGone {
+				f.id, f.schema = "", 0
+			} else {
+				f.id = "1/4/3"
+			}
+		}
+		if f.onRestore != nil {
+			f.mu.Unlock()
+			err := f.onRestore(ctx)
+			f.mu.Lock()
+			if err != nil {
+				return err
+			}
+		}
 		if rec.State != apppayload.DatabaseRestoring {
 			return fmt.Errorf("the record says %q while the dump is put back", rec.State)
 		}
@@ -1083,7 +1119,7 @@ func TestAppBundleFailedRestoreIsFinishedNextStart(t *testing.T) {
 	cfg, payload := appEnv(t, "v0.2.0", "")
 	dump := filepath.Join(cfg.StateDir(), "backups", "pre-v0.2.0-to-v0.3.0.dump")
 	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
-		Dump: dump, By: "admin"})
+		Dump: dump, By: "admin", Data: apppayload.DataUntouched, DataID: "1/2/3"})
 	f := installFakeDB(t, cfg)
 	f.restoreErr = errors.New("pg_restore: disk full")
 	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
@@ -1918,6 +1954,9 @@ func TestDetailCodesAreAFixedList(t *testing.T) {
 		"db_restore_unfinished":    "failed dump",
 		"db_restoring_backup":      "dump by",
 		"db_restore_backup_failed": "dump error",
+		"db_restore_backup_part":   "dump error",
+		"db_restore_backup_gone":   "dump error",
+		"db_restore_no_copy":       "dump error",
 		"db_no_cluster":            "failed error dump",
 		"db_record_failed":         "path error",
 		"pg_unreadable":            "path error",
@@ -2800,6 +2839,35 @@ func TestAppBundleCopiesStayOutUntilTheSchemaIsSettled(t *testing.T) {
 			t.Fatal(err)
 		}
 		h.check(t, "pause migrated|down|resume migrated|pause migrated|down|resume migrated", false)
+	})
+	t.Run("Down scripts that work after some that failed", func(t *testing.T) {
+		h := newPauseHome(t, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+		g := &migrationGate{stateDir: h.cfg.StateDir(), version: "v0.2.0", pg: testBundle(h.cfg), log: h.log}
+		u := &updates{api: exec.Command("maktaba-api")}
+		h.f.downErr = errors.New("boom")
+		if err := u.migrateDown(context.Background(), nil, 230, g); err == nil {
+			t.Fatal("a Down script that failed is said to have worked")
+		}
+		h.f.downErr = nil
+		if err := u.migrateDown(context.Background(), nil, 230, g); err != nil {
+			t.Fatal(err)
+		}
+		h.check(t, "pause migrated|down|pause migrated|down|resume migrated", false)
+	})
+	t.Run("another release's Down scripts failed", func(t *testing.T) {
+		// what failed on v0.3.0's database says nothing of the one v0.4.0's record is of
+		h := newPauseHome(t, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
+		if err := noteDownFailed(h.cfg.StateDir()); err != nil {
+			t.Fatal(err)
+		}
+		for version, settled := range map[string]bool{"v0.3.0": false, "0.3.0": false, "v0.4.0": true} {
+			if err := apppayload.WriteDatabase(h.cfg.StateDir(), apppayload.Database{Version: version, State: apppayload.DatabaseMigrated}); err != nil {
+				t.Fatal(err)
+			}
+			if schemaSettled(h.cfg.StateDir()) != settled {
+				t.Errorf("a Down script failed on v0.3.0's, the record is %s's: settled %v", version, !settled)
+			}
+		}
 	})
 }
 

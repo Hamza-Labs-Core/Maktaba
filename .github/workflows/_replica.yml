@@ -327,7 +327,7 @@ jobs:
           set -euo pipefail
           go test -count=1 -v -timeout 20m ./internal/dbsafe/ | tee "$RUNNER_TEMP/dbsafe.out"
           ../../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/dbsafe.out"
-          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRehearsalSkipsAndLeftovers TestRestoreWithMachineCopies TestSpaceForTheDatabaseWork TestEndSessionsAndTheLockTimeout TestMigrationBlockersEnded; do
+          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRehearsalSkipsAndLeftovers TestRestoreWithMachineCopies TestSpaceForTheDatabaseWork TestEndSessionsAndTheLockTimeout TestMigrationBlockersEnded TestRestoreKilledPartWayCommitsNothing; do
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/dbsafe.out" || { echo "::error::$t did not run"; exit 1; }
           done
 
@@ -338,6 +338,15 @@ jobs:
           go test -count=1 -v -timeout 15m -run '^(TestAFailedUpdateNeverUndoesAKeptSchema|TestSchemaVersionAt)$' . | tee "$RUNNER_TEMP/keptdown.out"
           for t in TestAFailedUpdateNeverUndoesAKeptSchema TestSchemaVersionAt; do
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/keptdown.out" || { echo "::error::$t did not run"; exit 1; }
+          done
+
+      - name: Every way out of a restore that failed (server)
+        working-directory: cmd/maktaba-server
+        run: |
+          set -euo pipefail
+          go test -count=1 -v -timeout 20m -run '^(TestEveryWayOutOfAFailedRestore|TestAHungRestoreIsGivenUp)$' . | tee "$RUNNER_TEMP/waysout.out"
+          for t in TestEveryWayOutOfAFailedRestore TestAHungRestoreIsGivenUp; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/waysout.out" || { echo "::error::$t did not run"; exit 1; }
           done
 
       - name: A home and a node update themselves (e2e)

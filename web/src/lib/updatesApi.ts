@@ -394,6 +394,11 @@ export interface RestorePlan {
   release: string;
   running: string;
   at: string;
+  /** why no copy of the library as it is now can be kept (absent: it can): it is then
+   * restored only with `without_copy`; the bytes free for one, and needed */
+  no_copy?: string;
+  copy_free?: number;
+  copy_need?: number;
 }
 
 export const updatesApi = {
@@ -429,9 +434,10 @@ export const updatesApi = {
   backups: () => api.get<HomeBackups>("/api/cluster/updates/backups"),
   restorePlan: (name: string) =>
     api.get<RestorePlan>(`/api/cluster/updates/backups/${encodeURIComponent(name)}/restore`),
-  restore: (name: string) =>
+  restore: (name: string, withoutCopy = false) =>
     api.post<RestorePlan>(`/api/cluster/updates/backups/${encodeURIComponent(name)}/restore`, {
       confirm: name,
+      ...(withoutCopy ? { without_copy: true } : {}),
     }),
 };
 

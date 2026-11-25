@@ -883,7 +883,7 @@ func (u *updates) adminHandler(base http.Handler, token string) http.Handler {
 			u.serveLog(w, r)
 			return
 		}
-		if name == "backups" || name == "restore" {
+		if name == "backups" || name == "restore" || name == "restore-abandon" {
 			u.serveRestore(w, r, name)
 			return
 		}

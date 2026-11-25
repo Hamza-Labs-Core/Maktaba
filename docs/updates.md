@@ -362,6 +362,72 @@ the update is held. Given up on, the older release refuses the database as newer
 put the backup back when a person asks. Update rehearsal 21 runs the previous release's real
 launcher and server against it.
 
+**A restore a person asked for that cannot finish** always has a way out. The database's record
+(`state/database.json`) says what state the data is in (`data`), written before each step that
+changes it, and that alone allows or refuses each way out:
+
+| The data | Try again | Another backup | Give it up | A newer release installed since |
+|---|---|---|---|---|
+| `untouched`: the database from before the restore | yes | yes | yes | goes on from it |
+| `replaced`: the backup's, in part or whole, not known to be whole | yes | yes | no | tries again |
+| `gone`: dropped, or empty | yes | yes | no | tries again |
+| not known (asked on a release from before this, and the database does not tell) | yes | yes | no | tries again |
+
+`untouched` is checked, never trusted: the record holds the identity of the database the restore
+found (`data_id`: its cluster, its oid and its public schema's), and whatever puts a dump back makes
+another. A restart of the release the restore is for, or of one whose own try failed, tries again: it
+is never taken for a newer release (`tried_by`). A restore asked on a release from before this has no
+identity: its database is the one from before only when its schema is another than that of every
+backup asked since (`maybe_schemas`: any of them may be what is there). No backup is removed until the
+restore is done (`backups/restore-hold`: the updates' and the scheduled dumps' pruning, and the room
+made for a dump, leave them all; no scheduled dump is taken), but for the copy below and what an older
+release does.
+
+**The database it replaces is set aside first**, once for a restore, however often it is tried
+(`aside`): it holds the newest data there is. Room is made for it from the older backups, never the one
+put back, the one the stopped update names, or the newest of each kind; none is removed when that is
+not room enough. When it does not fit, or cannot be taken, the restore stops before it touches anything
+(`db_restore_no_copy`) and says why, and the space it needs: free some, or delete backups you no longer
+need, and restart. A copy that is gone, or is not the one that was taken, is taken again (`aside_bytes`). Or put it back without a
+copy, which is asked for on its own (the Updates page, the recovery page, `--without-copy`): the
+library as it is now is then lost for good, and no backup is removed. It is for that restore and that
+reason only. The room is looked at when the restore is asked
+(`restore_no_copy`), and again when it starts. A restore asked on a release from before this, which
+could not ask, stops the same way.
+
+**A restore that goes back to an older release** (older than the one running) is done by that release's
+code, by its own rules, which this one cannot change. It may know nothing of the hold or of the record's
+copy: it takes a copy of its own, whatever the data is, and when that does not fit it removes the oldest
+`*.dump` of the folder, the chosen one too, and goes on with no copy all the same. So:
+
+- **There is room for its copy as things are**, by its rules (a quarter more than the newest backup, and
+  the reserve), with nothing removed. Otherwise the restore is refused before anything is touched
+  (`restore_older_no_room`), whatever was confirmed, and says how much to free: delete backups you no
+  longer need (`maktaba-server backups delete <name>`, which works on a stopped home), or put back one
+  that the running release puts back itself. It is never asked to go without a copy. The copy's size is
+  that release's guess: a library that grew far past its newest backup since, or a `pg_dump` that fails
+  there for another reason, still ends with none, and the restore goes on.
+- **What the restore needs is out of its reach**: the chosen backup, the copy already set aside and the one
+  the stopped update names, as hard links that take no room, in `backups/being-restored/`, where no release
+  removes anything. The record names the backup there. What was removed is back, whole, at the next start
+  of a release with this rule, and the folder goes when the restore is done. Until then deleting one of
+  those three frees nothing; deleting any other backup frees its space. That release counts the
+  space of one of those it removes as freed, though it is not: on a disk that is already tight, a later
+  dump of its may use part of the reserve.
+- **On a disk without hard links** only the newest `pre-<from>-to-<to>` backup, which no release removes,
+  can be put back on an older release. Any other is refused before anything changes
+  (`restore_unprotected`): put that one back, or move the backups to a disk that has them.
+
+That release may still remove other backups by its normal rules, then and while it runs: the oldest when
+the dumps take more than their share of the disk or a later dump needs the room, the scheduled and
+pre-update ones past the number kept, `replaced-` and `failed-` ones older than 30 days. Copy elsewhere
+what must outlive that.
+
+One lock covers asking for a restore, giving one up and the start's own try, and the record is written
+before the release is switched. On a Postgres the home does not bundle, the restore's transaction
+commits as the script's own last line, once psql ran all of it: a server killed in the middle of it
+commits nothing.
+
 **When the switch back fails** (the previous release gone, a pointer that cannot be written), a
 held record stays held: its Down scripts may have run in part, and the failed release never
 migrates and runs on that by itself.
@@ -485,7 +551,8 @@ maktaba-server restore --backup pre-0.3.5-to-0.3.6.dump --confirm
 
 The home restarts on the kept release whose schema is the backup's (the dump's newest applied
 migration), and that release puts the backup back before anything else runs; the database it
-replaces is set aside first (`replaced-<version>-<time>.dump`). **Every change made since the
+replaces is set aside first (`replaced-<version>-<time>.dump`; older backups may go to make room for
+it, never the one put back, and with no room even so it asks: `--without-copy`). **Every change made since the
 backup was taken is lost.** It refuses while an update runs, and when no kept release has the
 backup's schema (it names the release to install first). The machines copy the restored database
 anew.
@@ -521,11 +588,13 @@ GitHub lists them.
   windows ("stuck"), and the page offers **Install now**.
 - The dumps are kept to `backups_keep`; scratch copies and dumps a crash cut short
   (`*.dump.partial`) go once nothing was written to them for an hour.
-- **Before any dump** (nightly, before an update, a restore's set aside) the oldest dumps go
+- **Before any dump** (nightly, before an update, the copy a restore keeps of what it replaces) the oldest dumps go
   until the new one fits: it must leave 5% of the disk free (at least 2 GiB), and all the dumps
   together stay within a fifth of the disk. The newest dump of each kind always stays. When it
   cannot fit even so, the dump is not started and the update stops at its database step with the
   reason (`db_dump_failed`: not enough free space): free some space or move the data to a bigger disk.
+  A restore stops too, and may go on without its copy when a person says so (`db_restore_no_copy`,
+  above). While a restore is not done every dump stays, but for the room of its own copy.
 
 ## How each kind of install takes a release
 

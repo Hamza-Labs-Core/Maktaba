@@ -444,11 +444,12 @@
   },
   "listings": [
     {
-      "id": "apple-player-iphone",
+      "id": "apple-player",
       "store": "apple",
       "app": "player",
       "bundle": "com.hamzalabs.maktaba.player",
       "built": ".github/workflows/testflight.yml",
+      "note": "one universal app for iPhone and iPad (App Review 4.3(a)); the iPad-only com.hamzalabs.maktaba.player.tablet is retired",
       "sets": [
         {
           "asset": "iphone-6.3",
@@ -461,16 +462,7 @@
           "style": "captioned",
           "surface": "iphone",
           "langs": "per-language"
-        }
-      ]
-    },
-    {
-      "id": "apple-player-ipad",
-      "store": "apple",
-      "app": "player",
-      "bundle": "com.hamzalabs.maktaba.player.tablet",
-      "built": ".github/workflows/testflight.yml",
-      "sets": [
+        },
         { "asset": "ipad-13", "style": "captioned", "surface": "ipad", "langs": "per-language" }
       ]
     },
@@ -484,11 +476,12 @@
       "sets": [{ "asset": "mac", "style": "captioned", "surface": "mac", "langs": "per-language" }]
     },
     {
-      "id": "apple-remote-iphone",
+      "id": "apple-remote",
       "store": "apple",
       "app": "remote",
       "bundle": "com.hamzalabs.maktaba.remote",
       "built": ".github/workflows/testflight.yml",
+      "note": "one universal app for iPhone and iPad (App Review 4.3(a)); the iPad-only com.hamzalabs.maktaba.remote.tablet is retired",
       "sets": [
         {
           "asset": "iphone-6.3",
@@ -501,16 +494,7 @@
           "style": "captioned",
           "surface": "iphone",
           "langs": "per-language"
-        }
-      ]
-    },
-    {
-      "id": "apple-remote-ipad",
-      "store": "apple",
-      "app": "remote",
-      "bundle": "com.hamzalabs.maktaba.remote.tablet",
-      "built": ".github/workflows/testflight.yml",
-      "sets": [
+        },
         { "asset": "ipad-13", "style": "captioned", "surface": "ipad", "langs": "per-language" }
       ]
     },

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -64,8 +65,8 @@ func (p RoomPolicy) budget(total uint64) uint64 {
 	return uint64(float64(total) * share)
 }
 
-// NoRoomError says a dump was not started: even with the old dumps gone it would
-// leave its disk without the reserve.
+// NoRoomError says a dump was not started: it would leave its disk without the reserve,
+// with every old dump gone that may go.
 type NoRoomError struct {
 	Dir        string
 	Free, Need uint64
@@ -96,6 +97,41 @@ func MakeRoom(dir string) error { return MakeRoomWith(dir, DefaultRoom()) }
 
 // MakeRoomWith is MakeRoom with the room p leaves.
 func MakeRoomWith(dir string, p RoomPolicy) error {
+	held := BackupsHeld(dir) // a restore is not done: every dump stays
+	return roomIn(dir, p, func(string) bool { return held }, RemoveDump)
+}
+
+// MakeRoomKeeping is MakeRoomWith for the copy of the database a restore replaces, while the
+// backups are held for it (HoldBackups): the dumps of names stay, with the newest of each
+// kind, and no others. When that is not room enough nothing is removed.
+func MakeRoomKeeping(dir string, p RoomPolicy, names ...string) error {
+	if err := RoomKeeping(dir, p, names...); err != nil {
+		return err
+	}
+	return roomIn(dir, p, keepNames(names), RemoveDump)
+}
+
+// RoomKeeping says whether MakeRoomKeeping would make the room (a *NoRoomError: it would
+// not), removing nothing.
+func RoomKeeping(dir string, p RoomPolicy, names ...string) error {
+	return roomIn(dir, p, keepNames(names), func(string) error { return nil })
+}
+
+// RoomNow says whether there is room for the next dump as it is, removing nothing.
+func RoomNow(dir string, p RoomPolicy) error {
+	return roomIn(dir, p, func(string) bool { return true }, RemoveDump)
+}
+
+// keepNames keeps names (a disk may not tell their case apart).
+func keepNames(names []string) func(string) bool {
+	return func(name string) bool {
+		return slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(n, name) })
+	}
+}
+
+// roomIn is MakeRoomWith's work: keep says which dumps stay besides the newest of each kind,
+// remove removes one.
+func roomIn(dir string, p RoomPolicy, keep func(name string) bool, remove func(path string) error) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -145,10 +181,10 @@ func MakeRoomWith(dir string, p RoomPolicy) error {
 		if free >= need && used+next <= budget {
 			break
 		}
-		if newest[dumpKind(filepath.Base(d.path))].path == d.path {
+		if name := filepath.Base(d.path); newest[dumpKind(name)].path == d.path || keep(name) {
 			continue
 		}
-		if err := RemoveDump(d.path); err != nil {
+		if err := remove(d.path); err != nil {
 			return err
 		}
 		free += d.size
