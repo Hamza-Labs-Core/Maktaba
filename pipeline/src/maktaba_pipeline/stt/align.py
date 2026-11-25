@@ -19,7 +19,7 @@ cross-attention heads and DTW, in C++) and places the words with :func:`place`, 
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -141,12 +141,48 @@ def align_batch(model: Any, tokenizer: Any, items: list[AlignItem], features: An
             s.setdefault("words", [])
 
 
+def _letters(text: str) -> str:
+    return "".join(text.split())
+
+
+def _by_sentence(
+    segments: list[dict[str, Any]], per_seg: list[list[int]], alignment: list[Any]
+) -> list[list[Any]]:
+    """The window's words, each with the sentence whose text it is in. A word over two
+    sentences (one begins without a space, or is a "؟" alone: the tokenizer joins it to the
+    word before) is split between them, its time by their letters; one too short to split
+    stays with the first. Where the words and the texts differ, by tokens."""
+    texts = [_letters(str(s.get("text") or "")) for s in segments]
+    by_text = "".join(texts) == "".join(_letters(t.word) for t in alignment)
+    ends = list(itertools.accumulate(map(len, texts if by_text else per_seg)))
+    out: list[list[Any]] = [[] for _ in segments]
+    k = pos = 0
+    for t in alignment:
+        size = len(_letters(t.word)) if by_text else len(t.tokens)
+        while True:
+            while k + 1 < len(ends) and pos >= ends[k]:
+                k += 1
+            room = ends[k] - pos
+            if not by_text or size <= room or k + 1 == len(ends) or t.end - t.start < 0.02:
+                break
+            seen = list(itertools.accumulate(int(not c.isspace()) for c in t.word))
+            cut = seen.index(room) + 1
+            at = t.start + (t.end - t.start) * room / size
+            at = min(max(at, t.start + 0.01), t.end - 0.01)
+            out[k].append(replace(t, word=t.word[:cut], end=at))
+            t = replace(t, word=t.word[cut:], tokens=[], start=at)
+            pos, size = pos + room, size - room
+        out[k].append(t)
+        pos += size
+    return out
+
+
 def place(it: AlignItem, per_seg: list[list[int]], alignment: list[Any], merge: Any) -> None:
     """``add_word_timestamps`` after ``find_alignment``: the window's words (``alignment``,
-    its text's words with their times in the window) on its sentences. One thing differs: a
-    word goes to the sentence its first token is in, and punctuation joins words of its own
-    sentence only. Whisper counts each sentence's tokens from its first word, so a word that
-    reaches into the next sentence (a "." decoded as a sentence of its own) moves every
+    its text's words with their times in the window) on its sentences. One thing differs: each
+    sentence gets its own words (:func:`_by_sentence`), and punctuation joins words of its
+    own sentence only. Whisper counts each sentence's tokens from its first word, so a word
+    that reaches into the next sentence (a "." decoded as a sentence of its own) moves every
     later sentence's words along, and leaves the window's last sentence with none."""
     durations = np.array([t.end - t.start for t in alignment])
     durations = durations[durations.nonzero()]
@@ -160,14 +196,7 @@ def place(it: AlignItem, per_seg: list[list[int]], alignment: list[Any], merge: 
                     alignment[i].end = alignment[i].start + max_d
                 elif alignment[i - 1].word in marks:
                     alignment[i].start = alignment[i].end - max_d
-    per: list[list[Any]] = [[] for _ in it.segments]
-    ends = list(itertools.accumulate(len(tokens) for tokens in per_seg))
-    k = pos = 0
-    for t in alignment:
-        while k + 1 < len(ends) and pos >= ends[k]:
-            k += 1
-        per[k].append(t)
-        pos += len(t.tokens)
+    per = _by_sentence(it.segments, per_seg, alignment)
     for group in per:
         merge(group, PREPEND, APPEND)
 

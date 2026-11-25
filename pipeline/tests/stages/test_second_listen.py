@@ -81,6 +81,7 @@ def _hears(monkeypatch: pytest.MonkeyPatch, here: bool = True) -> list[list[str]
         for s in result.sentences:
             if s.words:
                 s.text = "قال " + s.text
+                s.words = [Word(s.start, s.start, "قال"), *s.words]
         return {"model": model, "source": "hf", "changed": len(result.sentences)}
 
     monkeypatch.setattr(tr, "_refine", refine)
@@ -245,54 +246,36 @@ async def test_a_transcript_from_before_the_split_has_no_words_to_align_on(
 # ------------------------------------------------- sentences without words (issue #1756)
 
 
-async def _priority(db: Database, vid: Any) -> int:
-    return int(
-        await db.fetchval(
-            "SELECT priority FROM processing_jobs WHERE subject_id = $1"
-            " AND state = 'pending' ORDER BY id DESC LIMIT 1",
-            str(vid),
-        )
-    )
-
-
-@pytest.mark.asyncio
-async def test_a_transcript_stopped_for_one_sentence_without_words_comes_back_once(
-    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """One sentence without its words left the whole transcript out, and its tries ran out:
-    the first sweep after the update gives them back, at the bulk priority, and the second
-    listen corrects the other sentences without transcribing again. A video stopped for
-    another reason stays stopped, and nothing is given back twice."""
-    heard = _hears(monkeypatch)
+async def _left_out(
+    db: Database, rt: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, why: str
+) -> Any:
+    """A video whose transcript has a sentence without words, as an earlier second listen
+    left it: skipped for ``why``, its tries used up, on machines the home knows."""
     monkeypatch.setattr(tr, "second_listen_capability", lambda: ("this machine", {}))
-    rt = await core_runtime(db)
-    vid, media = await _one_video(db, tmp_path)
+    vid, _ = await _one_video(db, tmp_path)
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
     await drain_core(db, rt, only={"transcribe"})
-    tid = (await _active(db, vid))["id"]
+    row = await _active(db, vid)
+    meta = {**_meta(row), "refine": {"model": "m", "source": "skipped", "skipped": why}}
+    assert meta["words"] is True
     await db.execute(
-        "UPDATE transcript_segments SET word_data = NULL WHERE transcript_id = $1 AND seq = 1", tid
+        "UPDATE transcripts SET metadata = $2 WHERE id = $1", row["id"], json.dumps(meta)
+    )
+    await db.execute(
+        "UPDATE transcript_segments SET word_data = NULL WHERE transcript_id = $1 AND seq = 1",
+        row["id"],
+    )
+    await db.execute(
+        "UPDATE processing_jobs SET state = 'done' WHERE subject_id = $1 AND state = 'pending'",
+        str(vid),
     )
     at = to_ts(db, now())
-
-    async def stop(why: str) -> None:
-        meta = {**_meta(await _active(db, vid)), "words": True}
-        meta["refine"] = {"model": "m", "source": "skipped", "skipped": why}
-        await db.execute(
-            "UPDATE transcripts SET metadata = $2 WHERE id = $1", tid, json.dumps(meta)
-        )
-        await db.execute(
-            "UPDATE processing_jobs SET state = 'done' WHERE subject_id = $1 AND state = 'pending'",
-            str(vid),
-        )
-        await db.execute(
-            "INSERT INTO relisten_attempts (video_id, attempts, last_at, next_at, ended_at,"
-            " stopped_at) VALUES ($1, 6, $2, $2, $2, $2)"
-            " ON CONFLICT (video_id) DO UPDATE SET attempts = 6, stopped_at = $2",
-            str(vid),
-            at,
-        )
-
+    await db.execute(
+        "INSERT INTO relisten_attempts (video_id, attempts, last_at, next_at, ended_at,"
+        " stopped_at) VALUES ($1, 6, $2, $2, $2, $2)",
+        str(vid),
+        at,
+    )
     for kind, key in (("model", str(tr.refine_model())), ("capability", "this machine")):
         await db.execute(
             "INSERT INTO relisten_seen (kind, key, detail, first_seen) VALUES ($1, $2, '{}', $3)",
@@ -300,24 +283,143 @@ async def test_a_transcript_stopped_for_one_sentence_without_words_comes_back_on
             key,
             at,
         )
-    await stop("it did not load")
-    assert await _sweep(db, monkeypatch) == 0  # not this reason
+    return vid
 
-    await stop(tr.NO_WORDS)
-    assert await _sweep(db, monkeypatch) == 0  # once a home: its sweep above was that
-    await db.execute("DELETE FROM relisten_seen WHERE kind = 'fix'")
+
+async def _fixed(db: Database) -> int:
+    return int(await db.fetchval("SELECT count(*) FROM relisten_seen WHERE kind = 'fix'"))
+
+
+@pytest.mark.asyncio
+async def test_a_video_stopped_for_a_sentence_without_words_is_transcribed_again_once(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Its stored words were given to the sentences wrongly, so the first sweep after the
+    update queues transcribe, at the bulk priority; the second listen and the subtitles
+    follow, a reviewer's fix is carried over, and no later sweep queues it."""
+    heard = _hears(monkeypatch)
+    rt = await core_runtime(db)
+    vid = await _left_out(db, rt, tmp_path, monkeypatch, tr.NO_WORDS_BEFORE)
+    old = (await _active(db, vid))["id"]
+    word = LINES[0][2].split()[0]
+    edit = str(uuid4())
+    await db.execute(
+        "INSERT INTO transcript_edits (id, transcript_id, segment_seq, char_start, char_len,"
+        " before, after) VALUES ($1, $2, 0, 0, $3, $4, 'مصحّحة')",
+        edit,
+        old,
+        len(word),
+        word,
+    )
     assert await _sweep(db, monkeypatch) == 1
-    assert await _priority(db, vid) == tr.RELISTEN_PRIORITY
+    job = await db.fetchrow(
+        "SELECT stage, priority FROM processing_jobs WHERE subject_id = $1 AND state = 'pending'",
+        str(vid),
+    )
+    assert (job["stage"], job["priority"]) == ("transcribe", tr.RELISTEN_PRIORITY)
+    assert await _fixed(db) == 1
     ran = await drain_core(db, rt, only={"transcribe", "second_listen", "subtitle_gen"})
-    assert ran == ["second_listen", "subtitle_gen"] and fake.calls == 1 and len(heard) == 1
+    assert ran == ["transcribe", "second_listen", "subtitle_gen"]
+    assert fake.calls == 2 and len(heard) == 1
     row = await _active(db, vid)
     assert _meta(row)["refine"]["source"] == "hf" and _meta(row)["words"] is True
     texts = await _texts(db, row["id"])
-    assert texts[0].startswith("قال ") and texts[1] == LINES[1][2]
-    assert media.with_name("درس السيرة 01.ar.vtt").exists()
+    assert "مصحّحة" in texts[0] and len(texts) == len(LINES)
     assert await _sweep(db, monkeypatch) == 0
-    left = await db.fetchval("SELECT count(*) FROM relisten_attempts WHERE video_id = $1", str(vid))
-    assert left == 0
+    tries = await db.fetchval(
+        "SELECT count(*) FROM relisten_attempts WHERE video_id = $1", str(vid)
+    )
+    assert tries == 0
+
+    # left out so again (a machine from before the fix): not transcribed a second time
+    meta = {**_meta(row), "refine": {"source": "skipped", "skipped": tr.NO_WORDS_BEFORE}}
+    await db.execute(
+        "UPDATE transcripts SET metadata = $2 WHERE id = $1", row["id"], json.dumps(meta)
+    )
+    assert await _sweep(db, monkeypatch) == 1
+    assert (await _last_listen_job(db, vid))["state"] == "pending"
+    await drain_core(db, rt, only={"transcribe", "second_listen"})
+    assert fake.calls == 2 and len(heard) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_video_stopped_for_another_reason_stays_stopped(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _hears(monkeypatch)
+    rt = await core_runtime(db)
+    vid = await _left_out(db, rt, tmp_path, monkeypatch, "it did not load")
+    assert await _sweep(db, monkeypatch) == 0 and await _fixed(db) == 1
+    assert _meta(await _active(db, vid))["words"] is True
+
+
+@pytest.mark.asyncio
+async def test_the_sweep_waits_for_a_worker_from_before_the_fix(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maktaba_pipeline.engine.workers import deregister_worker, register_worker
+
+    _hears(monkeypatch)
+    rt = await core_runtime(db)
+    await _left_out(db, rt, tmp_path, monkeypatch, tr.NO_WORDS_BEFORE)
+
+    async def worker(name: str, stages: list[str], caps: dict[str, Any]) -> None:
+        await register_worker(
+            db, worker_id=name, host=name, stages=stages, pools=["gpu"], capabilities=caps
+        )
+
+    await worker("new", ["transcribe", "second_listen"], {"words_by_sentence": True})
+    await worker("other", ["probe"], {})
+    await worker("old", ["second_listen"], {})
+    assert await _sweep(db, monkeypatch) == 0 and await _fixed(db) == 0
+    await deregister_worker(db, "old")
+    assert await _sweep(db, monkeypatch) == 1 and await _fixed(db) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_transcript_stored_now_with_one_sentence_without_words_is_heard(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    heard = _hears(monkeypatch)
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    await db.execute(
+        "UPDATE transcript_segments SET word_data = NULL WHERE transcript_id = $1 AND seq = 1",
+        (await _active(db, vid))["id"],
+    )
+    await drain_core(db, rt, only={"second_listen"})
+    row = await _active(db, vid)
+    texts = await _texts(db, row["id"])
+    assert len(heard) == 1 and _meta(row)["refine"]["source"] == "hf"
+    assert texts[0].startswith("قال ") and texts[1] == LINES[1][2]
+
+
+@pytest.mark.asyncio
+async def test_words_stored_before_word_data_are_read(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """2026-11-03 to slot 0186 (2026-11-06) each sentence's words were in its
+    ``metadata.words``, as ``[start, end, text]``, and ``word_data`` is NULL."""
+    heard = _hears(monkeypatch)
+    rt = await core_runtime(db)
+    vid, _ = await _one_video(db, tmp_path)
+    await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
+    await drain_core(db, rt, only={"transcribe"})
+    tid = (await _active(db, vid))["id"]
+    for seq, (a, b, text) in enumerate(LINES):
+        words = [[a, b, w] for w in text.split()]
+        await db.execute(
+            "UPDATE transcript_segments SET word_data = NULL, metadata = $3"
+            " WHERE transcript_id = $1 AND seq = $2",
+            tid,
+            seq,
+            json.dumps({"words": words}),
+        )
+    await drain_core(db, rt, only={"second_listen"})
+    assert len(heard) == 1
+    assert _meta(await _active(db, vid))["refine"]["source"] == "hf"
 
 
 @pytest.mark.parametrize("elsewhere", [False, True])  # words, but of other sentences
@@ -347,6 +449,8 @@ async def test_a_transcript_whisper_gave_no_words_for_is_not_queued_again(
     assert ran == ["transcribe", "second_listen", "subtitle_gen"] and heard == []
     meta = _meta(await _active(db, vid))
     assert meta["words"] is False and meta["refine"]["source"] == "none"
+    assert meta.get("words_unmatched", False) is elsewhere
+    assert ("do not match" in meta["refine"]["skipped"]) is elsewhere
     assert await _sweep(db, monkeypatch) == 0
 
 

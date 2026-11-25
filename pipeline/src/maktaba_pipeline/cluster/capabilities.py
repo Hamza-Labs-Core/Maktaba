@@ -187,4 +187,7 @@ def capabilities() -> dict[str, Any]:
         "extras": sorted(extras),
         "python": platform.python_version(),
         "pipeline_version": __version__,
+        # each sentence gets its own words (issue #1756): a worker from before does not
+        # say so, and the second listen's sweep waits for it (_retranscribe_wordless)
+        "words_by_sentence": True,
     }

@@ -42,7 +42,7 @@ from maktaba_pipeline.engine.stages._common import require_video
 from maktaba_pipeline.engine.stages.registry import StageImpl
 from maktaba_pipeline.log import get_logger
 from maktaba_pipeline.stt.settings import SAMPLE_RATE, Sentence, Transcript
-from maktaba_pipeline.stt.word_data import stored_words
+from maktaba_pipeline.stt.word_data import covers, spoken, stored_words
 
 __all__ = ["IMPL", "PASS_ON_AFTER_S", "input_fingerprint", "run", "unavailable"]
 
@@ -104,8 +104,9 @@ async def _segments(db: Any, transcript_id: Any) -> list[Any]:
 
 
 def _sentences(rows: list[Any]) -> tuple[list[Sentence], bool]:
-    """The stored sentences, and whether any has its words. One without (issue #1756)
-    keeps Whisper's text: the second listen leaves it out (``refine.chunks``)."""
+    """The stored sentences, and whether any has its words. One without, or whose words are
+    not all of its text (issue #1756), keeps Whisper's: the second listen leaves it out
+    (``refine.chunks``)."""
     out: list[Sentence] = []
     for r in rows:
         meta = loads(r["metadata"]) or {}
@@ -121,7 +122,7 @@ def _sentences(rows: list[Any]) -> tuple[list[Sentence], bool]:
                 words=timed,
             )
         )
-    return out, any(s.words for s in out)
+    return out, any(covers(s.text, s.words) for s in out)
 
 
 def _texts_hash(sentences: list[Sentence]) -> str:
@@ -160,21 +161,22 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
             )
         why = tr.second_listen_problem() or "it does not run here now"
         return await _skipped(db, job, row, meta, out, fingerprint, model, why, relisten)
-    if not sentences:
+    if not any(spoken(s.text) for s in sentences):
         return StageResult(output_hash=out, summary={"second_listen": "no speech"})
     if not has_words:
         # not one sentence to align on. Its try counts (relisten=True), so none goes on
         # for ever. What transcribe said of it decides:
         if meta.get("words") is False:
-            # Whisper gave no words: transcribing again gives none either. Not "skipped":
-            # the sweep leaves it
+            # transcribing again gives none either. Not "skipped": the sweep leaves it
             why = "Whisper gave no word timings for this transcript"
+            if meta.get("words_unmatched"):
+                why = "Whisper's word timings do not match this transcript's text"
             info = {"model": model, "source": "none", "skipped": why}
             return await _skipped(
                 db, job, row, meta, out, fingerprint, model, why, True, refined=info
             )
-        # made before the second listen had its own stage, or its words are gone: without
-        # the mark that they are stored, the sweep transcribes it again
+        # made before the second listen had its own stage, or its words are gone or another
+        # sentence's: without the mark that they are stored, the sweep transcribes it again
         meta.pop("words", None)
         return await _skipped(db, job, row, meta, out, fingerprint, model, tr.NO_WORDS, True)
 
