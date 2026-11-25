@@ -100,15 +100,16 @@ import Testing
 /// then read the defaults' data. The released Player's tabs were in no section: AppKit's
 /// outline gave them no drag, so a Mac stored hidden sections only; an order is read all the
 /// same.
-@Suite struct SidebarCarryOverTests {
+@Suite(.serialized) struct SidebarCarryOverTests {
     static let known = ["home", "libraries", "live", "search"]
     static let hiddenOnly = #"{"identifier":"EA330BA3-F44B-4AFB-8E6F-529F3526FD2E","perTabState":[{"base":{"explicit":{"_0":"player.section.search"}}},{"tabBarVisibility":{"automatic":{}},"visibility":{"hidden":{}}},{"base":{"explicit":{"_0":"player.section.home"}}},{"tabBarVisibility":{"automatic":{}},"visibility":{"visible":{}}},{"base":{"explicit":{"_0":"player.section.live"}}},{"tabBarVisibility":{"automatic":{}},"visibility":{"hidden":{}}}],"perSectionState":[]}"#
     static let orderAndHidden = #"{"identifier":"73AAF60F-88E8-4B86-B59A-06505DE4DD35","perTabState":[{"base":{"explicit":{"_0":"player.section.live"}}},{"tabBarVisibility":{"automatic":{}},"visibility":{"hidden":{}}},{"base":{"explicit":{"_0":"player.section.home"}}},{"tabBarVisibility":{"automatic":{}},"visibility":{"visible":{}}}],"perSectionState":[{"base":{"explicit":{"_0":"sec"}}},{"childrenIDs":[{"base":{"explicit":{"_0":"player.section.search"}}},{"base":{"explicit":{"_0":"player.section.home"}}},{"base":{"explicit":{"_0":"player.section.libraries"}}},{"base":{"explicit":{"_0":"player.section.live"}}},{"base":{"explicit":{"_0":"player.section.profile"}}}]}]}"#
     static let reset = #"{"identifier":"EA330BA3-F44B-4AFB-8E6F-529F3526FD2E","perTabState":[],"perSectionState":[]}"#
 
     private func with(_ tabs: Any?, kept: String? = nil, _ body: (UserDefaults) throws -> Void) throws {
-        let name = "maktaba.tests.carry.\(UUID().uuidString)"
+        let name = "maktaba.tests.carry"
         let defaults = try #require(UserDefaults(suiteName: name))
+        defaults.removePersistentDomain(forName: name)
         defer { defaults.removePersistentDomain(forName: name) }
         if let tabs { defaults.set(tabs, forKey: "player.tabs") }
         if let kept { defaults.set(kept, forKey: "player.mac.sidebar") }

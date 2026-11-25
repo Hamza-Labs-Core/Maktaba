@@ -161,8 +161,9 @@ import MaktabaKit
 
     /// An older Player's hidden sections carry over under the ids its tabs had.
     @Test func anOlderPlayersHiddenSectionsCarryOver() throws {
-        let name = "test.mac.carry.\(UUID().uuidString)"
+        let name = "test.mac.carry"
         let defaults = try #require(UserDefaults(suiteName: name))
+        defaults.removePersistentDomain(forName: name)
         defer { defaults.removePersistentDomain(forName: name) }
         let tabs = #"{"perSectionState":[],"perTabState":[{"base":{"explicit":{"_0":"player.section.live"}}},{"tabBarVisibility":{"automatic":{}},"visibility":{"hidden":{}}}]}"#
         defaults.set(Data(tabs.utf8), forKey: SidebarArrangement.tabsKey)
