@@ -127,9 +127,8 @@ class ChannelPlayback(
     fun streamEnded() {
         scope.launch {
             if (status != ChannelStatus.Playing) return@launch
-            stop()
             endedKey = "live.channelEnded"
-            status = ChannelStatus.Ended
+            over(ChannelStatus.Ended)
         }
     }
 
@@ -137,12 +136,24 @@ class ChannelPlayback(
     fun streamFailed() {
         scope.launch {
             if (status != ChannelStatus.Playing) return@launch
-            stop()
-            status = ChannelStatus.Failed(null, retryable = true)
+            over(ChannelStatus.Failed(null, retryable = true))
         }
     }
 
+    /**
+     * Nothing plays any more, and [why]: the home is not asked about the programme again, and
+     * away from home the remote session is ended rather than beating on behind the notice.
+     */
+    private suspend fun over(why: ChannelStatus) {
+        recheck?.cancel()
+        stop()
+        status = why
+        withContext(NonCancellable) { runCatching { source.close() } }
+    }
+
+    /** Pauses the channel; while one tunes, it opens paused. Nothing to pause behind a notice. */
     fun pause() {
+        if (status != ChannelStatus.Playing && status != ChannelStatus.Tuning) return
         paused = true
         pauseVideo()
     }
@@ -162,8 +173,14 @@ class ChannelPlayback(
         job?.cancel()
         job = scope.launch {
             opened++
-            show(u)
+            give(u)
         }
+    }
+
+    /** [u] in the player, which plays what it is given: paused again when Pause was pressed meanwhile. */
+    private suspend fun give(u: String) {
+        show(u)
+        if (paused) pauseVideo()
     }
 
     /** The player stops; nothing is paused any more. */
@@ -201,7 +218,7 @@ class ChannelPlayback(
             val u = local(s) ?: throw LiveFailure("network", "not a stream this player can play")
             url = u
             opened++
-            show(u)
+            give(u)
             status = ChannelStatus.Playing
         } catch (e: CancellationException) {
             throw e

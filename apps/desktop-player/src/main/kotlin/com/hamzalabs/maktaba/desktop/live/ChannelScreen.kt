@@ -135,7 +135,8 @@ fun ChannelScreen(id: String, players: Players = remember { Engine.players() }) 
                 }
                 ChannelStatus.Playing -> VideoSurface(player, Modifier.fillMaxSize())
                 is ChannelStatus.Failed -> Stopped(s.key?.let { t[it] } ?: t["live.cantPlay"], retry = if (s.retryable) playback::retry else null, close = { home.nav.back() })
-                ChannelStatus.Ended -> Stopped(t[playback.endedKey], retry = null, close = { home.nav.back() })
+                // it played, and ended: not "can't play", the sentence alone
+                ChannelStatus.Ended -> Stopped(t[playback.endedKey], retry = null, close = { home.nav.back() }, title = null)
                 is ChannelStatus.NotNow -> Stopped(
                     t["live.parental.slate"] + (s.retryAt?.let { "\n" + t["live.parental.back", com.hamzalabs.maktaba.desktop.watch.ParentalTime.next(it, t.lang)] } ?: ""),
                     retry = null, close = { home.nav.back() },
@@ -158,7 +159,8 @@ fun ChannelScreen(id: String, players: Players = remember { Engine.players() }) 
             IconButton(onClick = togglePause, modifier = Modifier.testTag("channel-pause")) {
                 if (playback.paused) Icon(Icons.Filled.PlayArrow, t["watch.play"], tint = Color.White) else Icon(Icons.Filled.Pause, t["watch.pause"], tint = Color.White)
             }
-            if (playback.paused) OutlinedButton(onClick = playback::backToLive, modifier = Modifier.testTag("back-to-live")) { Text(t["live.backToLive"]) }
+            // the live edge to go back to is a playing channel's, not one still tuning
+            if (playback.paused && playback.status == ChannelStatus.Playing) OutlinedButton(onClick = playback::backToLive, modifier = Modifier.testTag("back-to-live")) { Text(t["live.backToLive"]) }
             IconButton(onClick = { playback.next(live.lineup) }, modifier = Modifier.testTag("channel-next")) { Icon(Icons.Filled.KeyboardArrowDown, t["live.nextChannel"], tint = Color.White) }
             IconButton(onClick = { home.nav.back() }, modifier = Modifier.testTag("channel-close")) { Icon(Icons.Filled.Close, t["common.close"], tint = Color.White) }
         }
@@ -227,10 +229,10 @@ private fun DayGuide(channelId: String, live: LiveTvState) {
 }
 
 @Composable
-private fun Stopped(sentence: String, retry: (() -> Unit)?, close: () -> Unit) {
+private fun Stopped(sentence: String, retry: (() -> Unit)?, close: () -> Unit, title: String? = LocalTexts.current["live.cantPlay"]) {
     val t = LocalTexts.current
     Column(Modifier.padding(24.dp).testTag("channel-stopped"), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(t["live.cantPlay"], color = Color.White, style = MaterialTheme.typography.titleMedium)
+        if (title != null) Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium)
         Text(sentence, color = Color.White, textAlign = TextAlign.Center)
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (retry != null) Button(onClick = retry) { Text(t["common.retry"]) }

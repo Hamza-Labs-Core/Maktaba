@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.desktop.live
 
+import com.hamzalabs.maktaba.core.api.ChannelNow
 import com.hamzalabs.maktaba.core.api.LiveSource
 import com.hamzalabs.maktaba.core.api.RemoteTv
 import com.hamzalabs.maktaba.core.api.TvInfo
@@ -184,21 +185,27 @@ internal fun channelUrl(id: String) = "http://home.lan/stream/channel/$id/index.
 
 internal val twoChannels = listOf(LiveChannel("c1", 1, "One"), LiveChannel("c2", 2, "Two"))
 
-/** A channel's playback at home, its stream in [players]' video, wired as the channel screen does. */
+private object AtHome : RemoteTv {
+    override suspend fun info() = TvInfo()
+    override suspend fun tune(channelId: String, device: String) = error("no tune at home")
+    override suspend fun heartbeat(sessionId: String) = error("no beat at home")
+    override suspend fun end(sessionId: String) {}
+}
+
+/** A channel's playback at home (or on [remote]), its stream in [players]' video, wired as the channel screen does. */
 @OptIn(ExperimentalCoroutinesApi::class)
-internal fun TestScope.channelOnFakes(players: Players): Pair<ChannelPlayback, ChannelVideo> {
-    val atHome = object : RemoteTv {
-        override suspend fun info() = TvInfo()
-        override suspend fun tune(channelId: String, device: String) = error("no tune at home")
-        override suspend fun heartbeat(sessionId: String) = error("no beat at home")
-        override suspend fun end(sessionId: String) {}
-    }
+internal fun TestScope.channelOnFakes(
+    players: Players,
+    remote: RemoteTv = AtHome,
+    gate: (suspend (String) -> ChannelNow)? = null,
+): Pair<ChannelPlayback, ChannelVideo> {
     var cp: ChannelPlayback? = null
     val video = ChannelVideo(players, backgroundScope, onEnded = { cp?.streamEnded() }, onFailed = { cp?.streamFailed() }, nowMs = { currentTime })
-    val source = LiveSource(atHome, { channelUrl(it).toHttpUrl() }, backgroundScope, "test")
+    val source = LiveSource(remote, { channelUrl(it).toHttpUrl() }, backgroundScope, "test")
     val playback = ChannelPlayback(
         source, backgroundScope, local = { it.url.toString() },
         show = video::show, hide = video::hide, pauseVideo = video::pause, playVideo = video::play,
+        limited = { gate != null }, gate = gate, nowMs = { currentTime },
     ).also { cp = it }
     return playback to video
 }
