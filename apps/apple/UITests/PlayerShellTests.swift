@@ -163,6 +163,40 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertNil(PlayerUITestCase.cancelledTouches(in: nil), "no app, no answer")
     }
 
+    /// Only XCUITest's own "Failed to terminate" names a process to look for (#1678).
+    func testOnlyAFailureToTerminateNamesTheProcessLeft() {
+        func pid(_ said: String) -> pid_t? {
+            PlayerUITestCase.unterminated(XCTIssue(type: .system, compactDescription: said))
+        }
+        XCTAssertEqual(pid("Failed to terminate com.hamzalabs.maktaba.player:19635: Failed to terminate com.hamzalabs.maktaba.player:0"), 19635)
+        XCTAssertEqual(pid("Failed to terminate com.hamzalabs.maktaba.player.tablet:16867"), 16867)
+        XCTAssertNil(pid("Failed to terminate com.hamzalabs.maktaba.player:0"), "no process named")
+        XCTAssertNil(pid("Failed to launch com.hamzalabs.maktaba.player:12"))
+        XCTAssertNil(pid("the row: Failed to terminate com.hamzalabs.maktaba.player:12"), "a test's own words")
+    }
+
+    /// An app still running stays the failure it was; one gone is told by the kernel.
+    @MainActor
+    func testAnAppStillRunningIsNotTakenAsEnded() {
+        let me = ProcessInfo.processInfo.processIdentifier
+        XCTAssertTrue(PlayerUITestCase.isRunning(me))
+        XCTAssertFalse(PlayerUITestCase.isRunning(pid_t.max), "no such process")
+        var said: [String] = []
+        XCTAssertFalse(PlayerUITestCase.endedAfterAll(me, nil, patience: 0.5) { said.append($0) }, "still running")
+        XCTAssertFalse(PlayerUITestCase.endedAfterAll(pid_t.max, nil, patience: 0.5) { said.append($0) },
+                       "gone, but XCTest has no view of it")
+        XCTAssertEqual(said.map { $0.contains("it is still running") }, [true, false], "the log says which")
+    }
+
+    /// The issue recorded for it says all the first did; it is a new one, with no mark of its own.
+    func testAFailureToTerminateIsRecordedAsItWas() {
+        let first = XCTIssue(type: .system, compactDescription: "Failed to terminate a.b:7", detailedDescription: "more")
+        let again = PlayerUITestCase.withoutInterrupting(first)
+        XCTAssertEqual(again.type, first.type)
+        XCTAssertEqual(again.compactDescription, first.compactDescription)
+        XCTAssertEqual(again.detailedDescription, first.detailedDescription)
+    }
+
     /// A tap that should open a page is tapped again only when the page is not open and the
     /// app counted a touch cancelled during it; never when it landed or the app did not answer.
     func testOnlyACancelledTapThatOpenedNothingIsRetried() {
