@@ -55,7 +55,7 @@ func TestRestoreAtomicPsqlStopsFirst(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	began := time.Now()
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", io.Discard)
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "already exists") || !strings.Contains(err.Error(), "psql stopped") {
 		t.Fatalf("the error: %v", err)
 	}

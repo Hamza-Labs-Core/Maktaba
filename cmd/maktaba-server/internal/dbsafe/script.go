@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// copyScan reads the data section of a pg_restore script as it goes to psql: the COPY blocks
+// copyScan reads a pg_restore script with the tables and their rows as it goes to psql: the COPY blocks
 // in it, and whether the last one ended. A table's rows end in a line of `\.`, which is in the
 // dump's own file of them. Of a file cut short, which pg_restore does not always notice
 // (PostgreSQL 18's ends well), it is not there, and psql takes what comes next for rows: the
@@ -14,6 +14,7 @@ import (
 type copyScan struct {
 	copies int
 	inCopy bool
+	named  bool   // pg_restore said a table's rows come next
 	line   []byte // the line so far, its first scanLine bytes
 }
 
@@ -46,8 +47,10 @@ func (s *copyScan) end(line []byte) {
 	switch {
 	case s.inCopy:
 		s.inCopy = !bytes.Equal(line, []byte(`\.`))
-	case bytes.HasPrefix(line, []byte("COPY ")) && bytes.HasSuffix(line, []byte(" FROM stdin;")):
-		s.copies, s.inCopy = s.copies+1, true
+	case bytes.HasPrefix(line, []byte("-- Data for Name: ")) && bytes.Contains(line, []byte("; Type: TABLE DATA; ")):
+		s.named = true // not in a function's text, which may hold a COPY of its own
+	case s.named && bytes.HasPrefix(line, []byte("COPY ")) && bytes.HasSuffix(line, []byte(" FROM stdin;")):
+		s.copies, s.inCopy, s.named = s.copies+1, true, false
 	}
 }
 
