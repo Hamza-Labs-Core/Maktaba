@@ -4,6 +4,7 @@ package pgbundle
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"os/exec"
@@ -154,5 +155,76 @@ func TestRealStartAfterAKillWaitsForTheBackendsLeft(t *testing.T) {
 	}
 	if _, err := b.Backup(ctx, time.Now()); err != nil {
 		t.Fatalf("the restarted cluster's data: %v", err)
+	}
+}
+
+// The same for a private start (withServer: the 16 to 18 upgrade's recovery of a cluster
+// stopped hard, the others): it waits until the killed postmaster's processes are gone, and
+// comes up on the same data.
+func TestRealPrivateStartAfterAKillWaitsForTheBackendsLeft(t *testing.T) {
+	home := realHome(t)
+	if os.Geteuid() == 0 {
+		t.Skip("postgres refuses to run as root")
+	}
+	root, err := os.MkdirTemp("", "mkpg") // short: the unix socket path is limited
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	b := Bundle{Home: home, Data: filepath.Join(root, "pg"), Keys: filepath.Join(root, "keys"),
+		Backups: filepath.Join(root, "backups"), Port: testport.Free(t)}
+	ctx := context.Background()
+	if err := b.Prepare(ctx, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	// a file, not a buffer: the processes stopped below would keep a pipe open
+	logFile, err := os.Create(filepath.Join(root, "postgres.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer logFile.Close()
+	srv := exec.Command(b.Bin("postgres"), b.ServerArgs()...)
+	srv.Stdout, srv.Stderr = logFile, logFile
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	exited := make(chan error, 1)
+	go func() { exited <- srv.Wait() }()
+	for deadline := time.Now().Add(30 * time.Second); Ready(ctx, b.Addr(), AppRole, AppDatabase) != nil; time.Sleep(200 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the first start is not ready")
+		}
+	}
+	out, err := exec.Command("pgrep", "-P", strconv.Itoa(srv.Process.Pid)).Output()
+	if err != nil || len(strings.Fields(string(out))) == 0 {
+		t.Skipf("the postmaster's processes cannot be listed here (pgrep: %v)", err)
+	}
+	signalSlow := func(sig syscall.Signal) {
+		for _, f := range strings.Fields(string(out)) {
+			if pid, err := strconv.Atoi(f); err == nil {
+				_ = syscall.Kill(pid, sig)
+			}
+		}
+	}
+	signalSlow(syscall.SIGSTOP)
+	t.Cleanup(func() { signalSlow(syscall.SIGKILL) })
+	_ = srv.Process.Signal(syscall.SIGKILL)
+	select {
+	case <-exited:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the killed postmaster was not reaped in 30 s")
+	}
+	// what it did before: the one start, refused
+	if err := b.runServer(ctx, io.Discard, func() error { return nil }); !errors.Is(err, errShmInUse) {
+		t.Fatalf("a start beside the killed postmaster's processes: %v", err)
+	}
+	const held = 2 * time.Second
+	time.AfterFunc(held, func() { signalSlow(syscall.SIGKILL) })
+	began, ran := time.Now(), false
+	if err := b.WithServer(ctx, io.Discard, func() error { ran = true; return nil }); err != nil || !ran {
+		t.Fatalf("the private start: %v, ran %v", err, ran)
+	}
+	if d := time.Since(began); d < held-500*time.Millisecond || d > time.Minute {
+		t.Fatalf("took %s for a process that held the memory %s", d, held)
 	}
 }

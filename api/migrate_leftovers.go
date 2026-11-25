@@ -74,7 +74,13 @@ var createIndex = regexp.MustCompile(`^CREATE (UNIQUE )?INDEX `)
 // repairInvalidIndexes drops the INVALID leftovers of the migrations of dir (the staged
 // Postgres set) on db and builds again, CONCURRENTLY, those of the migrations goose has
 // recorded, saying each one.
-func repairInvalidIndexes(ctx context.Context, db *sql.DB, dir string) error {
+// plain (an offline run, migrate_offline.go): dropped and built without CONCURRENTLY, which
+// waits for every transaction older than it.
+func repairInvalidIndexes(ctx context.Context, db *sql.DB, dir string, plain bool) error {
+	concurrently := "CONCURRENTLY "
+	if plain {
+		concurrently = ""
+	}
 	current, err := goose.GetDBVersionContext(ctx, db)
 	if err != nil {
 		return fmt.Errorf("the schema's version: %w", err)
@@ -120,7 +126,7 @@ func repairInvalidIndexes(ctx context.Context, db *sql.DB, dir string) error {
 	}
 	for _, l := range found {
 		m := of[l.name]
-		if _, err := db.ExecContext(ctx, `DROP INDEX CONCURRENTLY IF EXISTS `+l.idx); err != nil {
+		if _, err := db.ExecContext(ctx, `DROP INDEX `+concurrently+`IF EXISTS `+l.idx); err != nil {
 			return fmt.Errorf("drop the invalid index %s: %w", l.idx, err)
 		}
 		if m.Version > current {
@@ -128,7 +134,7 @@ func repairInvalidIndexes(ctx context.Context, db *sql.DB, dir string) error {
 				"finish: dropped, %s builds it again\n", l.idx, filepath.Base(m.Source))
 			continue
 		}
-		def := createIndex.ReplaceAllString(l.def, "CREATE ${1}INDEX CONCURRENTLY IF NOT EXISTS ")
+		def := createIndex.ReplaceAllString(l.def, "CREATE ${1}INDEX "+concurrently+"IF NOT EXISTS ")
 		if def == l.def {
 			return fmt.Errorf("the invalid index %s of %s: its definition is not one to build again: %s", l.idx,
 				filepath.Base(m.Source), l.def)

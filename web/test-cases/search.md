@@ -675,6 +675,27 @@ The tab asks `POST /api/search/ai` (story 49.12) and reads its Server-Sent Event
   1. Open `/search?q=patience`. 2. Choose **AI mode**. 3. Choose **Results**. 4. Choose **AI mode** again.
 - **Expected:** Results is selected and searches; AI mode adds `tab=ai` and asks "patience" once; back on Results the same results show with no new search and the answer is stopped; AI mode again shows the stopped turn and does not ask again.
 
+### SRC-60b — AI mode opened as the results appear
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** choosing **AI mode** before the URL shows the results' `sid` keeps the `sid`; back on Results, no new search.
+
+### SRC-60c — A search that answers after AI mode was opened
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** the person stays in AI mode; back on Results, the results show with no new search.
+
+### SRC-60d — Results shows the search the URL names
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`, English and Arabic)
+- **Expected:** in AI mode, a recent search opened or Back to another entry, then **Results**, shows that search; AI mode and Back at once leave the next search in Results; new words and AI mode at once ask the new words; a search answering after the URL moved on does not rewrite it.
+
 ### SRC-61 — A link to AI mode does not search until Results opens
 
 - **Priority:** P1

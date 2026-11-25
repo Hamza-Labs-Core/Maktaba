@@ -48,6 +48,9 @@ type AppInstaller struct {
 	Rehearse bool
 	// Open opens a URL with the system (the app's deep link); tests replace it.
 	Open func(ctx context.Context, url string) error
+	// Logf writes to the run's log (nil: nothing): a start of the app that failed.
+	Logf     func(format string, a ...any)
+	nudgeErr string
 	// NudgeAfter and WaitApp: how long the app may take to answer before it is
 	// started, and to install once told to go before the run fails (90 s, 30 min).
 	NudgeAfter time.Duration
@@ -121,6 +124,11 @@ func (ai *AppInstaller) Extend(j *Journal, until time.Time) error {
 	return err
 }
 
+// RollingBack implements RollbackGuarder.
+func (ai *AppInstaller) RollingBack(j *Journal) error {
+	return layout.GuardRollingBack(ai.LauncherRoot, j.Job.RunID)
+}
+
 func (ai *AppInstaller) requests() requests { return requests{dir: ai.updatesDir(), now: ai.now} }
 
 func (ai *AppInstaller) nudgeAfter() time.Duration {
@@ -160,9 +168,23 @@ func (ai *AppInstaller) Order(j *Journal) error {
 func (ai *AppInstaller) Answer(j *Journal) (string, error) {
 	state, err := ai.requests().answer(j)
 	if err == nil && state == RequestOrdered {
-		ai.nudge.nudge(ai.requests(), j, ai.now(), ai.nudgeAfter(), ai.Open)
+		if nerr := ai.nudge.nudge(ai.requests(), j, ai.now(), ai.nudgeAfter(), ai.Open); nerr != nil {
+			ai.noteNudge(nerr)
+		}
 	}
 	return state, err
+}
+
+// noteNudge says why the app could not be started with its order (once per error: the
+// order is read every second).
+func (ai *AppInstaller) noteNudge(err error) {
+	if err.Error() == ai.nudgeErr {
+		return
+	}
+	ai.nudgeErr = err.Error()
+	if ai.Logf != nil {
+		ai.Logf("%v: the order waits for the app (open Maktaba on this machine)", err)
+	}
 }
 
 // InstallFailure implements InstallReporter: the failure the app reported.
@@ -487,7 +509,7 @@ func (ai *AppInstaller) Tools(j *Journal) (string, string) {
 func (ai *AppInstaller) Switch(_ context.Context, j *Journal) error {
 	if err := layout.WriteGuard(ai.LauncherRoot, layout.Guard{Version: layout.NormalizeVersion(j.Job.Version),
 		RunID: j.Job.RunID, Since: ai.now().UTC(), Deadline: guardDeadline(ai.now(), j).UTC(),
-		PreviousPayload: j.FromRef, Record: ai.Record}); err != nil {
+		MaxRunSec: int64(guardRun(j) / time.Second), PreviousPayload: j.FromRef, Record: ai.Record}); err != nil {
 		return Fail("switch_failed", "%v", err)
 	}
 	return nil

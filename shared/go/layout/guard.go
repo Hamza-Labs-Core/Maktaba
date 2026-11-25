@@ -5,8 +5,8 @@ package layout
 // orchestrator writes <launcher root>/updates/pending.json before it restarts onto a new
 // release; the launcher falls back to the previous release (a kept copy of the app's
 // payload, or the runtime directory that ran before) when the new one cannot stay up,
-// and marks the database record so the previous release puts back the dump taken
-// before the new one's migrations (shared with the layout's pending, Pending.Record).
+// and marks the database record held, so nothing is put back by itself and a person
+// chooses (shared with the layout's pending, Pending.Record).
 
 import (
 	"encoding/json"
@@ -33,12 +33,16 @@ type Guard struct {
 	// Deadline: not confirmed by then, the launcher falls back (zero: its own
 	// pending timeout).
 	Deadline time.Time `json:"deadline,omitzero"`
+	// MaxRunSec is the running time the release has to confirm (GuardBudget), set by the
+	// release that switched; RollingBack says its rollback is under way (GuardRollingBack).
+	MaxRunSec   int64 `json:"max_run_seconds,omitempty"`
+	RollingBack bool  `json:"rolling_back,omitempty"`
 	// PreviousPayload is the kept copy of the app payload that ran before (app
 	// bundle); PreviousRuntime the runtime directory that did (runtime copy).
 	PreviousPayload string `json:"previous_payload,omitempty"`
 	PreviousRuntime string `json:"previous_runtime,omitempty"`
-	// Record is the database's record (state/database.json) the fallback marks for
-	// the dump to be put back (a home's; "" on a node).
+	// Record is the database's record (state/database.json) the fallback marks held
+	// (MarkRecordHeld; a home's, "" on a node).
 	Record string `json:"record,omitempty"`
 }
 
@@ -158,7 +162,30 @@ func trimSpace(b []byte) []byte {
 // restores the dump before any role runs. It reports whether it marked the record; one
 // that names another release, or no dump, is left alone. Fields it does not know are
 // kept.
+//
+// Nothing in Maktaba marks a record restoring by itself any more (a failed update stops
+// and asks: MarkRecordHeld); this stays for the releases before 2026-11-24 that read it,
+// and for the tests that play them.
 func MarkRecordRestoring(path, failed, reason string) (bool, error) {
+	return markRecordFailed(path, failed, reason, "restoring")
+}
+
+// MarkRecordHeld marks the database's record so that no start puts anything back by
+// itself: the update to failed stopped after its migrations ran (or were running), and a
+// person decides how the database goes on (put the backup taken before them back, or
+// install a release that fixes the update). Its state becomes "held" with failed and
+// reason; version stays failed's, so every release older than failed refuses the
+// database (db_refused_older, the releases before 2026-11-24 included) instead of
+// putting the dump back, and every release since says what happened and the choices
+// (db_held). It reports whether it marked the record; one that names another release,
+// or no dump, is left alone. Fields it does not know are kept.
+func MarkRecordHeld(path, failed, reason string) (bool, error) {
+	return markRecordFailed(path, failed, reason, "held")
+}
+
+// markRecordFailed is MarkRecordRestoring and MarkRecordHeld: state is "restoring" or
+// "held". A record marked either way already is left as it is (marked).
+func markRecordFailed(path, failed, reason, state string) (bool, error) {
 	if path == "" {
 		return false, nil
 	}
@@ -174,17 +201,31 @@ func MarkRecordRestoring(path, failed, reason string) (bool, error) {
 		return false, fmt.Errorf("%s: %w", path, err)
 	}
 	str := func(k string) string { s, _ := rec[k].(string); return s }
-	if NormalizeVersion(str("version")) != NormalizeVersion(failed) || str("dump") == "" {
+	dump := str("dump")
+	if state == "held" && dump == "" {
+		// the dump an unconfirmed update's record withholds from older code
+		// (apppayload.Database.Unconfirmed); restoring is what that older code marks
+		dump = str("dump_unconfirmed")
+	}
+	if NormalizeVersion(str("version")) != NormalizeVersion(failed) || dump == "" {
 		return false, nil
 	}
 	switch str("state") {
 	case "migrated", "migrating":
-	case "restoring":
+	case "held":
 		return true, nil // marked already
+	case "restoring":
+		if state != "held" || str("by") != "" {
+			return true, nil // marked already (a person's restore is theirs)
+		}
+		// an older launcher or release marked it, with no person asking: held instead
 	default:
 		return false, nil
 	}
-	rec["state"], rec["failed"], rec["error"] = "restoring", str("version"), reason
+	rec["state"], rec["failed"], rec["error"] = state, str("version"), reason
+	// held is left alone by older code: it names its backup where every release reads it
+	rec["dump"] = dump
+	delete(rec, "dump_unconfirmed")
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	out, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -193,21 +234,93 @@ func MarkRecordRestoring(path, failed, reason string) (bool, error) {
 	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
 }
 
+// MaxGuardRun is the running time a guard or pending marker gives its release to confirm
+// when the release that switched set none (one from before 2026-11-24), and RollbackRun what
+// a rollback under way adds: its Down scripts are not stopped part way.
+const (
+	MaxGuardRun = 24 * time.Hour
+	RollbackRun = 6 * time.Hour
+)
+
+// GuardBudget is the running time a guard's release has to confirm: maxRunSec, what the
+// release that switched gave it (its database step's own cap and watch, which pass a day on
+// a large library; 0: MaxGuardRun), and RollbackRun when its rollback is under way. The
+// launcher counts it while it runs and never goes past it, whatever the deadline says
+// (research P5: the release being judged pushed the deadline 15 minutes ahead every minute,
+// without limit, so a release that hung with its watch alive was never timed out).
+func GuardBudget(maxRunSec int64, rollingBack bool) time.Duration {
+	d := MaxGuardRun
+	if maxRunSec > 0 {
+		d = time.Duration(maxRunSec) * time.Second
+	}
+	if rollingBack {
+		d += RollbackRun
+	}
+	return d
+}
+
 // ExtendGuard pushes the guard's deadline to until when the guard is runID's and its
 // deadline is earlier (the new release is busy starting); it reports whether it did.
 func ExtendGuard(root, runID string, until time.Time) (bool, error) {
 	g, err := ReadGuard(root)
-	if err != nil || g == nil || runID == "" || g.RunID != runID || !g.Deadline.Before(until) {
+	if err != nil || g == nil || runID == "" || g.RunID != runID {
 		return false, err
+	}
+	if !g.Deadline.Before(until) {
+		return false, nil
 	}
 	g.Deadline = until.UTC()
 	return true, WriteGuard(root, *g)
 }
 
-// UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the
-// release before failed: failed (still running) keeps the database its migrations made,
-// so the record says migrated again and no start puts the dump back. It reports whether
-// it changed the record.
+// ConfirmRecord says the update to version is confirmed (its watch passed): the record
+// names its backup where every release reads it. One that is not version's, migrated, or
+// withholds no backup, is left alone.
+func ConfirmRecord(path, version string) (bool, error) {
+	if path == "" {
+		return false, nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	str := func(k string) string { s, _ := rec[k].(string); return s }
+	if NormalizeVersion(str("version")) != NormalizeVersion(version) || str("state") != "migrated" || str("dump_unconfirmed") == "" {
+		return false, nil
+	}
+	rec["dump"], rec["confirmed"] = str("dump_unconfirmed"), true
+	delete(rec, "dump_unconfirmed")
+	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
+}
+
+// GuardRollingBack says the rollback of the guard's release is under way: the launcher gives
+// it RollbackRun more.
+func GuardRollingBack(root, runID string) error {
+	g, err := ReadGuard(root)
+	if err != nil || g == nil || runID == "" || g.RunID != runID || g.RollingBack {
+		return err
+	}
+	g.RollingBack = true
+	return WriteGuard(root, *g)
+}
+
+// UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the release
+// before failed: failed (still running) keeps the database its migrations made, so the
+// record says migrated again and no start puts the dump back. A held record stays held: its
+// Down scripts may have run in part, and the failed release must not migrate and start on
+// that by itself (a person chooses). It reports whether it changed the record.
 func UnmarkRecordRestoring(path, failed string) (bool, error) {
 	if path == "" {
 		return false, nil

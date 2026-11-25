@@ -49,11 +49,12 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -241,6 +242,21 @@ export function Search() {
   const { user } = useAuth();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
+  // The URL as this page last wrote it, else as rendered. The router renders a URL change in a
+  // transition, so `params` (and a callback's older one) can still be the URL before a write: a
+  // change to the URL starts from this one. A new location, Back too, has a new key.
+  const { key: urlKey } = useLocation();
+  const url = useRef(params);
+  useLayoutEffect(() => {
+    url.current = params;
+  }, [urlKey, params]);
+  const writeUrl = useCallback(
+    (p: URLSearchParams, replace: boolean) => {
+      url.current = p;
+      setParams(p, { replace });
+    },
+    [setParams]
+  );
   const urlQ = (params.get("q") ?? "").trim();
   const uMode = urlMode(params.get("mode"));
   const sid = params.get("sid") ?? "";
@@ -528,21 +544,28 @@ export function Search() {
     }
   }, []);
 
-  /** Shows the URL of a saved search; a replace unless `push`. */
+  /**
+   * Shows the URL of a saved search, in the tab the URL is on (one answering after the person
+   * moved to AI mode keeps them there); a replace unless `push`. A replace is of the same
+   * search's URL: one that has moved to another search is left alone. Whether it was shown.
+   */
   const showUrl = useCallback(
-    (s: SearchState, push = false) => {
-      if (!alive.current) return;
-      // a search answering after the person moved to AI mode keeps them there
-      setParams(
-        (prev) => {
-          const p = searchParamsOf(s);
-          if (prev.get("tab") === "ai") p.set("tab", "ai");
-          return p;
-        },
-        { replace: !push }
-      );
+    (s: SearchState, push = false): boolean => {
+      if (!alive.current) return false;
+      const now = url.current;
+      const p = searchParamsOf(s);
+      if (
+        !push &&
+        ((now.get("q") ?? "").trim() !== s.q ||
+          (urlMode(now.get("mode")) ?? s.mode) !== s.mode ||
+          JSON.stringify(selOf(now)) !== JSON.stringify(selOf(p)))
+      )
+        return false;
+      if (now.get("tab") === "ai") p.set("tab", "ai");
+      writeUrl(p, !push);
+      return true;
     },
-    [setParams]
+    [writeUrl]
   );
 
   /**
@@ -620,8 +643,8 @@ export function Search() {
         rememberSizes(s.sid, s);
         commit(s, vPage, vItems, tPage, tItems);
         setNotice(Boolean(opts.notice));
-        if (s.sid) {
-          lastRun.current = runKey(query, m, s.sort, s.sel, s.sid);
+        if (
+          s.sid &&
           showUrl({
             q: query,
             mode: m,
@@ -630,8 +653,9 @@ export function Search() {
             sid: s.sid,
             vp: vPage,
             tp: tPage,
-          });
-        }
+          })
+        )
+          lastRun.current = runKey(query, m, s.sort, s.sel, s.sid);
         void refreshRecent();
       } catch (e) {
         if (g !== gen.current) return;
@@ -879,7 +903,7 @@ export function Search() {
     if (!query) {
       if (urlQ) {
         lastRun.current = "";
-        setParams(new URLSearchParams());
+        writeUrl(new URLSearchParams(), false);
       }
       clearResults();
       return;
@@ -894,7 +918,7 @@ export function Search() {
       m === (uMode ?? modeRef.current) &&
       runKey(query, m, next.sort, next.sel, "") === runKey(urlQ, m, uSort, uSel, "");
     lastRun.current = runKey(query, m, next.sort, next.sel, "");
-    setParams(searchParamsOf({ q: query, mode: m, ...next }), { replace: same });
+    writeUrl(searchParamsOf({ q: query, mode: m, ...next }), same);
     void postSearch(query, m, next, { vp: 1, tp: 1 }, { youtube: withYouTube });
   }
 
@@ -1086,10 +1110,10 @@ export function Search() {
 
   /** The tab, in the URL (a replace: a tab is not a page of its own). */
   function selectTab(id: string) {
-    const p = new URLSearchParams(params);
+    const p = new URLSearchParams(url.current);
     if (id === "ai") p.set("tab", "ai");
     else p.delete("tab");
-    setParams(p, { replace: true });
+    writeUrl(p, true);
   }
 
   const results = (

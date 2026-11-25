@@ -360,8 +360,8 @@ func (c containerDeps) refuse(version string) {
 	_ = layout.WriteFileAtomic(filepath.Join(c.launcherRoot, "updates", imageRefusedFile), append(b, '\n'), 0o600)
 }
 
-// databaseRecord is the home's database record the launcher's fallback marks for the dump
-// to be put back ("" when there is none: not set up, or a machine without one).
+// databaseRecord is the home's database record the launcher's fallback marks held
+// ("" when there is none: not set up, or a machine without one).
 func databaseRecord(cfgPath string) string {
 	cfg, found, err := config.LoadFrom(cfgPath)
 	if err != nil || !found {

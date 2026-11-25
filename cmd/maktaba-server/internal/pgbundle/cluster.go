@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -278,6 +279,7 @@ func (b Bundle) hbaConf() string {
 	}
 	var s strings.Builder
 	s.WriteString("# Managed by Maktaba (pgbundle): written at every start, edits here are lost.\n")
+	s.WriteString(b.pausedHBA())
 	s.WriteString("# This machine: every role, with its password.\n")
 	s.WriteString("local   all          all                              scram-sha-256\n")
 	s.WriteString("host    all          all              127.0.0.1/32    scram-sha-256\n")
@@ -346,6 +348,10 @@ func (b Bundle) machinesFrom() []string {
 }
 
 func (b Bundle) writeHBA() error {
+	// one writer at a time (the machines' reach, a switch's freeze, the copies' pause): each
+	// writes what the markers say then, and none renames what another is writing
+	hbaMu.Lock()
+	defer hbaMu.Unlock()
 	path := filepath.Join(b.Data, "pg_hba.conf")
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, []byte(b.hbaConf()), 0o600); err != nil {
@@ -353,6 +359,9 @@ func (b Bundle) writeHBA() error {
 	}
 	return os.Rename(tmp, path)
 }
+
+// hbaMu is held while pg_hba.conf is written.
+var hbaMu sync.Mutex
 
 // clusterSQL lets the app role provision the machines: create their roles (and
 // their groups, which it then administers), their replication roles and slots, read

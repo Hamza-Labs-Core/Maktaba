@@ -163,8 +163,8 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 ### The library database could not be updated {#code-database}
 
 - **What it means:** The step that saves the library database and brings it up to date for the new version failed, or the changes failed when tried on a copy first, or the new version needs another database version than this machine has.
-- **Does Maktaba fix it itself?** In most cases: nothing was changed, or the update's own Down scripts undid its database changes and the previous version runs on the database as it knows it. That version is not installed again by itself. The whole backup taken before the update is put back only when those Down scripts fail, or when a change had already deleted data they cannot bring back. The reason then says so, and the logs say why.
-- **What you can do:** Read the reason and **See the logs**. When it says the database could not be put back, or the version is older than the database, [put a backup back](/help/updates#restore-backup).
+- **Does Maktaba fix it itself?** In most cases: nothing was changed, or the update's own Down scripts undid its database changes and the previous version runs on the database as it knows it. That version is not installed again by itself. Maktaba never puts the whole backup back by itself: when those Down scripts fail, or a change had already deleted data they cannot bring back, Maktaba stops, says why, and waits for you.
+- **What you can do:** Read the reason and **See the logs**. When Maktaba stopped and waits for you, choose one: put back the backup taken before the update on the [recovery page](/help/recovery) (**Restore a backup**: the changes made since that backup are lost), or install a newer release that fixes the update (it goes on from where the update stopped). When the version is older than the database, [put a backup back](/help/updates#restore-backup).
 
 ### The TV during an update {#code-tv}
 
@@ -186,7 +186,7 @@ An update is available. Admins open [Admin → Updates](/admin/updates) to see i
 
 ### The desktop app could not install the update {#code-desktop-app}
 
-- **What it means:** The Maktaba app on that machine could not replace itself: its folder needs an administrator, macOS blocks it, the download failed, or the app did not come back on the new version.
+- **What it means:** The Maktaba app on that machine could not replace itself: its folder needs an administrator, macOS blocks it, the download failed, or the app did not come back on the new version. Or the app never took the update: it was not running on that machine and could not be started, so the update stopped waiting for it at the end of its window (or after three hours).
 - **Does Maktaba fix it itself?** It keeps the version that runs, and tries again later when that can help.
 - **What you can do:** Follow the fix shown under the reason: it names the setting or the command. An app built on the machine itself cannot update: install the release by hand once.
 

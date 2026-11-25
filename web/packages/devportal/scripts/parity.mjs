@@ -3,7 +3,8 @@
 //
 //   - the sources: every guide has its Arabic twin (name.md and name.ar.md), and no Arabic
 //     file is left without its English one; CHANGELOG.ar.md has the same releases, the same
-//     sections and the same entries, in the same order, as CHANGELOG.md; the OpenAPI
+//     sections and the same entries, in the same order, as CHANGELOG.md, and each changelog
+//     fragment its Arabic pair (scripts/changelog.mjs); the OpenAPI
 //     overlay (shared/api/openapi.ar.json) translates every summary and description the
 //     OpenAPI description has, against its current English; the wiki's Arabic database
 //     (web/wiki-app/public/db/ar/) has every entry of the English one, translated from its
@@ -78,9 +79,9 @@ export function checkGuides(repo, dir, srcs) {
 }
 
 /** An Arabic markdown file is Arabic: its prose is mostly Arabic script. */
-export function checkArabicMarkdown(file, md) {
+export function checkArabicMarkdown(file, md, max = MAX_LATIN_SHARE) {
   const share = latinShare(markdownProse(md));
-  return share > MAX_LATIN_SHARE
+  return share > max
     ? [`${file}: ${Math.round(share * 100)}% of its prose is Latin script (most is not translated)`]
     : [];
 }

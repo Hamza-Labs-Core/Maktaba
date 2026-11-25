@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -205,6 +206,23 @@ func (r requests) set(j *Journal, kind, feed, state string) error {
 	return r.write(q)
 }
 
+// stage moves the run's order from ordered to staged, and says whether it did: an answer
+// that came meanwhile (staged, failed) and an order withdrawn or replaced stay as they are.
+func (r requests) stage(j *Journal) (bool, error) {
+	q, err := r.read()
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if q.RunID != j.Job.RunID || q.State != RequestOrdered {
+		return false, nil
+	}
+	q.State, q.Error = RequestStaged, ""
+	return true, r.write(q)
+}
+
 // failure is the failure the app reported for the run's order (nil: none).
 func (r requests) failure(j *Journal) *Failure {
 	q, err := r.read()
@@ -222,9 +240,11 @@ type nudger struct {
 	at  time.Time
 }
 
-func (n *nudger) nudge(r requests, j *Journal, now time.Time, after time.Duration, open func(context.Context, string) error) {
+// It returns the error of a start that failed (nil: none tried, or it started): the app
+// is not there to answer, and the order waits for it (research P10: the error was dropped).
+func (n *nudger) nudge(r requests, j *Journal, now time.Time, after time.Duration, open func(context.Context, string) error) error {
 	if open == nil {
-		return
+		return nil
 	}
 	if n.run != j.Job.RunID {
 		n.run, n.at = j.Job.RunID, now
@@ -234,8 +254,11 @@ func (n *nudger) nudge(r requests, j *Journal, now time.Time, after time.Duratio
 	}
 	if now.Sub(n.at) >= after {
 		n.at = now
-		_ = open(context.Background(), AppInstallURL+"?run="+j.Job.RunID)
+		if err := open(context.Background(), AppInstallURL+"?run="+j.Job.RunID); err != nil {
+			return fmt.Errorf("the app could not be started with its order (%s): %w", AppInstallURL, err)
+		}
 	}
+	return nil
 }
 
 // remove withdraws any order (the app forgets what it staged).

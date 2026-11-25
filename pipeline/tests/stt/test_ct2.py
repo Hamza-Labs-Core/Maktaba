@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import queue
 import sys
+import threading
 import types
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -570,6 +572,41 @@ async def test_a_load_failure_reaches_every_waiting_file_and_is_tried_again() ->
     with pytest.raises(RuntimeError):
         await t.transcribe(_audio(1, 30))
     assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_a_file_sent_as_the_failed_thread_ends_is_tried_by_a_new_one() -> None:
+    calls: list[int] = []
+
+    def loader(s: WhisperSettings) -> ct2.Loaded:
+        calls.append(1)
+        raise RuntimeError(f"no CUDA device, try {len(calls)}")
+
+    t = ct2.CT2Transcriber(WhisperSettings(model="fake/whisper"), loader=loader)
+    loop = asyncio.get_running_loop()
+    late: asyncio.Future[Any] = loop.create_future()
+
+    class Inbox(queue.Queue[Any]):
+        """The failed thread finds nothing more waiting, and a file is sent right then."""
+
+        sent: threading.Thread | None = None
+
+        def get_nowait(self) -> Any:
+            try:
+                return super().get_nowait()
+            except queue.Empty:
+                if self.sent is None:
+                    item = (_audio(1, 30), late, loop, None, None, 1.0, None)
+                    self.sent = threading.Thread(target=t._ensure_thread, args=(item,))
+                    self.sent.start()
+                    self.sent.join(0.5)  # it waits for the lock, or it is queued by now
+                raise
+
+    t._inbox = Inbox()
+    with pytest.raises(RuntimeError, match="try 1"):
+        await t.transcribe(_audio(1, 30))
+    with pytest.raises(RuntimeError, match="try 2"):
+        await asyncio.wait_for(late, 10)
 
 
 @pytest.mark.unit
