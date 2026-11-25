@@ -3,7 +3,9 @@
 # On a push to main that changes the portal, the wiki or a doc it publishes, by hand (Actions →
 # Deploy maktaba.dev → Run workflow), and monthly: each build renders security.txt with an
 # Expires 11 months after the build day (api/internal/security/disclosure.go,
-# ExpiryMonths), so the monthly deploy keeps it always 10 to 11 months ahead. Pull requests never deploy: ci.yml's
+# ExpiryMonths), so the monthly deploy keeps it always 10 to 11 months ahead. And daily: the
+# changelog page reads the release tags, so a new tag's section is on it within a day even with
+# nothing pushed. Pull requests never deploy: ci.yml's
 # devportal job builds and tests them. The deploy runs only after this run's own build,
 # tests and public-safety scan pass, and deploys the dist/ that build uploaded.
 #
@@ -25,6 +27,7 @@ on:
       - 'docs/developers/**'
       - 'CHANGELOG.md'
       - 'CHANGELOG.ar.md'
+      - 'changelog.d/**'
       - 'shared/api/openapi.json'
       - 'shared/api/openapi.ar.json'
       - 'shared/plugins/**'
@@ -40,6 +43,10 @@ on:
   # the 1st of each month, 06:17 UTC: security.txt's Expires rolls forward
   schedule:
     - cron: '17 6 1 * *'
+    # every day, 06:47 UTC: the changelog page puts each fragment in the release whose tag first
+    # has it (scripts/changelog.mjs). A push of main that changes what the site is built from
+    # deploys too; this is the latest a new tag's section waits. No release needs a step here.
+    - cron: '47 6 * * *'
 
 permissions:
   contents: read
