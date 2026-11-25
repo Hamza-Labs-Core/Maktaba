@@ -63,6 +63,12 @@ type rehearsalKit struct {
 	// from, this commit, and this commit as the release after it
 	prev, failed, cur, next string
 	rev                     int // this commit's newest migration slot
+	// guard is the last release whose launcher and server put a backup back by themselves
+	// (guard/: scenarios 21, 21b); "" in a kit without it
+	guard string
+	// prevVariant is the folder of the previous release's binaries ("prev"; under
+	// onGuardRelease "guard")
+	prevVariant string
 	// after is this commit as the release after next (story 51.18, scenario 13: a release
 	// that passes after a rollback); platform is the packs' (packs/<version>/: the
 	// tool.yt-dlp pack of cur, next and after and its components index). "" in a kit of a
@@ -88,7 +94,7 @@ func rehearsalOn(t *testing.T) {
 func loadKit(t *testing.T) *rehearsalKit {
 	t.Helper()
 	rehearsalOn(t)
-	k := &rehearsalKit{dir: os.Getenv("MAKTABA_REHEARSAL_KIT"), pgHome: os.Getenv("MAKTABA_REHEARSAL_PG_HOME"),
+	k := &rehearsalKit{prevVariant: "prev", dir: os.Getenv("MAKTABA_REHEARSAL_KIT"), pgHome: os.Getenv("MAKTABA_REHEARSAL_PG_HOME"),
 		pg18Home: os.Getenv("MAKTABA_REHEARSAL_PG18_HOME")}
 	if k.dir == "" || k.pgHome == "" {
 		t.Fatal("MAKTABA_REHEARSAL_KIT (tools/rehearsal/build.sh's --out) and MAKTABA_REHEARSAL_PG_HOME (a Postgres 16 with " +
@@ -106,6 +112,8 @@ func loadKit(t *testing.T) *rehearsalKit {
 		switch key {
 		case "PREV":
 			k.prev = val
+		case "GUARD":
+			k.guard = val
 		case "FAILED":
 			k.failed = val
 		case "CUR":
@@ -183,7 +191,7 @@ SELECT 1;
 // payloadSpec is one app payload: a variant of the kit's binaries, the version
 // payload.json says, and the migrations it ships beside the kit's.
 type payloadSpec struct {
-	variant string // prev, cur, next
+	variant string // prev, guard, cur, next
 	version string
 	extra   map[string]string // more migrations (name -> SQL)
 	// launcher is the variant whose launcher it ships ("": its own): an update leaves the
@@ -1121,10 +1129,25 @@ func (a *ownerSession) updateNow(version string) string {
 		t.Fatalf("check: %d %s", resp.StatusCode, body)
 	}
 	deadline := time.Now().Add(5 * time.Minute)
+	copying := time.Time{}
 	for {
 		resp, body = a.b.do("POST", web+"/api/cluster/updates/run", map[string]any{"confirm": true, "version": version}, a.csrf)
 		if resp.StatusCode == http.StatusAccepted {
+			if !copying.IsZero() {
+				a.m.r.logf("update now %s: taken %s after it was refused for a machine's copy", version, time.Since(copying).Round(time.Second))
+			}
 			break
+		}
+		// v0.3.163's Update now is refused while a machine copies the home's database (its
+		// scheduler's gate, met by an admin too): a person asks again once the copy is done.
+		// This commit's is not (RunNow)
+		if strings.Contains(string(body), "machine_copying") && a.m.selfVersion() == a.m.r.kit.prev && time.Now().Before(deadline) {
+			if copying.IsZero() {
+				copying = time.Now()
+				a.m.r.logf("update now %s: refused while a machine copies: %s", version, body)
+			}
+			time.Sleep(3 * time.Second)
+			continue
 		}
 		if resp.StatusCode != http.StatusConflict || time.Now().After(deadline) ||
 			!strings.Contains(string(body), "role_not_running") && !strings.Contains(string(body), "recent_crash") {

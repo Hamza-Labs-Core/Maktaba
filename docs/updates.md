@@ -483,7 +483,8 @@ from before it counts nothing; the release stops pushing the deadline itself at 
   EXISTS` had taken it for done.
 - **The machines' copies wait, then pause (since 2026-11-24).** An automatic update does not
   start while a machine is copying a table of the home's database (its first copy, or one made
-  anew: `machine_copying` on Admin → Updates); **Update now** does not wait. Before the
+  anew: `machine_copying` on Admin → Updates); **Update now** does not wait (v0.3.163's is refused until
+  the copy is done). Before the
   migrations the home waits for the table syncs still running, 10 minutes at most whatever the
   database does, then keeps the machines' copies out until the schema is settled: `pg_hba.conf`
   rejects their replication roles (`/^maktaba_rep_`; never the app role) and their sessions are
