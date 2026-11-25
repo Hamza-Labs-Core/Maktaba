@@ -65,6 +65,10 @@ jobs:
       - name: A simulator's settle check reads its own processes
         run: python3 tools/apple/sim-settle.py --self-test
 
+      # how a UI job turns its simulator's own services off, or starts one, and sees that it took
+      - name: A simulator's services are asked for until they are gone, or run
+        run: python3 tools/apple/sim-services.py --self-test
+
       # how a UI job keeps its simulator's logs and the app's crash reports
       - name: A simulator's logs and the app's crash reports are kept
         run: python3 tools/apple/sim-log.py --self-test
@@ -290,16 +294,10 @@ jobs:
           #   45495588048, twice; "does not have a process ID" in 45513857454).
           # - apsd retries its push connection 8 to 17 times a second for good: it has no device
           #   identity here. Each try writes some 80 log lines. It and diagnosticd, which reads
-          #   them, held more than one of the three cores, and kept 3 of 8 simulators from ever
-          #   settling below.
-          for service in com.apple.PosterBoard com.apple.apsd; do
-            xcrun simctl spawn "$udid" launchctl disable "user/foreground/$service" || true
-            xcrun simctl spawn "$udid" launchctl bootout "user/foreground/$service" || true
-            running=$(xcrun simctl spawn "$udid" launchctl list || true)
-            if grep -q "[[:space:]]$service\$" <<< "$running"; then
-              echo "::warning::$service still runs in the simulator: its load can fail a test (#1678)"
-            fi
-          done
+          #   them, held up to more than one of the three cores (136 % of one at the most), and
+          #   kept 3 of 8 simulators from ever settling below.
+          # until a list shows neither, in one budget (the calls are slow just after a boot)
+          python3 tools/apple/sim-services.py "$udid" --off com.apple.PosterBoard --off com.apple.apsd
           xcrun simctl ui "$udid" appearance dark
           # the simulator keeps the app's info and debug lines too (its subsystem is its bundle
           # id; a parent's config is not inherited): by default `log show` finds its errors and
@@ -533,6 +531,12 @@ jobs:
           # (no `simctl ui appearance` here: the tvOS runtime does not support it)
           xcrun simctl bootstatus "$udid" -b > /dev/null
           xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.tv --mode "level:debug,persist:debug"
+          # the keyboard's daemon, which a new simulator starts when a keyboard first opens: in two
+          # jobs' first test the simulator's new processes were all held for 15 and 27 s then, and
+          # the address typed meanwhile came in after the test had failed (jobs 138956933820 and
+          # 139001674314; a new process takes 25 ms, and kbd, once there, stays). So it runs before
+          # the first test.
+          python3 tools/apple/sim-services.py "$udid" --start system/com.apple.TextInput.kbd
           python3 tools/apple/sim-settle.py "$udid" "$RESULTS/tv-settle.log" --max 480
 
       - name: Run the TV UI tests
