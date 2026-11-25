@@ -293,7 +293,7 @@ def test_every_mutation_is_run_and_names_cases_that_exist() -> None:
     names = re.findall(r'^    "([\w-]+)": \("ops/', table, re.M)
     cases = set(re.findall(r'^        \("([^"]+)", ', text, re.M))
     noticed = {c for group in re.findall(r"\[((?:\"[^\"]+\"(?:, )?)+)\]\)", table) for c in re.findall(r'"([^"]+)"', group)}
-    assert len(names) >= 25 and noticed <= cases, noticed - cases
+    assert len(names) >= 33 and noticed <= cases, noticed - cases
     run = yaml.safe_load((ROOT / ".github/workflows/cloud-rehearsal.yml").read_text())["jobs"]
     assert run["single-node"]["strategy"]["matrix"]["part"] == ["1", "2", "3"]
     assert {"single-node", "single-node-reboots"} <= set(run["cloud-rehearsal"]["needs"])
@@ -306,9 +306,17 @@ def test_every_mutation_is_run_and_names_cases_that_exist() -> None:
 
 
 def test_the_nodes_address_is_in_no_run_log() -> None:
-    run = named("deploy", "The target")["run"]
-    assert 'echo "::add-mask::$host"' in run and run.index("::add-mask::") < run.index("NODE_IP=")
-    assert "echo \"node $host" not in run
+    # a step's env: is printed before the step runs, before any mask of its own: the address and the
+    # host key's line come as the target environment's secrets, which GitHub masks everywhere
+    text = (ROOT / ".github/workflows/cloud-deploy.yml").read_text()
+    assert not re.findall(r"vars\.\w*(?:HOST|KNOWN_HOSTS|_IP)\w*", text)
+    step = named("deploy", "The target")
+    assert step["env"]["NODE_HOST"] == "${{ secrets.NODE_HOST }}"
+    assert step["env"]["NODE_KNOWN_HOSTS"] == "${{ secrets.NODE_KNOWN_HOSTS }}"
+    for job in wf()["jobs"].values():
+        for s in job["steps"]:
+            for k, v in (s.get("env") or {}).items():
+                assert "vars." not in str(v) or k == "CLOUD_TLS", (s.get("name"), k)
 
 
 def test_every_mutation_still_finds_what_it_takes_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -70,23 +70,43 @@ saved() {
 	(cd "$DEPLOY_DIR" && env -i PATH="$PATH" HOME="${HOME:-/root}" ${vars[@]+"${vars[@]}"} docker compose \
 		-f "$STATE/pending/set/docker-compose.yml" --project-directory "$DEPLOY_DIR" --env-file "$STATE/pending/set/.env" "$@")
 }
+# the stack as the new release's compose file has it, before it is the node's (begin)
+BEGIN_WITH="" BEGIN_ENV=""
+begun() {
+	(cd "$DEPLOY_DIR" && env -i PATH="$PATH" HOME="${HOME:-/root}" docker compose \
+		-f "$BEGIN_WITH" --project-directory "$DEPLOY_DIR" --env-file "$BEGIN_ENV" "$@")
+}
 env_of() { grep -E "^$1=" "$DEPLOY_DIR/.env" 2>/dev/null | sed -n 1p | cut -d= -f2- || true; }
 
-# a service's running containers by their labels, whatever the compose file says by now
-containers() { docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1"; }
-running() { [ -n "$(containers "$1")" ]; }
-# stop_all SERVICE...: stopped, and seen to be (docker keeps a stopped container stopped at boot)
+# a service's containers by their labels, whatever the compose file says by now; -a: the ones that do
+# not run too. It fails when docker does not answer.
+containers() { # containers [-a] SERVICE
+	local all=()
+	if [ "$1" = -a ]; then all=(-a); shift; fi
+	docker ps -q ${all[@]+"${all[@]}"} --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1"
+}
+running() { local ids; ids="$(containers "$1" 2>/dev/null)" && [ -n "$ids" ]; }
+# stop_all SERVICE...: stopped and gone, and seen to be. Gone: docker starts at boot what it had not
+# been told to stop (a container that had failed at that moment). Their last lines are kept.
 stop_all() {
-	local s c try left
+	local s c ids try left
 	# a container that is restarting at that moment (it failed, and docker starts it again) can be
 	# missed once
 	for try in 1 2 3 4 5 6 7 8 9 10; do
 		for s in "$@"; do
-			for c in $(containers "$s"); do docker stop -t 30 "$c" >/dev/null 2>&1 || true; done
+			ids="$(containers -a "$s" 2>/dev/null)" || ids=""
+			for c in $ids; do
+				docker stop -t 30 "$c" >/dev/null 2>&1 || true
+				(umask 077; mkdir -p "$STATE/last-logs" && docker logs --tail 500 "$c" > "$STATE/last-logs/$s.log" 2>&1) 2>/dev/null || true
+				docker rm -f "$c" >/dev/null 2>&1 || true
+			done
 		done
 		left=""
 		for s in "$@"; do
-			if running "$s"; then left="$left $s"; fi
+			# no answer is not "nothing runs"
+			if ! ids="$(containers -a "$s" 2>/dev/null)"; then left="$left $s (docker does not answer)"
+			elif [ -n "$ids" ]; then left="$left $s"
+			fi
 		done
 		[ -n "$left" ] || return 0
 		sleep "$try"
@@ -168,7 +188,7 @@ UNIT
 }
 
 cmd_begin() {
-	local src tmp refs ref room p try was now tables=""
+	local src tmp refs ref room p try was now tables="" db=dc
 	src="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 	valid_id "${DEPLOY_ID:-}" || die "begin: name the deploy (DEPLOY_ID)"
 	if [ -z "${MAKTABA_CLOUD_TAG:-}" ] || [ -z "${MAKTABA_CADDY_TAG:-}" ]; then die "begin: MAKTABA_CLOUD_TAG and MAKTABA_CADDY_TAG are required"; fi
@@ -178,6 +198,7 @@ cmd_begin() {
 	esac
 	[ ! -f "$STATE/held" ] || { cat "$STATE/held" >&2; die "the node is held: a person decides first (maktaba-rollout unhold)"; }
 	[ ! -d "$STATE/pending" ] || die "begin: a deploy is under way ($(pending_id)): nothing was changed"
+	docker info >/dev/null 2>&1 || die "begin: docker does not answer: nothing was changed"
 	finish_commit
 	# a name used before would be answered with that deploy's output
 	if compgen -G "$STATE/jobs/$DEPLOY_ID.*" >/dev/null; then die "begin: deploy $DEPLOY_ID was here before: nothing was changed"; fi
@@ -202,12 +223,12 @@ cmd_begin() {
 	trap "rm -rf '$tmp'" EXIT
 	(
 		umask 077
+		# what compose only needs to read the file (setup.sh makes the real ones, which win)
+		printf 'MAKTABA_UID=%s\nMAKTABA_GID=%s\nPOSTGRES_PASSWORD=%s\n' 0 0 unused
 		if [ -f "$DEPLOY_DIR/.env" ]; then cat "$DEPLOY_DIR/.env"; else cat "$src/.env.example"; fi
 		for kv in "${!MAKTABA_@}" RELAY_DOMAIN API_DOMAIN APP_DOMAIN ACME_EMAIL RELAY_TLS; do
 			[ -z "${!kv:-}" ] || printf '\n%s=%s\n' "$kv" "${!kv}"
 		done
-		# what compose only needs to read the file (setup.sh makes the real ones)
-		printf '\nMAKTABA_UID=%s\nMAKTABA_GID=%s\nPOSTGRES_PASSWORD=%s\n' 0 0 unused
 	) > "$tmp/env"
 	refs="$(docker compose -f "$src/docker-compose.yml" --env-file "$tmp/env" config --images | sort -u)"
 	[ -n "$refs" ] || die "begin: the new compose file names no image"
@@ -227,13 +248,19 @@ cmd_begin() {
 	printf '%s\n' "$DEPLOY_ID" > "$STATE/pending.new/id"
 	# whatever there is in the database, before any deploy, a first one again included
 	if has_database; then
-		dc up -d --wait postgres </dev/null >/dev/null 2>&1 || die "begin: the database does not come up: nothing was changed"
-		tables="$(psql_as dc "$DEPLOY_DIR/.env" "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')")" || die "begin: the database can't be read: nothing was changed"
+		if ! dc up -d --wait --wait-timeout 180 postgres </dev/null >/dev/null 2>&1; then
+			# a failed first deploy's own compose file may be what breaks it: the new release's then
+			first_deploy || die "begin: the database does not come up: nothing was changed"
+			BEGIN_WITH="$src/docker-compose.yml" BEGIN_ENV="$tmp/env" db=begun
+			log "the database does not come up with the failed deploy's compose file: with this one's"
+			begun up -d --wait --wait-timeout 180 postgres </dev/null >/dev/null 2>&1 || die "begin: the database does not come up: no file was changed"
+		fi
+		tables="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')")" || die "begin: the database can't be read: nothing was changed"
 	fi
 	if [ "$tables" = 0 ] && first_deploy; then
 		log "the database is empty: nothing to back up" # a first deploy cut off before its migrations
 	elif [ -n "$tables" ]; then
-		DEPLOY_DIR="$DEPLOY_DIR" ROLLOUT_LOCKED=1 bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
+		DEPLOY_DIR="$DEPLOY_DIR" ROLLOUT_LOCKED=1 BACKUP_COMPOSE="$BEGIN_WITH" BACKUP_COMPOSE_ENV="$BEGIN_ENV" bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
 	fi
 	if first_deploy; then
 		touch "$STATE/pending.new/first"
@@ -345,9 +372,25 @@ cmd_apply() {
 	echo "__maktaba_deploy_complete__"
 }
 
+STOPPED="The relay, api and worker are stopped."
+NOT_STOPPED="NOT ALL of the relay, api and worker could be stopped yet (the node goes on trying): see docker ps."
+# a held node whose app could not be stopped when it was held
+stop_held() {
+	local what
+	[ -f "$STATE/not-stopped" ] || return 0
+	mapfile -t what < "$STATE/not-stopped"
+	stop_all "${what[@]}" || return 1
+	sed -i "s/^NOT ALL of the relay.*see docker ps\.\( The database.*\)/$STOPPED\1/" "$STATE/held"
+	rm -f "$STATE/not-stopped"
+}
 hold() { # hold WHY: stop the app, say why, leave the rest to a person
-	local stopped="The relay, api and worker are stopped."
-	stop_all "${APP[@]}" || stopped="NOT ALL of the relay, api and worker could be stopped: see docker ps."
+	local stopped="$STOPPED" what=("${APP[@]}")
+	[ ! -f "$STATE/pending/first" ] || what+=(caddy)
+	if ! stop_all "${what[@]}"; then
+		# the watch, and a boot, go on trying
+		stopped="$NOT_STOPPED"
+		printf '%s\n' "${what[@]}" > "$STATE/not-stopped" || true
+	fi
 	{
 		echo "HELD $(date -u +%FT%TZ): $1"
 		echo "$stopped The database is as the migrations and any Down"
@@ -452,7 +495,11 @@ restore() { # restore WHY: back to the saved set; 0 restored (or nothing to), 1 
 	# a commit of it that was cut off before the saved set went is undone with it
 	if [ "$(cat "$STATE/committed-id" 2>/dev/null)" = "$(pending_id)" ]; then rm -f "$STATE/committed.new" "$STATE/committed-id"; fi
 	if [ -f "$STATE/pending/first" ]; then
-		stop_all "${APP[@]}" caddy || { hold "a failed first deploy does not stop ($why)"; return 1; }
+		if ! stop_all "${APP[@]}" caddy; then
+			log "once more, when docker answers"
+			docker_ready || true
+			stop_all "${APP[@]}" caddy || { hold "a failed first deploy does not stop ($why)"; return 1; }
+		fi
 		touch "$STATE/no-release" || { hold "the state folder can't be written ($why)"; return 1; }
 		drop_pending || { hold "the saved set can't be dropped ($why)"; return 1; }
 		err "a first deploy failed: there is no earlier release to go back to, so the stack is stopped, and stays so at the next boot"
@@ -577,8 +624,11 @@ cmd_run_job() {
 }
 
 cmd_watch() {
-	[ -d "$STATE/pending" ] || exit 0
-	[ ! -f "$STATE/held" ] || exit 0
+	if [ ! -d "$STATE/pending" ] && [ ! -f "$STATE/held" ]; then exit 0; fi
+	if [ -f "$STATE/held" ]; then
+		stop_held || true
+		exit 0
+	fi
 	if [ -f "$STATE/pending/applying" ] || [ -f "$STATE/pending/restoring" ]; then
 		restore "a command of the deploy was stopped part way" || true
 	elif lease_over; then
@@ -588,6 +638,7 @@ cmd_watch() {
 
 cmd_boot() {
 	if [ -f "$STATE/held" ]; then
+		stop_held || true
 		cat "$STATE/held" >&2
 		exit 1
 	fi
@@ -622,7 +673,8 @@ cmd_unhold() {
 		rm -rf "$STATE/held-set"
 		mv -T "$STATE/pending" "$STATE/held-set"
 	fi
-	rm -f "$STATE/held" "$STATE/reserve" "$DEPLOY_DIR/.reserve"
+	# the node is as it is now, whether or not a first deploy failed there before
+	rm -f "$STATE/held" "$STATE/not-stopped" "$STATE/no-release" "$STATE/reserve" "$DEPLOY_DIR/.reserve"
 	log "not held any more; the set from before the failed deploy is in $STATE/held-set"
 }
 
@@ -671,7 +723,8 @@ main() {
 			# a command at work starts the stack itself, the one it is at; the unit's start would
 			# start another. The watch's look takes a moment: it is waited for.
 			exec 9>"$STATE/lock"
-			flock -w "${BOOT_WAIT:-30}" 9 || exit 1
+			# 255: systemd tries again (Restart=on-failure); any other code would skip the unit for good
+			flock -w "${BOOT_WAIT:-30}" 9 || exit 255
 			;;
 	esac
 	shift || true

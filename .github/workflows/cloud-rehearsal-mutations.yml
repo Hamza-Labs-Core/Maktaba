@@ -46,6 +46,14 @@ jobs:
           - first-by-what-runs
           - truncated-dump
           - no-reserve
+          - no-answer-is-stopped
+          - stopped-not-gone
+          - held-and-forgotten
+          - boot-gives-up
+          - one-postgres-only
+          - boots-only-committed
+          - first-while-it-serves
+          - unhold-keeps-no-release
           - boots-a-failed-first
           - first-unsaved
           - app-not-stopped

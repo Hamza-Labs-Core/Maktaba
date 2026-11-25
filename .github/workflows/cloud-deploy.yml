@@ -25,8 +25,8 @@
 # the CLOUD_TLS variable is "http" with the records made by hand), MAKTABA_LICENSE_SIGNING_KEY
 # (the licence signing seed whose public half releases embed, docs/licensing.md: without it a
 # node signs with its own key, which no released home trusts), MAKTABA_SYMBOLS_TOKEN.
-# Variables: QA_HOST, QA_SSH_USER, QA_SSH_KNOWN_HOSTS; RELAY_HOST, RELAY_SSH_USER,
-# RELAY_SSH_KNOWN_HOSTS. Each target's names are in deploy/cloud-relay/targets/<target>.env.
+# Each environment's own secrets (qa, prod): NODE_HOST and NODE_KNOWN_HOSTS, the node's address and its
+# pinned host key. Each target's names are in deploy/cloud-relay/targets/<target>.env.
 name: Cloud deploy
 run-name: cloud deploy ${{ inputs.target || 'qa' }} ${{ inputs.tag || 'latest release' }}
 
@@ -297,33 +297,27 @@ jobs:
       - name: The target
         id: target
         env:
-          QA_HOST: ${{ vars.QA_HOST }}
-          QA_USER: ${{ vars.QA_SSH_USER }}
-          QA_KH: ${{ vars.QA_SSH_KNOWN_HOSTS }}
-          PROD_HOST: ${{ vars.RELAY_HOST }}
-          PROD_USER: ${{ vars.RELAY_SSH_USER }}
-          PROD_KH: ${{ vars.RELAY_SSH_KNOWN_HOSTS }}
+          # the target's environment has its own two (secrets, so that no public log prints them)
+          NODE_HOST: ${{ secrets.NODE_HOST }}
+          NODE_KNOWN_HOSTS: ${{ secrets.NODE_KNOWN_HOSTS }}
           HAS_DNS_TOKEN: ${{ secrets.CLOUDFLARE_DNS_TOKEN != '' }}
           CLOUD_TLS: ${{ vars.CLOUD_TLS }}
         run: |
           set -euo pipefail
           grep -E '^[A-Z_]+=' "deploy/cloud-relay/targets/$TARGET.env" >> "$GITHUB_ENV"
-          if [ "$TARGET" = prod ]; then host="$PROD_HOST" user="$PROD_USER" kh="$PROD_KH"; else host="$QA_HOST" user="$QA_USER" kh="$QA_KH"; fi
-          [ -n "$host" ] && [ -n "$user" ] && [ -n "$kh" ] || { echo "::error::the $TARGET host, user or known_hosts variable is not set"; exit 1; }
+          [ -n "$NODE_HOST" ] && [ -n "$NODE_KNOWN_HOSTS" ] || { echo "::error::the $TARGET environment's NODE_HOST or NODE_KNOWN_HOSTS secret is not set"; exit 1; }
           if [ "$HAS_DNS_TOKEN" = true ]; then tls=dns
           elif [ "$CLOUD_TLS" = http ]; then tls=http
           elif [ "$TARGET" = qa ]; then tls=internal
           else echo "::error::production needs public certificates: the CLOUDFLARE_DNS_TOKEN secret (or CLOUD_TLS=http with the records made by hand)"; exit 1
           fi
-          # every run's log is public; the node's address is nobody's business there
-          echo "::add-mask::$host"
           {
-            echo "NODE_IP=$host"
-            echo "NODE_USER=$user"
+            echo "NODE_IP=$NODE_HOST"
+            echo "NODE_USER=root"
             echo "RELAY_TLS=$tls"
           } >> "$GITHUB_ENV"
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$kh" > ~/.ssh/known_hosts_node
+          printf '%s\n' "$NODE_KNOWN_HOSTS" > ~/.ssh/known_hosts_node
           echo "node: $TARGET, certificates: $tls"
 
       - name: SSH to the node (the pinned host key)

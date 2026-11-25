@@ -31,8 +31,10 @@ sys.dont_write_bytecode = True
 import rollout_rehearsal as rr  # noqa: E402
 
 REPO, OUT, MUTATE = rr.REPO, rr.OUT, rr.MUTATE
-IMAGE_AT = "https://cloud-images.ubuntu.com/releases/26.04/release"
+# one image, by its hash (a dated folder of Ubuntu's releases, which keeps it)
+IMAGE_AT = "https://cloud-images.ubuntu.com/releases/26.04/release-20261108"
 IMAGE = "ubuntu-26.04-server-cloudimg-amd64.img"
+IMAGE_SHA256 = "7b90593f5532b49b7e3fe3d2743f0d1f0d822e5b07cebcd8e00c0df8069ecab9"
 GUEST_REGISTRY = "10.0.2.2:5000/maktaba-cloud"  # the runner, as the machine's network names it
 PORT = 2222
 VM = Path("/var/tmp/reboot-rehearsal")
@@ -53,8 +55,7 @@ def make_machine() -> None:
     rr.sh("apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils", timeout=600)
     assert Path("/dev/kvm").exists(), "no KVM on this runner"
     VM.mkdir(mode=0o700, parents=True, exist_ok=True)
-    rr.sh(f"cd {VM} && curl -fsSL --retry 5 -o SHA256SUMS {IMAGE_AT}/SHA256SUMS && curl -fsSL --retry 5 -o {IMAGE} {IMAGE_AT}/{IMAGE} && "
-          f"grep -E '[ *]{IMAGE}$' SHA256SUMS | sha256sum -c -", timeout=900)
+    rr.sh(f"cd {VM} && curl -fsSL --retry 5 --retry-all-errors -o {IMAGE} {IMAGE_AT}/{IMAGE} && echo '{IMAGE_SHA256}  {IMAGE}' | sha256sum -c -", timeout=900)
     rr.sh(f"cd {VM} && rm -f id id.pub host host.pub disk.qcow2 && ssh-keygen -q -t ed25519 -N '' -f id && ssh-keygen -q -t ed25519 -N '' -f host && "
           f"qemu-img create -q -f qcow2 -F qcow2 -b {IMAGE} disk.qcow2 24G")
     host_key = "".join("    " + line + "\n" for line in (VM / "host").read_text().splitlines())

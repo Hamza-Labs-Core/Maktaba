@@ -10,7 +10,7 @@
 
 | | QA | Production |
 |---|---|---|
-| Host | `QA_HOST` (Hetzner, Helsinki) | `RELAY_HOST` (Hetzner, Helsinki) |
+| Host (Hetzner, Helsinki) | environment `qa`'s secret `NODE_HOST` | environment `prod`'s secret `NODE_HOST` |
 | Size | 1 vCPU, 2 GB | 2 vCPU, 4 GB |
 | Names | `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev`, `staging-app.maktaba.dev` | `relay.maktaba.tv`, `*.relay.maktaba.tv`, `api.maktaba.tv`, `app.maktaba.tv` |
 | Who uses it | the deploy's tests, never people | the household |
@@ -131,7 +131,10 @@ A rollback, on the node:
    restarted under it) is done once more when Docker answers, before the node is held.
 
 A **held** node has its relay, api and worker stopped, refuses deploys and does not start at boot;
-`maktaba-rollout status` says why and where the saved set and the backups are. A dump is never put
+`maktaba-rollout status` says why and where the saved set and the backups are. When Docker did not
+answer, it says that not all of them could be stopped, and the node goes on trying each minute and at
+boot. The stopped containers are removed (their last lines are in
+`/var/lib/maktaba-cloud-deploy/last-logs`), so that Docker can't start one again. A dump is never put
 back by itself. A person sets the node right, then `maktaba-rollout unhold`. A node that reboots
 during a deploy restores first (the stack's unit asks before it starts, and never starts anything
 while a command is at work), and a deploy that finds an earlier one cut off undoes it before it
