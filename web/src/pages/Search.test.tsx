@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Route, useLocation } from "react-router-dom";
+import { Route, useLocation, useNavigate, type NavigateFunction } from "react-router-dom";
 
 const { post, get, del } = vi.hoisted(() => ({
   post: vi.fn(),
@@ -98,8 +98,10 @@ const getCalls = (prefix: string) =>
 const problem = (status: number, title: string) =>
   new ApiError({ type: "about:blank", title, status });
 
+let go: NavigateFunction;
 function Loc() {
   const { pathname, search } = useLocation();
+  go = useNavigate();
   return <span data-testid="loc">{pathname + search}</span>;
 }
 const loc = () => screen.getByTestId("loc").textContent ?? "";
@@ -1040,6 +1042,45 @@ describe("Search results redesign (test-cases/search.md SRC-28..)", () => {
     ]);
     expect(screen.getByRole("combobox", { name: "Mode" })).toHaveValue("fts");
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("SRC-32b: a link past the last page and in another order: the last page, the search's own order", async () => {
+    const corpus = { titles: manyTitles(45), transcripts: manyTranscripts(3) };
+    serve(corpus, { existing: { "sid-old": { q: "fox", mode: "fts", sort: "matches", corpus } } });
+    renderSearchPage("/search?q=fox&mode=fts&sort=newest&sid=sid-old&vp=9");
+    await waitFor(() => expect(rowTitles(titlesSection())[0]).toBe("Title 41"));
+    await waitFor(() => expect(locParams().get("sort")).toBe("matches"));
+    expect(locParams().get("vp")).toBe("3");
+    expect(locParams().get("sid")).toBe("sid-old");
+  });
+
+  it("SRC-22b: an import asks again in the order on screen, and the URL has the new search", async () => {
+    const corpus = { titles: [titleVideo("v7", "Lesson")], transcripts: [] };
+    serve(corpus, {
+      ytAvailable: true,
+      existing: { "sid-old": { q: "fox", mode: "hybrid", sort: "matches", corpus } },
+      otherPost: () => ({ staged: true }),
+    });
+    const answer = get.getMockImplementation()!;
+    get.mockImplementation(async (url: string) =>
+      url.startsWith("/api/search/youtube?")
+        ? { items: [{ youtube_id: "defdefdefde", title: "Other", match: { state: "none" } }] }
+        : (answer(url) as unknown)
+    );
+    renderSearchPage("/search", { user: adminUser });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("checkbox", { name: "Also search YouTube" }));
+    // a link that names another order than the search's own: the URL follows the search
+    act(() => void go("/search?q=fox&mode=hybrid&sort=newest&sid=sid-old"));
+    await user.click(await screen.findByRole("button", { name: "Import" }));
+    expect(locParams().get("sort")).toBe("matches");
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByLabelText(/Lesson/));
+    await user.click(within(dialog).getByRole("button", { name: "Import" }));
+    await waitFor(() => expect(searchCalls()).toHaveLength(1));
+    expect(searchCalls()[0]![1]).toMatchObject({ q: "fox", sort: "matches" });
+    await waitFor(() => expect(locParams().get("sid")).toBe("sid-1"));
+    expect(locParams().get("sort")).toBe("matches");
   });
 
   it("SRC-33: an expired sid runs the search again, keeps the pages (clamped) and never mixes sids", async () => {

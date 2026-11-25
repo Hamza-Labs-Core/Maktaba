@@ -73,15 +73,7 @@ final class PlayerBrandTests: PlayerUITestCase {
     /// As `shot`, named `player-<iphone|ipad>-<language>-<name>` by this test's language.
     private func brandShot(_ name: String) {
         let full = "player-\(isPad ? "ipad" : "iphone")-\(shotLanguage)-\(name)"
-        let png = app.screenshot().pngRepresentation
-        let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
-        a.name = full
-        a.lifetime = .keepAlways
-        add(a)
-        if let dir = ProcessInfo.processInfo.environment["MAKTABA_SHOTS"], !dir.isEmpty {
-            try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-            try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(full).png"))
-        }
+        keep(app.screenshot().pngRepresentation, as: full)
     }
 
     private func expectBrand(_ language: String, on screen: String, theme: String) {
