@@ -1,15 +1,17 @@
 ---
 schema: 1
-tag: v0.3.163
-up_to_commit: e27d85787
-built_from: v0.3.162
+tag: v0.3.164
+up_to_commit: 77815eaf4
+built_from: v0.3.163
 ---
 
-# Trail snapshot: v0.3.163
+# Trail snapshot: v0.3.164
 
 ## Keep doing
 
 **Working**
+- Search specs as well as code when retiring a target or bundle ID; a wording-only specs change runs the wiki jobs, not platform jobs. (#1721)
+- Check authorization at every entry point and re-check existing connections when access changes; copying another row's value during insertion requires the same lock as its writers, with reads in a statement after the lock. (d20261124-cloud-claim-races)
 - File product decisions through the shared decisions inbox with one recommendation and the full context; do not ask for a decision in chat or a pull request. (#1610)
 - Write each changelog entry as an English/Arabic pair under `changelog.d/`; never fold fragments into a release commit, and rehearse migration tools against real open PR refs. (#1669)
 - Write follow-up specs from the built code, not the parent spec, and check a code inventory's key claims before putting them in a story. (#1613, #1629)
@@ -90,6 +92,8 @@ built_from: v0.3.162
 - Keep a read-only account's personal state open as one prefix (`/api/me/`) rather than route by route. (#1454)
 
 **Releases and live**
+- Prove deploy rollback by comparing the whole node before and after every injected failure, and remove each guarantee to show that its rehearsal case fails. Run remote apply and rollback as node-owned units, rank all migration refusals, and rehearse boot on a real VM for the few decisive cases. (d20261124-cloud-deploy-goes-back, d20261124-cloud-deploy-without-its-runner, d20261125-cloud-first-deploy-stays-down)
+- Exercise cloud deployment end to end with a real released home, and test restores on the real prior database and extensions; simulated homes and incomplete rigs miss licensing, linking, schema and extension failures. Number cloud migrations above the newest until applied-set readiness ships everywhere. (d20261124-cloud-single-node-qa, #1716, #1727)
 - Homes read Maktaba's small signed, platform-filtered release feed first and fall back to GitHub when it is unreachable, older, or too old; a refused feed stops the check. Measure external responses with the product's exact request and exercise the same code path in CI. (#1597, #1599)
 - A failed update holds for a person instead of restoring a dump automatically; a newer release can continue from the held database. Command-line updates confirm themselves, guard deadlines count running time rather than wall time, and automatic installs retry the catalog and hold on actual failure instead of age alone. For each step, identify which release's code runs it; the updater research recommends an old, trusted judge separate from the release being installed. (#1601, #1605, #1607, #1608)
 - Before migrations, wait out active table syncs and keep replica logins out through `pg_hba.conf` until the schema settles; offline Up index builds are plain, not concurrent. Every rollback path targets the recorded schema, including a database already on a kept schema. (d20261124-dump-instead-of-down, #1609, #1663)
@@ -116,6 +120,8 @@ built_from: v0.3.162
 - Prove a new Postgres major's tree on each built payload — the version, the preload, the extensions, a query through its index, the schema migrating — with a `pg_upgrade` of the payload's own cluster. (#1441)
 
 **Tests and CI**
+- After a distributed-timing fix, remove each side in turn and require a test failure; keep metric mutation in one function so shutdown and close cannot count the same cut twice. (#1717)
+- Measure setup commands before bounding them, and read warnings as well as green shards: a timeout that cuts service setup can silently undo it. Use recordings and model-versus-screen state to locate UI races instead of extending waits. (#1713, #1729, #1738)
 - Pass another job's build through `needs:` and an artifact: a queued job holds no runner, while a step polling for another job can starve its own build. (#1653, #1655)
 - Regenerate help mockups when their source topics change, and make the generated-file check run for every input the generator reads. (#1675, #1694)
 - In a `file://` Playwright e2e, set state through browser context or the UI rather than an init script touching early `localStorage`; reproduce the fix under the same load as the failure. (#1679)
@@ -321,6 +327,8 @@ built_from: v0.3.162
 
 ## Stop doing
 
+- Treating a failed query as an empty answer, a first-refusal migration check as sufficient, or a mutation test's unrelated failure as proof that it caught the mutation. (d20261124-cloud-deploy-without-its-runner, d20261125-cloud-first-deploy-stays-down)
+- Sending account mail without abuse limits that preserve the recipient's access; per-address daily caps, link supersession and Origin-only bot checks each create lock-out or bypass paths. (#1716)
 - Naming a woman or girl in a fixture whose screen can be captured. (#1582)
 - Deciding whether a SQL statement wrote from timestamp equality; return the decision itself. (#1587)
 - Restoring a whole dump merely because a migration failed part way, or adding new state for an older release to honour instead of checking that release's real rules. (d20261124-dump-instead-of-down, #1605, #1670)
@@ -508,6 +516,9 @@ built_from: v0.3.162
 - Anything computed again from a kept search (facets, counts) applies the caller's current scope, as its pages do: the kept set was made under the old scope. (d20261122-search-state-kept)
 
 **CI and releases**
+- Cloud account mail uses a durable outbox with uniform enqueue-only handlers; token creation waits for mail capacity, and consuming one link ends the rest. A bucket that refills N per hour can release 2N−1 initially, and provider sending region is not storage region. Goose's `GetDBVersion` is the last applied migration, not the highest, so a late lower number makes `AtHead` false. (#1716)
+- Cloud single-node rollback saves images, configuration, web files and migration state before any write, clears the shell environment for compose, and treats an unreachable Docker daemon as unknown rather than stopped. First deploys need backup and boot handling too; KVM on CI permits real reboot and power-cut rehearsals. (d20261124-cloud-deploy-goes-back, d20261124-cloud-deploy-without-its-runner, d20261125-cloud-first-deploy-stays-down)
+- PostgreSQL restore on an operator's own 18 with pg_textsearch must preserve pre-existing schemas and extensions and restore PUBLIC's grant; `pg_available_extension_versions.superuser` does not describe hosted-server permission. A fake `pg_restore` must forward its arguments or it cannot exercise `--use-list`. (#1727)
 - Homes' `releaseverify` accepts only a release whose Sigstore certificate's trigger (OID 1.3.6.1.4.1.57264.1.20) is `push`; a dispatched release differs in that claim alone and is refused, and a re-run of a dispatched run stays `workflow_dispatch`. A tag pushed with `GITHUB_TOKEN` starts no run, so tags come from a session's push; v0.3.83 to v0.3.85 have no release, so v0.3.86 is the first published release of their components (`since` says 0.3.86). (#725, #730, #748)
 - On main the update rehearsal is a `workflow_run` of CI's successful push run; a `workflow_run` run's `head_sha` is main's head when it started, not the commit it rehearsed. The rehearsed commit is in the run name `Update rehearsal of <sha>` (and its commit status); `tag-guard.sh` and `next_tag.py` read it there. Before this, two separate main concurrency groups finished on different commits and nothing was tagged for a day. (#737)
 - Shipped updaters refuse a release whose `payload.json` `postgres` or `release.json` `app_postgres_major` names another major, and the image's start refuses a cluster another major made, so PostgreSQL 18 ships beside the 16 the server runs and both fields keep saying 16. The prebuilt 18 trees carry what a baseline machine does not need (LLVM, PL/Python's own Python, some Linux libraries): take the baseline machine's copies. pg_textsearch's `Makefile.win` lacks objects of its own Makefile, so nmake takes an `OBJS=` on the command line; its `AGENTS.md` is a symlink MSYS tar cannot make. (#1441)
@@ -696,6 +707,9 @@ built_from: v0.3.162
 - SwiftUI can fold a `.contain` stack into its parent's accessibility container, hiding its identifier though it is drawn. On a Windows Desktop Player run, mockwebserver request logs need a copy-on-write list. esbuild's `es2019` target silently drops `import.meta` (the Cast receiver targets `es2020`); a Mac-made `package-lock.json` fails `npm ci` in the Playwright container. (#1287, #1302, #1267)
 
 **Apps and UI tests**
+- Main-actor `for await` can leave the actor for a buffered stream element when threads are starved; enqueue probe signals directly rather than through a forwarding task. Desktop Compose v1 runs effects unconfined, allowing OkHttp's thread to write during composition; v2 closes that race. (#1724, #1738)
+- Android `ApiClient.opened` reads and closes non-2xx bodies on OkHttp's thread: reading on the main thread throws, and a swallowed exception plus `getOrDefault` can choose the wrong user-facing refusal. (#1743)
+- Simulator recordings distinguish a missed action from a late daemon: tvOS's `kbd` can start tens of seconds after the first keyboard opens, and macOS does not always slide down the full-screen menu bar. Hosted SwiftUI unit tests cannot rely on main-menu redraw. (#1713, #1729)
 - Search help on the web (49.10): facets come with the first page only, and a saved search's pages (`GET /api/search/results/{sid}`) carry neither its sort nor its facets, so a client that pages, reloads or goes Back keeps them per sid itself (the web in session storage, `mkt:search:help`); the request takes one `date` and one `duration_sec` range and lists for libraries, languages and speakers; a limited user's own libraries ride in `filters`, unreadable as their chips; send only what differs from the defaults, and the request-body tests pass unchanged. (#1511)
 - AI mode's Apple client reads the SSE stream byte by byte (`SSEParser`): `URLSession.AsyncBytes.lines` drops the empty lines SSE needs, and a refusal (409, 429, 404) arrives on the same `bytes(for:)` call as the stream — the client reads up to 4 KB and throws `APIError.status`, so the problem's `code` and `help` come out the way other routes' do, and 404 means a home older than 49.12. The audit's "Potentially inaccessible text" with no element named can mean words drawn partly outside the window: a card cut by a horizontal row's edge — use rows or a capped list with Show all. `.caption2` does not shrink below its default, so it fails `assertTextScales`; a fixed-width `lineLimit`ed view trips the audit's clipped-text check at large sizes, so let it wrap. (#1529)
 - AI mode's Kotlin client reads the stream once, in the portable client: a blocking read on OkHttp's body is not cancellable by the coroutine — run it in a `channelFlow` child on IO, cancel the `Call` in the parent's `finally` after `join()`, and `ensureActive()` before wrapping the resulting `IOException`, or the first cancel test throws through a flow it has already left. `ApiClient.opened` skips the relay's reconnect waits that `send` does; `mockwebserver3`'s `throttleBody` lets a Robolectric test see what shows before the rest of a stream arrives; a Gradle `--tests` filter from `apps/desktop-player` also applies to the included `:client` and fails it with no matching test — run `:test --tests …` there. The portable client compiles against the desktop JDK: a JDK method newer than Java 8 (`ByteArrayOutputStream.toString(Charset)`, Android from API 33) compiles and passes every JVM test, then `NoSuchMethodError`s on an older device — only the emulator journey caught it. (#1531)
@@ -867,12 +881,13 @@ built_from: v0.3.162
 
 ## Open
 
+- Cloud: finish production deployment and off-node backups; mail webhooks (issue #1714), applied-set readiness (issue #1715), privacy retention (issue #1731), and the intermittent apply power-cut rehearsal (issue #1722) remain. Production mail still needs Turnstile keys and delivered-mail DKIM/DMARC verification. (d20261124-cloud-deploy-goes-back, d20261124-cloud-single-node-qa, #1716)
 - Desktop Player: stories 13.20–13.22 (subtitles, engine setting, Live TV and JavaFX removal) remain unbuilt; the device probe's easy committed clips overstate 2160p support and need realistic media or a correction. (#1591, #1629, #1633)
 - Apple: migrate testers from the retired tablet apps and remove their old App IDs after expiry; Cast still needs receiver registration, publication and device checks, and SDK 4.8.6 crashes on a malformed TXT record. (#1616, #1621)
-- Restore and Postgres follow-ups are tracked on issue #1681, issue #1688, issue #1671 and issue #1689; `--abandon` still needs the running server. (#1670, #1691, #1698)
+- Restore and Postgres follow-ups are tracked on issue #1681, issue #1688, issue #1671, issue #1689 and issue #1720; `--abandon` still needs the running server, and pgvector can prevent an unprivileged own-Postgres restore from recreating `public`. (#1670, #1691, #1698, #1727)
 - A late machine copy and the unbounded copying blocker remain on issue #1667; a release between a kept schema and its owning release can still refuse the record as `db_ahead`. (#1609, #1663)
 - With broadcasting off, the operator console's Moderation page shows an error state; dormant edge legal pages and moderation code remain. (#1624, #1657)
-- Player UI: measure the PosterBoard/apsd fix on CI; TV and Remote simulators are unchanged, and the animation-wait failure is untraced (issue #1678). (#1684, #1710)
+- Player UI: keep measuring the PosterBoard/apsd fix over subsequent runs; TV and Remote simulators are unchanged, simulator process delays remain untraced, and the rare follow-ups are on issue #1739 and issue #1740. The main-actor stream race has no committed load regression test, and cancellation can still close an unread response body on the cancelling thread. (#1710, #1724, #1729, #1738, #1743)
 - Audit the big screen's separate Search code for the URL races fixed on the web; Apple TV's Collections test can pass with zero texts (issue #1702). (#1683, #1701)
 - Non-visual test fixtures and cloud admin mockups still contain women's names; the help mockups' rendered PNGs are not compared by CI (issue #1696). (#1582, #1675)
 - After this release reaches the home, verify no primary-key table retains FULL replica identity and that stranded `second_listen` jobs drain. (d20261124-second-listen-replica-identity, d20261124-replica-identity-default)
@@ -994,11 +1009,8 @@ built_from: v0.3.162
 | #1451 | 2026-11-19 | search: retire Chroma, semantic search on pgvector only (story 43.5) |
 | #1471 | 2026-11-19 | docs(wiki): derive epic-status.md's counts from its story rows |
 | #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
-| #1627 | 2026-11-24 | fix(cloud): a claimed home takes its owner's plan and extra streams |
-| #1628 | 2026-11-24 | feat(cloud): deploy one cloud node to QA or production from CI, and test it end to end |
-| #1661 | 2026-11-24 | fix(cloud): a suspended owner's home holds no tunnel; a lost redeem answer can be retried |
-| #1717 | 2026-11-25 | test(relay): the relay's own deadline close, a retire's count, and a shutdown that counts once |
-| #1721 | 2026-11-25 | docs(specs): the iPad Player is the universal app |
+| #1737 | 2026-11-25 | fix(cloud): a release whose migration has a lower slot is ready on the database it updates |
+| #1745 | 2026-11-25 | fix(updates): Update now goes on past a machine's copy; the rehearsal's old-release scenarios pinned to v0.3.162 |
 
 ## Index
 
@@ -1852,6 +1864,10 @@ built_from: v0.3.162
 | 1701-collection-badges-followup | 2026-11-24 | pr | #1615's review: a leftover Plex collection reads as curated everywhere |
 | 1710-simulator-stall | 2026-11-24 | pr | The Player UI tests' stall is the simulator drawing its wallpapers; the hangs are XCTest's async hooks |
 | 1711-relay-drain-cut | 2026-11-24 | pr | TestDrainDeadlineForcesTheClose: the relay missed the cuts the home made first |
+| d20261124-cloud-claim-races | 2026-11-24 | incident | A home's claim raced its owner's plan change, and a suspended owner's home kept its tunnel: both from the review of #1627 |
+| d20261124-cloud-deploy-goes-back | 2026-11-24 | decision | The single cloud node's deploy can always go back, and its first rehearsal found two ways it could not |
+| d20261124-cloud-deploy-without-its-runner | 2026-11-24 | incident | A rollback died with its SSH session, a kept migration hid a contract one, and a green rehearsal noticed neither |
+| d20261124-cloud-single-node-qa | 2026-11-24 | incident | Deploying Maktaba Cloud to its QA node found four latent bugs in the single-VPS deploy, a claim that ignored the owner's plan, and two launch blockers (mail, the licence key) |
 | d20261124-dump-instead-of-down | 2026-11-24 | incident | A failed update put the whole 34 GB dump back twice, though its migrations' Down scripts could undo it: the database step had no Down path |
 | d20261124-home-161-by-order | 2026-11-24 | incident | The live home's 0.3.157 restore was stopped before it could drop the real database, and v0.3.161 was installed through the app's own order: schema 236 in 17 s, no dump put back |
 | d20261124-replica-identity-default | 2026-11-24 | incident | Every table with a primary key gets it back as its replica identity (slot 0238), after the home's FULL tables broke second_listen on PostgreSQL 18 |
@@ -1859,4 +1875,15 @@ built_from: v0.3.162
 | d20261124-stale-catalog-step-down | 2026-11-24 | incident | The live home installed v0.3.157 below its rolled-back v0.3.158 from a catalog frozen by GitHub's 8 MiB release list, and rolled back again |
 | 1670-restore-ways-out | 2026-11-25 | pr | A restore that cannot finish always has a safe way out |
 | 1698-restore-killed-commits-nothing | 2026-11-25 | pr | A killed or damaged restore on an own Postgres commits nothing |
+| 1710-first-run | 2026-11-25 | pr | With PosterBoard and apsd off: the first run, and two corrections |
+| 1713-mac-full-screen-menu-bar | 2026-11-25 | pr | The Mac full-screen test waited for a menu bar macOS sometimes does not slide down |
+| 1716-cloud-resend-mail | 2026-11-25 | pr | Maktaba Cloud sends its account mails through Resend, from an outbox |
+| 1717-relay-drain-follow-ups | 2026-11-25 | pr | The relay's own deadline close is tested again, and Shutdown counts a cut once |
+| 1721-specs-ipad-names | 2026-11-25 | pr | Two specs name the universal Player, not the removed iPad app |
+| 1724-permissions-browse-order | 2026-11-25 | pr | The permissions browse timed out with the answer behind a tick: a race fixed twice in part |
+| 1727-restore-follow-ups | 2026-11-25 | pr | An own PostgreSQL 18 with pg_textsearch can put a backup back, and the restore's smaller follow-ups |
+| 1729-tv-keyboard-daemon | 2026-11-25 | pr | TV testGuide's \"could not focus\" was the keyboard daemon starting 15 s late |
+| 1738-desktop-tests-v2 | 2026-11-25 | pr | The desktop screen tests ran effects on OkHttp's thread, and a screen could lose a change |
+| 1743-ai-refusal-main-thread | 2026-11-25 | pr | Android: AI mode's refusal was read on the main thread, and a swallowed exception chose the reason |
+| d20261125-cloud-first-deploy-stays-down | 2026-11-25 | incident | A failed first deploy started again at the next boot, and only a machine that really reboots shows what a boot does |
 
