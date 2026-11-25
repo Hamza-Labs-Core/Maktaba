@@ -35,6 +35,8 @@ The installers build story of the approved desktop design (D3).
 - **makensis runs on macOS and Linux**, and reads Windows plugin DLLs without running them. A tauri template can be compile-checked there, with a stand-in `powershell.exe` for the hooks' `!system`.
 - **A transform that changes the code page must say so**: without `MSITRANSFORM_ERROR_CHANGECODEPAGE` in its error conditions, applying it fails with 1624.
 - **A test folder named by the clock is not its own**: two crash tests in one tick of macOS' microsecond clock shared one, and one removed it under the other (EINVAL). It is counted now.
+- **`GetInstDirError` answers only on NSIS's own directory page**: a custom page has no disk-space check at all until it asks Windows.
+- **A solid NSIS installer unpacks its whole payload into `%TEMP%`**, so the room is needed twice on one drive.
 
 ## Keep doing
 - Compile-check the NSIS template locally (`nsis_template.py --makensis`) before pushing. It found a swallowed line that would have broken every Windows build.
