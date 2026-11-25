@@ -500,16 +500,39 @@ func goOnWithoutCopy(rec apppayload.Database, err error) bool {
 	return rec.NoCopy == apppayload.NoCopyAny || (rec.NoCopy == apppayload.NoCopyRoom && errors.As(err, &room))
 }
 
+// A restore on a release older than the one running is done by its code: it may know nothing
+// of the hold, of a copy that is there already, of a database that needs none, or of a person
+// who agreed to go on without one. So it is asked of it only when there is room for the copy it
+// takes as it is, with nothing removed (olderRoom), and what it needs is out of its reach
+// (protect).
+
+// olderRoom refuses a restore on the older release when its own rules leave no room for the
+// copy it takes, whatever this home's record says: it would remove the backups, and go on with
+// no copy all the same.
+func (r *restorer) olderRoom(release string) error {
+	err := roomNow(r.db.Backups, r.room)
+	if err == nil {
+		return nil
+	}
+	free := "Free some space there"
+	var room *pgbundle.NoRoomError
+	if errors.As(err, &room) && room.Need > room.Free {
+		free = fmt.Sprintf("Free %d MB more there", (room.Need-room.Free+1<<20-1)>>20)
+	}
+	return refuse("restore_older_no_room", "%s, the release that puts this backup back, first takes a copy of the library "+
+		"database by its own rules, and there is no room for it (%v). Nothing was changed. %s (deleting backups you no longer "+
+		"need does), or put back a backup that %s, the release running now, puts back itself", release, err, free, r.running())
+}
+
 // protect keeps the backups a restore on the older release pl.Release needs out of its reach
-// (pgbundle.KeepForRestore: it knows nothing of the hold): those asideKeeps names, or all of
-// them when no copy is kept (it would remove them for its own). It returns the chosen one's
-// path there. A disk that cannot: the chosen one's own path, when that release never removes
-// it, else a refusal.
+// (pgbundle.KeepForRestore): those asideKeeps names, and no others, whose room stays theirs to
+// give. It returns the chosen one's path there. A disk that cannot: the chosen one's own path,
+// when that release never removes it (the newest an update took), else a refusal.
 func (r *restorer) protect(pl restorePlan, rec apppayload.Database) (string, error) {
 	dir := r.db.Backups
 	names := []string{pl.Backup}
 	for _, b := range r.list().Backups {
-		if rec.NoCopy != "" || slices.Contains(asideKeeps(rec), b.Name) {
+		if slices.Contains(asideKeeps(rec), b.Name) {
 			names = append(names, b.Name)
 		}
 	}
@@ -517,12 +540,12 @@ func (r *restorer) protect(pl restorePlan, rec apppayload.Database) (string, err
 	switch {
 	case err == nil:
 		return pgbundle.KeptPath(dir, pl.Backup), nil
-	case pgbundle.NewestOfKind(dir, pl.Backup) && !pgbundle.IsNightly(pl.Backup):
+	case pgbundle.IsUpdateDump(pl.Backup) && pgbundle.NewestOfKind(dir, pl.Backup):
 		return rec.Dump, nil
 	}
-	return "", refuse("restore_unprotected", "%s, the release that puts this backup back, may remove it first to make room, "+
-		"and it cannot be kept from that on this disk (%v): nothing was changed. Put back the newest backup of its kind, or "+
-		"move the backups to a disk that has hard links and try again", pl.Release, err)
+	return "", refuse("restore_unprotected", "%s, the release that puts this backup back, may remove it first, and it cannot "+
+		"be kept from that in %s (%v): nothing was changed. Put back the newest pre-<from>-to-<to> backup, or move the backups "+
+		"to a disk that has hard links and try again", pl.Release, dir, err)
 }
 
 // copyRoom says why no copy of the database a restore of the backup name replaces could be

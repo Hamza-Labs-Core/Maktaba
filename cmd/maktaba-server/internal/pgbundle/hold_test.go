@@ -125,7 +125,17 @@ func TestRoomKeeping(t *testing.T) {
 	if err := MakeRoomWith(dir, p); !errors.As(err, &no) || left() != all {
 		t.Fatalf("held: %v, left %s", err, left())
 	}
-	if err := MakeRoomKeeping(dir, p, "maktaba-20260101-030000.dump"); err != nil {
+	// as it is, with nothing removed
+	if err := RoomNow(dir, p); !errors.As(err, &no) || no.Free != 500 || no.Need != 1250 || left() != all {
+		t.Fatalf("%v, left %s", err, left())
+	}
+	diskSpace = func(string) (uint64, uint64, error) { return 1250, 1 << 30, nil }
+	if err := RoomNow(dir, RoomPolicy{MaxShare: 1e-15}); err != nil || left() != all { // their share is no matter
+		t.Fatalf("%v, left %s", err, left())
+	}
+	diskSpace = func(string) (uint64, uint64, error) { return 500, 1 << 30, nil }
+	// a name in another case is the same dump on this disk
+	if err := MakeRoomKeeping(dir, p, "Maktaba-20260101-030000.DUMP"); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := left(), strings.Replace(all, "maktaba-20260102-030000.dump ", "", 1); got != want {
@@ -236,7 +246,100 @@ func TestNewestOfKind(t *testing.T) {
 			t.Errorf("%s: want %v", n, want)
 		}
 	}
-	if !IsNightly("maktaba-20260101-030000.dump") || IsNightly("pre-a-to-b.dump") {
-		t.Error("IsNightly")
+	for n, want := range map[string]bool{"pre-a-to-b.dump": true, "maktaba-20260101-030000.dump": false, "replaced-x.dump": false, "failed-x.dump": false} {
+		if IsUpdateDump(n) != want {
+			t.Errorf("%s: want %v", n, want)
+		}
+	}
+}
+
+// A release stopped in the middle of removing a backup leaves a part of it: the rest comes back,
+// with its date, and only then is what is kept removed. One of another content under its name is
+// another backup, and stays as it is; a kept one that is only a part takes nothing away.
+func TestAHalfRemovedBackupComesBackWhole(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Now().Add(-time.Hour).Truncate(time.Second)
+	const half, other, whole = "pre-v1-to-v2.dump", "pre-v2-to-v3.dump", "pre-v3-to-v4.dump"
+	files := []string{"toc.dat", "1.dat", "2.dat"}
+	fill := func(n, text string, files ...string) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Join(dir, n), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range files {
+			if err := os.WriteFile(filepath.Join(dir, n, f), []byte(text+f), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Chtimes(filepath.Join(dir, n), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, n := range []string{half, other, whole} {
+		fill(n, n, files...)
+	}
+	if err := KeepForRestore(dir, half, other, whole); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(dir, half, "1.dat"), KeptPath(dir, whole) + "/2.dat"} {
+		if err := os.Remove(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.RemoveAll(filepath.Join(dir, other)); err != nil { // and made again
+		t.Fatal(err)
+	}
+	fill(other, "new", "toc.dat", "1.dat")
+	// keeping again takes nothing from what is kept
+	if err := KeepForRestore(dir, half, other); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReleaseBackups(dir); err != nil {
+		t.Fatal(err)
+	}
+	for n, want := range map[string][]string{half: files, whole: files, other: {"toc.dat", "1.dat"}} {
+		text := n
+		if n == other {
+			text = "new"
+		}
+		ents, _ := os.ReadDir(filepath.Join(dir, n))
+		if len(ents) != len(want) {
+			t.Errorf("%s holds %v", n, ents)
+		}
+		for _, f := range want {
+			if b, err := os.ReadFile(filepath.Join(dir, n, f)); err != nil || string(b) != text+f {
+				t.Errorf("%s/%s: %q %v", n, f, b, err)
+			}
+		}
+		if info, err := os.Stat(filepath.Join(dir, n)); err != nil || !info.ModTime().Equal(at) {
+			t.Errorf("%s is of %v, not %v", n, info.ModTime(), at)
+		}
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, keptDir)); len(left) != 0 {
+		t.Errorf("left %v", left)
+	}
+}
+
+// A backup a person deletes by name goes whole: a link of it would hold its room, and bring it
+// back.
+func TestDeletedWhileKept(t *testing.T) {
+	dir := t.TempDir()
+	const n = "pre-v1-to-v2.dump"
+	if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := KeepForRestore(dir, n); err != nil {
+		t.Fatal(err)
+	}
+	if err := DeleteDump(dir, n); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReturnKept(dir); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(dir, n), KeptPath(dir, n)} {
+		if _, err := os.Lstat(p); !os.IsNotExist(err) {
+			t.Errorf("%s is still there (%v)", p, err)
+		}
 	}
 }

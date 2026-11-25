@@ -40,7 +40,8 @@ migrations, the daily one of the bundled PostgreSQL, the database a failed
 update or a restore replaced). Every change made since the backup was taken is
 lost; the database it replaces is set aside first (older backups make room for it,
 never the one restored or the newest of each kind). When there is no room for that
-copy it stops, unless --without-copy says to go on with none.
+copy it stops, unless --without-copy says to go on with none (not when the release
+that puts the backup back is older than the one running: that one always takes a copy).
 
 Without --backup it lists the backups. With --backup and without --confirm it
 says what the restore would do. With --confirm the home restarts on the kept

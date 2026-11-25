@@ -89,10 +89,16 @@ or a release you rolled back by hand that refuses the newer schema.
   on the backups' disk, or delete backups you no longer need, and try again. Or agree to go on without
   a copy (the Updates page, the recovery page, `--without-copy`): the library as it is now is then
   lost for good. No backup is removed then.
-- **`restore_unprotected`**: the release this backup runs on is older than the rules above and may remove
-  the backup first, and the disk has no hard links to keep it. Put back the newest backup of its kind,
-  or move the backups to another disk (Settings > Backups) and try again. The machines copy the
-  restored database anew.
+- **On an older release** (the backup runs on one older than the one running): that release always takes a
+  copy, by its own rules, and cannot go without one.
+  - `restore_older_no_room`: there is no room for it. Nothing was changed. Free what it says (delete backups
+    you no longer need), or put back a backup that the running release puts back itself.
+  - `restore_unprotected`: it may remove the backup first, and the backups' disk has no hard links to keep
+    it. Put back the newest `pre-<from>-to-<to>` backup, or move the backups to another disk (Settings >
+    Backups) and try again.
+  - It may still remove other, older backups by its own normal rules (docs/updates.md): copy elsewhere any
+    that must stay.
+- The machines copy the restored database anew.
 - **What it loses**: every change made since the backup was taken — added videos, watch history,
   settings, jobs done. A `pre-<from>-to-<to>.dump` is from right before that update's switch.
 - **Refusals**: `restore_not_confirmed` (no confirmation), `restore_update_under_way` (cancel the

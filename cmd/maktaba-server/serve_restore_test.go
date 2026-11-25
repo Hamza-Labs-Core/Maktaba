@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -61,8 +62,12 @@ func newRestoreRig(t *testing.T, schemas map[string]int64) *restoreRig {
 	if err := os.MkdirAll(backups, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for name := range schemas {
-		if err := os.WriteFile(filepath.Join(backups, name), []byte("dump"), 0o600); err != nil {
+	for i, name := range slices.Sorted(maps.Keys(schemas)) { // each newer than the one before
+		p, at := filepath.Join(backups, name), time.Now().Add(time.Duration(i-len(schemas))*time.Second)
+		if err := os.WriteFile(p, []byte("dump"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, at, at); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -357,6 +362,7 @@ func TestARestoreWithNoRoomForACopyStops(t *testing.T) {
 // not the one from before any more. Confirmed or not, a copy that fits is kept.
 func TestTheCopyIsAskedForOnlyWhenNeeded(t *testing.T) {
 	e := newExitsRig(t)
+	e.inst.running = "0.2.0"
 	prev := roomKeeping
 	t.Cleanup(func() { roomKeeping = prev })
 	roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }

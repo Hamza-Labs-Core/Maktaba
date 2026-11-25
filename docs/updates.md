@@ -380,7 +380,8 @@ is never taken for a newer release (`tried_by`). A restore asked on a release fr
 identity: its database is the one from before only when its schema is another than that of every
 backup asked since (`maybe_schemas`: any of them may be what is there). No backup is removed until the
 restore is done (`backups/restore-hold`: the updates' and the scheduled dumps' pruning, and the room
-made for a dump, leave them all; no scheduled dump is taken), but for the copy below.
+made for a dump, leave them all; no scheduled dump is taken), but for the copy below and what an older
+release does.
 
 **The database it replaces is set aside first**, once for a restore, however often it is tried
 (`aside`): it holds the newest data there is. Room is made for it from the older backups, never the one
@@ -394,13 +395,28 @@ reason only. The room is looked at when the restore is asked
 (`restore_no_copy`), and again when it starts. A restore asked on a release from before this, which
 could not ask, stops the same way.
 
-**A restore that goes back to an older release** hands the backup to code that knows nothing of the hold:
-to make room, every release before this one removes the oldest `*.dump` of the folder, the chosen one
-too. So what that restore needs is kept, as hard links that take no room, in `backups/being-restored/`,
-where no release removes anything, and the record names it there. What the older release removed is back
-at the next start of this one, and the folder goes when the restore is done. On a disk without hard links
-only the newest backup of its kind (which no release removes; not a nightly one) can be put back on an
-older release; any other is refused before anything changes (`restore_unprotected`).
+**A restore that goes back to an older release** (older than the one running) is done by that release's
+code, by its own rules, which this one cannot change. It may know nothing of the hold or of the record's
+copy: it takes a copy of its own, whatever the data is, and when that does not fit it removes the oldest
+`*.dump` of the folder, the chosen one too, and goes on with no copy all the same. So:
+
+- **There is room for its copy as things are**, by its rules (a quarter more than the newest backup, and
+  the reserve), with nothing removed. Otherwise the restore is refused before anything is touched
+  (`restore_older_no_room`), whatever was confirmed, and says how much to free: delete backups you no
+  longer need, or put back one that the running release puts back itself. It cannot go without a copy.
+- **What the restore needs is out of its reach**: the chosen backup, the copy already set aside and the one
+  the stopped update names, as hard links that take no room, in `backups/being-restored/`, where no release
+  removes anything. The record names the backup there. What was removed is back, whole, at the next start
+  of a release with this rule, and the folder goes when the restore is done. Until then deleting one of
+  those three frees nothing; deleting any other backup frees its space.
+- **On a disk without hard links** only the newest `pre-<from>-to-<to>` backup, which no release removes,
+  can be put back on an older release. Any other is refused before anything changes
+  (`restore_unprotected`): put that one back, or move the backups to a disk that has them.
+
+That release may still remove other backups by its normal rules, then and while it runs: the oldest when
+the dumps take more than their share of the disk or a later dump needs the room, the scheduled and
+pre-update ones past the number kept, `replaced-` and `failed-` ones older than 30 days. Copy elsewhere
+what must outlive that.
 
 One lock covers asking for a restore, giving one up and the start's own try, and the record is written
 before the release is switched. On a Postgres the home does not bundle, the restore's transaction

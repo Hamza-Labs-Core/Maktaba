@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 
 	"net/http"
 	"net/http/httptest"
@@ -1009,11 +1010,14 @@ func TestNoRoomRemovesNoBackup(t *testing.T) {
 				t.Fatalf("left %v\nof   %v", got, all)
 			}
 			e.r.room = room
-			if _, err := e.r.restore(context.Background(), firstBackup, "admin", true, false); restoreCode(err) != "restore_no_copy" {
-				t.Fatal(err)
-			}
-			if got := dumpsIn(e.backups); !slices.Equal(got, all) {
-				t.Fatalf("asked: left %v\nof   %v", got, all)
+			for running, code := range map[string]string{"0.2.0": "restore_no_copy", "0.3.0": "restore_older_no_room"} {
+				e.inst.running = running
+				if _, err := e.r.restore(context.Background(), firstBackup, "admin", true, false); restoreCode(err) != code {
+					t.Fatal(err)
+				}
+				if got := dumpsIn(e.backups); !slices.Equal(got, all) {
+					t.Fatalf("asked on %s: left %v\nof   %v", running, got, all)
+				}
 			}
 		})
 	}
@@ -1102,11 +1106,14 @@ func TestAnOlderReleaseCannotRemoveWhatItPutsBack(t *testing.T) {
 }
 
 // A disk that cannot keep it so: refused, with nothing changed, but for a backup no release
-// removes (the newest of its kind, which is no nightly one). And without a copy every backup is
-// kept: the older release would remove them for its own.
+// removes: the newest an update took. The newest replaced one is not the newest once the older
+// release took its copy, and any replaced or failed one goes by its age.
 func TestAnUnprotectedBackupIsRefused(t *testing.T) {
 	e := newExitsRig(t)
-	all := manyBackups(t, e.backups)
+	manyBackups(t, e.backups)
+	if err := os.WriteFile(filepath.Join(e.backups, "failed-v0.3.0-x.dump"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
 	e.r.schema = func(context.Context, string) (int64, error) { return 140, nil }
 	blocked := filepath.Dir(pgbundle.KeptPath(e.backups, "x"))
@@ -1114,7 +1121,7 @@ func TestAnUnprotectedBackupIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := e.rec()
-	for _, n := range []string{"pre-v0.1.0-to-v0.1.1.dump", "maktaba-20261103-030000.dump"} {
+	for _, n := range []string{"pre-v0.1.0-to-v0.1.1.dump", "maktaba-20261103-030000.dump", "replaced-v0.1.1-x.dump", "failed-v0.3.0-x.dump"} {
 		if _, err := e.r.restore(context.Background(), n, "admin", true, false); restoreCode(err) != "restore_unprotected" {
 			t.Fatalf("%s: %v", n, err)
 		}
@@ -1128,18 +1135,104 @@ func TestAnUnprotectedBackupIsRefused(t *testing.T) {
 	if rec := e.rec(); rec.Dump != filepath.Join(e.backups, otherBackup) {
 		t.Fatalf("%+v", rec)
 	}
-	e.fresh()
-	if err := os.Remove(blocked); err != nil {
+}
+
+// An older release takes its own copy by its own rules, whatever this home's record says: with
+// no room for it as things are, the restore is refused before anything is touched, confirmed
+// without a copy or not, and the refusal says how much to free. This release's own restore is not.
+func TestAnOlderReleaseNeedsRoomForItsCopy(t *testing.T) {
+	for name, set := range map[string]func(e *exitsRig, rec *apppayload.Database){
+		"untouched": func(*exitsRig, *apppayload.Database) {},
+		"replaced":  func(_ *exitsRig, rec *apppayload.Database) { rec.Data = apppayload.DataReplaced },
+		"gone":      func(_ *exitsRig, rec *apppayload.Database) { rec.Data = apppayload.DataGone },
+		"a copy kept": func(e *exitsRig, rec *apppayload.Database) {
+			rec.Aside, rec.AsideBytes = filepath.Join(e.backups, "replaced-v0.1.1-x.dump"), 1
+		},
+		"a copy that failed": func(_ *exitsRig, rec *apppayload.Database) { rec.CopyError = "pg_dump: invalid page" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newExitsRig(t)
+			all := manyBackups(t, e.backups)
+			rec := e.asked()
+			set(e, &rec)
+			e.write(rec)
+			asked := e.rec()
+			roomNow = func(string, pgbundle.RoomPolicy) error {
+				return &pgbundle.NoRoomError{Dir: e.backups, Free: 10 << 20, Need: 46<<20 + 1}
+			}
+			for _, without := range []bool{false, true} {
+				_, err := e.r.restoreAs(context.Background(), firstBackup, "admin", restoreAsk{confirm: true, withoutCopy: without})
+				if restoreCode(err) != "restore_older_no_room" || !strings.Contains(err.Error(), "Free 37 MB more there") ||
+					!strings.Contains(err.Error(), "a backup that 0.3.0, the release running now, puts back itself") {
+					t.Fatal(err)
+				}
+				if _, err := e.r.plan(context.Background(), firstBackup); restoreCode(err) != "restore_older_no_room" {
+					t.Fatalf("the plan: %v", err)
+				}
+			}
+			kept, _ := filepath.Glob(pgbundle.KeptPath(e.backups, "*"))
+			if now := e.rec(); !reflect.DeepEqual(now, asked) || len(e.inst.ran) != 0 || len(kept) != 0 || !slices.Equal(dumpsIn(e.backups), all) {
+				t.Fatalf("changed: %+v\nto %+v\n%v %v %v", asked, now, e.inst.ran, kept, dumpsIn(e.backups))
+			}
+			e.inst.running = "0.2.0"
+			if _, err := e.r.restore(context.Background(), firstBackup, "admin", true, false); err != nil {
+				t.Fatalf("by the release running: %v", err)
+			}
+		})
+	}
+	// and with room it keeps one, whatever was confirmed
+	e := newExitsRig(t)
+	rec := e.asked()
+	rec.CopyError = "pg_dump: invalid page"
+	e.write(rec)
+	if _, err := e.r.restoreAs(context.Background(), firstBackup, "admin", restoreAsk{confirm: true, withoutCopy: true}); err != nil {
 		t.Fatal(err)
 	}
-	roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }
+	if rec := e.rec(); rec.NoCopy != "" {
+		t.Fatalf("%+v", rec)
+	}
+}
+
+// What an older release cannot reach is what its restore needs and no more: the room of the
+// others is theirs to give.
+func TestOnlyWhatTheRestoreNeedsIsKept(t *testing.T) {
+	e := newExitsRig(t)
+	manyBackups(t, e.backups)
+	rec := e.asked()
+	rec.Before.Dump = filepath.Join(e.backups, "pre-v0.1.1-to-v0.2.0.dump")
+	rec.Aside, rec.AsideBytes, rec.Data = filepath.Join(e.backups, "replaced-v0.1.1-x.dump"), 1, apppayload.DataReplaced
+	e.write(rec)
+	e.f.id, e.f.schema = "9/9/9", 149
 	if _, err := e.r.restoreAs(context.Background(), otherBackup, "admin", restoreAsk{confirm: true, withoutCopy: true}); err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range all {
-		if _, err := os.Stat(pgbundle.KeptPath(e.backups, n)); err != nil {
-			t.Errorf("%s is not kept: %v", n, err)
-		}
+	kept, _ := filepath.Glob(pgbundle.KeptPath(e.backups, "*"))
+	for i := range kept {
+		kept[i] = filepath.Base(kept[i])
+	}
+	if want := []string{"pre-v0.1.1-to-v0.2.0.dump", otherBackup, "replaced-v0.1.1-x.dump"}; !slices.Equal(kept, want) {
+		t.Fatalf("kept %v\nwant %v", kept, want)
+	}
+}
+
+// A restore that is done names the backup in its folder: where it was kept is gone by then.
+func TestADoneRestoreNamesTheBackupInItsFolder(t *testing.T) {
+	e := newExitsRig(t)
+	e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
+	if _, err := e.r.restore(context.Background(), firstBackup, "admin", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.rec(); rec.Dump != pgbundle.KeptPath(e.backups, firstBackup) {
+		t.Fatalf("%+v", rec)
+	}
+	e.fresh()
+	g := &migrationGate{stateDir: e.dir, version: "v0.2.0", pg: &pgbundle.Bundle{Backups: e.backups}, api: exec.Command("maktaba-api"),
+		keep: 3, log: e.log}
+	if _, err := g.restoreAsked(context.Background(), e.rec(), noReport); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.rec(); rec.State != apppayload.DatabaseRestored || rec.Dump != filepath.Join(e.backups, firstBackup) {
+		t.Fatalf("%+v", rec)
 	}
 }
 
@@ -1151,6 +1244,7 @@ func TestACopyThatIsGoneIsNoCopy(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := newExitsRig(t)
+			e.inst.running = "0.2.0"
 			e.write(e.asked())
 			e.f.restoreErr = errors.New("disk full")
 			_ = haltCode(t, e.start("v0.2.0"))
@@ -1190,6 +1284,7 @@ func TestACopyThatIsGoneIsNoCopy(t *testing.T) {
 // covers no other failure of the copy.
 func TestAConfirmationDoesNotStick(t *testing.T) {
 	e := newExitsRig(t)
+	e.inst.running = "0.2.0"
 	e.write(e.asked())
 	ask := func(withoutCopy bool) string {
 		t.Helper()
@@ -1235,6 +1330,7 @@ func TestAConfirmationDoesNotStick(t *testing.T) {
 // update names, and the one asked.
 func TestWhatStaysWhenRoomIsMade(t *testing.T) {
 	e := newExitsRig(t)
+	e.inst.running = "0.2.0"
 	rec := e.asked()
 	rec.Before.Dump, rec.Aside = filepath.Join(e.backups, "pre-v0.1.1-to-v0.2.0.dump"), filepath.Join(e.backups, "replaced-v0.3.0-x.dump")
 	rec.Dump = pgbundle.KeptPath(e.backups, firstBackup)
@@ -1252,9 +1348,8 @@ func TestWhatStaysWhenRoomIsMade(t *testing.T) {
 }
 
 // Confirmed without a copy: one is kept when there is room as it is, and nothing is removed for
-// it, though removing would make the room the share of the disk wants. Asked for an older
-// release, with a copy, the room is made then: that release, whose own rules would remove the
-// backup it puts back, finds nothing to remove.
+// it, though removing would make the room the share of the disk wants. Nor is any when an older
+// release is asked to.
 func TestWhoMakesTheRoom(t *testing.T) {
 	overShare := pgbundle.RoomPolicy{MaxShare: 1e-15} // room enough, but more dumps than their share
 	realRoom := func() {
@@ -1281,7 +1376,7 @@ func TestWhoMakesTheRoom(t *testing.T) {
 	t.Run("for an older release", func(t *testing.T) {
 		e := newExitsRig(t)
 		realRoom()
-		manyBackups(t, e.backups)
+		all := manyBackups(t, e.backups)
 		e.r.room = overShare
 		e.r.schema = func(context.Context, string) (int64, error) { return 140, nil }
 		e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
@@ -1289,20 +1384,8 @@ func TestWhoMakesTheRoom(t *testing.T) {
 		if _, err := e.r.restore(context.Background(), chosen, "admin", true, false); err != nil {
 			t.Fatal(err)
 		}
-		left := dumpsIn(e.backups)
-		if !slices.Contains(left, chosen) || slices.Contains(left, "maktaba-20261101-030000.dump") || !slices.Contains(left, "maktaba-20261103-030000.dump") {
+		if left := dumpsIn(e.backups); !slices.Equal(left, all) {
 			t.Fatalf("left %v", left)
-		}
-	})
-	t.Run("no room after all", func(t *testing.T) {
-		e := newExitsRig(t)
-		e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
-		makeRoomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }
-		if _, err := e.r.restore(context.Background(), firstBackup, "admin", true, false); err == nil {
-			t.Fatal("asked")
-		}
-		if kept, _ := filepath.Glob(pgbundle.KeptPath(e.backups, "*")); len(kept) != 0 || e.rec().State != apppayload.DatabaseMigrated {
-			t.Fatalf("left %v, %+v", kept, e.rec())
 		}
 	})
 }

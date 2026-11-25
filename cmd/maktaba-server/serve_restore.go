@@ -104,7 +104,8 @@ type restorePlan struct {
 	At time.Time `json:"at"`
 	// NoCopy is why no copy of the database it replaces can be kept now ("": it can):
 	// CopyFree bytes are free for one, CopyNeed needed. It is then restored only once the
-	// person confirms that none is (restoreAsk.withoutCopy).
+	// person confirms that none is (restoreAsk.withoutCopy). Never on an older release, which
+	// is refused instead (olderRoom).
 	NoCopy   string `json:"no_copy,omitempty"`
 	CopyFree uint64 `json:"copy_free,omitempty"`
 	CopyNeed uint64 `json:"copy_need,omitempty"`
@@ -244,7 +245,11 @@ func (r *restorer) plan(ctx context.Context, name string) (restorePlan, error) {
 		return restorePlan{}, err
 	}
 	pl := restorePlan{Backup: name, Schema: schema, Release: rel.Version, Running: r.running(), At: st.ModTime().UTC()}
-	if err := r.copyRoom(name); err != nil {
+	if newerThan(r.running(), pl.Release) {
+		if err := r.olderRoom(pl.Release); err != nil {
+			return pl, err
+		}
+	} else if err := r.copyRoom(name); err != nil {
 		pl.NoCopy = err.Error()
 		var room *pgbundle.NoRoomError
 		if errors.As(err, &room) {
@@ -396,7 +401,8 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 		// what was asked before may be what is there, in part or whole
 		maybe = append(append(maybe, data.MaybeSchemas...), r.probe().backupSchema(ctx, old))
 	}
-	if data.Data == apppayload.DataUntouched && data.DataID == "" && newerThan(r.running(), pl.Release) {
+	older := newerThan(r.running(), pl.Release)
+	if data.Data == apppayload.DataUntouched && data.DataID == "" && older {
 		// the database does not run now (offline), and the release that tries is an older one,
 		// which may keep no track of the data
 		data.Data = apppayload.DataUnknown
@@ -406,7 +412,7 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 	if asideThere(data) {
 		rec.Aside, rec.AsideBytes = data.Aside, data.AsideBytes
 	}
-	if withoutCopy {
+	if withoutCopy && !older { // an older release keeps one whatever it is told
 		// what was said when it was confirmed, and no more
 		switch {
 		case pl.NoCopy != "":
@@ -424,13 +430,8 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 			rec.DumpKeptFor = o.DumpKeptFor
 		}
 	}
-	if newerThan(r.running(), pl.Release) {
-		// an older release may know nothing of the hold: what it needs is put out of its reach,
-		// and the room for the copy it takes is made here, from what may go
-		if rec.Dump, err = r.protect(pl, rec); err == nil && rec.NoCopy == "" && r.copyNeeded() {
-			err = makeRoomKeeping(r.db.Backups, r.room, append(asideKeeps(rec), pl.Backup)...)
-		}
-		if err != nil {
+	if older {
+		if rec.Dump, err = r.protect(pl, rec); err != nil {
 			_ = r.holdFor(old) // as it was
 			return err
 		}

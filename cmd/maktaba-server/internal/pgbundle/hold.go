@@ -95,14 +95,23 @@ func isFolder(path string) bool {
 	return err == nil && info.IsDir()
 }
 
-// linkDump links the dump from as to (there already: nothing is done), whole or not at all.
+// linkDump links the dump from as to, whole or not at all. There already, nothing is done, but
+// for one that is a part of it (a release stopped in the middle of removing it left that): it
+// gets the rest.
 func linkDump(from, to string) error {
-	if _, err := os.Lstat(to); err == nil {
+	have, herr := os.Lstat(to)
+	info, err := os.Lstat(from)
+	if herr == nil && (err != nil || !info.IsDir() || !have.IsDir() || !partOf(to, from)) {
 		return nil
 	}
-	info, err := os.Lstat(from)
 	if err != nil {
 		return err
+	}
+	if herr == nil {
+		if err := linkFiles(from, to); err != nil {
+			return err
+		}
+		return os.Chtimes(to, info.ModTime(), info.ModTime())
 	}
 	part := to + ".linking"
 	if err := os.RemoveAll(part); err != nil {
@@ -114,20 +123,7 @@ func linkDump(from, to string) error {
 	if !info.IsDir() {
 		err = os.Link(from, part)
 	} else {
-		err = filepath.WalkDir(from, func(p string, d fs.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-			rel, err := filepath.Rel(from, p)
-			if err != nil {
-				return err
-			}
-			if d.IsDir() {
-				return os.MkdirAll(filepath.Join(part, rel), 0o700)
-			}
-			return os.Link(p, filepath.Join(part, rel))
-		})
-		if err == nil { // its date is the folder's
+		if err = linkFiles(from, part); err == nil { // its date is the folder's
 			err = os.Chtimes(part, info.ModTime(), info.ModTime())
 		}
 	}
@@ -140,8 +136,61 @@ func linkDump(from, to string) error {
 	return err
 }
 
-// NewestOfKind reports whether dump name is the newest of its kind in dir: no release removes
-// that one for room.
+// linkFiles links the files of the folder from in the folder to, those that are there apart.
+func linkFiles(from, to string) error {
+	return filepath.WalkDir(from, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(from, p)
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return os.MkdirAll(filepath.Join(to, rel), 0o700)
+		}
+		if err := os.Link(p, filepath.Join(to, rel)); !errors.Is(err, fs.ErrExist) {
+			return err
+		}
+		return nil
+	})
+}
+
+// partOf reports whether the folder part holds nothing but files of the folder whole (the same
+// files, linked).
+func partOf(part, whole string) bool {
+	files := func(dir string) (map[string]fs.FileInfo, error) {
+		out := map[string]fs.FileInfo{}
+		err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return err
+			}
+			rel, err := filepath.Rel(dir, p)
+			if err != nil {
+				return err
+			}
+			out[rel], err = d.Info()
+			return err
+		})
+		return out, err
+	}
+	some, err := files(part)
+	if err != nil {
+		return false
+	}
+	all, err := files(whole)
+	if err != nil {
+		return false
+	}
+	for rel, info := range some {
+		if other, ok := all[rel]; !ok || !os.SameFile(info, other) {
+			return false
+		}
+	}
+	return true
+}
+
+// NewestOfKind reports whether dump name is the newest of its kind in dir.
 func NewestOfKind(dir, name string) bool {
 	info, err := os.Lstat(filepath.Join(dir, name))
 	if err != nil {
@@ -162,9 +211,8 @@ func NewestOfKind(dir, name string) bool {
 	return true
 }
 
-// IsNightly reports whether name is one of the scheduled dumps (their own retention goes by
-// name, newest first).
-func IsNightly(name string) bool { return dumpKind(name) == backupPrefix }
+// IsUpdateDump reports whether name is one an update takes first.
+func IsUpdateDump(name string) bool { return dumpKind(name) == updateDumpPrefix }
 
 // BackupsHeld reports whether dir's dumps are held.
 func BackupsHeld(dir string) bool {
