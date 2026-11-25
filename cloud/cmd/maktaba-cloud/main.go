@@ -8,6 +8,8 @@
 //	maktaba-cloud migrate up
 //	maktaba-cloud migrate down 1
 //	maktaba-cloud migrate status
+//	maktaba-cloud migrate applied
+//	maktaba-cloud migrate undo 500025 500026   (the Down scripts of these, when they lose nothing)
 //	maktaba-cloud staff add|grant|revoke|disable|enable|reset-mfa|unlock|list   # console staff (50.33)
 //	maktaba-cloud license issue|pubkey|revoke|unrevoke  # Epic 16 licenses
 //	maktaba-cloud version
@@ -15,6 +17,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -23,6 +26,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -178,6 +182,26 @@ func runMigrate(args []string) {
 			logger.Error("migrate down", "err", err)
 			os.Exit(1)
 		}
+	case "applied":
+		vs, err := mig.Applied(ctx)
+		if err != nil {
+			logger.Error("migrate applied", "err", err)
+			os.Exit(1)
+		}
+		for _, v := range vs {
+			fmt.Fprintln(os.Stdout, v)
+		}
+	case "undo":
+		// what a failed deploy applied (deploy/cloud-relay/ops/rollout.sh reads the exit codes)
+		vs, err := parseVersions(rest[1:])
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+		if err := mig.Undo(ctx, vs); err != nil {
+			logger.Error("migrate undo", "err", err)
+			os.Exit(undoExit(err))
+		}
 	case "status":
 		ok, err := mig.AtHead(ctx)
 		if err != nil {
@@ -188,6 +212,36 @@ func runMigrate(args []string) {
 	default:
 		fmt.Fprintln(os.Stderr, "unknown migrate subcommand:", sub)
 		os.Exit(2)
+	}
+}
+
+// parseVersions reads migrate undo's versions.
+func parseVersions(args []string) ([]int64, error) {
+	if len(args) == 0 {
+		return nil, errors.New("migrate undo: name the versions")
+	}
+	var out []int64
+	for _, a := range args {
+		v, err := strconv.ParseInt(a, 10, 64)
+		if err != nil || v <= 0 {
+			return nil, fmt.Errorf("migrate undo: not a version: %q", a)
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+// undoExit is migrate undo's exit code: 3, nothing changed and the schema is better kept (a Down
+// script would delete rows written since); 4, nothing changed and nothing can undo it; 1, it
+// failed, part way perhaps.
+func undoExit(err error) int {
+	switch {
+	case errors.Is(err, db.ErrUndoKeeps):
+		return 3
+	case errors.Is(err, db.ErrUndoLossy):
+		return 4
+	default:
+		return 1
 	}
 }
 

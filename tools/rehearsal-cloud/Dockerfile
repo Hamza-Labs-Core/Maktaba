@@ -17,17 +17,20 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd cloud && go mod download
 COPY cloud ./cloud
+# the image's health probe, as cloud/Dockerfile builds it (the single node's compose file runs it)
+COPY tools/healthcheck ./tools/healthcheck
 # BUILD_TAGS=rehearsalbad: the bad release (story 50.08); VERSION: what /version says
 ARG BUILD_TAGS=
 ARG VERSION=rehearsal
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     cd cloud && go build -trimpath -tags "${BUILD_TAGS}" -ldflags "-s -w -X main.Version=${VERSION}" -o /out/maktaba-cloud ./cmd/maktaba-cloud \
-    && go build -trimpath -ldflags "-s -w" -o /out/maktaba-rehearsal ./cmd/maktaba-rehearsal
+    && go build -trimpath -ldflags "-s -w" -o /out/maktaba-rehearsal ./cmd/maktaba-rehearsal \
+    && cd ../tools/healthcheck && go build -trimpath -ldflags "-s -w" -o /out/healthcheck .
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl iptables \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /out/maktaba-cloud /out/maktaba-rehearsal /usr/local/bin/
+COPY --from=builder /out/maktaba-cloud /out/maktaba-rehearsal /out/healthcheck /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/maktaba-cloud"]
 CMD ["serve", "--role", "relay"]

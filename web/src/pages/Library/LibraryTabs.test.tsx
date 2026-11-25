@@ -406,8 +406,24 @@ describe("Library page: Playlists and sourced collections", () => {
     expect(within(filter).queryByRole("button", { name: /From Plex/ })).toBeNull();
     // a channel's collection shows with no source badge (and no Automatic one)
     const chCard = screen.getByText("محاضرات أسبوعية").closest("a")!;
-    expect(within(chCard).queryByText("YouTube channel")).toBeNull();
-    expect(within(chCard).queryByText(en["collections.automatic"])).toBeNull();
-    expect(within(chCard).queryByText(en["collections.badge.youtubePlaylist"])).toBeNull();
+    expect(card.querySelector(".mk-badge")).not.toBeNull();
+    expect(chCard.querySelector(".mk-badge")).toBeNull();
+  });
+
+  it("an older home's kind plex shows as a curated collection, with no badge", async () => {
+    // homes up to v0.3.162 answer kind plex for a collection once read in from Plex
+    const px = col("plex", "x1", "مسلسلات", { source_kind: "plex", automatic: true });
+    serve({
+      [`/api/libraries/${ID}/collections`]: {
+        ...ALL,
+        items: [...ALL.items, px],
+        counts: { ...COUNTS, all: 5, youtube: 0, plex: 1 },
+        total: 5,
+      },
+    });
+    renderLib(`/library/${ID}?tab=collections`);
+    const card = (await screen.findByText("مسلسلات")).closest("a")!;
+    expect(card).toHaveAttribute("href", "/collections/x1");
+    expect(card.querySelector(".mk-badge")).toBeNull();
   });
 });

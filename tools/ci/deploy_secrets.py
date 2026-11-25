@@ -1,7 +1,7 @@
 """Both cloud deploy paths hand the api every secret it reads.
 
 The cloud has two deploy paths: the single VPS (deploy/cloud-relay, Docker Compose) and the
-Phase 1 pair (deploy/cloud-ha, systemd), each its own step in .github/workflows/relay.yml.
+Phase 1 pair (deploy/cloud-ha, systemd), each a step of its own workflow.
 A secret wired into one path only leaves the other's api without it, silently: the feature
 it turns on stays off there (story 53.16's symbol uploads stayed 503 symbols_off on the
 single VPS that way). This guard checks:
@@ -24,9 +24,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 API_DIR = "cloud/cmd/maktaba-cloud"
-WORKFLOW = ".github/workflows/relay.yml"
+WORKFLOWS = {"single VPS": ".github/workflows/cloud-deploy.yml", "Phase 1 pair": ".github/workflows/relay.yml"}
 PATHS = {"single VPS": "deploy/cloud-relay", "Phase 1 pair": "deploy/cloud-ha"}
-STEPS = {"single VPS": "Deploy (the single VPS)", "Phase 1 pair": "Deploy (the Phase 1 pair)"}
+STEPS = {"single VPS": "Deploy (deploy.sh)", "Phase 1 pair": "Deploy (the Phase 1 pair)"}
 
 # a token file a path has none of, with why
 EXEMPT: dict[tuple[str, str], str] = {
@@ -38,7 +38,7 @@ EXEMPT: dict[tuple[str, str], str] = {
 
 # a repository secret only one deploy step takes, with why
 PATH_ONLY: dict[str, str] = {
-    "RELAY_SSH_HOST": "the single VPS's host",
+    "RELAY_SSH_USER": "the pair's login; the single node's is a variable (cloud-deploy.yml)",
     "RELAY_HOST_A": "the pair's first node",
     "RELAY_HOST_B": "the pair's second node",
     "CLOUDFLARE_TUNNEL_TOKEN": "the Tunnel fronts the pair (story 50.31); the single VPS runs Caddy",
@@ -63,11 +63,11 @@ def path_text(root: Path, rel: str) -> str:
 
 def step_secrets(root: Path = ROOT) -> dict[str, set[str]]:
     """Each deploy step's repository secrets, by path."""
-    wf = yaml.safe_load((root / WORKFLOW).read_text())
     found: dict[str, set[str]] = {}
-    for job in wf.get("jobs", {}).values():
-        for step in job.get("steps", []) or []:
-            for path, name in STEPS.items():
+    for path, name in STEPS.items():
+        wf = yaml.safe_load((root / WORKFLOWS[path]).read_text())
+        for job in wf.get("jobs", {}).values():
+            for step in job.get("steps", []) or []:
                 if step.get("name") == name:
                     env = step.get("env", {}) or {}
                     found[path] = {m for v in env.values() for m in SECRET_RE.findall(str(v))}
@@ -84,7 +84,7 @@ def gaps(root: Path = ROOT) -> list[str]:
     steps = step_secrets(root)
     for path in STEPS:
         if path not in steps:
-            out.append(f"{WORKFLOW}: no step named {STEPS[path]!r}")
+            out.append(f"{WORKFLOWS[path]}: no step named {STEPS[path]!r}")
     if len(steps) == len(STEPS):
         for path, secrets in steps.items():
             for other, theirs in steps.items():
@@ -92,7 +92,7 @@ def gaps(root: Path = ROOT) -> list[str]:
                     continue
                 for s in sorted(secrets - theirs - PATH_ONLY.keys()):
                     out.append(
-                        f"{WORKFLOW}: {STEPS[path]!r} is given secrets.{s} but {STEPS[other]!r} is not"
+                        f"{WORKFLOWS[path]}: {STEPS[path]!r} is given secrets.{s} but {STEPS[other]!r} is not"
                     )
             # what the step is given, its path's files read
             for s in sorted(secrets - PATH_ONLY.keys()):

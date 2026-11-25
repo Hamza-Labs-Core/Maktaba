@@ -67,19 +67,13 @@ on:
       # the test job's PgBouncer (story 50.18)
       - 'tools/ci/pgbouncer-ci.sh'
       - 'tools/release/fetch-pinned.sh'
-  # Manual rollout: pick a tag (or leave blank to deploy `latest`) and
-  # run the deploy job against the `production` environment.
-  # Or a tag's run by hand, as a pushed tag's (`--ref vX.Y.Z -f tag=vX.Y.Z`), when its push run
+  # A tag's run by hand, as a pushed tag's (`--ref vX.Y.Z -f tag=vX.Y.Z`), when its push run
   # is missing (the release session's tag push starts the push run).
   # "A tag's run" below is a pushed tag, or a dispatch with `tag` on that tag's ref.
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: 'Image tag to deploy (e.g. v1.2.3). Blank = latest.'
-        required: false
-        default: ''
       tag:
-        description: "A tag's run by hand, dispatched with --ref set to it; blank for a manual rollout"
+        description: "A tag's run by hand, dispatched with --ref set to it; blank: the checks only, nothing deployed"
         required: false
         default: ''
 
@@ -402,6 +396,14 @@ jobs:
             docker run --rm -v "$PWD/$f:/etc/caddy/Caddyfile:ro" -e RELAY_DOMAIN=relay.example.com \
               -e ACME_EMAIL=ops@example.com -e CF_API_TOKEN="$tok" -e NODE_ADDR=10.0.0.2 -e "RELAY_UPSTREAMS=127.0.0.1:8443 127.0.0.1:8453" \
               -e "RELAY_METRICS_UPSTREAMS=127.0.0.1:8445 127.0.0.1:8455" \
+              -e API_DOMAIN=api.example.com -e APP_DOMAIN=app.example.com \
+              maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
+          done
+          # the single node's other certificate modes (RELAY_TLS: http with no DNS token,
+          # internal before its names are public; docs/cloud-single-node.md)
+          for tls in http internal; do
+            docker run --rm -v "$PWD/deploy/cloud-relay/Caddyfile:/etc/caddy/Caddyfile:ro" -e RELAY_DOMAIN=relay.example.com \
+              -e API_DOMAIN=api.example.com -e APP_DOMAIN=app.example.com -e ACME_EMAIL=ops@example.com -e RELAY_TLS="$tls" \
               maktaba-caddy:check caddy validate --config /etc/caddy/Caddyfile
           done
       # Epic 50 story 50.31 T04: the pair's Caddy serves relay names only (no catch-all, no
@@ -506,7 +508,7 @@ jobs:
     needs: [lint, test, build]
     if: >-
       !cancelled() && startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == github.ref_name)) &&
-      !contains(github.ref, '-') && vars.RELAY_DEPLOY == 'true' &&
+      !contains(github.ref, '-') && vars.RELAY_DEPLOY == 'true' && vars.CLOUD_HA == 'true' &&
       needs.lint.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-22.04
     # the release is published once release.yml and the desktop apps are in (about 90 min);
@@ -585,24 +587,21 @@ jobs:
           echo "release ${TAG} is published; the latest: ${latest}"
           echo "deploy=${latest}" >> "$GITHUB_OUTPUT"
 
+  # The Phase 1 pair only (deploy/cloud-ha), and only once it exists (the repository variables
+  # RELAY_DEPLOY and CLOUD_HA, both 'true'). The single node is not deployed here: its one way in
+  # is cloud-deploy.yml, which deploys to production what QA passed (docs/cloud-single-node.md).
   deploy:
-    name: deploy to VPS
+    name: deploy the Phase 1 pair
     needs: [lint, test, build, docker, gate]
-    # Manual rollout, or automatically for the latest release's tag (the gate), but only in
-    # a repo that has a VPS: set the RELAY_DEPLOY repo variable to 'true'. Without it a tag
-    # skips this job, so no deployment is recorded on `production`. A pre-release tag
-    # (v0.3.0-rc.1) or a maintenance release never deploys by itself; dispatch it with its
-    # tag to roll it out. Never when this run's lint, test or build failed, each checked
-    # (`docker` is skipped on a dispatch and on a tag, after a failure too). `!cancelled()`
-    # lets the skipped jobs' dependents run, but not a cancelled run (`always()` would).
+    # Only for the latest release's tag (the gate), never a branch, `latest` or a tag named by
+    # hand. Never when this run's lint, test or build failed, each checked (`docker` is skipped on
+    # a tag, after a failure too). `!cancelled()` lets the skipped jobs' dependents run, but not a
+    # cancelled run (`always()` would).
     if: >-
-      !cancelled() &&
+      !cancelled() && vars.CLOUD_HA == 'true' &&
       needs.lint.result == 'success' && needs.test.result == 'success' && needs.build.result == 'success' &&
-      (
-        (github.event_name == 'workflow_dispatch' && inputs.tag == '' && needs.docker.result == 'skipped') ||
-        (startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == github.ref_name)) &&
-          needs.gate.result == 'success' && needs.gate.outputs.deploy == 'true')
-      )
+      startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.tag == github.ref_name)) &&
+      needs.gate.result == 'success' && needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-22.04
     # a tag waits up to an hour for release.yml's image
     timeout-minutes: 75
@@ -623,21 +622,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
-      # Pick the tag to roll out: explicit dispatch input wins, else the
-      # pushed tag, else `latest`.
-      - name: Resolve image tag
+      - name: The tag
         id: tag
-        env:
-          INPUT_TAG: ${{ github.event.inputs.image_tag }}
         run: |
           set -euo pipefail
-          if [ -n "${INPUT_TAG}" ]; then
-            echo "tag=${INPUT_TAG}" >> "$GITHUB_OUTPUT"
-          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-          fi
+          [[ "${GITHUB_REF}" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::not a release tag: ${GITHUB_REF}"; exit 1; }
+          echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
       # A tag's run: its release is published (the gate), so release.yml's image of it is
       # pushed and signed; checked here once more before the rollout.
@@ -667,41 +657,16 @@ jobs:
 
       # Epic 50 story 50.06: no cloud deploy of a commit whose failover, deploy, rollback and
       # restore the cloud rehearsal (cloud-rehearsal.yml) did not pass on; a run still going is
-      # waited for. The commit is the pushed tag's, or the dispatched image tag's.
+      # waited for. The commit is the tag's.
       - name: The cloud rehearsal passed on this commit
         env:
           GH_TOKEN: ${{ github.token }}
-          IMAGE_TAG: ${{ steps.tag.outputs.tag }}
-        run: |
-          set -euo pipefail
-          sha="${GITHUB_SHA}"
-          if [ "${IMAGE_TAG}" != latest ] && [[ "${GITHUB_REF}" != refs/tags/* ]]; then
-            git fetch -q origin "+refs/tags/${IMAGE_TAG}:refs/tags/${IMAGE_TAG}"
-            sha="$(git rev-list -n 1 "refs/tags/${IMAGE_TAG}")"
-          fi
-          SHA="${sha}" bash tools/release/cloud-guard.sh
-
-      # The single VPS (deploy/cloud-relay), until the Phase 1 pair exists.
-      - name: Deploy (the single VPS)
-        if: vars.CLOUD_HA != 'true'
-        env:
-          RELAY_SSH_HOST: ${{ secrets.RELAY_SSH_HOST }}
-          RELAY_SSH_USER: ${{ secrets.RELAY_SSH_USER }}
-          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
-          # the symbol uploaders' token (story 53.16), as the pair gets it: deploy.sh writes it
-          # to the stack's secrets; empty until the owner adds it (uploads stay off)
-          MAKTABA_SYMBOLS_TOKEN: ${{ secrets.MAKTABA_SYMBOLS_TOKEN }}
-          MAKTABA_CLOUD_TAG: ${{ steps.tag.outputs.tag }}
-        # deploy.sh fails if the SSH secrets are missing: once this job
-        # runs, a missing host is a misconfiguration, not a skip.
-        run: bash deploy/cloud-relay/deploy.sh
+        run: SHA="${GITHUB_SHA}" bash tools/release/cloud-guard.sh
 
       # The Phase 1 pair (Epic 50 story 50.08, deploy/cloud-ha/deploy.sh): Patroni says which
       # node leads; the standby smoke-tests the release first, then expand-only migrations and
-      # a blue/green on the leader, whose old colour drains its homes to the new one. Set the
-      # repository variable CLOUD_HA to 'true' once the pair runs.
+      # a blue/green on the leader, whose old colour drains its homes to the new one.
       - name: Deploy (the Phase 1 pair)
-        if: vars.CLOUD_HA == 'true'
         env:
           RELAY_HOST_A: ${{ secrets.RELAY_HOST_A }}
           RELAY_HOST_B: ${{ secrets.RELAY_HOST_B }}

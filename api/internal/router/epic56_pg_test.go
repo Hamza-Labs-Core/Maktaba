@@ -269,7 +269,28 @@ func TestPGEpic56Library(t *testing.T) {
 	if got := e.want(http.StatusOK, "admin", "GET", "/api/collections/"+px, nil); got["source_kind"] != nil {
 		t.Errorf("a Plex-read collection has a source: %v", got)
 	}
-	e.want(http.StatusOK, "admin", "PATCH", "/api/collections/"+px, map[string]any{"name": "Picks"})
+	e.want(http.StatusOK, "admin", "PATCH", "/api/collections/"+px, map[string]any{"name": "Picks", "show_on_library": true, "show_on_home": true})
+	// nor has it one as a promoted row or as the grid's card (the library hides items)
+	for _, path := range []string{"/api/libraries/" + acLibA + "/hub", "/api/home"} {
+		found := false
+		for _, row := range e.want(http.StatusOK, "member", "GET", path, nil)["collection_rows"].([]any) {
+			if c := row.(map[string]any)["collection"].(map[string]any); c["id"] == px {
+				found = c["source_kind"] == nil
+			}
+		}
+		if !found {
+			t.Errorf("%s: no row of the Plex-read collection, or it has a source", path)
+		}
+	}
+	found = false
+	for _, c := range e.want(http.StatusOK, "member", "GET", "/api/videos?"+url.Values{"library": {acLibA}}.Encode(), nil)["collections"].([]any) {
+		if m := c.(map[string]any); m["id"] == px {
+			found = m["source_kind"] == nil
+		}
+	}
+	if !found {
+		t.Error("the grid: no card of the Plex-read collection, or it has a source")
+	}
 	e.want(http.StatusBadRequest, "member", "GET", "/api/libraries/"+acLibA+"/collections?kind=bogus", nil)
 	// a queue from a sourced collection plays in its order
 	q := e.want(http.StatusCreated, "member", "POST", "/api/me/play-queues", map[string]any{"source": map[string]any{"kind": "collection", "id": yt}})

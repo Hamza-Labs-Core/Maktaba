@@ -8,9 +8,9 @@ package db
 import (
 	"context"
 	"database/sql"
-	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"strconv"
 	"strings"
 	"sync"
@@ -108,7 +108,7 @@ func (p *Pool) Close() error {
 // two pods racing `up` serialize cleanly.
 type Migrator struct {
 	pool *Pool
-	dir  embed.FS
+	dir  fs.FS
 	root string
 	mu   sync.Mutex
 }
@@ -116,7 +116,7 @@ type Migrator struct {
 // NewMigrator wires the pool, the embedded FS, and the root path within
 // that FS where SQL files live (use "." when migrations are at the
 // embed root).
-func NewMigrator(p *Pool, dir embed.FS, root string) *Migrator {
+func NewMigrator(p *Pool, dir fs.FS, root string) *Migrator {
 	if root == "" {
 		root = "."
 	}
