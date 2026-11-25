@@ -32,8 +32,11 @@ export function ShellDialog() {
   // the newest error's words (asking shows the dialog), then any newer one's
   useEffect(() => {
     let live = true;
-    void loadDialogContent().then((c) => live && c && setContent(c));
-    const stop = onDialogContent(setContent);
+    // an answer that came late is not a newer error's
+    const take = (c: DialogContent) =>
+      setContent((now) => (now && now.revision > c.revision ? now : c));
+    void loadDialogContent().then((c) => live && c && take(c));
+    const stop = onDialogContent(take);
     return () => {
       live = false;
       stop();

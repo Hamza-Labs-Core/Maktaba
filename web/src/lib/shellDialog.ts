@@ -5,7 +5,8 @@
 //
 //   shell_dialog_content             -> the newest error's words; the dialog shows
 //   shell_dialog_choose { action }   -> "close" | "logs" (the dialog closes, then Open logs)
-//   event "shell-dialog"             -> a newer error's words, while it is shown
+//   event "shell-dialog"             -> a newer error, while it is shown (nothing in it: the
+//                                       dialog asks for its words)
 import { isDesktop } from "./desktop";
 
 export interface DialogContent {
@@ -71,15 +72,18 @@ export async function chooseDialog(action: "close" | "logs"): Promise<void> {
   }
 }
 
-/** Calls `cb` with new words while the dialog is open; returns its stop. */
+/**
+ * Calls `cb` with new words while the dialog is open; returns its stop. Its own window's event,
+ * which says only that there are some: the words come from the shell.
+ */
 export function onDialogContent(cb: (c: DialogContent) => void): () => void {
   if (win().__MAKTABA_DIALOG_PREVIEW__ || !isDesktop()) return () => {};
   let stop = () => {};
   let live = true;
-  void import("@tauri-apps/api/event")
-    .then(({ listen }) =>
-      listen<DialogContent>("shell-dialog", (e) => {
-        if (isContent(e.payload)) cb(e.payload);
+  void import("@tauri-apps/api/webviewWindow")
+    .then(({ getCurrentWebviewWindow }) =>
+      getCurrentWebviewWindow().listen("shell-dialog", () => {
+        void loadDialogContent().then((c) => live && c && cb(c));
       })
     )
     .then((f) => {
