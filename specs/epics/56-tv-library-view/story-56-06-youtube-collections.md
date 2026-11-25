@@ -78,7 +78,6 @@ Run with `uv run --extra dev pytest`; mypy strict covers the tests.
 | Key | English | Arabic |
 |---|---|---|
 | `collections.badge.youtubePlaylist` | YouTube playlist | قائمة تشغيل يوتيوب |
-| `collections.badge.youtubeChannel` | YouTube channel | قناة يوتيوب |
 | `collections.kind.youtube` | From YouTube | من يوتيوب |
 | `queue.stage.youtube_collections.title` | Collections from YouTube | مجموعات من يوتيوب |
 | `queue.stage.youtube_collections.desc` | Makes a collection from each YouTube playlist and channel a library's videos came from. | ينشئ مجموعة من كل قائمة تشغيل وقناة يوتيوب جاءت منها مقاطع المكتبة. |

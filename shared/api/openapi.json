@@ -23437,8 +23437,7 @@
             "type": "string",
             "enum": [
               "youtube_playlist",
-              "youtube_channel",
-              "plex"
+              "youtube_channel"
             ]
           },
           "source_ref": {

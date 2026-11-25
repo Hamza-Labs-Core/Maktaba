@@ -329,7 +329,8 @@ func hasGridFilter(q url.Values) bool {
 }
 
 // modeCollectionCond keeps the collections c that take part in a library's
-// collection mode: an admin's manual ones and Plex's, shown, not dismissed.
+// collection mode: an admin's manual ones and those an older release read in from Plex
+// (ordinary ones now), shown, not dismissed.
 const modeCollectionCond = `NOT c.is_smart AND (c.source_kind IS NULL OR c.source_kind = 'plex') AND c.hidden_at IS NULL AND c.dismissed_at IS NULL`
 
 // collectionMode is a library's collection_mode (tab_only when unknown).
@@ -355,7 +356,8 @@ type CollectionCard struct {
 }
 
 // modeCollections is the library's collections that take part in its mode,
-// each with the caller's visible videos (a collection with none is left out).
+// each with the caller's visible videos (a collection with none is left out). One an older
+// release read in from Plex has no source here.
 func (h *Handler) modeCollections(ctx context.Context, p *principal.Principal, lib string) ([]CollectionCard, error) {
 	args := []any{lib}
 	scope := ""
@@ -371,7 +373,7 @@ func (h *Handler) modeCollections(ctx context.Context, p *principal.Principal, l
 		scope = " AND v.library_id IN (" + strings.Join(ph, ",") + ")"
 	}
 	scope += parental.Where(ctx, "v")
-	rows, err := h.DB.QueryContext(ctx, `SELECT CAST(c.id AS TEXT), COALESCE(c.name_override, c.name), COALESCE(c.source_kind, ''), CAST(v.id AS TEXT)
+	rows, err := h.DB.QueryContext(ctx, `SELECT CAST(c.id AS TEXT), COALESCE(c.name_override, c.name), COALESCE(NULLIF(c.source_kind, 'plex'), ''), CAST(v.id AS TEXT)
 		FROM collections c JOIN collection_items ci ON ci.collection_id = c.id JOIN videos v ON v.id = ci.video_id
 		WHERE c.library_id = $1 AND `+modeCollectionCond+` AND v.deleted_at IS NULL AND v.state NOT IN ('missing', 'superseded')`+scope+`
 		ORDER BY COALESCE(c.sort_title, c.name_override, c.name), c.id,

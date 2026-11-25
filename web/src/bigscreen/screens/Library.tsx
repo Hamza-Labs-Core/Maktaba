@@ -10,8 +10,8 @@
 //   collections an admin promoted to it.
 // - Library: Show [Videos | Series], Sort, Filter, a grid (GET /api/videos, or
 //   ?group=series) and the letter rail at its end side (GET /api/videos/facets).
-// - Collections: the library's collections with a badge per kind (YouTube,
-//   Plex, Smart); Playlists: the user's lists with videos here; Categories:
+// - Collections: the library's collections with a badge (a YouTube
+//   playlist's, Smart); Playlists: the user's lists with videos here; Categories:
 //   speakers, topics, languages and years, each opening the filtered grid.
 //
 // Remote (Epic 56 §6.5): opening a library lands on its tab row; Left and Right

@@ -31,7 +31,7 @@ __all__ = ["Desired", "SyncStats", "sync_sourced"]
 class Desired:
     """One collection as its source has it now."""
 
-    source_kind: str  # youtube_playlist | youtube_channel | plex
+    source_kind: str  # youtube_playlist | youtube_channel
     source_ref: str
     name: str
     items: tuple[str, ...]  # video ids, in the source's order

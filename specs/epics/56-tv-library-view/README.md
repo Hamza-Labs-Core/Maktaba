@@ -200,7 +200,7 @@ that tries every route as no one and as a viewer):
 | `POST /api/me/play-queues/{id}/items` `{video_ids, where: next\|end}` | the owner | 56.01 |
 | `POST /api/me/play-queues/{id}/reshuffle`, `DELETE /api/me/play-queues/{id}` | the owner | 56.01 |
 | `GET /api/libraries/{id}/categories` → speakers, topics, languages, years with counts | readers of the library | 56.05 |
-| `GET /api/libraries/{id}/collections` gains `kind=youtube\|plex` and returns `source_kind`, `show_on_library` | readers | 56.06–56.08 |
+| `GET /api/libraries/{id}/collections` gains `kind=youtube` and returns `source_kind`, `show_on_library` | readers | 56.06–56.08 |
 | `PATCH /api/collections/{id}` accepts `name_override`, `hidden`, `show_on_library`, `show_on_home`, `sort_title` (automatic ones: only these) | admin | 56.08 |
 | `PATCH /api/libraries/{id}` accepts `collection_mode` | admin | 56.08 |
 | `GET /api/libraries/{id}/hub` gains promoted collection rows; `GET /api/home` gains `show_on_home` rows | readers | 56.08 |
@@ -224,7 +224,7 @@ playlists, hub, home, facets, `/me/*`), and fixes the collections items path (56
 │  promoted collections…)                                              │
 │  Library: Show [Videos|Series]  Sort [Newest ▾]  Filter [2]  A…Z ي…ا │
 │           grid of cards                                              │
-│  Collections: grid of collection cards (badge: YouTube, Plex, Smart) │
+│  Collections: grid of collection cards (badge: YouTube, Smart)       │
 │  Playlists: the user's lists with items here, + New smart playlist   │
 │  Categories: Speakers · Topics · Languages · Years → filtered grid   │
 └──────────────────────────────────────────────────────────────────────┘

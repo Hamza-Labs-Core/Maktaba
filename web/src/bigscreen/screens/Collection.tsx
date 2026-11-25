@@ -4,7 +4,7 @@
 // Shuffle; the items in order. Choosing an item plays the list from it, on the
 // server queue (story 56.01), as Play/Pause on it does.
 //
-//   /big/collection/:id                          curated, smart, YouTube, Plex
+//   /big/collection/:id                          curated, smart, YouTube
 //   /big/library/:libraryId/collection/:kind/:id the pipeline's topic and clip groups
 //   /big/playlist/:id                            the user's own, manual or smart
 import { useEffect, useState } from "react";

@@ -132,6 +132,23 @@ func TestLibraryCollectionsNoPlexKind(t *testing.T) {
 	if c := kinds["px"]; c.Kind != KindCurated || c.SourceKind != "" || c.Automatic {
 		t.Errorf("a Plex-read collection %+v, want curated with no source", c)
 	}
+	// promoted, its row has no source either; a YouTube one's row keeps its own
+	if _, err := e.db.Exec(`UPDATE collections SET show_on_library = 1 WHERE id IN ('ch', 'px')`); err != nil {
+		t.Fatal(err)
+	}
+	var hub struct {
+		Rows []CollectionRow `json:"collection_rows"`
+	}
+	if code := e.do(asViewer(), "GET", "/api/libraries/"+libA+"/hub", nil, &hub); code != 200 {
+		t.Fatalf("hub: %d", code)
+	}
+	sources := map[string]string{}
+	for _, r := range hub.Rows {
+		sources[r.Collection.ID] = r.Collection.SourceKind
+	}
+	if len(sources) != 2 || sources["ch"] != "youtube_channel" || sources["px"] != "" {
+		t.Errorf("promoted rows' sources %v", sources)
+	}
 	if n, ok := cols.Counts["plex"]; !ok || n != 0 || cols.Counts["youtube"] != 1 || cols.Counts["curated"] != 2 {
 		t.Errorf("counts %v", cols.Counts)
 	}
