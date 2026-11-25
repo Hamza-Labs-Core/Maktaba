@@ -98,7 +98,7 @@ stop_all() {
 			for c in $ids; do
 				docker stop -t 30 "$c" >/dev/null 2>&1 || true
 				keep="$STATE/last-logs/$s.log" # the first is the refused release's: the next, beside it
-				[ ! -e "$keep" ] || keep="$STATE/last-logs/$s.$(date +%s).log"
+				[ ! -e "$keep" ] || keep="$STATE/last-logs/$s.$c.log"
 				(umask 077; mkdir -p "$STATE/last-logs" && docker logs --tail 500 "$c" > "$keep" 2>&1) 2>/dev/null || true
 				docker rm -f "$c" >/dev/null 2>&1 || true
 			done
@@ -251,16 +251,18 @@ USER_TABLES="pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schem
 # folder only, and that one was cut, or failed. It is made again, from nothing, when it is shown that
 # nothing of anybody's is in it: no release was ever committed here (first_deploy) and no backup was ever
 # taken (each begin takes one of a database with a table in it), and either postgres itself says that it has no
-# database but its own three, with no table in them, or, when it can't start, its folder is what a new
+# database but its own three, with no table in the two it lets anyone into, or, when it can't start, its folder is what a new
 # cluster's is and nothing else: no other database's folder, no file of a table of anybody's (those are
 # numbered from 16384), no tablespace, nothing postgres does not make.
 afresh() { # afresh COMPOSE WHY
-	local db="$1" why="$2" not="" n="" t="" files="" keep
+	local db="$1" why="$2" not="" n="" t="" d files="" keep
 	if compgen -G "/var/backups/maktaba-cloud/db-*.dump" >/dev/null; then
 		not="a backup of a database of this node is in /var/backups/maktaba-cloud"
 	elif n="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM pg_database WHERE datname NOT IN ('postgres', 'template0', 'template1')" postgres 2>/dev/null)"; then
-		t="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM $USER_TABLES" postgres 2>/dev/null)" || t="?"
-		[ "$n" = 0 ] && [ "$t" = 0 ] || not="postgres has $n database(s) of its users, and $t table(s) beside them"
+		for d in postgres template1; do
+			t="$t$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM $USER_TABLES" "$d" 2>/dev/null)" || t="$t?"
+		done
+		[ "$n" = 0 ] && [ "$t" = 00 ] || not="postgres has $n database(s) of its users, or tables in its own ($t)"
 	else
 		n="" # whatever it had printed: it did not end well, and the folder is looked at instead
 	fi
@@ -370,8 +372,7 @@ cmd_begin() {
 		log "image $ref"
 	done
 
-	rm -rf "$STATE/pending.new" "$STATE/last-logs.old"
-	[ ! -d "$STATE/last-logs" ] || mv "$STATE/last-logs" "$STATE/last-logs.old" # the last deploy's words
+	rm -rf "$STATE/pending.new"
 	(umask 077; mkdir -p "$STATE/pending.new/set")
 	cat /proc/sys/kernel/random/boot_id > "$STATE/pending.new/boot_id"
 	printf '%s\n' "$DEPLOY_ID" > "$STATE/pending.new/id"
@@ -426,6 +427,9 @@ cmd_begin() {
 	mkdir -p "$DEPLOY_DIR"
 	if ! fallocate -l 16M "$DEPLOY_DIR/.reserve" || ! fallocate -l 64M "$STATE/reserve"; then die "begin: no room to keep for going back: nothing was changed"; fi
 	install_watch
+	# the last deploy's words, only now: a begin that refused before this left them where they are
+	rm -rf "$STATE/last-logs.old"
+	[ ! -d "$STATE/last-logs" ] || mv "$STATE/last-logs" "$STATE/last-logs.old"
 	sync
 	mv "$STATE/pending.new" "$STATE/pending"
 	sync

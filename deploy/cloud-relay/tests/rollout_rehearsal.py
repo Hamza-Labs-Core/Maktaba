@@ -113,7 +113,7 @@ MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
     "unhold-serves-it": ("ops/rollout.sh", r"elif \[ -f \"\$STATE/pending/first\" \]; then touch \"\$STATE/no-release\"", "elif false; then true", ["a first rollback without docker"]),
     "never-afresh": ("ops/rollout.sh", r"\t\t\tafresh \"\$db\" \"\$broken\"", '\t\t\tdie "begin: the database $broken"', ["a database whose first start failed"]),
     "afresh-unsure": ("ops/rollout.sh", r"n=\"\" # whatever it had printed[^\n]*", "true", ["a database that can't be shown empty"]),
-    "afresh-over-databases": ("ops/rollout.sh", r"\[ \"\$n\" = 0 \] && \[ \"\$t\" = 0 \] \|\| not=[^\n]*", "true", ["a database that can't be shown empty"]),
+    "afresh-over-databases": ("ops/rollout.sh", r"\[ \"\$n\" = 0 \] && \[ \"\$t\" = 00 \] \|\| not=[^\n]*", "true", ["a database that can't be shown empty"]),
     "afresh-beside-a-backup": ("ops/rollout.sh", r"if compgen -G \"/var/backups[^\n]*then", "if false; then", ["a database whose first start failed"]),
     "afresh-over-a-tablespace": ("ops/rollout.sh", r"\[ -z \"\$\(ls -A pg_tblspc[^\n]*", "true", ["a database whose first start failed"]),
     "afresh-any-layout": ("ops/rollout.sh", r"\*\) echo \"what postgres does not make[^\n]*", "*) ;;", ["a database whose first start failed"]),
@@ -547,14 +547,23 @@ def database_that_cannot_be_shown_empty() -> str:
     refused_to_remake("postgres has 1 database(s)")
     dc("up -d --wait postgres </dev/null")
     sh(f"{super_psql} 'ALTER DATABASE other RENAME TO maktaba' </dev/null")
+    # tables in postgres's own databases
+    sh(f"{super_psql} 'DROP DATABASE maktaba' </dev/null")
+    for own in ("postgres", "template1"):
+        in_own = super_psql.replace("-d postgres", f"-d {own}")
+        sh(f"{in_own} 'CREATE TABLE somebodys (id INT)' </dev/null")
+        refused_to_remake("postgres has 0 database(s)")
+        dc("up -d --wait postgres </dev/null")
+        sh(f"{in_own} 'DROP TABLE somebodys' </dev/null")
+    sh(f"{super_psql} 'CREATE DATABASE maktaba' </dev/null")
     # an answer that was printed by a command that then failed is no answer
-    refused_to_remake("its folder has database 16384", stand_in(
+    refused_to_remake("its folder has database ", stand_in(
         '*"FROM pg_database"*) echo 0; exit 1 ;;\n*"count(*) FROM pg_tables"*) exit 1 ;;'))
     code, out = begin("a")
     assert code == 0 and "the database is empty" in out, out[-2500:]
     code, out = rollback()
     assert code == 0, out[-1500:]
-    return "refused four times, with the steps"
+    return "refused six times, with the steps"
 
 
 def answer_docker_does_not_give() -> str:
@@ -817,6 +826,16 @@ def unhealthy() -> str:
     assert "the relay's /readyz does not answer 200" in out, "it does not say what was not ready"
     kept = STATE / "last-logs/maktaba-cloud.log"  # the refused release's own words: its container is gone
     assert IMAGES["bad"].split("@")[0] in kept.read_text(), "its log was not kept"
+    # two begins that refuse leave it where it is; one that goes through puts it aside
+    for _ in range(2):
+        code, out = begin("b", extra={"MIN_FREE_MB": "99999999"})
+        assert code != 0 and kept.exists(), "a begin that refused moved it"
+    code, out = begin("b", extra=stand_in('*"exec -T postgres pg_restore"*) exit 1 ;;'))
+    assert code != 0 and "backup" in out and kept.exists(), f"a begin that refused moved it: {out[-800:]}"
+    code, out = begin("b")
+    assert code == 0 and (STATE / "last-logs.old/maktaba-cloud.log").exists() and not kept.exists(), out[-1500:]
+    code, out = rollback()
+    assert code == 0, out[-1500:]
     not_pending()
     ready()
     same(before, snapshot())

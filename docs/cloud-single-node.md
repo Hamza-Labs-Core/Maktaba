@@ -154,8 +154,8 @@ restore and the next deploy take it out first.
 **A database that does not come up.** `begin` starts the database to back it up, and refuses when it can't,
 with nothing changed. On a node that never committed a release, a first start of Postgres that was cut or
 failed leaves a folder Postgres does not finish by itself: `begin` makes it afresh when it can show that
-nothing is in it (no backup was ever taken, and Postgres has no database but its own, or, when it can't
-start, its folder holds only what a new cluster's does), and keeps a copy in
+nothing is in it (no backup was ever taken, and Postgres has no database but its own, with no table in
+them, or, when it can't start, its folder holds only what a new cluster's does), and keeps a copy in
 `/var/backups/maktaba-cloud`. When it can't show that, it says why and refuses. Then, on the node:
 
 - nobody needs what is in it: `docker ps -aq --filter volume=maktaba-relay_pg_data | xargs -r docker rm -f`,
