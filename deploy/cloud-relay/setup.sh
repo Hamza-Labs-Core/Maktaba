@@ -257,7 +257,9 @@ release_sends() {
 	local image tag out rc=0
 	image="$(get_env MAKTABA_CLOUD_IMAGE)"; tag="$(get_env MAKTABA_CLOUD_TAG)"
 	image="${image:-ghcr.io/hamza-labs-core/maktaba-cloud}:${tag:-latest}"
-	out="$(timeout 60 docker run --rm --network none "$image" mail drivers </dev/null 2>"$DEPLOY_DIR/.drivers.err")" || rc=$?
+	# (a hand-run setup may not have it yet: its pull has no clock on it)
+	docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null || die "the release's image can't be pulled"
+	out="$(timeout -k 5 60 docker run --rm --pull never --network none "$image" mail drivers </dev/null 2>"$DEPLOY_DIR/.drivers.err")" || rc=$?
 	if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
 		warn "$(head -c 400 "$DEPLOY_DIR/.drivers.err")"
 		rm -f "$DEPLOY_DIR/.drivers.err"
@@ -306,6 +308,15 @@ if [ -z "$turnstile_site" ] || [ -z "$turnstile_secret" ]; then
 elif ! release_sends; then
 	warn "bot check: this release is from before it could be used here: it is off"
 else
+	# a wrong secret closes every web sign-in: Cloudflare is asked once, with a token that is none
+	# (on stdin, not on a command line). A good secret's answer is about the token.
+	answer="$(printf 'secret=%s&response=deploy-check' "$turnstile_secret" | curl -sS -m 20 --retry 2 --data-binary @- \
+		https://challenges.cloudflare.com/turnstile/v0/siteverify 2>/dev/null)" || answer=""
+	case "$answer" in
+		*invalid-input-secret* | *missing-input-secret*) die "TURNSTILE_SECRET_KEY is not a secret Cloudflare knows (is it the site key?)" ;;
+		*invalid-input-response* | *'"success":true'* | *'"success": true'*) ;;
+		*) warn "bot check: Cloudflare could not be asked about TURNSTILE_SECRET_KEY; it is not checked" ;;
+	esac
 	TURNSTILE_ENABLED=true
 	log "bot check: on (Turnstile)"
 fi

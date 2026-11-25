@@ -335,7 +335,8 @@ def target_env(name: str) -> dict[str, str]:
     return dict(line.split("=", 1) for line in (NODE / f"targets/{name}.env").read_text().splitlines() if re.match(r"[A-Z_]+=", line))
 
 
-def mail_block(tmp: Path, env: dict[str, str], dotenv: str = "", drivers: str = "log\\nresend") -> tuple[int, str, dict[str, Any]]:
+def mail_block(tmp: Path, env: dict[str, str], dotenv: str = "", drivers: str = "log\\nresend",
+               siteverify: str = """echo '{"success":false,"error-codes":["invalid-input-response"]}'""") -> tuple[int, str, dict[str, Any]]:
     """setup.sh's mail block, then its cloud.toml: (exit, what it said, [mail]). The release's image
     says drivers; "" is one from before the command (it exits 2)."""
     import tomllib
@@ -346,9 +347,11 @@ def mail_block(tmp: Path, env: dict[str, str], dotenv: str = "", drivers: str = 
     loop = re.search(r"^for k in RELAY_DOMAIN .*?^done$.*?^for k in MAIL_ALLOW .*?^done$", text, re.S | re.M)
     (tmp / "bin").mkdir(exist_ok=True)
     answer = drivers if drivers.startswith("exit") else f'printf "%b\\n" "{drivers}"' if drivers else "echo '--role required' >&2; exit 2"
-    (tmp / "bin/docker").write_text(f'#!/bin/sh\necho "$*" >> {tmp}/docker.said\n{answer}\n')
-    (tmp / "bin/timeout").write_text('#!/bin/sh\nshift\nexec "$@"\n')
-    for f in ("docker", "timeout"):
+    (tmp / "bin/docker").write_text(f'#!/bin/sh\necho "$*" >> {tmp}/docker.said\n[ "$1" = run ] || exit 0\n{answer}\n')
+    # siteverify: what it is given on stdin is kept, with the command line it must not be on
+    (tmp / "bin/curl").write_text(f'#!/bin/sh\necho "$*" > {tmp}/curl.args\ncat > {tmp}/curl.stdin\n{siteverify}\n')
+    (tmp / "bin/timeout").write_text('#!/bin/sh\nshift 3\nexec "$@"\n')
+    for f in ("docker", "timeout", "curl"):
         (tmp / "bin" / f).chmod(0o755)
     render = re.search(r"^sed -e .*?cloud\.toml\.new\"$", text, re.S | re.M)
     assert loop and render
@@ -405,7 +408,7 @@ def test_the_driver_is_for_a_release_that_knows_it(tmp_path: Path) -> None:
     code, said, toml = mail_block(tmp_path, {"RESEND_API_KEY": KEY})
     assert code == 0 and toml["driver"] == "resend"
     asked = (tmp_path / "docker.said").read_text().splitlines()[-1]
-    assert asked == "run --rm --network none ghcr.io/hamza-labs-core/maktaba-cloud:v9.9.9@sha256:abc mail drivers"
+    assert asked == "run --rm --pull never --network none ghcr.io/hamza-labs-core/maktaba-cloud:v9.9.9@sha256:abc mail drivers"
 
 
 def test_the_bot_check_is_on_with_both_its_keys_and_says_so(tmp_path: Path) -> None:
@@ -425,6 +428,18 @@ def test_the_bot_check_is_on_with_both_its_keys_and_says_so(tmp_path: Path) -> N
         assert "the-secret" not in said + (tmp / "cloud.toml").read_text()
     compose = yaml.safe_load((NODE / "docker-compose.yml").read_text())["services"]
     assert [n for n, svc in compose.items() if "MAKTABA_CLOUD_TURNSTILE_SECRET" in (svc.get("environment") or {})] == ["api"]
+    # the secret is asked of Cloudflare once, on stdin; a bad one fails the deploy, saying which
+    tmp = tmp_path / "asked"
+    tmp.mkdir()
+    bad_secret = """echo '{"success":false,"error-codes":["invalid-input-secret"]}'"""
+    for siteverify, ok, words in ((bad_secret, False, "is not a secret Cloudflare knows"), ("echo '{\"success\":true}'", True, "bot check: on"),
+                                  ("exit 28", True, "could not be asked"), ("echo '<html>'", True, "could not be asked")):
+        code, said, _ = mail_block(tmp, both, siteverify=siteverify)
+        assert (code == 0) is ok and words in said and "the-secret" not in said, siteverify
+        assert "the-secret" in (tmp / "curl.stdin").read_text() and "the-secret" not in (tmp / "curl.args").read_text()
+    (tmp / "curl.args").unlink()
+    mail_block(tmp, {"TURNSTILE_SITE_KEY": "", "TURNSTILE_SECRET_KEY": ""})
+    assert not (tmp / "curl.args").exists(), "not asked without the keys"
     # taken out of the environment, they are taken off the node
     tmp = tmp_path / "off"
     tmp.mkdir()
@@ -522,3 +537,53 @@ def test_e2e_refuses_a_qa_that_could_mail_a_stranger(e2e: Any) -> None:
     assert "all" in e2e.mail_status({"mail": {**sends, "recipients": "all"}}, False)
     with pytest.raises(AssertionError, match="stranger"):
         e2e.mail_status({"mail": {**sends, "recipients": "all"}}, True)
+
+
+# --- the operator's reset link
+
+
+def ops_tool(tmp: Path, args: list[str], stdin: str, tty: bool) -> tuple[int, str, str]:
+    """cloud-ops.py with a docker that keeps what psql is given: (exit, what it printed, the SQL)."""
+    import pty
+
+    (tmp / "bin").mkdir(exist_ok=True)
+    (tmp / ".env").write_text("APP_DOMAIN=app.example.test\n")
+    (tmp / "bin/docker").write_text(f'#!/bin/sh\necho "$*" >> {tmp}/docker.args\ncat > {tmp}/sql\n[ -e {tmp}/none ] || echo some-id\n')
+    (tmp / "bin/docker").chmod(0o755)
+    script = f"import os, runpy, sys; os.geteuid = lambda: 0; sys.argv = {['cloud-ops.py', *args]!r}; runpy.run_path({str(NODE / 'ops/cloud-ops.py')!r}, run_name='__main__')"
+    env = {"PATH": f"{tmp}/bin:{os.environ['PATH']}", "DEPLOY_DIR": str(tmp)}
+    master, slave = pty.openpty()
+    p = subprocess.run([sys.executable, "-c", script], input=stdin.encode(), env=env, stdout=slave if tty else subprocess.PIPE, stderr=subprocess.PIPE)
+    # read while the slave is open: closing it may drop what the terminal holds
+    said = os.read(master, 4096).decode() if tty and p.returncode == 0 else (p.stdout or b"").decode()
+    os.close(slave)
+    os.close(master)
+    return p.returncode, said + p.stderr.decode(), (tmp / "sql").read_text() if (tmp / "sql").exists() else ""
+
+
+def test_the_operators_reset_link_is_shown_once_on_a_terminal_and_audited(tmp_path: Path) -> None:
+    import hashlib
+
+    code, said, sql = ops_tool(tmp_path, ["reset-link"], "owner@example.test\n", tty=True)
+    assert code == 0, said
+    link = re.search(r"https://app\.example\.test/reset-password\?token=([A-Za-z0-9_-]{43})", said)
+    assert link
+    # only its SHA-256 goes to the database, as the cloud keeps one, with its audit row in the same transaction
+    assert hashlib.sha256(link[1].encode()).hexdigest() in sql and link[1] not in sql + (tmp_path / "docker.args").read_text()
+    assert sql.index("BEGIN;") < sql.index("email_verifications") < sql.index("audit_log") < sql.index("COMMIT;")
+    assert "'auth.password_reset_link'" in sql and "status = 'active'" in sql and "'1 hour'" in sql
+    assert "owner@example.test" not in (tmp_path / "docker.args").read_text()
+    # a pipe, a file or a CI run gets none, and nothing is made
+    (tmp_path / "sql").unlink()
+    code, said, sql = ops_tool(tmp_path, ["reset-link"], "owner@example.test\n", tty=False)
+    assert code != 0 and "terminal only" in said and "token=" not in said and not sql
+    # no such account: no link
+    (tmp_path / "none").touch()
+    code, said, _ = ops_tool(tmp_path, ["reset-link"], "nobody@example.test\n", tty=True)
+    assert code != 0 and "no active account" in said and "token=" not in said
+
+
+def test_the_reset_links_hash_is_the_clouds() -> None:
+    go = (ROOT / "cloud/internal/stores/tokens.go").read_text()
+    assert "sha256.Sum256([]byte(raw))" in go and "hex.EncodeToString(sum[:])" in go
+    assert re.search(r'PurposePasswordReset\s+= "password_reset"', go)

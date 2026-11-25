@@ -24,7 +24,7 @@
 
 **Links.** A reset's link is good for an hour, a confirmation's for a day. Asking for another never
 ends one: each sent is good for its own life, until one is used, which ends the others of its
-account and kind. So nobody can end the link in somebody's inbox by asking.
+account and kind. A password change and signing out everywhere end the reset links too. So nobody can end the link in somebody's inbox by asking.
 
 A restart, a deploy or a crash loses no mail: the next process sends the row, with the same
 idempotency key. Several api nodes share the outbox. The worker only writes rows.
@@ -80,19 +80,29 @@ a request from a web page without it is refused. A request from no web page (an 
 not asked: it gets the smaller shares above. **Without the keys every request does**, so
 strangers' mails stop at 40 % of the day.
 
-What a determined attacker can still do, within a plan of 100 mails a day: with about two networks
-a day, use up the strangers' share without the check (sign-ups from the web pages, with the check,
-go on if it is on; without it, nobody new gets a confirmation that day); with about five networks
-and confirmed accounts of their own, use up the whole day, a confirmed owner's reset included; on a
-shared network (CGNAT, a school), use up its asks, so the others there wait. The notices and links
-already sent are not affected. And someone who fills the day to one below a limit, then asks for an
-address, can tell from their own next mail whether it had an account: one answer a day, and noisy.
-The remedies: the keys, then a bigger plan.
+What a determined attacker can still do, within a plan of 100 mails a day:
+
+- **Strangers' mails**, without the keys: about two networks a day use up the share asked for without
+  the check, and nobody new gets a confirmation that day. With them, sign-ups from the web pages go on.
+- **The whole day**, a confirmed owner's reset included: each confirmed account of the attacker's
+  own draws a reset an hour from the reserve. Without the keys, four accounts and five networks
+  start to; **with them, three or four accounts and two networks do**, as a network's asks with and
+  without the check add up (80 of an 85-mail day). The keys protect sign-ups, not this. Links already
+  sent still work, and **the owner always has a way in**: `cloud-ops.py reset-link` on the node
+  ([`cloud-single-node.md`](cloud-single-node.md), "Operator actions").
+- **A shared network** (CGNAT, a school): its asks used up, the others there wait up to a day. With
+  the keys the web pages' own allowance stays open.
+- **One bit a day**: someone who fills the day to one below a limit, then asks for an address, can
+  tell from their own next mail whether it had an account. Noisy.
+
+The remedy for the first two is a bigger plan. Known and left: a mail tried again can arrive with a
+link that another, used meanwhile, has ended; a Turnstile token is not bound to one page's action.
 
 **The keys**: Cloudflare → Turnstile → a widget in managed mode for the web app's name
 (`app.maktaba.tv`; QA's `staging-app.maktaba.dev`), one for each. `gh secret set
 TURNSTILE_SECRET_KEY --env prod` and `TURNSTILE_SITE_KEY` the same, pasted at the prompt (QA's with
-`--env qa`), then deploy. Without both the check is off, and the deploy says so. The node's operator
+`--env qa`), then deploy: `setup.sh` asks Cloudflare once
+whether it knows the secret, and fails if it does not. Without both the check is off, and the deploy says so. The node's operator
 console has no public name and is left out (`turnstile.staff = false`).
 
 ## The single node (QA and production)

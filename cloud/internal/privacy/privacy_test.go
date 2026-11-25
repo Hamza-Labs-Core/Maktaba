@@ -2,6 +2,7 @@ package privacy
 
 import (
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -114,6 +115,13 @@ func TestPolicyAndProcessingRecords(t *testing.T) {
 		if strings.Contains(s, "EU region") {
 			t.Errorf("the %s: %s", what, s)
 		}
+	}
+	// the bot check's processor, said for when it is on
+	if s := strings.Join(p.Processors, "; "); !strings.Contains(s, "Cloudflare (the bot check") || !strings.Contains(s, "when it is on") {
+		t.Errorf("processors: %s", s)
+	}
+	if n := slices.IndexFunc(recs, func(a ProcessingActivity) bool { return a.Name == "Bot check (when it is on)" }); n < 0 || !strings.Contains(strings.Join(recs[n].Categories, " "), "IP address") {
+		t.Error("the record of processing has no bot check")
 	}
 	// what an account holds is said, and "no IP addresses" of the analytics only
 	if !strings.Contains(strings.Join(p.AccountData, " "), "Email address") || !strings.Contains(strings.Join(p.AccountData, " "), "35 days") {

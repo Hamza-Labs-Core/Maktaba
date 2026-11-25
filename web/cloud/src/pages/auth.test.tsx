@@ -214,3 +214,57 @@ describe("the shell's status strip (Epic 50 story 50.11)", () => {
     );
   });
 });
+
+describe("forgot password", () => {
+  for (const [name, answer, en] of [
+    [
+      "the network's share is used",
+      () =>
+        new Response(JSON.stringify({ error: "rate_limited", message: "" }), {
+          status: 429,
+          headers: { "Content-Type": "application/json", "Retry-After": "1500" },
+        }),
+      "Too many requests from your network. Try again in 25 minutes.",
+    ],
+    ["the cloud fails", [500, { error: "internal_error", message: "" }], /./],
+    [
+      "the network is away",
+      () => {
+        throw new TypeError("Failed to fetch");
+      },
+      /./,
+    ],
+  ] as const) {
+    it(`${name}: it says so, never that a mail is on its way`, async () => {
+      stubFetch({
+        "POST /v1/auth/refresh": signedOut,
+        "GET /v1/auth/providers": [200, { google: false, apple: false }],
+        "POST /v1/auth/password/forgot": answer as never,
+      });
+      renderAt("/forgot-password");
+      const u = userEvent.setup();
+      await u.type(await screen.findByLabelText(/^Email/), "sam@example.com");
+      await u.click(screen.getByRole("button", { name: "Send reset link" }));
+      const alert = await screen.findByRole("alert");
+      if (typeof en === "string") expect(alert).toHaveTextContent(en);
+      expect(
+        screen.queryByText("If that address has an account, a reset link is on its way.")
+      ).toBeNull();
+    });
+  }
+
+  it("says a mail is on its way when it was asked for", async () => {
+    stubFetch({
+      "POST /v1/auth/refresh": signedOut,
+      "GET /v1/auth/providers": [200, { google: false, apple: false }],
+      "POST /v1/auth/password/forgot": [202],
+    });
+    renderAt("/forgot-password");
+    const u = userEvent.setup();
+    await u.type(await screen.findByLabelText(/^Email/), "sam@example.com");
+    await u.click(screen.getByRole("button", { name: "Send reset link" }));
+    expect(
+      await screen.findByText("If that address has an account, a reset link is on its way.")
+    ).toBeInTheDocument();
+  });
+});

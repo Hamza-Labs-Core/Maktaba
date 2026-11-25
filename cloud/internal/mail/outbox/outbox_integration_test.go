@@ -764,6 +764,40 @@ func TestRepeatsLeaveTheReserve(t *testing.T) {
 	}
 }
 
+// Only a reset sent makes the next one a repeat: another kind of mail to the address, which anyone
+// can cause, never takes the first of the hour, and the strangers' share being gone, it goes.
+func TestAnotherKindOfMailIsNotARepeat(t *testing.T) {
+	w := newWorld(t, DefaultLimits(10, 1000))
+	w.verified("owner@example.test")
+	w.register("owner@example.test", "en") // already registered
+	w.work()
+	if w.to("owner@example.test", mail.KindAlreadyRegistered) != 1 {
+		t.Fatal(w.states())
+	}
+	if err := w.o.Send(context.Background(), mail.Message{To: "owner@example.test", Kind: "payment_failed"}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 20 {
+		if err := w.o.Register(context.Background(), mail.Ask{To: fmt.Sprintf("s%d@example.test", i), Checked: true}, "hash", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.work()
+	// the repeats' share is spent by another account
+	w.verified("other@example.test")
+	for range 4 {
+		w.ask(mail.KindPasswordReset, "other@example.test", "en")
+		w.work()
+		w.at = w.at.Add(15 * time.Minute)
+	}
+	w.at = w.at.Add(-40 * time.Minute) // within the hour of the owner's other mails
+	w.ask(mail.KindPasswordReset, "owner@example.test", "en")
+	w.work()
+	if w.to("owner@example.test", mail.KindPasswordReset) != 1 {
+		t.Fatalf("the first reset of the hour waits: %s", w.states())
+	}
+}
+
 // What goes first: confirmed accounts' mails, then strangers', whoever asked first.
 func TestConfirmedAccountsGoFirst(t *testing.T) {
 	w := newWorld(t, DefaultLimits(100, 1000))

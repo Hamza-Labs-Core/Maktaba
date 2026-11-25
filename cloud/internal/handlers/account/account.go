@@ -31,6 +31,7 @@ import (
 type Deps struct {
 	Users    *stores.Users
 	Sessions *sessions.Store
+	Tokens   *stores.MailTokens
 	Audit    *audit.Log
 	Logger   *slog.Logger
 }
@@ -186,6 +187,9 @@ func (d *Deps) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if err := d.Sessions.RevokeAllForUser(r.Context(), uid); err != nil {
 		d.Logger.Error("account: revoke sessions after password change", "err", err)
 	}
+	if err := d.Tokens.End(r.Context(), uid, stores.PurposePasswordReset); err != nil {
+		d.Logger.Error("account: end reset links after password change", "err", err)
+	}
 	d.audit(r, audit.Entry{ActorID: uid, ActorEmail: u.Email, Action: audit.ActionPasswordChange, TargetKind: "user", TargetID: uid})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -237,11 +241,16 @@ func (d *Deps) RevokeSession(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// RevokeAllSessions is "sign out everywhere".
+// RevokeAllSessions is "sign out everywhere": the reset links in an inbox somebody else may read
+// end too.
 func (d *Deps) RevokeAllSessions(w http.ResponseWriter, r *http.Request) {
 	uid := middleware.GetUserID(r.Context())
 	if err := d.Sessions.RevokeAllForUser(r.Context(), uid); err != nil {
 		d.fail(w, r, "revoke sessions", err)
+		return
+	}
+	if err := d.Tokens.End(r.Context(), uid, stores.PurposePasswordReset); err != nil {
+		d.fail(w, r, "end reset links", err)
 		return
 	}
 	d.audit(r, audit.Entry{ActorID: uid, Action: audit.ActionSessionsRevoked, TargetKind: "user", TargetID: uid})

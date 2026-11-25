@@ -191,11 +191,16 @@ nothing secret is printed:
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py verify-email   # confirm the account's email
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py set-plan pro    # free, basic or pro
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py account         # id, plan, confirmed
+echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py reset-link       # a password reset link, once, on a terminal only
 /opt/maktaba-relay/ops/cloud-ops.py mail-status                                  # how mails go, and what became of them
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py mail-test ar     # a test mail (docs/cloud-mail.md)
 /opt/maktaba-relay/ops/cloud-ops.py end-test-accounts                            # the deploy tests' own (ci-e2e-*)
 maktaba-rollout status                                                          # committed, pending or held
 ```
+
+`reset-link` is for when no mail can arrive: it prints a link like a mailed one (an hour, once),
+keeps only its SHA-256, and writes its audit row (`cli`, `auth.password_reset_link`) in the same
+transaction. It prints on a terminal only, so over SSH it needs `ssh -t`, and never in a CI run.
 
 `verify-email` changes the account and writes its audit row (`cli`, `auth.email_verified`) in
 one transaction. `set-plan` goes through the operator console's API on the private listener,

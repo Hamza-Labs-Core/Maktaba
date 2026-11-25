@@ -59,22 +59,43 @@ func (s *MailTokens) Redeem(ctx context.Context, tok, purpose string) (string, e
 	if tok == "" {
 		return "", ErrTokenInvalid
 	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback() }()
+	// the account first: two of its links used at once wait for each other here, in one order
 	var uid string
-	err := s.DB.QueryRowContext(ctx, `
-        WITH used AS (
-            UPDATE email_verifications SET used_at = now()
-            WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()
-            RETURNING user_id
-        ), others AS (
-            UPDATE email_verifications e SET used_at = now() FROM used
-            WHERE e.user_id = used.user_id AND e.purpose = $2 AND e.token_hash <> $1 AND e.used_at IS NULL
-        )
-        SELECT user_id FROM used
-    `, hashMailToken(tok), purpose).Scan(&uid)
+	err = tx.QueryRowContext(ctx, `
+        SELECT u.id FROM users u JOIN email_verifications e ON e.user_id = u.id
+        WHERE e.token_hash = $1 AND e.purpose = $2 FOR NO KEY UPDATE OF u`, hashMailToken(tok), purpose).Scan(&uid)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrTokenInvalid
 	}
-	return uid, err
+	if err != nil {
+		return "", err
+	}
+	res, err := tx.ExecContext(ctx, `
+        UPDATE email_verifications SET used_at = now()
+        WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()`, hashMailToken(tok), purpose)
+	if err != nil {
+		return "", err
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return "", errors.Join(ErrTokenInvalid, err)
+	}
+	if _, err := tx.ExecContext(ctx, endSQL, uid, purpose); err != nil {
+		return "", err
+	}
+	return uid, tx.Commit()
+}
+
+const endSQL = `UPDATE email_verifications SET used_at = now() WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL`
+
+// End ends the account's links of a purpose (a password changed, everything signed out).
+func (s *MailTokens) End(ctx context.Context, userID, purpose string) error {
+	_, err := s.DB.ExecContext(ctx, endSQL, userID, purpose)
+	return err
 }
 
 func hashMailToken(raw string) string {

@@ -344,7 +344,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		TurnstileSiteKey: cfg.Turnstile.SiteKey,
 		BroadcastEnabled: cfg.Broadcast.Enabled,
 	}
-	accountDeps := &accounth.Deps{Users: users, Sessions: sess, Audit: auditLog, Logger: logger}
+	accountDeps := &accounth.Deps{Users: users, Sessions: sess, Tokens: stores.NewMailTokens(pool.DB), Audit: auditLog, Logger: logger}
 	// Build the router. Order matters: health probes mount on the
 	// outer router before the auth-required group so they don't need
 	// a token.

@@ -58,6 +58,7 @@ func CurrentPolicy() Policy {
 			"Resend (account email): sent from Ireland, stored in the United States; the address, the content and the delivery record, 30 days; an address that bounced or complained stays on its suppression list",
 			"Hetzner (the cloud's servers): Finland",
 			"Apple and Google (push notifications), for an app that asks for them",
+			"Cloudflare (the bot check on the web app's sign-in, sign-up and reset pages, when it is on): the visitor's IP address and what their browser shows it",
 		},
 		LawfulBasis: "Legitimate interest (Art. 6(1)(f)) in operating a reliable, abuse-resistant relay, balanced by collecting only anonymous aggregates; " +
 			"for an account and its email, the contract with its owner (Art. 6(1)(b)).",
@@ -117,6 +118,18 @@ func ProcessingRecords() []ProcessingActivity {
 			Safeguards: []string{
 				"Deletion-on-account-delete via DataSubjectService",
 				"Access restricted to operator email domain",
+			},
+		},
+		{
+			Name:    "Bot check (when it is on)",
+			Purpose: "Tell people from bots on the web app's sign-in, sign-up and reset pages.",
+			Categories: []string{
+				"The visitor's IP address, and what their browser shows the check (Cloudflare Turnstile)",
+			},
+			Recipients: []string{"Cloudflare (Turnstile): in the visitor's browser, and the IP address with the check's answer from the api"},
+			Retention:  "Nothing here: the answer is used once. At Cloudflare: its Turnstile privacy addendum.",
+			Safeguards: []string{
+				"Off without both its keys; no cookie of ours; never asked of the apps",
 			},
 		},
 		{

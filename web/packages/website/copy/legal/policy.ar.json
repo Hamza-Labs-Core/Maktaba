@@ -34,6 +34,7 @@
     "Resend (account email): sent from Ireland, stored in the United States; the address, the content and the delivery record, 30 days; an address that bounced or complained stays on its suppression list": "Resend (رسائل الحساب): تُرسَل من أيرلندا وتُخزَّن في الولايات المتحدة؛ العنوان والمحتوى وسجلّ التسليم 30 يومًا، ويبقى العنوان الذي ارتدّت رسالته أو اشتكى صاحبه في قائمة المنع لديها",
     "Hetzner (the cloud's servers): Finland": "Hetzner (خوادم السحابة): فنلندا",
     "Apple and Google (push notifications), for an app that asks for them": "Apple وGoogle (الإشعارات)، للتطبيق الذي يطلبها",
+    "Cloudflare (the bot check on the web app's sign-in, sign-up and reset pages, when it is on): the visitor's IP address and what their browser shows it": "Cloudflare (فحص الروبوتات في صفحات تسجيل الدخول والتسجيل وإعادة التعيين في تطبيق الويب، حين يكون مفعّلًا): عنوان IP للزائر وما يُظهره متصفّحه لها",
     "Legitimate interest (Art. 6(1)(f)) in operating a reliable, abuse-resistant relay, balanced by collecting only anonymous aggregates; for an account and its email, the contract with its owner (Art. 6(1)(b)).": "المصلحة المشروعة (المادة 6(1)(f) من اللائحة العامة لحماية البيانات) في تشغيل مُرحِّل موثوق يقاوم إساءة الاستخدام، مع الاقتصار على جمع أرقام إجمالية مجهولة الهوية؛ وللحساب ورسائله: العقد مع صاحبه (المادة 6(1)(b)).",
     "Access": "الاطّلاع",
     "Erasure": "المحو",

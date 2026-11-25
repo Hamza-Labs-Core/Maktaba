@@ -59,6 +59,7 @@ const POLICY = {
     "Resend (account email): sent from Ireland, stored in the United States; the address, the content and the delivery record, 30 days; an address that bounced or complained stays on its suppression list",
     "Hetzner (the cloud's servers): Finland",
     "Apple and Google (push notifications), for an app that asks for them",
+    "Cloudflare (the bot check on the web app's sign-in, sign-up and reset pages, when it is on): the visitor's IP address and what their browser shows it",
   ],
   lawful_basis:
     "Legitimate interest (Art. 6(1)(f)) in operating a reliable, abuse-resistant relay, balanced by collecting only anonymous aggregates; for an account and its email, the contract with its owner (Art. 6(1)(b)).",
@@ -128,6 +129,9 @@ test("the account's emails: who delivers them, where they are stored and for how
   for (const lang of ["en", "ar"]) {
     const doc = legalDoc("privacy", lang, { sources: sources() });
     const html = doc.sections.find((s) => s.id === "account").html;
+    // the bot check, worded for when it is on
+    assert.ok(html.includes("https://www.cloudflare.com/turnstile-privacy-policy/"), lang);
+    assert.ok(html.includes({ en: "When it is on", ar: "حين يكون مفعّلًا" }[lang]), lang);
     for (const w of ["Resend", "https://resend.com/security/gdpr", ...say[lang]])
       assert.ok(html.includes(w), `${lang}: ${w}`);
     assert.ok(doc.summary.includes("Resend"), `${lang}: the summary`);

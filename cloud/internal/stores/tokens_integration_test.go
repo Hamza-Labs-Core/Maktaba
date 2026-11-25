@@ -83,6 +83,30 @@ func TestTokensAndRegistrationAreTheirCallersTransaction(t *testing.T) {
 			t.Errorf("a link outlived the one that was used: %v", err)
 		}
 	}
+	// two links of an account used at once, again and again: one wins, the other is told it is used
+	// (never a deadlock)
+	for range 40 {
+		pair := []string{issue(true), issue(true)}
+		errs := make(chan error, 2)
+		for _, tok := range pair {
+			go func() {
+				_, err := tokens.Redeem(ctx, tok, PurposePasswordReset)
+				errs <- err
+			}()
+		}
+		a, b := <-errs, <-errs
+		if (a == nil) == (b == nil) || !errors.Is(errors.Join(a, b), ErrTokenInvalid) {
+			t.Fatalf("%v, %v", a, b)
+		}
+	}
+	// and End ends them without one being used
+	left := issue(true)
+	if err := tokens.End(ctx, u.ID, PurposePasswordReset); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tokens.Redeem(ctx, left, PurposePasswordReset); !errors.Is(err, ErrTokenInvalid) {
+		t.Errorf("a link that was ended: %v", err)
+	}
 	if _, err := tokens.Redeem(ctx, confirm, PurposeVerifyEmail); err != nil {
 		t.Errorf("another purpose's link: %v", err)
 	}

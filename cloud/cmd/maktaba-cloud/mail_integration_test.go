@@ -183,6 +183,32 @@ func TestOneNetworkIsOneRequester(t *testing.T) {
 	}
 }
 
+// A password change and signing out everywhere end the reset links in an inbox.
+func TestAPasswordChangeEndsTheResetLinks(t *testing.T) {
+	e := newEnv(t)
+	const email = "someone@example.test"
+	c := e.registerVerified(email)
+	link := func() string {
+		t.Helper()
+		c.mustStatus(e.client().do("POST", "/v1/auth/password/forgot", map[string]string{"email": email}), http.StatusAccepted)
+		return e.mailedToken("password_reset", email)
+	}
+	dead := func(when, tok string) {
+		t.Helper()
+		r := e.client().do("POST", "/v1/auth/password/reset", map[string]string{"token": tok, "password": "yet another passphrase"})
+		if r.code != 400 || r.errCode() != "invalid_token" {
+			t.Fatalf("after %s: %d %s", when, r.code, r.body)
+		}
+	}
+	tok := link()
+	c.mustStatus(c.do("POST", "/v1/account/password", map[string]string{"current_password": goodPassword, "new_password": "a brand new passphrase"}), http.StatusNoContent)
+	dead("a password change", tok)
+	c.login(email, "a brand new passphrase")
+	tok = link()
+	c.mustStatus(c.do("POST", "/v1/account/sessions/revoke-all", nil), http.StatusNoContent)
+	dead("signing out everywhere", tok)
+}
+
 // The worker's account purge takes the address out of the outbox.
 func TestThePurgeForgetsTheAccountsMail(t *testing.T) {
 	e := newEnv(t)
