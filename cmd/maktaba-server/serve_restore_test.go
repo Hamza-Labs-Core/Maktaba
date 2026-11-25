@@ -189,7 +189,7 @@ func TestRestoreMarksTheRecordAndRestarts(t *testing.T) {
 	}
 	rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir)
 	if rec.State != apppayload.DatabaseRestoring || rec.Version != "0.3.0" || rec.From != "0.2.0" || rec.By != "root" ||
-		rec.Failed != "" || rec.Dump != filepath.Join(rig.backups, "pre-v0.2.0-to-v0.3.0.dump") {
+		rec.Failed != "" || rec.Dump != pgbundle.KeptPath(rig.backups, "pre-v0.2.0-to-v0.3.0.dump") {
 		t.Fatalf("record %+v", rec)
 	}
 	if len(rig.inst.ran) != 1 || rig.inst.ran[0] != "0.2.0" {
@@ -275,14 +275,17 @@ func TestARestoreWithNoRoomForACopyStops(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			e := newExitsRig(t)
-			prevRoom, prevAside, prevCheck := makeRoomKeeping, dumpAsideBundled, roomKeeping
-			t.Cleanup(func() { makeRoomKeeping, dumpAsideBundled, roomKeeping = prevRoom, prevAside, prevCheck })
+			prevRoom, prevAside, prevCheck, prevNow := makeRoomKeeping, dumpAsideBundled, roomKeeping, roomNow
+			t.Cleanup(func() {
+				makeRoomKeeping, dumpAsideBundled, roomKeeping, roomNow = prevRoom, prevAside, prevCheck, prevNow
+			})
 			var kept [][]string
 			makeRoomKeeping = func(_ string, _ pgbundle.RoomPolicy, names ...string) error {
 				kept = append(kept, names)
 				return c.room
 			}
 			roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return c.room }
+			roomNow = func(string, pgbundle.RoomPolicy) error { return c.room }
 			if c.dump != nil {
 				dumpAsideBundled = func(context.Context, pgbundle.Bundle, string) error { return c.dump }
 			}
@@ -296,7 +299,7 @@ func TestARestoreWithNoRoomForACopyStops(t *testing.T) {
 				if code := haltCode(t, err); code != "db_restore_no_copy" {
 					t.Fatalf("start %d: %s: %v", i, code, err)
 				}
-				for _, want := range []string{"Nothing was changed", "--without-copy", "no copy of it as it is now could be kept"} {
+				for _, want := range []string{"This try changed nothing", "--without-copy", "no copy of it as it is now could be kept"} {
 					if !strings.Contains(err.Error(), want) {
 						t.Errorf("%q does not say %q", err, want)
 					}
@@ -313,8 +316,8 @@ func TestARestoreWithNoRoomForACopyStops(t *testing.T) {
 				t.Fatalf("stuck %+v", s)
 			}
 			// asked again as it was: refused before anything, with what is needed (when it is the room)
-			pl, err := e.r.restore(context.Background(), firstBackup, "root", true, false)
 			if c.room != nil {
+				pl, err := e.r.restore(context.Background(), firstBackup, "root", true, false)
 				if restoreCode(err) != "restore_no_copy" || pl.CopyNeed != 46<<30 || pl.CopyFree != 10<<30 || pl.NoCopy == "" {
 					t.Fatalf("%+v %v", pl, err)
 				}
@@ -323,15 +326,17 @@ func TestARestoreWithNoRoomForACopyStops(t *testing.T) {
 				if !strings.Contains(out.String(), "--without-copy") {
 					t.Fatalf("the plan says:\n%s", out.String())
 				}
-			} else if err != nil {
-				t.Fatal(err)
 			}
 			e.fresh()
 			// confirmed: it goes on, and says it kept none
 			if _, err := e.r.restoreAs(context.Background(), firstBackup, "root", restoreAsk{confirm: true, withoutCopy: true}); err != nil {
 				t.Fatal(err)
 			}
-			if rec := e.rec(); !rec.NoCopy || rec.CopyError != "" {
+			want := apppayload.NoCopyRoom
+			if c.room == nil {
+				want = apppayload.NoCopyAny
+			}
+			if rec := e.rec(); rec.NoCopy != want || rec.CopyError != "" {
 				t.Fatalf("%+v", rec)
 			}
 			e.fresh()
@@ -356,9 +361,14 @@ func TestTheCopyIsAskedForOnlyWhenNeeded(t *testing.T) {
 	t.Cleanup(func() { roomKeeping = prev })
 	roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }
 	for name, set := range map[string]func(rec *apppayload.Database){
-		"kept already": func(rec *apppayload.Database) { rec.Aside = filepath.Join(e.backups, "replaced-v0.3.0-x.dump") },
-		"replaced":     func(rec *apppayload.Database) { rec.Data = apppayload.DataReplaced },
-		"gone":         func(rec *apppayload.Database) { rec.Data = apppayload.DataGone },
+		"kept already": func(rec *apppayload.Database) {
+			rec.Aside, rec.AsideBytes = filepath.Join(e.backups, "replaced-v0.3.0-x.dump"), 4
+			if err := os.WriteFile(rec.Aside, []byte("copy"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"replaced": func(rec *apppayload.Database) { rec.Data = apppayload.DataReplaced },
+		"gone":     func(rec *apppayload.Database) { rec.Data = apppayload.DataGone },
 	} {
 		rec := e.asked()
 		set(&rec)

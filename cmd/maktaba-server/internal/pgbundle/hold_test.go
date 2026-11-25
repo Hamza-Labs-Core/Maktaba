@@ -132,3 +132,111 @@ func TestRoomKeeping(t *testing.T) {
 		t.Fatalf("left %s\nwant %s", got, want)
 	}
 }
+
+// KeepForRestore's dumps stay whatever a release that knows nothing of the hold removes: the
+// room for a dump, its retention, its nightly pruning (the same code as every release since
+// v0.3.82 has, but for the hold); then they are back, with their dates.
+func TestKeptForARestore(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Now().Add(-40 * 24 * time.Hour).Truncate(time.Second)
+	names := []string{"maktaba-20260101-030000.dump", "pre-v1-to-v2.dump", "replaced-v1-x.dump", "failed-v1-x.dump"}
+	for _, n := range names {
+		p := filepath.Join(dir, n)
+		if err := os.MkdirAll(filepath.Join(p, "chunks"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range []string{"toc.dat", "chunks/1"} {
+			if err := os.WriteFile(filepath.Join(p, f), []byte(n+f), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatal(err)
+		}
+		// a newer one of each kind
+		if err := os.WriteFile(filepath.Join(dir, strings.Replace(strings.Replace(n, "v1", "v9", 1), "20260101", "20260909", 1)), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file := "pre-v0-to-v1.dump" // one of a single file, as before the directory format
+	if err := os.WriteFile(filepath.Join(dir, file), []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(dir, file), at, at); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 { // again is no change
+		if err := KeepForRestore(dir, append(names, file)...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// what an older release does (nothing is held)
+	prev := diskSpace
+	diskSpace = func(string) (uint64, uint64, error) { return 1, 1 << 30, nil }
+	_ = MakeRoomWith(dir, RoomPolicy{MaxShare: 0.0000001, ReserveMin: 1 << 20})
+	diskSpace = prev
+	if err := PruneBackups(dir, "", 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := (Bundle{Backups: dir, Nightly: &NightlyPolicy{EveryDays: 1, Hour: 3, Keep: 1}}).prune(); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range append(names, file) {
+		if _, err := os.Stat(filepath.Join(dir, n)); !os.IsNotExist(err) {
+			t.Errorf("%s was not removed: this shows nothing (%v)", n, err)
+		}
+		if _, err := os.Stat(KeptPath(dir, n)); err != nil {
+			t.Errorf("%s: %v", n, err)
+		}
+		if OriginalPath(KeptPath(dir, n)) != filepath.Join(dir, n) || OriginalPath(filepath.Join(dir, n)) != filepath.Join(dir, n) {
+			t.Error(OriginalPath(KeptPath(dir, n)))
+		}
+	}
+	if err := os.Mkdir(KeptPath(dir, "half.dump.linking"), 0o700); err != nil { // a link cut short
+		t.Fatal(err)
+	}
+	if err := HoldBackups(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReleaseBackups(dir); err != nil || BackupsHeld(dir) {
+		t.Fatal(err)
+	}
+	for _, n := range append(names, file) {
+		info, err := os.Stat(filepath.Join(dir, n))
+		if err != nil || !info.ModTime().Equal(at) {
+			t.Errorf("%s is not back as it was: %v", n, err)
+			continue
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, n, "chunks", "1")); info.IsDir() && (err != nil || string(b) != n+"chunks/1") {
+			t.Errorf("%s: %q %v", n, b, err)
+		}
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, keptDir, "*")); len(left) != 0 {
+		t.Errorf("left %v", left)
+	}
+	if ents, _ := filepath.Glob(filepath.Join(dir, "*.linking")); len(ents) != 0 {
+		t.Errorf("left %v", ents)
+	}
+}
+
+func TestNewestOfKind(t *testing.T) {
+	dir := t.TempDir()
+	for i, n := range []string{"pre-a-to-b.dump", "pre-b-to-c.dump", "failed-x.dump"} {
+		p := filepath.Join(dir, n)
+		at := time.Now().Add(time.Duration(i-9) * time.Hour)
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for n, want := range map[string]bool{"pre-a-to-b.dump": false, "pre-b-to-c.dump": true, "failed-x.dump": true, "gone.dump": false} {
+		if NewestOfKind(dir, n) != want {
+			t.Errorf("%s: want %v", n, want)
+		}
+	}
+	if !IsNightly("maktaba-20260101-030000.dump") || IsNightly("pre-a-to-b.dump") {
+		t.Error("IsNightly")
+	}
+}

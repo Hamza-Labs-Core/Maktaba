@@ -209,9 +209,17 @@ type damage struct {
 
 var pgDamages = []damage{
 	{"the backup is lost", "", func(e *pgExits) func() {
-		p := filepath.Join(e.b.Backups, pgFirst)
-		e.must(os.Rename(p, p+".away"))
-		return func() { e.must(os.Rename(p+".away", p)) }
+		// where the record names it (kept for the older release), and in its folder
+		for _, p := range []string{e.rec().Dump, filepath.Join(e.b.Backups, pgFirst)} {
+			e.must(os.Rename(p, p+".away"))
+		}
+		return func() {
+			for _, p := range []string{e.rec().Dump, filepath.Join(e.b.Backups, pgFirst)} {
+				if filepath.Base(p) == pgFirst {
+					e.must(os.Rename(p+".away", p))
+				}
+			}
+		}
 	}, apppayload.DataUntouched, "db_restore_backup_failed"},
 	{"a table's rows are cut", "bundled|external", cutRows, apppayload.DataUntouched, "db_restore_backup_failed"},
 	// the schema is dropped before the dump goes in: the database is empty

@@ -88,7 +88,10 @@ or a release you rolled back by hand that refuses the newer schema.
   stops before it touches anything, and says how much is free and how much is needed. Free some space
   on the backups' disk, or delete backups you no longer need, and try again. Or agree to go on without
   a copy (the Updates page, the recovery page, `--without-copy`): the library as it is now is then
-  lost for good. The machines copy the
+  lost for good. No backup is removed then.
+- **`restore_unprotected`**: the release this backup runs on is older than the rules above and may remove
+  the backup first, and the disk has no hard links to keep it. Put back the newest backup of its kind,
+  or move the backups to another disk (Settings > Backups) and try again. The machines copy the
   restored database anew.
 - **What it loses**: every change made since the backup was taken — added videos, watch history,
   settings, jobs done. A `pre-<from>-to-<to>.dump` is from right before that update's switch.

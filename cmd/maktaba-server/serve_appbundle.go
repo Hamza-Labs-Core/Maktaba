@@ -470,7 +470,7 @@ var (
 	makeRoom = pgbundle.MakeRoomWith
 	// the same for the copy of the database a restore replaces (MakeRoomKeeping), and whether
 	// it would be made (RoomKeeping)
-	makeRoomKeeping, roomKeeping = pgbundle.MakeRoomKeeping, pgbundle.RoomKeeping
+	makeRoomKeeping, roomKeeping, roomNow = pgbundle.MakeRoomKeeping, pgbundle.RoomKeeping, pgbundle.RoomNow
 	// the other sessions on the database, ended before an update's migrations
 	endSessionsBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.EndSessions(ctx) }
 	endSessionsExternal = func(ctx context.Context, t dbsafe.Target) (int, error) { return t.EndSessions(ctx) }
@@ -630,7 +630,8 @@ func (g *migrationGate) backups() string {
 // is tried (the record's Aside; its path, "" when it could not): it holds every change made
 // since the backup, which the person chose to put back. Room is made for it from the older
 // backups, never the one put back, those kept for this restore, or the newest of each kind
-// (asideKeeps). One that cannot be kept is an error: the restore stops there, unless the
+// (asideKeeps), and none at all when it is not enough, or the person confirmed a restore
+// without a copy. One that cannot be kept is an error: the restore stops there, unless the
 // person confirmed it goes on without (restoreAsked). An update's rollback sets nothing aside: the
 // release before starts at once, from the dump taken before the failed release's
 // migrations when they ran.
@@ -647,7 +648,12 @@ func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Dat
 		}
 	}
 	path := filepath.Join(dir, prefix+time.Now().UTC().Format("20060102T150405")+".dump")
-	err := makeRoomKeeping(dir, g.room, asideKeeps(rec)...)
+	var err error
+	if rec.NoCopy != "" {
+		err = roomNow(dir, g.room)
+	} else {
+		err = makeRoomKeeping(dir, g.room, asideKeeps(rec)...)
+	}
 	if err == nil {
 		if g.pg != nil {
 			err = dumpAsideBundled(ctx, *g.pg, path)
@@ -1636,14 +1642,18 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 	}
 	report(detail("db_restoring_backup", fmt.Sprintf("Putting the library database back from %s, as %s asked",
 		rec.Dump, rec.By), rec.Dump, rec.By))
-	if rec.Aside == "" && rec.Data != apppayload.DataReplaced && rec.Data != apppayload.DataGone {
+	if !asideThere(rec) && rec.Data != apppayload.DataReplaced && rec.Data != apppayload.DataGone {
+		rec.Aside, rec.AsideBytes = "", 0
 		if rec.Aside, err = g.setAsideReplaced(tctx, rec); err != nil && ctx.Err() == nil && tctx.Err() == nil {
-			if !rec.NoCopy {
+			if !goOnWithoutCopy(rec, err) {
 				// the only copy of the newest data: never lost unasked
 				return rec, g.restoreFailed(ctx, rec, &copyError{err})
 			}
 			fmt.Fprintf(g.log, "[serve] level=warn no copy is kept of the library database the restore replaces, as %s "+
 				"confirmed: %v\n", rec.By, err)
+		}
+		if rec.Aside != "" {
+			rec.AsideBytes = pgbundle.DumpBytes(rec.Aside)
 		}
 	}
 	fmt.Fprintf(g.log, "[serve] restore asked by %s: putting %s back for %s\n", rec.By, rec.Dump, orUnknown(rec.From))
@@ -1666,8 +1676,8 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 		return rec, g.restoreFailed(ctx, rec, err)
 	}
 	// the dump of a schema kept for a release is that schema again, kept for it
-	done := apppayload.Database{Version: rec.From, State: apppayload.DatabaseRestored, From: rec.From, Dump: rec.Dump,
-		By: rec.By, KeptFor: rec.DumpKeptFor}
+	done := apppayload.Database{Version: rec.From, State: apppayload.DatabaseRestored, From: rec.From,
+		Dump: pgbundle.OriginalPath(rec.Dump), By: rec.By, KeptFor: rec.DumpKeptFor}
 	if err := g.save(done); err != nil {
 		return rec, err
 	}
@@ -1715,8 +1725,7 @@ func (g *migrationGate) restoreFailed(ctx context.Context, rec apppayload.Databa
 	switch {
 	case noCopy != nil:
 		code, text = "db_restore_no_copy", "the library database was not put back from %s: no copy of it as it is now "+
-			"could be kept (%v). Nothing was changed. Free some space on the backups' disk, or delete backups you no longer "+
-			"need. "+ways+", or put this one back without keeping a copy (--without-copy)"
+			"could be kept (%v). This try changed nothing. "+ways+", or put this one back without keeping a copy (--without-copy)"
 	case rec.Data == apppayload.DataUntouched:
 	case rec.Data == apppayload.DataGone:
 		code, text = "db_restore_backup_gone", "putting the library database back from %s failed: %v. The library "+

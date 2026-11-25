@@ -153,10 +153,13 @@ type Database struct {
 	// known (0: one whose schema cannot be told): any of them may be what is there.
 	MaybeSchemas []int64 `json:"maybe_schemas,omitempty"`
 	Aside        string  `json:"aside,omitempty"`
-	// NoCopy: the person confirmed a restore with no copy kept of the database it replaces,
-	// when there is no room for one; CopyError why its last try could not keep one (that try
+	// AsideBytes is Aside's size: another, or none, is not that copy.
+	AsideBytes int64 `json:"aside_bytes,omitempty"`
+	// NoCopy: the person confirmed a restore with no copy kept of the database it replaces:
+	// when there is no room for one (NoCopyRoom), or whatever the last try said kept it from
+	// being taken (NoCopyAny); CopyError why its last try could not keep one (that try
 	// stopped before it touched anything).
-	NoCopy       bool   `json:"no_copy,omitempty"`
+	NoCopy       string `json:"no_copy,omitempty"`
 	CopyError    string `json:"copy_error,omitempty"`
 	RestoreError string `json:"restore_error,omitempty"`
 	TriedBy      string `json:"tried_by,omitempty"`
@@ -226,6 +229,12 @@ const (
 	DataReplaced = "replaced"
 	// DataGone: dropped, or empty (pgbundle.StepGone).
 	DataGone = "gone"
+)
+
+// What a person confirmed of the copy a restore keeps (Database.NoCopy).
+const (
+	NoCopyRoom = "space"
+	NoCopyAny  = "error"
 )
 
 // DatabasePath is the database's record: the record of the cluster this install runs on

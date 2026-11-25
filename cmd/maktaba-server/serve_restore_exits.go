@@ -33,6 +33,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -483,21 +484,66 @@ func asideKeeps(rec apppayload.Database) []string {
 	return names
 }
 
+// asideThere reports whether the copy the record names is there, as it was taken.
+func asideThere(rec apppayload.Database) bool {
+	if rec.Aside == "" || rec.AsideBytes <= 0 {
+		return false
+	}
+	info, err := os.Lstat(rec.Aside)
+	return err == nil && pgbundle.IsDump(info) && pgbundle.DumpBytes(rec.Aside) == rec.AsideBytes
+}
+
+// goOnWithoutCopy reports whether the person who asked for rec confirmed that it goes on with
+// no copy, err being why there is none.
+func goOnWithoutCopy(rec apppayload.Database, err error) bool {
+	var room *pgbundle.NoRoomError
+	return rec.NoCopy == apppayload.NoCopyAny || (rec.NoCopy == apppayload.NoCopyRoom && errors.As(err, &room))
+}
+
+// protect keeps the backups a restore on the older release pl.Release needs out of its reach
+// (pgbundle.KeepForRestore: it knows nothing of the hold): those asideKeeps names, or all of
+// them when no copy is kept (it would remove them for its own). It returns the chosen one's
+// path there. A disk that cannot: the chosen one's own path, when that release never removes
+// it, else a refusal.
+func (r *restorer) protect(pl restorePlan, rec apppayload.Database) (string, error) {
+	dir := r.db.Backups
+	names := []string{pl.Backup}
+	for _, b := range r.list().Backups {
+		if rec.NoCopy != "" || slices.Contains(asideKeeps(rec), b.Name) {
+			names = append(names, b.Name)
+		}
+	}
+	err := pgbundle.KeepForRestore(dir, names...)
+	switch {
+	case err == nil:
+		return pgbundle.KeptPath(dir, pl.Backup), nil
+	case pgbundle.NewestOfKind(dir, pl.Backup) && !pgbundle.IsNightly(pl.Backup):
+		return rec.Dump, nil
+	}
+	return "", refuse("restore_unprotected", "%s, the release that puts this backup back, may remove it first to make room, "+
+		"and it cannot be kept from that on this disk (%v): nothing was changed. Put back the newest backup of its kind, or "+
+		"move the backups to a disk that has hard links and try again", pl.Release, err)
+}
+
 // copyRoom says why no copy of the database a restore of the backup name replaces could be
 // kept now (nil: it can, or none is needed: one is there already, or the database is another
 // since).
 func (r *restorer) copyRoom(name string) error {
-	if r.db == nil {
+	if r.db == nil || !r.copyNeeded() {
 		return nil
 	}
-	rec := apppayload.Database{}
-	if old, had, err := apppayload.ReadDatabase(r.stateDir); err == nil && had {
-		rec = old
-		if asked(old) && (old.Aside != "" || old.Data == apppayload.DataReplaced || old.Data == apppayload.DataGone) {
-			return nil
-		}
-	}
+	rec, _, _ := apppayload.ReadDatabase(r.stateDir)
 	return roomKeeping(r.db.Backups, r.room, append(asideKeeps(rec), name)...)
+}
+
+// copyNeeded reports whether a restore takes a copy of the database it replaces: not when there
+// is one already, or the database is another since.
+func (r *restorer) copyNeeded() bool {
+	old, had, err := apppayload.ReadDatabase(r.stateDir)
+	if err != nil || !had || !asked(old) {
+		return true
+	}
+	return !asideThere(old) && old.Data != apppayload.DataReplaced && old.Data != apppayload.DataGone
 }
 
 // holdFor holds the backups while rec is a restore that is not done, and releases them
@@ -516,7 +562,11 @@ func holdBackupsFor(dir string, rec apppayload.Database) error {
 	if !asked(rec) {
 		return pgbundle.ReleaseBackups(dir)
 	}
-	if err := pgbundle.HoldBackups(dir); err != nil {
+	err := pgbundle.HoldBackups(dir)
+	if err == nil {
+		err = pgbundle.ReturnKept(dir) // what an older release that tried removed
+	}
+	if err != nil {
 		return fmt.Errorf("keep the backups in %s until the restore is done: %w", dir, err)
 	}
 	return nil

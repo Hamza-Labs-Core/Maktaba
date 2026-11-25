@@ -402,14 +402,37 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 		data.Data = apppayload.DataUnknown
 	}
 	rec := apppayload.Database{Version: held, State: apppayload.DatabaseRestoring, From: pl.Release, Dump: p, By: by,
-		Error: "restore asked by " + by, Before: was, Data: data.Data, DataID: data.DataID, Aside: data.Aside, NoCopy: withoutCopy}
+		Error: "restore asked by " + by, Before: was, Data: data.Data, DataID: data.DataID}
+	if asideThere(data) {
+		rec.Aside, rec.AsideBytes = data.Aside, data.AsideBytes
+	}
+	if withoutCopy {
+		// what was said when it was confirmed, and no more
+		switch {
+		case pl.NoCopy != "":
+			rec.NoCopy = apppayload.NoCopyRoom
+		case data.CopyError != "":
+			rec.NoCopy = apppayload.NoCopyAny
+		}
+	}
 	slices.Sort(maybe)
 	rec.MaybeSchemas = slices.Compact(maybe)
 	for _, o := range []*apppayload.Database{orig, was} {
-		if o != nil && o.Dump == p && o.DumpKeptFor != "" && sameRelease(o.DumpKeptFor, pl.Release) {
+		if o != nil && pgbundle.OriginalPath(o.Dump) == p && o.DumpKeptFor != "" && sameRelease(o.DumpKeptFor, pl.Release) {
 			// the dump of a schema kept for the release it goes back for (a held update from a
 			// kept schema): put back, it is that schema again, kept for it
 			rec.DumpKeptFor = o.DumpKeptFor
+		}
+	}
+	if newerThan(r.running(), pl.Release) {
+		// an older release may know nothing of the hold: what it needs is put out of its reach,
+		// and the room for the copy it takes is made here, from what may go
+		if rec.Dump, err = r.protect(pl, rec); err == nil && rec.NoCopy == "" && r.copyNeeded() {
+			err = makeRoomKeeping(r.db.Backups, r.room, append(asideKeeps(rec), pl.Backup)...)
+		}
+		if err != nil {
+			_ = r.holdFor(old) // as it was
+			return err
 		}
 	}
 	return r.leaveFor(ctx, rec, orig, pl.Release)

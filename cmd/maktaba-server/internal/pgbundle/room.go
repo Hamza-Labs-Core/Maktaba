@@ -103,8 +103,11 @@ func MakeRoomWith(dir string, p RoomPolicy) error {
 
 // MakeRoomKeeping is MakeRoomWith for the copy of the database a restore replaces, while the
 // backups are held for it (HoldBackups): the dumps of names stay, with the newest of each
-// kind, and no others.
+// kind, and no others. When that is not room enough nothing is removed.
 func MakeRoomKeeping(dir string, p RoomPolicy, names ...string) error {
+	if err := RoomKeeping(dir, p, names...); err != nil {
+		return err
+	}
 	return roomIn(dir, p, keepNames(names), RemoveDump)
 }
 
@@ -114,8 +117,16 @@ func RoomKeeping(dir string, p RoomPolicy, names ...string) error {
 	return roomIn(dir, p, keepNames(names), func(string) error { return nil })
 }
 
+// RoomNow says whether there is room for the next dump as it is, removing nothing.
+func RoomNow(dir string, p RoomPolicy) error {
+	return roomIn(dir, p, func(string) bool { return true }, RemoveDump)
+}
+
+// keepNames keeps names (a disk may not tell their case apart).
 func keepNames(names []string) func(string) bool {
-	return func(name string) bool { return slices.Contains(names, name) }
+	return func(name string) bool {
+		return slices.ContainsFunc(names, func(n string) bool { return strings.EqualFold(n, name) })
+	}
 }
 
 // roomIn is MakeRoomWith's work: keep says which dumps stay besides the newest of each kind,

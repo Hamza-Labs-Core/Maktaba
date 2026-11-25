@@ -3777,13 +3777,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "The restore of the backup {dump} stopped: no copy of the library as it is now could be kept. Nothing was changed. Free some space on the backups' disk and restart, or choose on the recovery page."
+            "value" : "The restore of the backup {dump} stopped: no copy of the library as it is now could be kept. This try changed nothing. The recovery page says why, and what you can do."
           }
         },
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "توقفت إعادة النسخة الاحتياطية {dump}: تعذّر الاحتفاظ بنسخة من المكتبة كما هي الآن. لم يتغيّر شيء. حرّر مساحة على قرص النسخ الاحتياطية ثم أعِد التشغيل، أو اختر من صفحة الاستعادة."
+            "value" : "توقفت إعادة النسخة الاحتياطية {dump}: تعذّر الاحتفاظ بنسخة من المكتبة كما هي الآن. لم تغيّر هذه المحاولة شيئًا. وتبيّن صفحة الاستعادة السبب وما يمكنك فعله."
           }
         }
       }
