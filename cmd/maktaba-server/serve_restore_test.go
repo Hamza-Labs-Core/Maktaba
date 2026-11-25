@@ -317,9 +317,15 @@ func TestARestoreWithNoRoomForACopyStops(t *testing.T) {
 				t.Fatalf("%d restores, room made keeping %v", r, kept)
 			}
 			e.inst.running = "0.2.0"
-			if s := stuckOf(e.r); s == nil || !s.NoCopy {
+			if s := stuckOf(e.r); s == nil || !s.NoCopy || !s.WithoutCopy {
 				t.Fatalf("stuck %+v", s)
 			}
+			// nor offered without one where the release that puts it back is older, which is refused
+			e.inst.running = "0.3.0"
+			if s := stuckOf(e.r); s == nil || !s.NoCopy || s.WithoutCopy {
+				t.Fatalf("stuck on a newer release %+v", s)
+			}
+			e.inst.running = "0.2.0"
 			// asked again as it was: refused before anything, with what is needed (when it is the room)
 			if c.room != nil {
 				pl, err := e.r.restore(context.Background(), firstBackup, "root", true, false)

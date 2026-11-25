@@ -1725,7 +1725,12 @@ func (g *migrationGate) restoreFailed(ctx context.Context, rec apppayload.Databa
 	switch {
 	case noCopy != nil:
 		code, text = "db_restore_no_copy", "the library database was not put back from %s: no copy of it as it is now "+
-			"could be kept (%v). This try changed nothing. "+ways+", or put this one back without keeping a copy (--without-copy)"
+			"could be kept (%v). This try changed nothing. "+ways
+		if newerThan(g.version, rec.From) {
+			text += ". To make room, delete backups you no longer need (`maktaba-server backups delete <name>`)"
+		} else {
+			text += ", or put this one back without keeping a copy (--without-copy)"
+		}
 	case rec.Data == apppayload.DataUntouched:
 	case rec.Data == apppayload.DataGone:
 		code, text = "db_restore_backup_gone", "putting the library database back from %s failed: %v. The library "+

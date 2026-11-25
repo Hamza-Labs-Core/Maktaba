@@ -403,12 +403,17 @@ copy: it takes a copy of its own, whatever the data is, and when that does not f
 - **There is room for its copy as things are**, by its rules (a quarter more than the newest backup, and
   the reserve), with nothing removed. Otherwise the restore is refused before anything is touched
   (`restore_older_no_room`), whatever was confirmed, and says how much to free: delete backups you no
-  longer need, or put back one that the running release puts back itself. It cannot go without a copy.
+  longer need (`maktaba-server backups delete <name>`, which works on a stopped home), or put back one
+  that the running release puts back itself. It is never asked to go without a copy. The copy's size is
+  that release's guess: a library that grew far past its newest backup since, or a `pg_dump` that fails
+  there for another reason, still ends with none, and the restore goes on.
 - **What the restore needs is out of its reach**: the chosen backup, the copy already set aside and the one
   the stopped update names, as hard links that take no room, in `backups/being-restored/`, where no release
   removes anything. The record names the backup there. What was removed is back, whole, at the next start
   of a release with this rule, and the folder goes when the restore is done. Until then deleting one of
-  those three frees nothing; deleting any other backup frees its space.
+  those three frees nothing; deleting any other backup frees its space. That release counts the
+  space of one of those it removes as freed, though it is not: on a disk that is already tight, a later
+  dump of its may use part of the reserve.
 - **On a disk without hard links** only the newest `pre-<from>-to-<to>` backup, which no release removes,
   can be put back on an older release. Any other is refused before anything changes
   (`restore_unprotected`): put that one back, or move the backups to a disk that has them.

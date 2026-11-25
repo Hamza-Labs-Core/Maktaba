@@ -58,8 +58,10 @@ type Stuck struct {
 	Running   bool   `json:"running,omitempty"`
 	CanGiveUp bool   `json:"can_give_up,omitempty"`
 	// NoCopy: that try stopped because no copy of the database could be kept
-	NoCopy  bool   `json:"no_copy,omitempty"`
-	Release string `json:"release,omitempty"`
+	NoCopy bool `json:"no_copy,omitempty"`
+	// WithoutCopy: and it may be put back without one
+	WithoutCopy bool   `json:"without_copy,omitempty"`
+	Release     string `json:"release,omitempty"`
 }
 
 // Held is an update that stopped with nothing put back by itself: the release that

@@ -1193,6 +1193,23 @@ func TestAnOlderReleaseNeedsRoomForItsCopy(t *testing.T) {
 	}
 }
 
+// A newer release that stops for want of a copy does not offer to go on without one: the release
+// that puts the backup back is older, and refused that.
+func TestNoCopyIsNotOfferedForAnOlderRelease(t *testing.T) {
+	for version, offered := range map[string]bool{"v0.2.0": true, "v0.4.0": false} {
+		e := newExitsRig(t)
+		e.write(e.asked())
+		makeRoomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }
+		err := e.start(version)
+		if code := haltCode(t, err); code != "db_restore_no_copy" {
+			t.Fatalf("%s: %s", version, code)
+		}
+		if strings.Contains(err.Error(), "--without-copy") != offered || strings.Contains(err.Error(), "maktaba-server backups delete") == offered {
+			t.Fatalf("%s says %q", version, err)
+		}
+	}
+}
+
 // What an older release cannot reach is what its restore needs and no more: the room of the
 // others is theirs to give.
 func TestOnlyWhatTheRestoreNeedsIsKept(t *testing.T) {

@@ -86,13 +86,14 @@ or a release you rolled back by hand that refuses the newer schema.
   names, or the newest of each kind.
 - **No room for that copy** (`restore_no_copy` when you ask, `db_restore_no_copy` at the start): it
   stops before it touches anything, and says how much is free and how much is needed. Free some space
-  on the backups' disk, or delete backups you no longer need, and try again. Or agree to go on without
-  a copy (the Updates page, the recovery page, `--without-copy`): the library as it is now is then
-  lost for good. No backup is removed then.
+  on the backups' disk, or delete backups you no longer need (`maktaba-server backups delete <name>`, on
+  a stopped home too), and try again. Or agree to go on without a copy (the Updates page, the recovery
+  page, `--without-copy`): the library as it is now is then lost for good. No backup is removed then.
 - **On an older release** (the backup runs on one older than the one running): that release always takes a
-  copy, by its own rules, and cannot go without one.
+  copy, by its own rules, and is never asked to go without one.
   - `restore_older_no_room`: there is no room for it. Nothing was changed. Free what it says (delete backups
-    you no longer need), or put back a backup that the running release puts back itself.
+    you no longer need: `maktaba-server backups delete <name>`, on a stopped home too), or put back a
+    backup that the running release puts back itself.
   - `restore_unprotected`: it may remove the backup first, and the backups' disk has no hard links to keep
     it. Put back the newest `pre-<from>-to-<to>` backup, or move the backups to another disk (Settings >
     Backups) and try again.

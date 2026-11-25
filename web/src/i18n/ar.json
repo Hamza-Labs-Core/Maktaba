@@ -3732,7 +3732,7 @@
   "updates.backups.refused.restore_no_release": "لا يستطيع أي إصدار يحتفظ به هذا المنزل تشغيل هذه النسخة: ثبّت الإصدار الذي أُخذت منه، ثم استعدها مجددًا.",
   "updates.backups.refused.restore_no_copy": "تعذّر الاحتفاظ بنسخة من المكتبة كما هي الآن.",
   "updates.backups.refused.restore_unprotected": "قد يحذف الإصدار الذي يعيد هذه النسخة النسخةَ نفسها أولًا، ولا يستطيع هذا القرص منع ذلك: أعِد أحدث نسخة أخذها تحديث، أو انقل النسخ الاحتياطية إلى قرص آخر.",
-  "updates.backups.refused.restore_older_no_room": "يأخذ الإصدار الأقدم الذي يعيد هذه النسخة نسخةً من المكتبة كما هي الآن أولًا، ولا مساحة لها. لم يتغيّر شيء. أفرِغ بعض المساحة، أو احذف نسخًا احتياطية لم تعد تحتاجها، ثم حاول من جديد.",
+  "updates.backups.refused.restore_older_no_room": "يأخذ الإصدار الأقدم الذي يعيد هذه النسخة نسخةً من المكتبة كما هي الآن أولًا، ولا مساحة لها. لم يتغيّر شيء. أفرِغ بعض المساحة، أو احذف نسخًا احتياطية لم تعد تحتاجها (في المنزل: maktaba-server backups delete)، ثم حاول من جديد.",
   "updates.backups.refused.restore_update_under_way": "يجري تحديث الآن: ألغِه، أو انتظر حتى ينتهي.",
   "updates.backups.refused.restore_unreadable": "تتعذر قراءة هذه النسخة الاحتياطية.",
   "updates.backups.refused.restore_no_backup": "لم تعد هذه النسخة الاحتياطية موجودة.",

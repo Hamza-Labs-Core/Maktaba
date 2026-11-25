@@ -503,12 +503,14 @@ func goOnWithoutCopy(rec apppayload.Database, err error) bool {
 // A restore on a release older than the one running is done by its code: it may know nothing
 // of the hold, of a copy that is there already, of a database that needs none, or of a person
 // who agreed to go on without one. So it is asked of it only when there is room for the copy it
-// takes as it is, with nothing removed (olderRoom), and what it needs is out of its reach
-// (protect).
+// takes as it is, with nothing removed for room (olderRoom), and what it needs is out of its reach
+// (protect). What that release removes by its other rules (the dumps' share of the disk, their
+// age, their number) it still may.
 
 // olderRoom refuses a restore on the older release when its own rules leave no room for the
 // copy it takes, whatever this home's record says: it would remove the backups, and go on with
-// no copy all the same.
+// no copy all the same. The copy's size is the guess that release makes, from the newest backup:
+// a library that grew far past it, or a pg_dump that fails there, still ends with no copy.
 func (r *restorer) olderRoom(release string) error {
 	err := roomNow(r.db.Backups, r.room)
 	if err == nil {
@@ -520,8 +522,8 @@ func (r *restorer) olderRoom(release string) error {
 		free = fmt.Sprintf("Free %d MB more there", (room.Need-room.Free+1<<20-1)>>20)
 	}
 	return refuse("restore_older_no_room", "%s, the release that puts this backup back, first takes a copy of the library "+
-		"database by its own rules, and there is no room for it (%v). Nothing was changed. %s (deleting backups you no longer "+
-		"need does), or put back a backup that %s, the release running now, puts back itself", release, err, free, r.running())
+		"database by its own rules, and there is no room for it (%v). Nothing was changed. %s (delete backups you no longer "+
+		"need: `maktaba-server backups delete <name>`), or put back a backup that %s, the release running now, puts back itself", release, err, free, r.running())
 }
 
 // protect keeps the backups a restore on the older release pl.Release needs out of its reach
@@ -620,6 +622,7 @@ func stuckOf(r *restorer) *recovery.Stuck {
 		s.Data = apppayload.DataReplaced // what can be done is the same
 	}
 	s.NoCopy = rec.CopyError != ""
+	s.WithoutCopy = s.NoCopy && !newerThan(r.running(), rec.From) // refused there (olderRoom)
 	if !s.Running && s.Why == "" {
 		return nil // not tried yet: the restart that was asked does
 	}

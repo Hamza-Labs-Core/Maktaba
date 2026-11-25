@@ -65,7 +65,7 @@ function load(){
       function sb(key,f){var b=el('button',t(key,sv));b.onclick=f;sa.appendChild(b)}
       if(!k.running){sb('recovery.stuck.retry',function(){act({action:'restore',backup:k.backup},2)});
         sb('recovery.stuck.other',restore);
-        if(k.no_copy)sb('recovery.stuck.withoutCopy',function(){act({action:'restore',backup:k.backup,without_copy:true},2)})}
+        if(k.without_copy)sb('recovery.stuck.withoutCopy',function(){act({action:'restore',backup:k.backup,without_copy:true},2)})}
       if(k.can_give_up)sb(k.running?'recovery.stuck.stop':(k.release?'recovery.stuck.giveUp':'recovery.stuck.giveUpHeld'),
         function(){act({action:'give_up_restore'},2)});
       if(k.data==='untouched'&&!k.running)sd.appendChild(el('p',t('recovery.stuck.newer',sv)))}
