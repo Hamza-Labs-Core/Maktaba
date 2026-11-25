@@ -26,7 +26,7 @@ final class TVDemoShotsUITests: XCTestCase {
 
     override func tearDown() async throws {
         // a failure here is recorded, not an interruption: one inside an async tearDown hangs
-        // XCTest (`PlayerUITestCase.tearDown`)
+        // XCTest (`PlayerUITestCase.setUpWithError`'s comment says how)
         continueAfterFailure = true
         app?.terminate()
         home?.stop()
