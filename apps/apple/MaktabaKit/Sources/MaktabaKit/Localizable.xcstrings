@@ -14703,57 +14703,6 @@
         }
       }
     },
-    "queue.running.step.waiting" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "في الانتظار"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Waiting"
-          }
-        }
-      }
-    },
-    "queue.running.step.decode" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "فك الترميز"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Decode"
-          }
-        }
-      }
-    },
-    "queue.running.step.store" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الحفظ"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save"
-          }
-        }
-      }
-    },
     "queue.running.step.ask" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14771,104 +14720,19 @@
         }
       }
     },
-    "queue.running.step.render" : {
+    "queue.running.step.catch_up" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "رسم الصفحات"
+            "value" : "اللحاق بالفائت"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Draw the pages"
-          }
-        }
-      }
-    },
-    "queue.running.step.matching" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المطابقة"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Match"
-          }
-        }
-      }
-    },
-    "queue.running.step.exact dates" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "التواريخ الدقيقة"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Exact dates"
-          }
-        }
-      }
-    },
-    "queue.running.step.download" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "التنزيل"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Download"
-          }
-        }
-      }
-    },
-    "queue.running.step.sources" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "المصادر"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sources"
-          }
-        }
-      }
-    },
-    "queue.running.step.listing" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "القوائم"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Listings"
+            "value" : "Catch up"
           }
         }
       }
@@ -14890,6 +14754,57 @@
         }
       }
     },
+    "queue.running.step.convert" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التحويل"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convert"
+          }
+        }
+      }
+    },
+    "queue.running.step.decode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فك الترميز"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decode"
+          }
+        }
+      }
+    },
+    "queue.running.step.download" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التنزيل"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
+          }
+        }
+      }
+    },
     "queue.running.step.embed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -14907,53 +14822,36 @@
         }
       }
     },
-    "queue.running.step.read vectors" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "قراءة الفهرس"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Read the index"
-          }
-        }
-      }
-    },
-    "queue.running.step.repair" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الإصلاح"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Repair"
-          }
-        }
-      }
-    },
     "queue.running.step.fan_out" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "حصر الملفات"
+            "value" : "توزيع العمل"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "List the files"
+            "value" : "Share out the work"
+          }
+        }
+      }
+    },
+    "queue.running.step.frames" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "التقاط الإطارات"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take frames"
           }
         }
       }
@@ -14964,47 +14862,64 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "مقارنة الملفات"
+            "value" : "مقارنة الملفات كاملة"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Compare files"
+            "value" : "Compare whole files"
           }
         }
       }
     },
-    "queue.running.step.purge" : {
+    "queue.running.step.listen" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "إفراغ السلة"
+            "value" : "الاستماع مجددًا"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trash purge"
+            "value" : "Listen again"
           }
         }
       }
     },
-    "queue.running.step.restore" : {
+    "queue.running.step.listing" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الاستعادة"
+            "value" : "قراءة قوائم القنوات"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Restore"
+            "value" : "Read channel lists"
+          }
+        }
+      }
+    },
+    "queue.running.step.matching" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مطابقة الحلقات"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Match episodes"
           }
         }
       }
@@ -15026,36 +14941,138 @@
         }
       }
     },
-    "queue.running.step.convert" : {
+    "queue.running.step.plugin" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "التحويل"
+            "value" : "الإضافة تعمل"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Convert"
+            "value" : "Plugin at work"
           }
         }
       }
     },
-    "queue.running.step.verify" : {
+    "queue.running.step.purge" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "التحقق"
+            "value" : "إفراغ السلة"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Verify"
+            "value" : "Trash purge"
+          }
+        }
+      }
+    },
+    "queue.running.step.read_vectors" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قراءة فهرس البحث"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read the search index"
+          }
+        }
+      }
+    },
+    "queue.running.step.render" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "رسم الصفحات"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draw the pages"
+          }
+        }
+      }
+    },
+    "queue.running.step.repair" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإصلاح"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repair"
+          }
+        }
+      }
+    },
+    "queue.running.step.restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الاستعادة"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore"
+          }
+        }
+      }
+    },
+    "queue.running.step.sources" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قراءة المصادر"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Read sources"
+          }
+        }
+      }
+    },
+    "queue.running.step.store" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الحفظ"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
           }
         }
       }
@@ -15066,64 +15083,47 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الاستبدال"
+            "value" : "وضع الملف الجديد مكان القديم"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Swap"
+            "value" : "Swap in the new file"
           }
         }
       }
     },
-    "queue.running.step.frames" : {
+    "queue.running.step.verify" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الإطارات"
+            "value" : "التحقق من النتيجة"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Frames"
+            "value" : "Check the result"
           }
         }
       }
     },
-    "queue.running.step.plugin" : {
+    "queue.running.step.waiting" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الإضافة"
+            "value" : "في الانتظار"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plugin"
-          }
-        }
-      }
-    },
-    "queue.running.step.catch_up" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "اللحاق بالفائت"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Catch up"
+            "value" : "Waiting"
           }
         }
       }
@@ -15328,23 +15328,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Stopped a loop between plugins"
-          }
-        }
-      }
-    },
-    "queue.running.step.listen" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "الاستماع مجددًا"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Listen again"
           }
         }
       }

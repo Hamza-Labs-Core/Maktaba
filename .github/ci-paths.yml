@@ -908,8 +908,10 @@ linux_app:
 android_apps:
   - *ci
   - 'apps/android/**'
-  # the demo library the Demo*ScreenshotTests and DemoLibraryTest read (60.09)
+  # the demo library the Demo*ScreenshotTests and DemoLibraryTest read (60.09), and the subtitle
+  # line the player's shots show (60.14)
   - 'tests/fixtures/demo-library/**'
+  - 'apps/apple/UITests/Fixtures/Stream/demo-subs-*.vtt'
   # the problem types and codes the apps compare are checked against the registry (60.06)
   - 'shared/api/problems.json'
   # the compatibility vectors the client's CompatTest runs (58.01)
@@ -930,8 +932,10 @@ android_apps:
 android_tv:
   - *ci
   - 'apps/tv/android/**'
-  # the demo library the TV's DemoScreenshotTest reads (60.09)
+  # the demo library the TV's DemoScreenshotTest reads (60.09), and the subtitle line its player
+  # shot shows (60.14)
   - 'tests/fixtures/demo-library/**'
+  - 'apps/apple/UITests/Fixtures/Stream/demo-subs-*.vtt'
   - 'apps/android/core/**'
   - 'apps/android/client/**'
   - 'apps/android/gradle/libs.versions.toml'
@@ -970,6 +974,10 @@ tv_web:
   - 'shared/compat/**'
   # the device caps vectors the Samsung and LG readers are tested against (58.02)
   - 'shared/playback/caps-vectors.json'
+  # the store shots' capture of it (60.14), run here as well as in the website's job: its
+  # script, the subtitle lines it plays
+  - 'web/packages/website/scripts/capture-tvweb.mjs'
+  - 'apps/apple/UITests/Fixtures/Stream/demo-subs-*.vtt'
 
 # The Roku channel (Epic 58 stories 58.12, 58.13, 58.15): its BrightScript on brs-engine, the
 # build-time shaping of its Arabic catalogs and the shared vectors both are held to (_roku.yml)

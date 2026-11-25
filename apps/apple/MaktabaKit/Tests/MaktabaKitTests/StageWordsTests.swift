@@ -86,7 +86,7 @@ import Testing
         #expect(jobs[0].stepWords(locale: en) == "Index for search")
         // the stage's own id says nothing the row does not
         #expect(jobs[1].stepWords(locale: ar) == nil)
-        #expect(jobs[2].stepWords(locale: ar) == "مقارنة الملفات")
+        #expect(jobs[2].stepWords(locale: ar) == "مقارنة الملفات كاملة")
         // a step this app has no words for: as sent, its underscores as spaces
         #expect(jobs[3].stepWords(locale: ar) == "warm up")
         #expect(jobs[4].stepWords(locale: ar) == nil)
@@ -95,6 +95,9 @@ import Testing
         #expect(jobs[3].stateWords(locale: ar) == "يُستأنف")
         // a step that is another stage's id is that stage's title
         #expect(StageWords.step("second_listen", stage: "transcribe", locale: ar) == "الاستماع الثاني")
+        // a step named with spaces
+        #expect(StageWords.step("exact dates", stage: "youtube_sync", locale: ar) == "التواريخ الدقيقة")
+        #expect(StageWords.step("read vectors", stage: "topic_assign", locale: en) == "Read the search index")
     }
 
     // MARK: the guards
@@ -127,10 +130,7 @@ import Testing
         for key in keys {
             let stage = String(key.dropFirst("queue.stage.".count).dropLast(".title".count))
             #expect(StageWords.stages[stage] == webEN[key], "\(stage): not the web's English")
-            // Plex Live TV: the web keeps the name whole; here its Arabic is the web's other words
-            if stage != "plex_livetv" {
-                #expect(StageWords.title(stage, locale: ar) == webAR[key], "\(stage): not the web's Arabic")
-            }
+            #expect(StageWords.title(stage, locale: ar) == webAR[key], "\(stage): not the web's Arabic")
         }
         #expect(Set(StageWords.stages.keys) == Set(keys.map { String($0.dropFirst("queue.stage.".count).dropLast(".title".count)) }),
                 "a stage here the web does not name")
@@ -154,6 +154,15 @@ import Testing
         }
     }
 
+    /// Every step here is said in the web's words (`queue.running.step.<step>`), both languages.
+    @Test func everyStepIsTheWebs() throws {
+        let webEN = try Self.json("web/src/i18n/en.json"), webAR = try Self.json("web/src/i18n/ar.json")
+        for (step, english) in StageWords.steps {
+            #expect(webEN["queue.running.step.\(step)"] == english, "\(step): not the web's English")
+            #expect(webAR["queue.running.step.\(step)"] == kitWord("queue.running.step.\(step)", ar), "\(step): not the web's Arabic")
+        }
+    }
+
     /// Every step the pipeline and Maktaba's own plugins report (`ctx.progress("<step>", ...)`,
     /// the steps they list) is a stage's id or has its words.
     @Test func everyStepThePipelineReportsIsHere() throws {
@@ -173,7 +182,8 @@ import Testing
         }
         #expect(steps.count > 20, "the steps read: \(steps.sorted())")
         for step in steps {
-            #expect(StageWords.stages[step] != nil || StageWords.steps[step] != nil, "the step \(step) has no words")
+            let code = step.replacingOccurrences(of: " ", with: "_")
+            #expect(StageWords.stages[code] != nil || StageWords.steps[code] != nil, "the step \(step) has no words")
         }
     }
 }

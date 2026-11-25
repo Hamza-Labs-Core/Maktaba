@@ -483,7 +483,8 @@ jobs:
   # PlayerMacTests/UI against MockHome. A macOS UI-test runner must be signed, so the
   # The Apple TV app's Live TV, Home and Libraries UI tests (TVLiveUITests), its parental
   # controls' (TVParentalUITests, Epic 57) and Watch a broadcast's (TVGuestUITests, story 50.27,
-  # against the mock edge) and Search's (TVSearchUITests, story 49.11) against the mock home,
+  # against the mock edge), Search's (TVSearchUITests, story 49.11) and the first launch's
+  # (TVConnectUITests: an address, signing in with a code) against the mock home,
   # with the Siri remote, on a
   # throwaway Apple TV simulator made and deleted here (MaktabaTVUITests.swift needs a real
   # home and skips without one).
@@ -525,7 +526,8 @@ jobs:
           only=(-only-testing "Maktaba TV UITests/TVDemoShotsUITests")
           if [ "$SHOTS_ONLY" != true ]; then
             only+=(-only-testing "Maktaba TV UITests/TVLiveUITests" -only-testing "Maktaba TV UITests/TVParentalUITests"
-                   -only-testing "Maktaba TV UITests/TVGuestUITests" -only-testing "Maktaba TV UITests/TVSearchUITests")
+                   -only-testing "Maktaba TV UITests/TVGuestUITests" -only-testing "Maktaba TV UITests/TVSearchUITests"
+                   -only-testing "Maktaba TV UITests/TVConnectUITests")
           fi
           printf '%s\n' "${only[@]}" > "$RESULTS/tv.selection"
           TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba TV" \

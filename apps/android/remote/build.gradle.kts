@@ -84,6 +84,15 @@ android {
             test.maxHeapSize = "3g"
             // the demo library (story 60.09) the demo screenshots read at test time
             test.inputs.dir(file("../../../tests/fixtures/demo-library")).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("demoLibrary")
+            // the home's own lists ServerWordsTest and AttentionWordsTest read: a change of one
+            // runs the tests again (the check on every pull request is tools/ci/app_words.py)
+            test.inputs.files(
+                file("../../../pipeline/src/maktaba_pipeline/engine/graph.py"),
+                file("../../../pipeline/src/maktaba_pipeline/engine/causes.py"),
+                file("../../../api/internal/handlers/queues/causes.go"),
+                fileTree("../../../pipeline/src") { include("**/*.py") },
+                fileTree("../../../plugins/first-party") { include("*/manifest.toml", "**/*.py") },
+            ).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("homeLists")
         }
     }
 }

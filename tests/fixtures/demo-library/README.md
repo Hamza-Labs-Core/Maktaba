@@ -63,6 +63,8 @@ subtitle line are this fixture's own.
 
 Works of NASA (and of NOAA, a United States agency) are in the public domain in the United
 States; NASA asks that its material not be used to imply its endorsement, and nothing here does.
+Their emblems are not part of that: the ghost octopus's frame carries NOAA's and the ship's name
+in its corner, and its art here is cropped clear of both.
 Gran Dillama is under CC BY-SA 3.0: its art here is the studio's card (CC BY 4.0), not a frame
 of the film.
 

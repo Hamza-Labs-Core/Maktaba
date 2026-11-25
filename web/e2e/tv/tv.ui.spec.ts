@@ -9,10 +9,12 @@
 //        (shared/i18n/visual-vectors.json), in the bundled Arabic font, in both languages.
 //   49.11: Search with the D-pad: suggestions with their kinds, Did you mean, the order and
 //        the Filters panel, in both languages.
+//   60.14: the player's subtitles: a cue left to the player clear of the bottom edge, one that
+//        says where it goes there and whole, on the app's own player.
 //   49.14: Search's AI mode tab with the D-pad: the words typed asked, the sources and the
 //        cited sentences, a follow-up with its history, a citation playing its moment.
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   arabicFontLoaded,
@@ -389,6 +391,101 @@ for (const locale of ["en", "ar"] as const) {
     expect(log.consoleLines.filter((l) => l.startsWith("[pageerror]"))).toEqual([]);
   });
 }
+
+/** The rows of `page` with near-white pixels (letters), as [first, last] bands. */
+async function whiteBands(page: Page): Promise<[number, number][]> {
+  const png = (await page.screenshot()).toString("base64");
+  return page.evaluate(async (b64) => {
+    const img = await createImageBitmap(await (await fetch(`data:image/png;base64,${b64}`)).blob());
+    const ctx = new OffscreenCanvas(img.width, img.height).getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, img.width, img.height).data;
+    const bands: [number, number][] = [];
+    for (let y = 0; y < img.height; y++) {
+      let white = 0;
+      for (let x = 0; x < img.width; x++) {
+        const i = (y * img.width + x) * 4;
+        if (d[i]! > 225 && d[i + 1]! > 225 && d[i + 2]! > 225) white++;
+      }
+      if (!white) continue;
+      const last = bands.at(-1);
+      if (last && y - last[1] < 4) last[1] = y;
+      else bands.push([y, y]);
+    }
+    return bands;
+  }, png);
+}
+
+test("the player's subtitles: clear of the bottom edge, a placed cue where it says (60.14)", async ({
+  page,
+}, info) => {
+  const log = record(page);
+  const home = await mockHome(page);
+  await page.route("**/api/stream/sessions", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({
+          status: 201,
+          contentType: "application/json",
+          body: JSON.stringify({
+            session_id: "s-cues",
+            mode: "direct",
+            direct_url: "/cues/film.webm",
+            duration_sec: 30,
+            expires_at: new Date(Date.now() + 3600_000).toISOString(),
+            subtitles: [{ lang: "ar", label: "العربية", url: "/cues/ar.vtt" }],
+          }),
+        })
+      : route.fallback()
+  );
+  // a person's own subtitle file, as a home serves it: a line at the bottom, one placed at the
+  // top, one of two lines
+  await page.route("**/cues/ar.vtt", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "text/vtt",
+      body: [
+        "WEBVTT",
+        "00:00:00.000 --> 00:00:30.000\nكيوريوسيتي بأمان على المريخ",
+        "00:00:00.000 --> 00:00:30.000 line:0\nعلى ارتفاعٍ عالٍ",
+        "",
+      ].join("\n\n"),
+    })
+  );
+  const film = readFileSync(path.resolve(process.cwd(), "e2e/launcher/fixtures/lesson.webm"));
+  await page.route("**/cues/film.webm", (route) =>
+    route.fulfill({ status: 200, contentType: "video/webm", body: film })
+  );
+  await start(page, "ar");
+  await page.addInitScript(() =>
+    localStorage.setItem("mkt:big:prefs", JSON.stringify({ subtitlesOn: true }))
+  );
+  await page.goto("/tv/big/watch/v3");
+  const video = page.locator(".bs-watch video");
+  await expect(video).toHaveCount(1);
+  await expect
+    .poll(() => video.evaluate((v: HTMLVideoElement) => v.textTracks[0]?.activeCues?.length ?? 0))
+    .toBe(2);
+  // the letters alone on black: the picture and the controls out of the way
+  await page.addStyleTag({
+    content: "video { object-position: 0 -4000px !important } .bs-watch__overlay { display: none }",
+  });
+  await page.waitForTimeout(500);
+  const bands = await whiteBands(page);
+  await shot(page, "player-cues-ar");
+  const what = JSON.stringify(bands);
+  expect(bands.length, what).toBeGreaterThanOrEqual(2);
+  const top = bands[0]!;
+  const bottom = bands.at(-1)!;
+  // the placed cue: at the top, none of it above the screen (its letters start under the edge)
+  expect(top[0], what).toBeGreaterThan(0);
+  expect(top[0], what).toBeLessThan(80);
+  expect(top[1] - top[0], what).toBeGreaterThan(25);
+  // the player's own: whole, at least 3% of the height above the bottom edge, and not mid-screen
+  expect(bottom[1], what).toBeLessThan(1080 * 0.97);
+  expect(bottom[0], what).toBeGreaterThan(1080 * 0.8);
+  await log.attach(info, home);
+  expect(log.consoleLines.filter((l) => l.startsWith("[pageerror]"))).toEqual([]);
+});
 
 // Story 58.15: "الحلقة 3 — Intro" reads Arabic first (on the right), then 3, the dash and Intro,
 // as Roku's VisualText draws it (vector episode.06), whatever the screen's language: the title

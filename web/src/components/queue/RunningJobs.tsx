@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { ProgressBar } from "@ds/components/ProgressBar/ProgressBar";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
 import type { JobRef } from "../../lib/queueApi";
+import { stepTitle } from "../../lib/stageWords";
 import { useFmt } from "./format";
 
 export const jobHref = (j: Pick<JobRef, "subject_kind" | "subject_id">) =>
@@ -59,7 +60,7 @@ export function RunningJobs({
                     aria-current={i === current ? "step" : undefined}
                   >
                     <span aria-hidden="true">{i < current ? "✓" : i === current ? "▶" : "·"}</span>{" "}
-                    {s}
+                    {stepTitle(t, s)}
                   </li>
                 ))}
               </ol>

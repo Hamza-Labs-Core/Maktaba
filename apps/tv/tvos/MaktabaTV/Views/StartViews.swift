@@ -326,7 +326,7 @@ struct TVSignInView: View {
 
     private var codePanel: some View {
         HStack(alignment: .center, spacing: 64) {
-            VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 14) {
                 SectionTitle(tv.text(.codeTitle, session.current?.name ?? ""), size: 52)
                 switch codeFlow?.status {
                 case let .showing(p)?:
@@ -336,7 +336,7 @@ struct TVSignInView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("pairing-intro")
                     Text(verbatim: p.code)
-                        .font(.system(size: 110, weight: .bold, design: .monospaced))
+                        .font(.system(size: 96, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.goldText)
                         .environment(\.layoutDirection, .leftToRight)
                         .accessibilityLabel(p.code.map(String.init).joined(separator: " "))
@@ -353,6 +353,12 @@ struct TVSignInView: View {
                     HStack(spacing: 16) {
                         ProgressView()
                         Text(words.text(.waiting)).foregroundStyle(Theme.muted)
+                        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                            let left = max(0, Int(p.expiresAt.timeIntervalSince(ctx.date)))
+                            Text(words.text(.codeChangesIn, String(format: "%d:%02d", left / 60, left % 60)))
+                                .font(Theme.body(24).monospacedDigit())
+                                .foregroundStyle(Theme.faint)
+                        }
                     }
                     // a phone signed in on the home has read this code: approval is next
                     if codeFlow?.lookedUp == true {
@@ -360,12 +366,6 @@ struct TVSignInView: View {
                             .font(Theme.body(28, weight: .semibold))
                             .foregroundStyle(Theme.goldText)
                             .accessibilityIdentifier("pairing-looked-up")
-                    }
-                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                        let left = max(0, Int(p.expiresAt.timeIntervalSince(ctx.date)))
-                        Text(words.text(.codeChangesIn, String(format: "%d:%02d", left / 60, left % 60)))
-                            .font(Theme.body(24).monospacedDigit())
-                            .foregroundStyle(Theme.faint)
                     }
                 case .unsupported?:
                     Text(words.text(.codeUnsupported))
@@ -378,14 +378,11 @@ struct TVSignInView: View {
                 if let problem = codeFlow?.problem {
                     Text(problem).foregroundStyle(.red)
                 }
-                // on one line where the words fit; else the two sign-in choices, then a new code
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 32) { otherWays; newCode }
-                    VStack(alignment: .leading, spacing: 20) {
-                        HStack(spacing: 32) { otherWays }
-                        newCode
-                    }
-                    VStack(alignment: .leading, spacing: 20) { otherWays; newCode }
+                // one layout, with or without a code: the focus stays on its button when a code
+                // comes or is renewed
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 32) { otherWays }
+                    newCode
                 }
                 .buttonStyle(.gold)
                 .padding(.top, 8)

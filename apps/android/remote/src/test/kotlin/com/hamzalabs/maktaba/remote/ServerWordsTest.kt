@@ -178,8 +178,8 @@ class ServerWordsTest {
 
     @Test
     fun aJobsStepAndSubjectAreSaidInTheAppsLanguage() {
-        assertEquals("Reading exact dates", en.jobStep("exact dates"))
-        assertEquals("قراءة التواريخ الدقيقة", ar.jobStep("exact dates"))
+        assertEquals("Exact dates", en.jobStep("exact dates"))
+        assertEquals("التواريخ الدقيقة", ar.jobStep("exact dates"))
         assertEquals("الفهرسة للبحث", ar.jobStep("embed"))
         // a stage reporting its own name
         assertEquals("التفريغ", ar.jobStep("transcribe"))

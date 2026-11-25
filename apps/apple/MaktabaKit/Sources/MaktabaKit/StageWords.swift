@@ -74,32 +74,31 @@ public enum StageWords {
     /// The progress steps the stages report (`ctx.progress("<step>", ...)` in the pipeline and
     /// the first-party plugins, and the steps they list) that are not a stage's id.
     public static let steps: [String: String] = [
-        "waiting": "Waiting",
-        "decode": "Decode",
-        "listen": "Listen again",
-        "store": "Save",
         "ask": "Ask the model",
-        "render": "Draw the pages",
-        "matching": "Match",
-        "exact dates": "Exact dates",
-        "download": "Download",
-        "sources": "Sources",
-        "listing": "Listings",
-        "cluster": "Group topics",
-        "embed": "Index for search",
-        "read vectors": "Read the index",
-        "repair": "Repair",
-        "fan_out": "List the files",
-        "full_hash": "Compare files",
-        "purge": "Trash purge",
-        "restore": "Restore",
-        "plan": "Plan",
-        "convert": "Convert",
-        "verify": "Verify",
-        "swap": "Swap",
-        "frames": "Frames",
-        "plugin": "Plugin",
         "catch_up": "Catch up",
+        "cluster": "Group topics",
+        "convert": "Convert",
+        "decode": "Decode",
+        "download": "Download",
+        "embed": "Index for search",
+        "fan_out": "Share out the work",
+        "frames": "Take frames",
+        "full_hash": "Compare whole files",
+        "listen": "Listen again",
+        "listing": "Read channel lists",
+        "matching": "Match episodes",
+        "plan": "Plan",
+        "plugin": "Plugin at work",
+        "purge": "Trash purge",
+        "read_vectors": "Read the search index",
+        "render": "Draw the pages",
+        "repair": "Repair",
+        "restore": "Restore",
+        "sources": "Read sources",
+        "store": "Save",
+        "swap": "Swap in the new file",
+        "verify": "Check the result",
+        "waiting": "Waiting",
     ]
 
     /// A running job's states (`GET /api/queues/running`): claimed, running, resuming.
@@ -123,8 +122,11 @@ public enum StageWords {
     /// spaces.
     public static func step(_ step: String?, stage: String, locale: Locale = AppLanguage.locale) -> String? {
         guard let step, !step.trimmingCharacters(in: .whitespaces).isEmpty, step != stage else { return nil }
-        if stages[step] != nil { return title(step, locale: locale) }
-        return words(steps, "queue.running.step.", step, locale)
+        // a step named with spaces ("read vectors") is keyed with underscores
+        let code = step.replacingOccurrences(of: " ", with: "_")
+        guard code != stage else { return nil }
+        if stages[code] != nil { return title(code, locale: locale) }
+        return words(steps, "queue.running.step.", code, locale)
     }
 
     /// A running job's state in words ("starting" for a claimed job); one with no words as

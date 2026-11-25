@@ -74,34 +74,36 @@ internal val stageWords: Map<String, Int> = mapOf(
 )
 
 /**
- * A running job's step (`ctx.progress("<step>", ...)` in the pipeline and its first-party
- * plugins; a step named with spaces is keyed with underscores). A step that is a stage's own name
- * ("transcribe") takes the stage's title.
+ * `queue.running.step.*`: a running job's step (`ctx.progress("<step>", ...)` in the pipeline and
+ * its first-party plugins; a step named with spaces is keyed with underscores). A step that is a
+ * stage's own name ("transcribe", "exact dates") takes the stage's title.
  */
 internal val jobStepWords: Map<String, Int> = mapOf(
-    "ask" to R.string.job_step_ask,
-    "catch_up" to R.string.job_step_catch_up,
-    "cluster" to R.string.job_step_cluster,
-    "convert" to R.string.job_step_convert,
-    "download" to R.string.job_step_download,
-    "embed" to R.string.job_step_embed,
-    "exact_dates" to R.string.job_step_exact_dates,
-    "fan_out" to R.string.job_step_fan_out,
-    "frames" to R.string.job_step_frames,
-    "full_hash" to R.string.job_step_full_hash,
-    "listing" to R.string.job_step_listing,
-    "matching" to R.string.job_step_matching,
-    "plan" to R.string.job_step_plan,
-    "plugin" to R.string.job_step_plugin,
-    "purge" to R.string.job_step_purge,
-    "read_vectors" to R.string.job_step_read_vectors,
-    "render" to R.string.job_step_render,
-    "repair" to R.string.job_step_repair,
-    "restore" to R.string.job_step_restore,
-    "sources" to R.string.job_step_sources,
-    "swap" to R.string.job_step_swap,
-    "verify" to R.string.job_step_verify,
-    "waiting" to R.string.job_step_waiting,
+    "ask" to R.string.w_queue_running_step_ask,
+    "catch_up" to R.string.w_queue_running_step_catch_up,
+    "cluster" to R.string.w_queue_running_step_cluster,
+    "convert" to R.string.w_queue_running_step_convert,
+    "decode" to R.string.w_queue_running_step_decode,
+    "download" to R.string.w_queue_running_step_download,
+    "embed" to R.string.w_queue_running_step_embed,
+    "fan_out" to R.string.w_queue_running_step_fan_out,
+    "frames" to R.string.w_queue_running_step_frames,
+    "full_hash" to R.string.w_queue_running_step_full_hash,
+    "listen" to R.string.w_queue_running_step_listen,
+    "listing" to R.string.w_queue_running_step_listing,
+    "matching" to R.string.w_queue_running_step_matching,
+    "plan" to R.string.w_queue_running_step_plan,
+    "plugin" to R.string.w_queue_running_step_plugin,
+    "purge" to R.string.w_queue_running_step_purge,
+    "read_vectors" to R.string.w_queue_running_step_read_vectors,
+    "render" to R.string.w_queue_running_step_render,
+    "repair" to R.string.w_queue_running_step_repair,
+    "restore" to R.string.w_queue_running_step_restore,
+    "sources" to R.string.w_queue_running_step_sources,
+    "store" to R.string.w_queue_running_step_store,
+    "swap" to R.string.w_queue_running_step_swap,
+    "verify" to R.string.w_queue_running_step_verify,
+    "waiting" to R.string.w_queue_running_step_waiting,
 )
 
 /** `queue.subject.*`: what a job works on. */

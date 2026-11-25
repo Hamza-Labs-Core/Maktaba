@@ -23,6 +23,7 @@ import { VideoPlayer } from "../../pages/VideoPlayer";
 import { useFocusApi, useLayer } from "../focus/FocusProvider";
 import { ACTION_EVENT, type ActionDetail } from "../input/actions";
 import { bigPath, useBigNav } from "../nav";
+import { raiseCues } from "../cues";
 import { readPrefs, SUBTITLE_SCALES } from "../prefs";
 import { Ltr, Panel, clock } from "../ui";
 import { fetchEpisodes, lessonsInOrder, resumeAt } from "./Series";
@@ -194,6 +195,9 @@ export function BigWatch() {
       el.textTracks?.removeEventListener?.("addtrack", applyPrefs);
     };
   }, [el]);
+
+  // the subtitles clear of the picture's bottom edge
+  useEffect(() => (el ? raiseCues(el, captionScale) : undefined), [el, captionScale]);
 
   // the last seconds: the card shows (no countdown until the end)
   const nearEnd = duration > 0 && duration - time <= UP_NEXT_LEAD_SECONDS && time > 0;
