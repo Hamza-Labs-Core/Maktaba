@@ -497,7 +497,10 @@ func (o *Outbox) wants(ctx context.Context, kind, addr string) (stores.User, boo
 	if err != nil {
 		return u, false, err
 	}
-	return u, u.Status == stores.StatusActive && !(kind == mail.KindVerifyEmail && u.EmailVerified), nil
+	if u.Status != stores.StatusActive || (kind == mail.KindVerifyEmail && u.EmailVerified) {
+		return u, false, nil
+	}
+	return u, true, nil
 }
 
 // resetClass is a confirmed account's reset's class: account for the day's first few, then repeat.
