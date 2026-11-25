@@ -25,6 +25,7 @@ export function SignIn() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<CloudApiError | Error | null>(null);
   const [resent, setResent] = useState(false);
+  const [resendError, setResendError] = useState<unknown>(null);
   const providers = useProviders();
   const [turnstileToken, setTurnstileToken] = useState("");
   const [turnstileReset, setTurnstileReset] = useState(0);
@@ -38,6 +39,7 @@ export function SignIn() {
     setBusy(true);
     setError(null);
     setResent(false);
+    setResendError(null);
     try {
       await signIn(email.trim(), password, turnstileToken || undefined);
       navigate(from && from.startsWith("/") ? from : "/account", { replace: true });
@@ -51,12 +53,23 @@ export function SignIn() {
   }
 
   async function resend() {
+    setResendError(null);
     try {
-      await api.post("/v1/auth/verify-email/resend", { email: email.trim() }, { auth: false });
-    } catch {
-      // 202 always; a failure (rate limit) still gets the same answer
+      await api.post(
+        "/v1/auth/verify-email/resend",
+        {
+          email: email.trim(),
+          ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+        },
+        { auth: false }
+      );
+      setResent(true);
+    } catch (err) {
+      // the address is never told of; too many requests and the bot check are
+      setResendError(err);
+    } finally {
+      if (turnstileToken) setTurnstileReset((n) => n + 1);
     }
-    setResent(true);
   }
 
   const unverified = error instanceof CloudApiError && error.code === "email_not_verified";
@@ -80,10 +93,16 @@ export function SignIn() {
                 {resent ? (
                   <span>{t("signIn.resent")}</span>
                 ) : (
-                  <Button size="sm" variant="secondary" onClick={resend}>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={resend}
+                    disabled={!!providers.turnstileSiteKey && !turnstileToken}
+                  >
                     {t("signIn.resend")}
                   </Button>
                 )}
+                {resendError !== null && <span>{message(resendError)}</span>}
               </div>
             )}
           </Banner>

@@ -94,6 +94,7 @@ role needs only:
 | `MAKTABA_CLOUD_TOKEN_SECRET` | Access-token HMAC secret (≥ 32 bytes) |
 | `MAKTABA_CLOUD_STAFF_TOKEN_SECRET` | The console's staff access-token secret (≥ 32 bytes, another key; story 50.33) |
 | `MAKTABA_CLOUD_STAFF_SECRET_KEY` | 32 bytes (hex or base64) sealing each staff TOTP secret |
+| `MAIL_ALLOW` | Whom the node may mail: `everyone`, or addresses and `@domain`s ([docs/cloud-mail.md](../../docs/cloud-mail.md)); the provider's key is `secrets/resend.key`, which `setup.sh` writes from `RESEND_API_KEY` in its environment. Without both, mails go to the api's log |
 | `POSTGRES_PASSWORD` | Must match the password in `MAKTABA_CLOUD_DB_URL` |
 
 `MAKTABA_CLOUD_RELAY_PUBLIC_HOST` is set automatically from

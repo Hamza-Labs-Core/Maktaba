@@ -190,24 +190,30 @@ func (m *Migrator) Down(ctx context.Context, steps int) error {
 
 // AtHead reports whether the database has every embedded migration
 // applied. Used by /readyz so the LB only routes traffic to a pod whose
-// schema matches its binary.
+// schema matches its binary. Each one, not goose's "current version": that
+// is the one applied last, which is below the newest when a migration of a
+// lower slot landed late (Up), and a release that ships one would never be
+// ready on a database it updates.
 func (m *Migrator) AtHead(ctx context.Context) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	goose.SetBaseFS(m.dir)
-	if err := goose.SetDialect("postgres"); err != nil {
-		return false, err
-	}
-	cur, err := goose.GetDBVersionContext(ctx, m.pool.DB)
-	if err != nil {
-		return false, err
-	}
 	migs, err := goose.CollectMigrations(m.root, 0, goose.MaxVersion)
 	if err != nil {
 		return false, err
 	}
-	if len(migs) == 0 {
-		return true, nil
+	applied, err := m.Applied(ctx)
+	if err != nil {
+		return false, err
 	}
-	return cur >= migs[len(migs)-1].Version, nil
+	have := make(map[int64]bool, len(applied))
+	for _, v := range applied {
+		have[v] = true
+	}
+	for _, mig := range migs {
+		if !have[mig.Version] {
+			return false, nil
+		}
+	}
+	return true, nil
 }

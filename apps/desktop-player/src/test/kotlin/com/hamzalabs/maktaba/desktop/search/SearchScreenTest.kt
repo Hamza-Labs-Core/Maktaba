@@ -10,7 +10,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.api.Feature
 import com.hamzalabs.maktaba.desktop.InPlayer
@@ -154,7 +154,7 @@ class SearchScreenTest {
         val m = SearchModel(fake.client, rest = {}).also { runBlocking { it.typing("fa") } }
         val home = fake.home()
         // a window wider than the page-beside breakpoint (1,100 dp)
-        androidx.compose.ui.test.runDesktopComposeUiTest(width = 1400, height = 800) {
+        androidx.compose.ui.test.v2.runDesktopComposeUiTest(width = 1400, height = 800) {
             setContent { InPlayer(home) { Box(Modifier.size(1400.dp, 800.dp)) { SearchContent(m, home, fake.features.value) } } }
             onNodeWithTag("suggestion-0").performClick()
             waitUntil(timeoutMillis = 5_000) { onAllNodes(hasTestTag("search-preview")).fetchSemanticsNodes().isNotEmpty() }

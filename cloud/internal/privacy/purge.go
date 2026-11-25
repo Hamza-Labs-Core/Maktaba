@@ -3,6 +3,7 @@ package privacy
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -20,6 +21,9 @@ type Eraser interface {
 type AccountPurger struct {
 	DB    *sql.DB
 	Erase Eraser
+	// ForgetMail takes the account's address out of the mail outbox, before the account goes
+	// (nil: there is none to take it out of).
+	ForgetMail func(ctx context.Context, email string) error
 }
 
 // NewAccountPurger wires the purge to a pool and the erasure service.
@@ -65,6 +69,17 @@ func (p *AccountPurger) PurgeDue(ctx context.Context) (PurgeResult, error) {
 		return PurgeResult{}, fmt.Errorf("list due accounts: %w", err)
 	}
 	return purgeAccounts(ctx, ids, p.Erase, func(ctx context.Context, id string) error {
+		if p.ForgetMail != nil {
+			var email string
+			err := p.DB.QueryRowContext(ctx, `SELECT email FROM users WHERE id = $1 AND id IN (
+                SELECT user_id FROM account_deletions WHERE cancelled_at IS NULL AND purge_after < now())`, id).Scan(&email)
+			if err == nil {
+				err = p.ForgetMail(ctx, email)
+			}
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return fmt.Errorf("forget its mail: %w", err)
+			}
+		}
 		// re-check the hold so a deletion cancelled since the listing survives
 		_, err := p.DB.ExecContext(ctx, `
             DELETE FROM users WHERE id = $1 AND id IN (

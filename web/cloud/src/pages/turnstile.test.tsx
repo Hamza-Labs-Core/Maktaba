@@ -106,6 +106,40 @@ describe("the Turnstile widget", () => {
     await waitFor(() => expect(reset).toHaveBeenCalledWith("w1"));
   });
 
+  it("a resend carries a token of its own", async () => {
+    let n = 0;
+    let give: (t: string) => void = () => {};
+    const render = vi.fn((_el: HTMLElement, opts: Record<string, unknown>) => {
+      give = opts.callback as (t: string) => void;
+      give(`tok-${++n}`);
+      return "w1";
+    });
+    const reset = vi.fn(() => void setTimeout(() => give(`tok-${++n}`), 0));
+    (window as { turnstile?: unknown }).turnstile = { render, reset, remove: vi.fn() };
+    const f = stubFetch({
+      "POST /v1/auth/refresh": signedOut,
+      "GET /v1/auth/providers": [
+        200,
+        { google: false, apple: false, turnstile_site_key: "0x4AAA" },
+      ],
+      "POST /v1/auth/login": [403, { error: "email_not_verified", message: "verify" }],
+      "POST /v1/auth/verify-email/resend": [202],
+    });
+    renderAt("/sign-in");
+    await waitFor(() => expect(render).toHaveBeenCalled());
+    const u = await fillSignIn();
+    const button = await screen.findByRole("button", { name: "Resend the verification email" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await u.click(button);
+    await waitFor(() => expect(f.find("POST", "/v1/auth/verify-email/resend")).toHaveLength(1));
+    const used = f.find("POST", "/v1/auth/login")[0].body as { turnstile_token: string };
+    const own = f.find("POST", "/v1/auth/verify-email/resend")[0].body as {
+      turnstile_token: string;
+    };
+    expect(own.turnstile_token).toMatch(/^tok-/);
+    expect(own.turnstile_token).not.toBe(used.turnstile_token);
+  });
+
   it("without a site key: no widget, and no token in the request", async () => {
     const f = stubFetch({
       "POST /v1/auth/refresh": signedOut,

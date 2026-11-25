@@ -46,11 +46,11 @@ var mails = map[string][2]string{
 	},
 }
 
-// MailText is a mail's body in both languages with its params filled in.
-func MailText(kind string, params map[string]any) (string, bool) {
+// MailText is a mail's body in English and in Arabic with its params filled in.
+func MailText(kind string, params map[string]any) (en, ar string, ok bool) {
 	t, ok := mails[kind]
 	if !ok {
-		return "", false
+		return "", "", false
 	}
 	fill := func(s string) string {
 		for k, v := range params {
@@ -62,7 +62,7 @@ func MailText(kind string, params map[string]any) (string, bool) {
 		}
 		return strings.ReplaceAll(s, "{claimant}", "—")
 	}
-	return fill(t[0]) + "\n\n———\n\n" + fill(t[1]), true
+	return fill(t[0]), fill(t[1]), true
 }
 
 // send mails one message (best effort: the statement is on the Broadcast page either way).
@@ -70,12 +70,12 @@ func (s *Store) send(ctx context.Context, to, kind string, params map[string]any
 	if s.Mailer == nil || strings.TrimSpace(to) == "" {
 		return
 	}
-	body, ok := MailText(kind, params)
+	en, ar, ok := MailText(kind, params)
 	if !ok {
 		return
 	}
 	subject := "Maktaba Cloud: copyright · سحابة مكتبة: حقوق النشر"
-	if err := s.Mailer.Send(ctx, mail.Message{To: to, Subject: subject, Body: body, Kind: "moderation_" + kind}); err != nil {
+	if err := s.Mailer.Send(ctx, mail.Both(to, "moderation_"+kind, subject, en, ar)); err != nil {
 		s.log().Warn("moderation: a mail was not sent", "err", err, "kind", kind)
 	}
 }

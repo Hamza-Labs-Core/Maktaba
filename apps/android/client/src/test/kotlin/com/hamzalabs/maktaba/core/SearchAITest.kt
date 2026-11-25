@@ -6,6 +6,7 @@ import com.hamzalabs.maktaba.core.api.AiEvent
 import com.hamzalabs.maktaba.core.api.AiPhase
 import com.hamzalabs.maktaba.core.api.AiRefusal
 import com.hamzalabs.maktaba.core.api.AiRefused
+import com.hamzalabs.maktaba.core.api.AiState
 import com.hamzalabs.maktaba.core.api.AiTurn
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.ApiException
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -43,11 +45,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.io.BufferedInputStream
+import java.io.FilterInputStream
+import java.io.InputStream
 import java.io.OutputStream
+import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import javax.net.SocketFactory
 import kotlin.concurrent.thread
 
 /**
@@ -236,6 +243,64 @@ class SearchAITest {
         } catch (e: ApiException.Status) {
             assertEquals(500, e.code)
         }
+    }
+
+    /** Sockets a thread called "main" may not read, as Android's main thread may not. */
+    private class NotOnMain : SocketFactory() {
+        override fun createSocket(): Socket = object : Socket() {
+            override fun getInputStream(): InputStream = object : FilterInputStream(super.getInputStream()) {
+                override fun read(b: ByteArray, off: Int, len: Int): Int {
+                    // Android throws NetworkOnMainThreadException: a RuntimeException, not an IOException
+                    if (Thread.currentThread().name.startsWith("main")) throw IllegalStateException("network on the main thread")
+                    return super.read(b, off, len)
+                }
+            }
+        }
+
+        override fun createSocket(host: String, port: Int) = error("not used")
+        override fun createSocket(host: String, port: Int, from: InetAddress, fromPort: Int) = error("not used")
+        override fun createSocket(host: InetAddress, port: Int) = error("not used")
+        override fun createSocket(host: InetAddress, port: Int, from: InetAddress, fromPort: Int) = error("not used")
+    }
+
+    /** What AI mode's conversation shows, asked on an app's main thread, of a home whose answers' bodies come after their headers. */
+    private fun shown(status: Int, body: String, signedOut: () -> Unit = {}): Pair<AiState, List<Throwable>> {
+        val h = RawHome { _, out ->
+            val b = body.toByteArray()
+            out.write("HTTP/1.1 $status X\r\nContent-Type: application/problem+json\r\nContent-Length: ${b.size}\r\n\r\n".toByteArray())
+            out.flush()
+            Thread.sleep(300) // the headers are read, and the answer handed on, before the body comes
+            out.write(b)
+        }.also { home = it }
+        val http = ApiClient.defaultHttp.newBuilder().socketFactory(NotOnMain()).build()
+        val main = Executors.newSingleThreadExecutor { Thread(it, "main of the app") }
+        try {
+            val failures = mutableListOf<Throwable>()
+            val c = AiConversation(ApiClient(h.url.toHttpUrl(), MemoryTokens(jwt(4_000_000_000L), "r"), http), signedOut, failures::add)
+            val scope = CoroutineScope(SupervisorJob() + main.asCoroutineDispatcher())
+            return runBlocking {
+                withTimeout(10_000) { c.ask(scope, "q")!!.join() }
+                c.state.value to failures
+            }
+        } finally {
+            main.shutdownNow()
+        }
+    }
+
+    /** A refusal says its reason however late its body comes, and nothing is read on the main thread (Android forbids it). */
+    @Test
+    fun aRefusalWhoseBodyComesLateIsStillItsReason() {
+        assertEquals(AiRefusal.Off, shown(409, """{"code":"ai-off","status":409}""").first.refusal)
+        assertEquals(AiRefusal.Busy(9), shown(429, """{"code":"ai-busy","status":429,"position":9}""").first.refusal)
+    }
+
+    /** A 401 whose body comes late is closed off the main thread too: the sign-in is over, not the answer broken. */
+    @Test
+    fun a401WhoseBodyComesLateIsStillSignedOut() {
+        var told = 0
+        val (_, failures) = shown(401, """{"code":"unauthorized","status":401}""") { told++ }
+        assertEquals(emptyList<Throwable>(), failures)
+        assertEquals(1, told)
     }
 
     @Test

@@ -35,7 +35,7 @@ func NewAdminRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build 
 		r.Use(o.gate)
 	}
 	r.Get("/healthz", healthzHandler(build))
-	ready := readyzHandler(pool, mig)
+	ready := readyzHandler(pool, mig, nil)
 	if o.draining != nil {
 		ready = drainingReadyz(o.draining, ready)
 	}

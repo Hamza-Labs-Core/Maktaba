@@ -5,6 +5,7 @@ package billing
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 	billingpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db/dbtest"
+	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
@@ -71,5 +73,33 @@ func TestSubscriptionEventOfAnAccountPurgedMeanwhile(t *testing.T) {
 	var left int
 	if err := pool.DB.QueryRow(`SELECT count(*) FROM subscriptions`).Scan(&left); err != nil || left != 0 {
 		t.Fatalf("%d subscriptions left (%v)", left, err)
+	}
+}
+
+// A failed payment's notice is in the account's language, with the billing page's link.
+func TestThePaymentNoticeIsInTheAccountsLanguage(t *testing.T) {
+	ctx := context.Background()
+	pool := dbtest.Migrated(t)
+	users := stores.NewUsers(pool.DB)
+	rec := &mailpkg.Recorder{}
+	d := &Deps{DB: pool.DB, Users: users, Mailer: rec, Logger: slog.New(slog.DiscardHandler), WebURL: "https://app.example.test"}
+	for _, lang := range []string{"en", "ar"} {
+		email := lang + "@example.test"
+		u, err := users.Create(ctx, email, "", "P", true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := users.UpdateProfile(ctx, u.ID, "", lang, ""); err != nil {
+			t.Fatal(err)
+		}
+		d.mailUser(u.ID, "payment_failed")(ctx)
+		m, ok := rec.Last("payment_failed", email)
+		if !ok || m.Lang != lang || !strings.Contains(m.Body, "https://app.example.test/billing\n") {
+			t.Fatalf("%s: %+v", lang, m)
+		}
+		d.mailUser(u.ID, "no such notice")(ctx)
+	}
+	if len(rec.Sent) != 2 {
+		t.Fatalf("%d mails", len(rec.Sent))
 	}
 }

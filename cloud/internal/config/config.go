@@ -105,6 +105,9 @@ type TurnstileConfig struct {
 	Enabled bool   // turnstile.enabled
 	SiteKey string // turnstile.site_key: public, served to the web pages
 	Secret  string // env MAKTABA_CLOUD_TURNSTILE_SECRET only
+	// Staff is turnstile.staff (default true): the operator console's sign-in is checked too. Off
+	// where the console has no public name (the single node's, on its private network).
+	Staff bool
 	// WebOrigins are the origins asked for a token (turnstile.web_origins; default the web
 	// app's, server.web_url). Native apps send no Origin and are never asked.
 	WebOrigins []string
@@ -245,8 +248,58 @@ type FCMConfig struct {
 
 // MailConfig picks the mail driver. "log" (the default and, today, the
 // only driver) writes mails to the log instead of delivering them.
+// MailConfig is the account mails' ([mail]).
 type MailConfig struct {
+	// Driver is "log" (the default: a mail is written to the api's log, never delivered) or
+	// "resend" (sent through resend.com).
 	Driver string
+	// From ("Maktaba <no-reply@maktaba.tv>") is on the domain verified at the provider; ReplyTo
+	// is where an answer goes.
+	From, ReplyTo string
+	// The provider's API key: env MAKTABA_CLOUD_RESEND_API_KEY, or the file at
+	// mail.resend_api_key_path (env MAKTABA_CLOUD_RESEND_API_KEY_FILE). Never in the config file.
+	APIKey, APIKeyPath string
+	// AllowRecipients keeps the deployment to these addresses and "@domain"s (QA); empty is
+	// everyone. SubjectPrefix goes before each subject.
+	AllowRecipients []string
+	SubjectPrefix   string
+	// DailyLimit and MonthlyLimit are how many mails this deployment sends in 24 hours and in 30
+	// days (defaults 80 and 2700, within the provider's free plan); more wait, then expire.
+	DailyLimit, MonthlyLimit int
+}
+
+// The mail drivers.
+const (
+	MailLog    = "log"
+	MailResend = "resend"
+)
+
+// Delivers reports whether mails are really sent.
+func (m MailConfig) Delivers() bool { return m.Driver == MailResend }
+
+// ResendKey is the provider's API key: the environment's, else the file's as it is now (a key
+// replaced in the file needs no restart).
+func (m MailConfig) ResendKey() (string, error) {
+	key := m.APIKey
+	if key == "" && m.APIKeyPath != "" {
+		raw, err := os.ReadFile(m.APIKeyPath)
+		if err != nil {
+			return "", fmt.Errorf("mail: the Resend key file can't be read: %w", err)
+		}
+		key = string(raw)
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", fmt.Errorf("%w: the Resend API key (MAKTABA_CLOUD_RESEND_API_KEY, or the file at mail.resend_api_key_path)", ErrMissing)
+	}
+	if !strings.HasPrefix(key, "re_") {
+		return "", errors.New("mail: the Resend API key is not one (it begins with re_)")
+	}
+	// it goes in a header
+	if strings.ContainsFunc(key, func(r rune) bool { return r <= ' ' || r > '~' }) {
+		return "", errors.New("mail: the Resend API key holds a space or a character that is not ASCII")
+	}
+	return key, nil
 }
 
 type EntitlementConfig struct {
@@ -374,8 +427,9 @@ func defaultConfig() Config {
 			MaxIdleConns:    5,
 			ConnMaxLifetime: 30 * time.Minute,
 		},
-		Mail:    MailConfig{Driver: "log"},
-		Billing: BillingConfig{Provider: "none"},
+		Turnstile: TurnstileConfig{Staff: true},
+		Mail:      MailConfig{Driver: MailLog, DailyLimit: 80, MonthlyLimit: 2700},
+		Billing:   BillingConfig{Provider: "none"},
 		Telemetry: TelemetryConfig{
 			LogFormat:          "json",
 			LogLevel:           "info",
@@ -465,6 +519,12 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_BROADCAST_ANALYTICS_TOKEN"); v != "" {
 		c.Broadcast.AnalyticsToken = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_RESEND_API_KEY"); v != "" {
+		c.Mail.APIKey = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_RESEND_API_KEY_FILE"); v != "" {
+		c.Mail.APIKeyPath = v
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
@@ -708,10 +768,29 @@ func assign(c *Config, section, key, val string) error {
 	case "turnstile.secret":
 		// the secret is never in a file: MAKTABA_CLOUD_TURNSTILE_SECRET only
 		return fmt.Errorf("turnstile.secret: the secret is not read from the file; set MAKTABA_CLOUD_TURNSTILE_SECRET")
+	case "turnstile.staff":
+		return setBool(&c.Turnstile.Staff, val)
 	case "billing.provider":
 		c.Billing.Provider = val
 	case "mail.driver":
 		c.Mail.Driver = val
+	case "mail.from":
+		c.Mail.From = val
+	case "mail.reply_to":
+		c.Mail.ReplyTo = val
+	case "mail.resend_api_key_path":
+		c.Mail.APIKeyPath = val
+	case "mail.resend_api_key", "mail.api_key":
+		// the key is never in a file of settings
+		return fmt.Errorf("%s: the key is not read from this file; set mail.resend_api_key_path or MAKTABA_CLOUD_RESEND_API_KEY", section+"."+key)
+	case "mail.allow_recipients":
+		c.Mail.AllowRecipients = parseList(val)
+	case "mail.subject_prefix":
+		c.Mail.SubjectPrefix = val
+	case "mail.daily_limit":
+		return setInt(&c.Mail.DailyLimit, val)
+	case "mail.monthly_limit":
+		return setInt(&c.Mail.MonthlyLimit, val)
 	case "entitlement.private_key_path":
 		c.Entitlement.PrivateKeyPath = val
 	case "telemetry.log_format":

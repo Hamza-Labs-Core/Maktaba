@@ -4,6 +4,9 @@
 Run on the node, as root, from the CI deploy (over SSH) or by hand:
 
     cloud-ops.py verify-email   < email        confirm an account's email (no mail is sent)
+    cloud-ops.py reset-link     < email        print a password reset link, once, on a terminal
+    cloud-ops.py mail-status                   how mails go, and the last 30 days' by state
+    cloud-ops.py mail-test [ar] < email        send a test mail to an address, and say what became of it
     cloud-ops.py set-plan PLAN  < email        set an account's plan (free, basic, pro)
     cloud-ops.py account        < email        print the account's id, plan and whether confirmed
     cloud-ops.py end-test-accounts             end what the deploy's tests left (below)
@@ -11,10 +14,15 @@ Run on the node, as root, from the CI deploy (over SSH) or by hand:
 The account's email is read from stdin, never from the command line, so it is in no process
 list, shell history or CI log; this tool prints no email, password, token or code.
 
-- verify-email: the cloud's only mail driver writes mail to its log, which redacts the address
-  and the link's code, so a sign-up's confirmation can't reach anyone. Until the cloud sends
-  mail, the operator confirms an account here: the change and its audit row ("cli",
-  auth.email_verified) in one transaction.
+- verify-email: for an account no mail reaches: on a node whose mail driver is log (a mail goes
+  to the api's log, which redacts the address and the link's code), and the deploy's tests' own
+  accounts, which QA never mails. The change and its audit row ("cli", auth.email_verified) are
+  one transaction.
+- reset-link: a way in that no mail is needed for (docs/cloud-mail.md). The link is like a mailed
+  one: an hour, until one of the account's links is used; only its SHA-256 is kept, with an audit
+  row ("cli", auth.password_reset_link) in the same transaction. It is printed on a terminal only:
+  a pipe, a file or a CI run gets none. Hand it over by a way only its owner reads.
+- mail-status, mail-test: `maktaba-cloud mail` in the api's container (docs/cloud-mail.md).
 - end-test-accounts: the accounts of the deploy's tests (ci-e2e-<digits>@example.com, nothing
   else): their homes and claim codes deleted, their sessions ended, their 30-day deletion holds on, in one
   transaction, audited. It prints how many it ended and how many are left active or with a home
@@ -124,6 +132,33 @@ SELECT email_verified FROM users WHERE lower(email) = lower(:'email');
     if out[-1] != "t":
         die("the account is still not confirmed")
     print("confirmed" if len(out) > 1 else "already confirmed")
+
+
+def reset_link(email: str) -> None:
+    app = env_value("APP_DOMAIN")
+    if not app:
+        die(".env has no APP_DOMAIN")
+    token = secrets.token_urlsafe(32)
+    out = psql(
+        f"""BEGIN;
+WITH u AS (
+  SELECT id FROM users WHERE lower(email) = lower(:'email') AND status = 'active'
+), t AS (
+  INSERT INTO email_verifications (token_hash, user_id, purpose, expires_at)
+  SELECT '{hashlib.sha256(token.encode()).hexdigest()}', id, 'password_reset', now() + INTERVAL '1 hour' FROM u
+  RETURNING user_id
+)
+INSERT INTO audit_log (actor_kind, action, target_kind, target_id, detail)
+SELECT 'cli', 'auth.password_reset_link', 'user', user_id::text, '{{"by":"cloud-ops reset-link"}}'
+FROM t
+RETURNING target_id;
+COMMIT;
+""",
+        email,
+    ).split()
+    if len(out) != 1:
+        die("no active account with that email")
+    print(f"https://{app}/reset-password?token={token}\n\nGood for an hour, once. It is not shown again.")
 
 
 # a deploy's test account (tests/e2e.py), never a person's
@@ -271,6 +306,11 @@ def set_plan(plan: str, email: str) -> None:
     print(f"plan {plan}")
 
 
+def mail(*args: str, stdin: str = "") -> None:
+    sys.stdout.write(compose("exec", "-T", "api", "/usr/local/bin/maktaba-cloud", "mail", args[0],
+                             "--config", "/etc/maktaba/cloud/cloud.toml", *args[1:], stdin=stdin))
+
+
 def main() -> None:
     if os.geteuid() != 0:
         die("run as root on the node")
@@ -283,8 +323,16 @@ def main() -> None:
         account(read_email())
     elif args == ["end-test-accounts"]:
         end_test_accounts()
+    elif args == ["reset-link"]:
+        if not sys.stdout.isatty():
+            die("reset-link prints its link on a terminal only")
+        reset_link(read_email())
+    elif args == ["mail-status"]:
+        mail("status")
+    elif args[:1] == ["mail-test"] and (len(args) == 1 or args[1:] in (["en"], ["ar"])):
+        mail("test", "--lang", args[1] if len(args) == 2 else "en", stdin=read_email() + "\n")
     else:
-        die("usage: cloud-ops.py verify-email | set-plan PLAN | account (the email on stdin) | end-test-accounts")
+        die("usage: cloud-ops.py verify-email | set-plan PLAN | account | reset-link | mail-test [en|ar] (the email on stdin) | mail-status | end-test-accounts")
 
 
 if __name__ == "__main__":

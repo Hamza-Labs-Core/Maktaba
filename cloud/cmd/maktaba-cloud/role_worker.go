@@ -16,7 +16,6 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db"
 	broadcasth "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/broadcast"
-	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/moderation"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/obs"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/privacy"
@@ -94,7 +93,7 @@ func workerJobs(ctx context.Context, logger *slog.Logger, cfg config.Config, poo
 		go func() { defer wg.Done(); f() }()
 	}
 	run(func() { cleanupExpired(ctx, logger, pool) })
-	run(func() { purgeDeletedAccounts(ctx, logger, pool) })
+	run(func() { purgeDeletedAccounts(ctx, logger, cfg, pool) })
 	// story 50.19: relayed streams silent for 2 minutes stop counting against their plan
 	run(func() { sweepStreams(ctx, logger, &billingpkg.Streams{DB: pool.DB}, time.Minute) })
 	// story 50.19 §6: the hourly pay-as-you-go usage reports, with a payment provider that
@@ -203,13 +202,25 @@ func cleanupExpired(ctx context.Context, logger *slog.Logger, pool *db.Pool) {
 	}
 }
 
+// accountPurger is the purge, with the mail outbox's part in it.
+func accountPurger(cfg config.Config, pool *db.Pool, logger *slog.Logger) *privacy.AccountPurger {
+	p := privacy.NewAccountPurger(pool.DB)
+	o, err := mailOutbox(cfg, pool, logger, nil)
+	if err != nil {
+		logger.Warn("worker: a purged account's address stays in the mail outbox until its rows go", "err", err, "event", "mail_forget_off")
+		return p
+	}
+	p.ForgetMail = o.Forget
+	return p
+}
+
 // purgeDeletedAccounts removes users whose deletion hold has elapsed.
 // We run once an hour. Each account first goes through the GDPR erasure
 // (privacy.DataSubjectService, story 30.2) so its push logs, which have
 // no FK to users, go with it; CASCADE on the FK chains then drops
 // sessions, oauth links, servers, etc.
-func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, pool *db.Pool) {
-	purger := privacy.NewAccountPurger(pool.DB)
+func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, cfg config.Config, pool *db.Pool) {
+	purger := accountPurger(cfg, pool, logger)
 	t := time.NewTicker(1 * time.Hour)
 	defer t.Stop()
 	for {
@@ -261,30 +272,19 @@ func usageReporter(cfg config.Config, pool *db.Pool, logger *slog.Logger) *billi
 		return nil
 	}
 	users := stores.NewUsers(pool.DB)
-	var mailer mailpkg.Mailer = mailpkg.LogMailer{Logger: logger}
+	mailer := workerMailer(cfg, pool, logger)
 	return &billingpkg.Reporter{DB: pool.DB, Provider: p, Logger: logger,
 		Notify: func(ctx context.Context, uid string, near bool) error {
 			u, err := users.ByID(ctx, uid)
 			if err != nil {
 				return err
 			}
-			kind, subject, body := "payg_cap_reached", "Your pay-as-you-go limit is reached",
-				"You've reached your pay-as-you-go limit. Remote play continues at Basic quality until next month."
+			kind := "payg_cap_reached"
 			if near {
-				kind, subject, body = "payg_near_cap", "80% of your pay-as-you-go limit is used",
-					"You've used 80% of your pay-as-you-go limit this month."
+				kind = "payg_near_cap"
 			}
-			return mailer.Send(ctx, mailpkg.Message{To: u.Email, Kind: kind, Subject: subject, Body: body})
+			return sendNotice(ctx, mailer, cfg, u.Locale, u.Email, kind)
 		}}
-}
-
-// broadcastNotice is the email of each broadcast notice kind (story 50.20 §5).
-var broadcastNotice = map[string][2]string{
-	billingpkg.NoticeAllowanceNear: {"80% of this month's viewing is used", "Your channels have used 80% of this month's viewer-hours."},
-	billingpkg.NoticeAllowanceUsed: {"This month's viewing allowance is used",
-		"Your channels have used this month's viewer-hours. New viewers now follow your plan: pay as you go if it is on, then lower quality, then a wait. People already watching continue."},
-	billingpkg.NoticeCapNear:    {"80% of your viewing limit is used", "You've used 80% of this month's pay-as-you-go limit for your channels."},
-	billingpkg.NoticeCapReached: {"Your viewing limit is reached", "You've reached this month's pay-as-you-go limit. New viewers watch in lower quality until next month, or until you raise your limit."},
 }
 
 // broadcastReporter is the worker's broadcast reporter. It sends the viewer-hour reports only
@@ -295,17 +295,16 @@ func broadcastReporter(cfg config.Config, pool *db.Pool, logger *slog.Logger) *b
 	if err != nil {
 		p = billingpkg.None{}
 	}
-	var mailer mailpkg.Mailer = mailpkg.LogMailer{Logger: logger}
+	mailer := workerMailer(cfg, pool, logger)
 	store := &billingpkg.BroadcastStore{DB: pool.DB, Enabled: cfg.Broadcast.Enabled, Enforce: cfg.Broadcast.PlansEnforce}
 	return &billingpkg.BroadcastReporter{Store: store, Provider: p, Logger: logger, Enabled: cfg.Broadcast.PAYGReports && p.Enabled(),
 		Notify: func(ctx context.Context, serverID, kind string) error {
-			var email string
-			if err := pool.DB.QueryRowContext(ctx, `SELECT u.email FROM servers s JOIN users u ON u.id = s.owner_user_id WHERE s.id = $1`,
-				serverID).Scan(&email); err != nil {
+			var email, locale string
+			if err := pool.DB.QueryRowContext(ctx, `SELECT u.email, u.locale FROM servers s JOIN users u ON u.id = s.owner_user_id WHERE s.id = $1`,
+				serverID).Scan(&email, &locale); err != nil {
 				return err
 			}
-			m := broadcastNotice[kind]
-			return mailer.Send(ctx, mailpkg.Message{To: email, Kind: "broadcast_" + kind, Subject: m[0], Body: m[1]})
+			return sendNotice(ctx, mailer, cfg, locale, email, "broadcast_"+kind)
 		}}
 }
 

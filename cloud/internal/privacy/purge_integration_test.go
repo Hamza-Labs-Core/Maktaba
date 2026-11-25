@@ -4,6 +4,7 @@ package privacy
 
 import (
 	"context"
+	"errors"
 	neturl "net/url"
 	"os"
 	"strconv"
@@ -61,9 +62,22 @@ func TestPurgeDueRemovesPushLogs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	res, err := NewAccountPurger(pool.DB).PurgeDue(ctx)
+	// its address leaves the mail outbox first; an account whose mail could not be forgotten stays
+	purger := NewAccountPurger(pool.DB)
+	var forgot []string
+	fail := errors.New("the outbox is away")
+	purger.ForgetMail = func(_ context.Context, email string) error { forgot = append(forgot, email); return fail }
+	res, err := purger.PurgeDue(ctx)
+	if err != nil || res.Purged != 0 || res.Failed[gone] == nil {
+		t.Fatalf("%+v %v", res, err)
+	}
+	fail = nil
+	res, err = purger.PurgeDue(ctx)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if want := "purge-gone-" + stamp + "@example.test"; len(forgot) != 2 || forgot[0] != want || forgot[1] != want {
+		t.Fatalf("forgot %v", forgot)
 	}
 	if len(res.Failed) != 0 || res.Purged < 1 {
 		t.Fatalf("purge: %+v", res)
