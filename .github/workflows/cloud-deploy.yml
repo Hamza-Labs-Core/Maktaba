@@ -454,7 +454,7 @@ jobs:
         if: failure() || cancelled()
         run: |
           mkdir -p "$RUNNER_TEMP/e2e"
-          ssh node 'cd /opt/maktaba-relay && docker compose --env-file .env ps -a; docker compose --env-file .env logs --tail 300 --no-color; tail -n 300 /var/lib/maktaba-cloud-deploy/last-logs/*.log 2>/dev/null' \
+          ssh node 'cd /opt/maktaba-relay && docker compose --env-file .env ps -a; docker compose --env-file .env logs --tail 300 --no-color; tail -n 300 /var/lib/maktaba-cloud-deploy/last-logs/*.log /var/lib/maktaba-cloud-deploy/last-logs.old/*.log 2>/dev/null' \
             </dev/null > "$RUNNER_TEMP/e2e/node-compose.log" 2>&1 || true
 
       - name: Commit (the node's set is this one)

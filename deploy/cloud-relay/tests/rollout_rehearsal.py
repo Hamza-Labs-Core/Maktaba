@@ -109,6 +109,12 @@ MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
     "unhold-keeps-no-release": ("ops/rollout.sh", r"if \[ \"\$runs\" = yes \]; then rm -f \"\$STATE/no-release\"", "if false; then true", ["unhold after a failed first deploy"]),
     "unhold-serves-it": ("ops/rollout.sh", r"elif \[ -f \"\$STATE/pending/first\" \]; then touch \"\$STATE/no-release\"", "elif false; then true", ["a first rollback without docker"]),
     "never-afresh": ("ops/rollout.sh", r"\t\t\tafresh \"\$db\" \"\$broken\"", '\t\t\tdie "begin: the database $broken"', ["a database whose first start failed"]),
+    "afresh-unsure": ("ops/rollout.sh", r"n=\"\" # whatever it had printed[^\n]*", "true", ["a database that can't be shown empty"]),
+    "afresh-over-databases": ("ops/rollout.sh", r"\[ \"\$n\" = 0 \] && \[ \"\$t\" = 0 \] \|\| not=[^\n]*", "true", ["a database that can't be shown empty"]),
+    "afresh-beside-a-backup": ("ops/rollout.sh", r"if compgen -G \"/var/backups[^\n]*then", "if false; then", ["a database whose first start failed"]),
+    "afresh-over-a-tablespace": ("ops/rollout.sh", r"\[ -z \"\$\(ls -A pg_tblspc[^\n]*", "true", ["a database whose first start failed"]),
+    "afresh-any-layout": ("ops/rollout.sh", r"\*\) echo \"what postgres does not make[^\n]*", "*) ;;", ["a database whose first start failed"]),
+    "afresh-over-a-table": ("ops/rollout.sh", r"\[ \"\$n\" -lt 16384 \] \|\| \{ echo \"a table[^\n]*", "true", ["a database whose first start failed"]),
     "afresh-anyway": ("ops/rollout.sh", r"\[ \"\$files\" = nothing \] \|\| not=[^\n]*", "true", ["a database that can't be shown empty"]),
     "no-volume-is-no-database": ("ops/rollout.sh", r"\|\| die \"docker does not say which volumes[^\n]*", '|| volumes=""', ["an answer docker does not give"]),
     "any-failed-inspect": ("ops/rollout.sh", r"case \"\$said\" in [^\n]*", "true", ["an answer docker does not give"]),
@@ -459,52 +465,84 @@ def has_volume() -> bool:
     return rc("docker volume inspect maktaba-relay_pg_data")[0] == 0
 
 
+def refused_to_remake(why: str, extra: dict[str, str] | None = None) -> None:
+    code, out = begin("a", extra=extra)
+    assert code != 0 and f"be shown that nothing is in it: {why}" in out and "docker volume rm maktaba-relay_pg_data" in out, f"{why}: {out[-2500:]}"
+    not_pending()
+    assert has_volume(), f"{why}: a database was removed"
+
+
 def first_start_of_the_database_failed() -> str:
     """Postgres made its folder and never the database: its first start failed, or was cut before its control
-    file was written. The next deploy makes it afresh."""
+    file was written. The next deploy makes it afresh, unless anything says that somebody's is in it."""
     for how in ("its first start failed", "cut while its folder was made"):
         code, out = deploy("a", "app a", broken_postgres)
         assert code != 0 and "first deploy failed" in out, out[-2000:]
         assert has_volume()
         if how.startswith("cut"):
             in_the_volume("rm global/pg_control")
+            for put, take, why in (
+                ("mkdir pg_tblspc/99999", "rmdir pg_tblspc/99999", "its folder has a tablespace"),
+                ("mkdir pgdata", "rmdir pgdata", "its folder has what postgres does not make (pgdata)"),
+                ("touch base/5/16400", "rm base/5/16400", "its folder has a table of somebody (base/5/16400)"),
+            ):
+                in_the_volume(put)
+                refused_to_remake(why)
+                in_the_volume(take)
+            backup = Path("/var/backups/maktaba-cloud/db-20260101T000000Z.dump")
+            backup.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            backup.touch()
+            refused_to_remake("a backup of a database of this node")
+            backup.unlink()
         code, out = begin("a")
         assert code == 0 and "made afresh" in out, f"{how}: {out[-2500:]}"
         assert not has_volume(), "the folder is there still"
         assert list(Path("/var/backups/maktaba-cloud").glob("unfinished-*.tar.gz")), "no copy of it"
         code, out = rollback()
         assert code == 0, out[-1500:]
-    return "made afresh, twice"
+    return "made afresh, twice; refused for four things in it"
+
+
+def stand_in(rules: str) -> dict[str, str]:
+    """A docker that answers some questions as `rules` says (bash case arms over its arguments)."""
+    shim = Path("/root/shim")
+    shim.mkdir(exist_ok=True)
+    (shim / "docker").write_text(f'#!/bin/bash\ncase "$*" in\n{rules}\nesac\nexec {sh("command -v docker").strip()} "$@"\n')
+    (shim / "docker").chmod(0o755)
+    return {"PATH": f"{shim}:{os.environ['PATH']}"}
 
 
 def database_that_cannot_be_shown_empty() -> str:
-    """A database that exists and does not come up, on a node that never committed: refused, with what to
-    do, and nothing touched."""
+    """A database that exists and can't be read, on a node that never committed: refused, with what to do,
+    and nothing touched."""
     assert has_volume() and not dumps()
     in_the_volume("mv global/pg_control pg_control.away")
-    code, out = begin("a")
-    assert code != 0 and "be shown that nothing is in it: its folder has database 16384" in out and "docker volume rm maktaba-relay_pg_data" in out, out[-2500:]
-    not_pending()
-    assert has_volume(), "a database was removed"
-    in_the_volume("mv pg_control.away global/pg_control")
+    refused_to_remake("its folder has what postgres does not make (pg_control.away)")
+    in_the_volume("mv pg_control.away /tmp/x && cp /tmp/x global/pg_control.kept && rm -f global/pg_control")
+    refused_to_remake("its folder has database 16384")
+    in_the_volume("mv global/pg_control.kept global/pg_control && chown 70:70 global/pg_control")
+    # under another name
+    dc("up -d --wait postgres </dev/null")
+    super_psql = f"cd {DEPLOY} && docker compose --env-file .env exec -T postgres psql -X -q -U maktaba -d postgres -c"
+    sh(f"{super_psql} 'ALTER DATABASE maktaba RENAME TO other' </dev/null")
+    refused_to_remake("postgres has 1 database(s)")
+    dc("up -d --wait postgres </dev/null")
+    sh(f"{super_psql} 'ALTER DATABASE other RENAME TO maktaba' </dev/null")
+    # an answer that was printed by a command that then failed is no answer
+    refused_to_remake("its folder has database 16384", stand_in(
+        '*"FROM pg_database"*) echo 0; exit 1 ;;\n*"count(*) FROM pg_tables"*) exit 1 ;;'))
     code, out = begin("a")
     assert code == 0 and "the database is empty" in out, out[-2500:]
     code, out = rollback()
     assert code == 0, out[-1500:]
-    return "refused, with the steps"
+    return "refused four times, with the steps"
 
 
 def answer_docker_does_not_give() -> str:
     """One question docker fails to answer (a timeout, say) is not answered "no"."""
     before = snapshot()
-    shim = Path("/root/shim")
-    shim.mkdir(exist_ok=True)
-    docker = sh("command -v docker").strip()
-    (shim / "docker").write_text(f'#!/bin/bash\nif [ -n "${{SHIM_FAILS:-}}" ]; then case "$*" in "$SHIM_FAILS"*) echo "context deadline exceeded" >&2; exit 1 ;; esac; fi\nexec {docker} "$@"\n')
-    (shim / "docker").chmod(0o755)
-    path = {"PATH": f"{shim}:{os.environ['PATH']}"}
     for fails in ("volume ls", "volume inspect"):
-        code, out = begin("b", extra={**path, "SHIM_FAILS": fails})
+        code, out = begin("b", extra=stand_in(f'"{fails}"*) echo "context deadline exceeded" >&2; exit 1 ;;'))
         if fails == "volume ls":
             assert code != 0 and "docker does not say" in out, f"{code}: {out[-2000:]}"
         else:
@@ -514,7 +552,7 @@ def answer_docker_does_not_give() -> str:
         not_pending()
     ids = sh("docker ps -q --no-trunc | sort")
     daemon = sh("systemctl show -p MainPID --value docker")
-    code, out = rc(f"{ROLLOUT} boot", env={**path, "SHIM_FAILS": "inspect --type container"})
+    code, out = rc(f"{ROLLOUT} boot", env=stand_in('"inspect --type container"*) echo "context deadline exceeded" >&2; exit 1 ;;'))
     assert code == 0 and "half removed" not in out, out
     assert daemon == sh("systemctl show -p MainPID --value docker") and ids == sh("docker ps -q --no-trunc | sort"), "docker was restarted for it"
     ready()

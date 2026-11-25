@@ -293,7 +293,7 @@ def test_every_mutation_is_run_and_names_cases_that_exist() -> None:
     names = re.findall(r'^    "([\w-]+)": \("ops/', table, re.M)
     cases = set(re.findall(r'^        \("([^"]+)", ', text, re.M))
     noticed = {c for group in re.findall(r"\[((?:\"[^\"]+\"(?:, )?)+)\]\)", table) for c in re.findall(r'"([^"]+)"', group)}
-    assert len(names) >= 39 and noticed <= cases, noticed - cases
+    assert len(names) >= 45 and noticed <= cases, noticed - cases
     run = yaml.safe_load((ROOT / ".github/workflows/cloud-rehearsal.yml").read_text())["jobs"]
     assert run["single-node"]["strategy"]["matrix"]["part"] == ["1", "2", "3"]
     assert {"single-node", "single-node-reboots"} <= set(run["cloud-rehearsal"]["needs"])

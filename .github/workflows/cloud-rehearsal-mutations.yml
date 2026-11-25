@@ -56,6 +56,12 @@ jobs:
           - unhold-keeps-no-release
           - unhold-serves-it
           - never-afresh
+          - afresh-unsure
+          - afresh-over-databases
+          - afresh-beside-a-backup
+          - afresh-over-a-tablespace
+          - afresh-any-layout
+          - afresh-over-a-table
           - afresh-anyway
           - no-volume-is-no-database
           - any-failed-inspect

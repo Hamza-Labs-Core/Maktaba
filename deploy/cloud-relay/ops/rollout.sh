@@ -89,7 +89,7 @@ running() { local ids; ids="$(containers "$1" 2>/dev/null)" && [ -n "$ids" ]; }
 # stop_all SERVICE...: stopped and gone, and seen to be. Gone: docker starts at boot what it had not
 # been told to stop (a container that had failed at that moment). Their last lines are kept.
 stop_all() {
-	local s c ids try left
+	local s c ids try left keep
 	# a container that is restarting at that moment (it failed, and docker starts it again) can be
 	# missed once
 	for try in 1 2 3 4 5 6 7 8 9 10; do
@@ -97,7 +97,9 @@ stop_all() {
 			ids="$(containers -a "$s" 2>/dev/null)" || ids=""
 			for c in $ids; do
 				docker stop -t 30 "$c" >/dev/null 2>&1 || true
-				(umask 077; mkdir -p "$STATE/last-logs" && docker logs --tail 500 "$c" > "$STATE/last-logs/$s.log" 2>&1) 2>/dev/null || true
+				keep="$STATE/last-logs/$s.log" # the first is the refused release's: the next, beside it
+				[ ! -e "$keep" ] || keep="$STATE/last-logs/$s.$(date +%s).log"
+				(umask 077; mkdir -p "$STATE/last-logs" && docker logs --tail 500 "$c" > "$keep" 2>&1) 2>/dev/null || true
 				docker rm -f "$c" >/dev/null 2>&1 || true
 			done
 		done
@@ -249,8 +251,9 @@ USER_TABLES="pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schem
 # folder only, and that one was cut, or failed. It is made again, from nothing, when it is shown that
 # nothing of anybody's is in it: no release was ever committed here (first_deploy) and no backup was ever
 # taken (each begin takes one of a database with a table in it), and either postgres itself says that it has no
-# database but its own three, with no table in them, or, when it can't start, no folder of another database
-# is there (they are numbered from 16384; a database that exists has its folder).
+# database but its own three, with no table in them, or, when it can't start, its folder is what a new
+# cluster's is and nothing else: no other database's folder, no file of a table of anybody's (those are
+# numbered from 16384), no tablespace, nothing postgres does not make.
 afresh() { # afresh COMPOSE WHY
 	local db="$1" why="$2" not="" n="" t="" files="" keep
 	if compgen -G "/var/backups/maktaba-cloud/db-*.dump" >/dev/null; then
@@ -258,6 +261,8 @@ afresh() { # afresh COMPOSE WHY
 	elif n="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM pg_database WHERE datname NOT IN ('postgres', 'template0', 'template1')" postgres 2>/dev/null)"; then
 		t="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM $USER_TABLES" postgres 2>/dev/null)" || t="?"
 		[ "$n" = 0 ] && [ "$t" = 0 ] || not="postgres has $n database(s) of its users, and $t table(s) beside them"
+	else
+		n="" # whatever it had printed: it did not end well, and the folder is looked at instead
 	fi
 	if [ -z "$not" ]; then
 		stop_all postgres || not="postgres does not stop"
@@ -266,12 +271,26 @@ afresh() { # afresh COMPOSE WHY
 		# shellcheck disable=SC2016  # expands in the container
 		files="$(begun run --rm -T --no-deps --entrypoint sh postgres -c '
 			cd /var/lib/postgresql/data || exit 1
-			for d in base/*; do
-				n="${d#base/}"
-				case "$n" in "*" | *[!0-9]*) continue ;; esac
-				[ "$n" -lt 16384 ] || { echo "database $n"; exit 0; }
+			for f in $(ls -A); do
+				case "$f" in
+					PG_VERSION | base | global | pg_commit_ts | pg_dynshmem | pg_hba.conf | pg_ident.conf | pg_logical | pg_multixact | pg_notify) ;;
+					pg_replslot | pg_serial | pg_snapshots | pg_stat | pg_stat_tmp | pg_subtrans | pg_tblspc | pg_twophase | pg_wal | pg_xact) ;;
+					postgresql.conf | postgresql.auto.conf | postmaster.opts | postmaster.pid) ;;
+					*) echo "what postgres does not make ($f)"; exit 0 ;;
+				esac
 			done
 			[ -z "$(ls -A pg_tblspc 2>/dev/null)" ] || { echo "a tablespace"; exit 0; }
+			for d in base/*; do
+				case "${d#base/}" in
+					"*" | 1 | 4 | 5 | pgsql_tmp) ;;
+					*) echo "database ${d#base/}"; exit 0 ;;
+				esac
+			done
+			for f in base/*/* global/*; do
+				n="${f##*/}"; n="${n%%[._]*}"
+				case "$n" in "" | *[!0-9]*) continue ;; esac
+				[ "$n" -lt 16384 ] || { echo "a table of somebody ($f)"; exit 0; }
+			done
 			echo nothing' </dev/null 2>/dev/null)" || files="an unreadable folder"
 		[ "$files" = nothing ] || not="its folder has $files"
 	fi
@@ -279,7 +298,10 @@ afresh() { # afresh COMPOSE WHY
 		# a copy all the same: it is small
 		keep="/var/backups/maktaba-cloud/unfinished-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 		if ! (umask 077; mkdir -p "${keep%/*}" && begun run --rm -T --no-deps --entrypoint tar postgres -C /var/lib/postgresql/data -czf - . </dev/null > "$keep" 2>/dev/null) ||
-			! docker volume rm "$VOLUME" >/dev/null; then not="its volume can't be copied or removed"; fi
+			! docker volume rm "$VOLUME" >/dev/null; then
+			not="its volume can't be copied or removed"
+			rm -f "$keep"
+		fi
 	fi
 	if [ -n "$not" ]; then
 		err "the database of this node's failed first deploy $why, and it can't be shown that nothing is in it: $not"
@@ -348,7 +370,8 @@ cmd_begin() {
 		log "image $ref"
 	done
 
-	rm -rf "$STATE/pending.new" "$STATE/last-logs" # the last deploy's words
+	rm -rf "$STATE/pending.new" "$STATE/last-logs.old"
+	[ ! -d "$STATE/last-logs" ] || mv "$STATE/last-logs" "$STATE/last-logs.old" # the last deploy's words
 	(umask 077; mkdir -p "$STATE/pending.new/set")
 	cat /proc/sys/kernel/random/boot_id > "$STATE/pending.new/boot_id"
 	printf '%s\n' "$DEPLOY_ID" > "$STATE/pending.new/id"
