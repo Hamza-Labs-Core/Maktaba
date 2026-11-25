@@ -211,7 +211,7 @@ export function BigCollection() {
           name: col.name_override || col.name,
           badge: collectionBadge(
             {
-              kind: col.is_smart ? "smart" : col.source_kind === "plex" ? "plex" : "curated",
+              kind: col.is_smart ? "smart" : "curated",
               source_kind: col.source_kind,
             },
             t

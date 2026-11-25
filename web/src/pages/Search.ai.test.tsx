@@ -332,6 +332,53 @@ describe("AI mode tab (story 49.14)", () => {
       expect(params().get("tab")).toBeNull();
     });
 
+    it("a recent search and then Back before it renders: Results shows the search it was", async () => {
+      withRecentSabr();
+      renderSearch("/search?q=patience&mode=hybrid");
+      await screen.findByText("Patience in hardship");
+      fireEvent.click(ai());
+      await waitFor(() => expect(params().get("tab")).toBe("ai"));
+      const recent = await recentSabr();
+      act(() => {
+        recent.click();
+        void go(-1);
+      });
+      fireEvent.click(results());
+      await waitFor(() => expect(params().get("tab")).toBeNull());
+      expect(params().get("q")).toBe("patience");
+      expect(asked()).toEqual(["patience"]);
+    });
+
+    it("AI mode and then Back, before it renders, to an entry of the same URL", async () => {
+      withRecentSabr();
+      const entry = "/search?q=sabr&mode=hybrid&sid=sid-rec";
+      renderSearch(entry, memberUser, [entry]);
+      await screen.findByText("A lesson on sabr");
+      act(() => {
+        ai().click();
+        void go(-1);
+      });
+      fireEvent.click(await recentSabr());
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+      });
+      expect(params().get("tab")).toBeNull();
+      expect(streams).toHaveLength(0);
+    });
+
+    it("a search that answers after the same words were opened in another order", async () => {
+      const release = holdSearch();
+      renderSearch("/search?q=patience&mode=hybrid");
+      await waitFor(() => expect(asked()).toEqual(["patience"]));
+      fireEvent.click(ai());
+      await waitFor(() => expect(params().get("tab")).toBe("ai"));
+      act(() => void go("/search?q=patience&mode=hybrid&sort=newest&tab=ai"));
+      await waitFor(() => expect(params().get("sort")).toBe("newest"));
+      await release();
+      expect(params().get("sort")).toBe("newest");
+      expect(params().get("sid")).toBeNull();
+    });
+
     it("new words, then AI mode before they render: it asks the new words", async () => {
       renderSearch("/search?q=patience&mode=hybrid");
       await screen.findByText("Patience in hardship");

@@ -47,6 +47,7 @@
 import {
   type FormEvent,
   type ReactNode,
+  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -54,7 +55,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Modal } from "@ds/components/Modal/Modal";
@@ -244,16 +245,18 @@ export function Search() {
   const [params, setParams] = useSearchParams();
   // The URL as this page last wrote it, else as rendered. The router renders a URL change in a
   // transition, so `params` (and a callback's older one) can still be the URL before a write: a
-  // change to the URL starts from this one. A new location, Back too, has a new key.
-  const { key: urlKey } = useLocation();
+  // change to the URL starts from this one. Each write is counted in the same transition: once
+  // that renders, `params` is the URL, even one that looks as it did (Back at once).
   const url = useRef(params);
+  const [writes, setWrites] = useState(0);
   useLayoutEffect(() => {
     url.current = params;
-  }, [urlKey, params]);
+  }, [params, writes]);
   const writeUrl = useCallback(
     (p: URLSearchParams, replace: boolean) => {
       url.current = p;
       setParams(p, { replace });
+      startTransition(() => setWrites((w) => w + 1));
     },
     [setParams]
   );
@@ -547,10 +550,11 @@ export function Search() {
   /**
    * Shows the URL of a saved search, in the tab the URL is on (one answering after the person
    * moved to AI mode keeps them there); a replace unless `push`. A replace is of the same
-   * search's URL: one that has moved to another search is left alone. Whether it was shown.
+   * search's URL, as `asked` (its order; the home may answer in another): one that has moved to
+   * another search, or the same in another order, is left alone. Whether it was shown.
    */
   const showUrl = useCallback(
-    (s: SearchState, push = false): boolean => {
+    (s: SearchState, push = false, asked: Sort = s.sort ?? "relevance"): boolean => {
       if (!alive.current) return false;
       const now = url.current;
       const p = searchParamsOf(s);
@@ -558,6 +562,7 @@ export function Search() {
         !push &&
         ((now.get("q") ?? "").trim() !== s.q ||
           (urlMode(now.get("mode")) ?? s.mode) !== s.mode ||
+          urlSort(now.get("sort")) !== asked ||
           JSON.stringify(selOf(now)) !== JSON.stringify(selOf(p)))
       )
         return false;
@@ -645,15 +650,19 @@ export function Search() {
         setNotice(Boolean(opts.notice));
         if (
           s.sid &&
-          showUrl({
-            q: query,
-            mode: m,
-            sort: s.sort,
-            sel: s.sel,
-            sid: s.sid,
-            vp: vPage,
-            tp: tPage,
-          })
+          showUrl(
+            {
+              q: query,
+              mode: m,
+              sort: s.sort,
+              sel: s.sel,
+              sid: s.sid,
+              vp: vPage,
+              tp: tPage,
+            },
+            false,
+            ask.sort
+          )
         )
           lastRun.current = runKey(query, m, s.sort, s.sel, s.sid);
         void refreshRecent();
@@ -731,28 +740,36 @@ export function Search() {
           if (g !== gen.current) return;
           if (a2) a = a2;
           if (b2) b = b2;
-          showUrl({
-            q: query,
-            mode: m,
-            sort: snapshot.sort,
-            sel: ask.sel,
-            sid: s,
-            vp: vPage,
-            tp: tPage,
-          });
+          showUrl(
+            {
+              q: query,
+              mode: m,
+              sort: snapshot.sort,
+              sel: ask.sel,
+              sid: s,
+              vp: vPage,
+              tp: tPage,
+            },
+            false,
+            ask.sort
+          );
         }
         commit(snapshot, vPage, listOf(a?.items), tPage, listOf(b?.items));
         // a link naming another order than the search's own: the address follows the pages
         if (snapshot.sort !== ask.sort && vPage === want.vp && tPage === want.tp)
-          showUrl({
-            q: query,
-            mode: m,
-            sort: snapshot.sort,
-            sel: ask.sel,
-            sid: s,
-            vp: vPage,
-            tp: tPage,
-          });
+          showUrl(
+            {
+              q: query,
+              mode: m,
+              sort: snapshot.sort,
+              sel: ask.sel,
+              sid: s,
+              vp: vPage,
+              tp: tPage,
+            },
+            false,
+            ask.sort
+          );
         setNotice(false);
         void refreshRecent();
       } catch (e) {

@@ -242,10 +242,11 @@ type LibraryCollection struct {
 	// SmartQuery is a saved filter's smart_query, as stored (JSON text).
 	SmartQuery *string `json:"smart_query,omitempty"`
 	// Epic 56 (slot 0193): a collection a pipeline stage keeps in step with
-	// a YouTube playlist or channel (kind youtube), or one an older release
-	// read in from Plex (kind plex, no longer synced), read-only like the topic
+	// a YouTube playlist or channel (kind youtube), read-only like the topic
 	// and clip groups, and an admin's choices: shown as a row on the library's
-	// Recommended tab, hidden.
+	// Recommended tab, hidden. A collection an older release read in from Plex
+	// (source_kind plex) is no longer synced: it lists as a curated one, with
+	// no source_kind.
 	SourceKind    string `json:"source_kind,omitempty"`
 	ShowOnLibrary bool   `json:"show_on_library"`
 	Hidden        bool   `json:"hidden,omitempty"`
@@ -254,15 +255,18 @@ type LibraryCollection struct {
 	sortTitle string
 }
 
-// The kinds of a sourced collection (Epic 56 stories 56.06, 56.07).
-const (
-	KindYouTube = "youtube" // collections.source_kind youtube_playlist or youtube_channel
-	KindPlex    = "plex"    // collections.source_kind plex
-)
+// KindYouTube is a sourced collection's kind (Epic 56 story 56.06):
+// collections.source_kind youtube_playlist or youtube_channel.
+const KindYouTube = "youtube"
 
 // The kind filter of GET /api/libraries/{id}/collections, and the order of
 // the kinds in the list.
-var collectionFilters = []string{KindTopic, SubFiller, SubStandalone, KindCurated, KindYouTube, KindPlex}
+var collectionFilters = []string{KindTopic, SubFiller, SubStandalone, KindCurated, KindYouTube}
+
+// legacyKindPlex is the filter of an older client's "From Plex" kind: collections
+// are no longer read in from Plex, so it is accepted and keeps nothing (an empty
+// list, and a count of 0), never an invalid query.
+const legacyKindPlex = "plex"
 
 func (c LibraryCollection) filter() string {
 	switch c.Kind {
@@ -287,8 +291,8 @@ func (h *Handler) LibraryCollections(w http.ResponseWriter, r *http.Request) {
 	if kind == "all" {
 		kind = ""
 	}
-	if kind != "" && !contains(collectionFilters, kind) {
-		httperror.Write(w, r, httperror.InvalidQuery("kind must be all, topic, filler, standalone, curated, youtube or plex"))
+	if kind != "" && kind != legacyKindPlex && !contains(collectionFilters, kind) {
+		httperror.Write(w, r, httperror.InvalidQuery("kind must be all, topic, filler, standalone, curated or youtube"))
 		return
 	}
 	// hidden collections are left out for everyone; an admin may ask for
@@ -309,6 +313,7 @@ func (h *Handler) LibraryCollections(w http.ResponseWriter, r *http.Request) {
 	for _, f := range collectionFilters {
 		counts[f] = 0
 	}
+	counts[legacyKindPlex] = 0 // an older client reads it for its "From Plex" chip
 	var listed []LibraryCollection
 	for _, c := range all {
 		counts[c.filter()]++
@@ -365,13 +370,13 @@ func (h *Handler) libraryCollections(ctx context.Context, s scope, lib string, w
 		WHERE g.library_id = $1 AND v.library_id = $1 AND `+shown(ctx)+`
 		GROUP BY g.id, g.name, g.kind
 		UNION ALL
-		SELECT CASE WHEN c.source_kind IS NULL THEN 3 WHEN c.source_kind = 'plex' THEN 5 ELSE 4 END,
-		       CASE WHEN c.source_kind = 'plex' THEN 'plex' WHEN c.source_kind IS NOT NULL THEN 'youtube'
+		SELECT CASE WHEN c.source_kind IN ('youtube_playlist', 'youtube_channel') THEN 4 ELSE 3 END,
+		       CASE WHEN c.source_kind IN ('youtube_playlist', 'youtube_channel') THEN 'youtube'
 		            WHEN c.is_smart THEN 'smart' ELSE 'curated' END,
 		       CASE WHEN c.source_kind = 'youtube_playlist' THEN 'playlist' WHEN c.source_kind = 'youtube_channel' THEN 'channel' ELSE '' END,
 		       c.id, COALESCE(c.name_override, c.name),
 		       CASE WHEN c.is_smart THEN NULL ELSE `+curatedCount+` END, CAST(c.smart_query AS TEXT),
-		       c.source_kind, c.show_on_library, CASE WHEN c.hidden_at IS NULL THEN `+falseLit(h.DB)+` ELSE `+trueLit(h.DB)+` END, c.sort_title
+		       CASE WHEN c.source_kind IN ('youtube_playlist', 'youtube_channel') THEN c.source_kind END, c.show_on_library, CASE WHEN c.hidden_at IS NULL THEN `+falseLit(h.DB)+` ELSE `+trueLit(h.DB)+` END, c.sort_title
 		FROM collections c WHERE c.library_id = $1 AND c.dismissed_at IS NULL`+hidden+`
 		) g ORDER BY g.rank, COALESCE(g.st, g.name), g.id`, args...)
 	if err != nil {
@@ -493,7 +498,7 @@ func (h *Handler) collectionPosters(ctx context.Context, s scope, lib string, pa
 	if err := auto(byKind[KindClip], "clip_group_items", "group_id"); err != nil {
 		return err
 	}
-	if ids := append(append(byKind[KindCurated], byKind[KindYouTube]...), byKind[KindPlex]...); len(ids) > 0 {
+	if ids := append(byKind[KindCurated], byKind[KindYouTube]...); len(ids) > 0 {
 		var args []any
 		in := inList(ids, &args)
 		cond := and(shown(ctx), s.cond("v.library_id", &args))

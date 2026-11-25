@@ -51,8 +51,8 @@ export interface Collection {
   /** a manual collection's visible videos */
   videos: number | null;
   poster_video_ids: string[];
-  /** Epic 56: what keeps it in step (youtube_playlist, youtube_channel, plex), and an admin's choices */
-  source_kind?: "youtube_playlist" | "youtube_channel" | "plex";
+  /** Epic 56: what keeps it in step (youtube_playlist, youtube_channel), and an admin's choices */
+  source_kind?: "youtube_playlist" | "youtube_channel";
   name_override?: string | null;
   hidden?: boolean;
   show_on_library?: boolean;
@@ -98,9 +98,7 @@ function readCollection(raw: unknown): Collection | null {
           .slice(0, 4)
       : [],
     source_kind:
-      c.source_kind === "youtube_playlist" ||
-      c.source_kind === "youtube_channel" ||
-      c.source_kind === "plex"
+      c.source_kind === "youtube_playlist" || c.source_kind === "youtube_channel"
         ? c.source_kind
         : undefined,
     name_override: typeof c.name_override === "string" ? c.name_override : null,

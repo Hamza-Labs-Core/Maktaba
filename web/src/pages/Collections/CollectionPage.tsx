@@ -336,15 +336,11 @@ function CollectionOf({ id }: { id: string }) {
 
       {col.source_kind && (
         <p className="mkt-muted">
-          <Badge tone="neutral">
-            {t(
-              col.source_kind === "plex"
-                ? "collections.badge.plex"
-                : col.source_kind === "youtube_channel"
-                  ? "collections.badge.youtubeChannel"
-                  : "collections.badge.youtubePlaylist"
-            )}
-          </Badge>{" "}
+          {col.source_kind === "youtube_playlist" && (
+            <>
+              <Badge tone="neutral">{t("collections.badge.youtubePlaylist")}</Badge>{" "}
+            </>
+          )}
           {t("collections.sourced")}
         </p>
       )}

@@ -1116,8 +1116,8 @@ export const APPS = [
               shot(
                 "appletv-library-collections-ar",
                 "wide",
-                "A library's Collections tab on an Apple TV, in Arabic: a YouTube playlist, a Plex collection and one made by hand",
-                "تبويب المجموعات في مكتبة على آبل تي في، بالعربية: قائمة تشغيل من يوتيوب، ومجموعة من Plex، ومجموعة أُنشئت يدويًا"
+                "A library's Collections tab on an Apple TV, in Arabic: a YouTube playlist with its badge, a YouTube channel's collection and one made by hand",
+                "تبويب المجموعات في مكتبة على آبل تي في، بالعربية: قائمة تشغيل من يوتيوب مع شارتها، ومجموعة قناة على يوتيوب، ومجموعة أُنشئت يدويًا"
               ),
               shot(
                 "appletv-live-guide",
