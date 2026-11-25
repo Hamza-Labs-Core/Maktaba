@@ -46,8 +46,8 @@ IPv4, all **DNS only**, TTL 300, and the CI deploy writes them (`cloud-deploy.ym
 
 | Names | Points at |
 |---|---|
-| `relay.maktaba.tv`, `*.relay.maktaba.tv`, `api.maktaba.tv`, `app.maktaba.tv` | the production node (`RELAY_HOST`) |
-| `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev`, `staging-app.maktaba.dev` | the QA node (`QA_HOST`) |
+| `relay.maktaba.tv`, `*.relay.maktaba.tv`, `api.maktaba.tv`, `app.maktaba.tv` | the production node |
+| `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev`, `staging-app.maktaba.dev` | the QA node |
 
 `api` and `app` are DNS only here, not the Tunnel's proxied names: Caddy on the node serves
 them (the api on a private address, `CF-Connecting-IP` written by Caddy). They move to the
@@ -80,6 +80,13 @@ Tunnel with the pair.
   used only for direct names, each delegated by `NS` to the cloud's own DNS responder on nodes A
   and B (`--role=dns`, UDP/TCP 53), as `1-2-3-4.<home-id>.<direct-domain>` → `1.2.3.4`. The list
   is configuration (`direct.domains`, story 50.15 §4).
+
+## Mail records
+
+Receiving for maktaba.tv is at Proton (its MX, SPF, DKIM and DMARC). Sending the account mails is at
+Resend, under names of its own that conflict with none of those: `resend._domainkey` (TXT), `send`
+(MX and TXT) and `rsend` (CNAME), all DNS only ([`cloud-mail.md`](cloud-mail.md)). No deploy writes
+or changes a mail record.
 
 ## CAA records
 

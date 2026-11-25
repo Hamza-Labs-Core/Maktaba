@@ -234,8 +234,7 @@ func (d *Deps) applyEvent(ctx context.Context, tx *sql.Tx, provider string, ev b
 		if _, err := tx.ExecContext(ctx, `UPDATE subscriptions SET status = 'past_due', updated_at = now() WHERE user_id = $1 AND status = 'active'`, uid); err != nil {
 			return nil, err
 		}
-		return []notice{d.mailUser(uid, "payment_failed", "Your Maktaba Cloud payment failed",
-			"We could not take your payment for Maktaba Cloud. Update your payment method from the billing page: "+d.WebURL+"/billing")}, nil
+		return []notice{d.mailUser(uid, "payment_failed")}, nil
 
 	case billingpkg.EventPaymentDisputed:
 		uid, err := d.resolveUser(ctx, tx, ev.UserID, ev.CustomerID)
@@ -275,7 +274,8 @@ func (d *Deps) suspendForDispute(ctx context.Context, tx *sql.Tx, provider, uid,
 	}}, nil
 }
 
-func (d *Deps) mailUser(uid, kind, subject, body string) notice {
+// mailUser mails the account one of the notices (mail.NoticeKinds), in its language.
+func (d *Deps) mailUser(uid, kind string) notice {
 	return func(ctx context.Context) {
 		if d.Mailer == nil {
 			return
@@ -285,7 +285,12 @@ func (d *Deps) mailUser(uid, kind, subject, body string) notice {
 			d.Logger.Error("billing: mail lookup", "user_id", uid, "err", err)
 			return
 		}
-		if err := d.Mailer.Send(ctx, mailpkg.Message{To: u.Email, Kind: kind, Subject: subject, Body: body}); err != nil {
+		m, ok := mailpkg.Templates{WebURL: d.WebURL}.Notice(mailpkg.Pick(u.Locale), u.Email, kind)
+		if !ok {
+			d.Logger.Error("billing: no notice of that kind", "kind", kind)
+			return
+		}
+		if err := d.Mailer.Send(ctx, m); err != nil {
 			d.Logger.Error("billing: send mail", "kind", kind, "err", err)
 		}
 	}

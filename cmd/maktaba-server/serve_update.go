@@ -692,7 +692,7 @@ func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema in
 		return err
 	}
 	defer pgbundle.Hold()()
-	g.pauseCopies(ctx, 0)
+	g.pauseCopies(ctx)
 	if err := runMigrateDownTo(ctx, api, schema, os.Stderr); err != nil {
 		// the copies stay paused: the schema is part way (the update is held, when it has a
 		// backup to hold for)

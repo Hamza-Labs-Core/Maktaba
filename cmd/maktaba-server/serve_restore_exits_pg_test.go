@@ -44,7 +44,8 @@ type pgExits struct {
 const pgFirst, pgOther = "pre-v0.1.0-to-v0.2.0.dump", "maktaba-20261101-030000.dump"
 
 // newPGExits is the home; kind is bundled, external (a Postgres the home does not bundle),
-// or external without psql.
+// external without psql, or external with a plain user (no superuser, and pgvector, or another
+// extension it may not make, in public: the backup is put back inside it).
 func newPGExits(t *testing.T, kind string) *pgExits {
 	t.Helper()
 	programs := pgtest.Programs(t)
@@ -66,7 +67,14 @@ func newPGExits(t *testing.T, kind string) *pgExits {
 	}
 	target := dbsafe.Target{URL: super, Bin: e.b.Bin, Backups: e.b.Backups}
 	if kind != "bundled" {
-		e.dsn = super // one role does it all (pgvector's extension needs it)
+		if kind == "external, a plain user" {
+			target.URL = e.dsn
+			q, err := e.b.NewQuerier()
+			e.must(err)
+			e.must(q.Exec(e.ctx, pgbundle.AppDatabase, "CREATE EXTENSION pageinspect SCHEMA public;"))
+		} else {
+			e.dsn = super // one role does it all
+		}
 		e.ext = &target
 	}
 	cfg := config.Config{}
@@ -90,8 +98,8 @@ func newPGExits(t *testing.T, kind string) *pgExits {
 		e.must(os.WriteFile(filepath.Join(dir, "MANIFEST.md"), []byte(manifest), 0o644))
 		e.must(os.WriteFile(filepath.Join(dir, updater.SchemaKeepFile), []byte(`{"protocol":1}`), 0o644))
 	}
-	e.inst = &keepInstaller{running: "0.2.0", kept: []updater.KeptRelease{{Version: "0.1.0", Schema: 1},
-		{Version: "0.2.0", Schema: 2}, {Version: "0.2.1", Schema: 3}}}
+	e.inst = &keepInstaller{running: "0.2.0", kept: []updater.KeptRelease{{Version: "0.1.0", Schema: 1, Inside: true},
+		{Version: "0.2.0", Schema: 2, Inside: true}, {Version: "0.2.1", Schema: 3, Inside: true}}}
 	e.must(e.start("v0.1.0"))
 	e.exec(`INSERT INTO a_t VALUES (1)`)
 	e.must(target.Dump(e.ctx, filepath.Join(e.b.Backups, pgOther)))
@@ -110,6 +118,9 @@ func newPGExits(t *testing.T, kind string) *pgExits {
 	}
 	e.r = &restorer{stateDir: e.stateDir, db: &target, inst: e.inst, log: io.Discard, schema: target.DumpSchema, identity: target.Identity,
 		run: func() *updater.Journal { return nil }}
+	if e.ext != nil {
+		e.r.check = e.ext.CheckRestore
+	}
 	return e
 }
 
@@ -215,13 +226,13 @@ var pgDamages = []damage{
 			}
 		}
 	}, apppayload.DataUntouched, "db_restore_backup_failed"},
-	{"a table's rows are cut", "bundled|external", cutRows, apppayload.DataUntouched, "db_restore_backup_failed"},
+	{"a table's rows are cut", "bundled|external|external, a plain user", cutRows, apppayload.DataUntouched, "db_restore_backup_failed"},
 	// the schema is dropped before the dump goes in: the database is empty
 	{"a table's rows are cut", "external without psql", cutRows, apppayload.DataGone, "db_restore_backup_gone"},
 	// the bundled one is checked before it takes the database's place
 	{"it comes out not whole", "bundled", shortRows, apppayload.DataUntouched, "db_restore_backup_failed"},
 	// another's rows are counted before its commit
-	{"it comes out not whole", "external", shortRows, apppayload.DataUntouched, "db_restore_backup_failed"},
+	{"it comes out not whole", "external|external, a plain user", shortRows, apppayload.DataUntouched, "db_restore_backup_failed"},
 	// without psql it is committed first
 	{"it comes out not whole", "external without psql", shortRows, apppayload.DataReplaced, "db_restore_backup_part"},
 	{"the database dropped for room, then no room all the same", "bundled", func(e *pgExits) func() {
@@ -275,7 +286,7 @@ func shortRows(e *pgExits) func() {
 // Opt-in: MAKTABA_TEST_PG_BIN (pgtest.Programs).
 func TestEveryWayOutOfAFailedRestore(t *testing.T) {
 	t.Setenv(envLauncherRoot, "")
-	for _, kind := range []string{"bundled", "external", "external without psql"} {
+	for _, kind := range []string{"bundled", "external", "external without psql", "external, a plain user"} {
 		for _, d := range pgDamages {
 			if d.kind != "" && !strings.Contains("|"+d.kind+"|", "|"+kind+"|") {
 				continue
@@ -374,7 +385,7 @@ func wayOut(t *testing.T, kind string, d damage, exit string) {
 // Postgres: the library is as it was.
 func TestAHungRestoreIsGivenUp(t *testing.T) {
 	t.Setenv(envLauncherRoot, "")
-	for _, kind := range []string{"bundled", "external"} {
+	for _, kind := range []string{"bundled", "external", "external, a plain user"} {
 		t.Run(kind, func(t *testing.T) {
 			e := newPGExits(t, kind)
 			e.ask(pgFirst)

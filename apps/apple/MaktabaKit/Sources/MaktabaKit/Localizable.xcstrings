@@ -9087,6 +9087,23 @@
         }
       }
     },
+    "updates.waiting.machine_copying" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The restart waits for a machine to finish copying a table of the home's database (ten minutes at most)."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعادة التشغيل تنتظر أن ينهي جهاز نسخ جدول من قاعدة بيانات الجهاز الرئيسي (عشر دقائق على الأكثر)."
+          }
+        }
+      }
+    },
     "updates.waiting.needs_person" : {
       "extractionState" : "manual",
       "localizations" : {

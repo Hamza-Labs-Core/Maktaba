@@ -254,9 +254,8 @@ type fakeDB struct {
 	befores    []int64     // the slot before the update, as each was decided
 	askedAt    []time.Time // the times the slot the database itself recorded was asked for
 	drops      []string    // the record's state as each drop of the invalid leftovers began
-	// syncs is what each count of the machines' table syncs says (then 0); copies what was
-	// paused and resumed, with the record's state then, in order; paused whether they are now
-	syncs     []int
+	// copies is what was paused and resumed, with the record's state then, in order; paused
+	// whether they are now
 	copies    []string
 	paused    bool
 	pauseErr  error
@@ -278,26 +277,17 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 	prevD, prevR, prevM, prevA, prevP := dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations
 	prevG := grantWorkersConnect
 	prevFB, prevSV, prevDI, prevMD, prevEB := failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled
-	prevTS, prevCP, prevPC, prevRC := tableSyncsBundled, copiesPausedBundled, pauseCopiesBundled, resumeCopiesBundled
+	prevCP, prevPC, prevRC := copiesPausedBundled, pauseCopiesBundled, resumeCopiesBundled
 	prevUF, prevAt, prevID := runMigrateUndoFailed, schemaVersionAt, dataIdentity
 	t.Cleanup(func() {
 		dataIdentity = prevID
 		schemaVersionAt = prevAt
-		tableSyncsBundled, copiesPausedBundled, pauseCopiesBundled, resumeCopiesBundled = prevTS, prevCP, prevPC, prevRC
+		copiesPausedBundled, pauseCopiesBundled, resumeCopiesBundled = prevCP, prevPC, prevRC
 		dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations = prevD, prevR, prevM, prevA, prevP
 		grantWorkersConnect = prevG
 		failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled = prevFB, prevSV, prevDI, prevMD, prevEB
 		runMigrateUndoFailed = prevUF
 	})
-	tableSyncsBundled = func(context.Context, pgbundle.Bundle) (int, error) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		n := 0
-		if len(f.syncs) > 0 {
-			n, f.syncs = f.syncs[0], f.syncs[1:]
-		}
-		return n, nil
-	}
 	copiesPausedBundled = func(pgbundle.Bundle) bool {
 		f.mu.Lock()
 		defer f.mu.Unlock()
@@ -2665,9 +2655,6 @@ type pauseHome struct {
 
 func newPauseHome(t *testing.T, rec apppayload.Database) pauseHome {
 	t.Helper()
-	prevW, prevE := copySyncWait, copySyncEvery
-	t.Cleanup(func() { copySyncWait, copySyncEvery = prevW, prevE })
-	copySyncWait, copySyncEvery = time.Minute, time.Millisecond
 	cfg, payload := appEnv(t, "v0.3.0", "")
 	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
 		t.Fatal(err)
@@ -2699,21 +2686,17 @@ var (
 	errPauseRun = errors.New("migrate: ERROR 0144_x.sql: boom")
 )
 
-// Research item 5 (E4, E8): an update's migrations wait for the machines' table syncs to end,
-// pause the machines' copies while they run, and let them in again once the schema is settled.
+// Research item 5 (E4, E8): an update's migrations pause the machines' copies while they run,
+// and let them in again once the schema is settled. They wait for no table sync: the restart
+// that began the release ended each (the home's driver waits before it, api/internal/updates).
 func TestAppBundleMigrationsPauseTheMachinesCopies(t *testing.T) {
 	t.Run("an update", func(t *testing.T) {
 		h := newPauseHome(t, pausePrev)
-		h.f.syncs = []int{2, 1, 0}
 		if err := h.start(t); err != nil {
 			t.Fatal(err)
 		}
 		h.check(t, "pause migrating|resume migrated", false)
-		if len(h.f.syncs) != 0 {
-			t.Fatalf("the table syncs were not waited out (%d counts left)", len(h.f.syncs))
-		}
-		for _, want := range []string{"2 of the machines' table syncs run", "the machines' table syncs ended",
-			"the machines' copies are paused until the schema is settled (2 of their sessions ended)",
+		for _, want := range []string{"the machines' copies are paused until the schema is settled (2 of their sessions ended)",
 			"the machines' copies may log in again"} {
 			if !strings.Contains(h.log.String(), want) {
 				t.Errorf("the log lacks %q:\n%s", want, h.log)
@@ -2803,16 +2786,12 @@ func TestAppBundleCopiesStayOutUntilTheSchemaIsSettled(t *testing.T) {
 	})
 	t.Run("a rollback's Down scripts", func(t *testing.T) {
 		h := newPauseHome(t, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated})
-		h.f.syncs = []int{1, 1, 1}
 		g := &migrationGate{stateDir: h.cfg.StateDir(), version: "v0.2.0", pg: testBundle(h.cfg), log: h.log}
 		u := &updates{api: exec.Command("maktaba-api")}
 		if err := u.migrateDown(context.Background(), nil, 230, g); err != nil {
 			t.Fatal(err)
 		}
 		h.check(t, "pause migrated|down|resume migrated", false)
-		if len(h.f.syncs) != 3 {
-			t.Fatal("a rollback waited for a table sync")
-		}
 		// a Down script that fails leaves the schema part way: they stay out
 		h.f.downErr = errors.New("boom")
 		if err := u.migrateDown(context.Background(), nil, 230, g); err == nil {
@@ -2898,17 +2877,5 @@ func TestAppBundleCopiesPauseThatFails(t *testing.T) {
 			t.Fatal(err)
 		}
 		h.check(t, "pause migrating|resume migrated|resume migrated", false)
-	})
-	t.Run("a server that does not answer bounds the wait", func(t *testing.T) {
-		h := newPauseHome(t, pausePrev)
-		was := tableSyncsBundled
-		defer func() { tableSyncsBundled = was }()
-		tableSyncsBundled = func(ctx context.Context, _ pgbundle.Bundle) (int, error) { <-ctx.Done(); return 0, ctx.Err() }
-		copySyncWait = 50 * time.Millisecond
-		defer func() { copySyncWait = time.Minute }()
-		if err := h.start(t); err != nil {
-			t.Fatal(err)
-		}
-		h.check(t, "pause migrating|resume migrated", false)
 	})
 }

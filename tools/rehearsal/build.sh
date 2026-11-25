@@ -7,6 +7,9 @@
 # staging compiled in, as on every release (scenario 11 stages a TV change on it).
 #
 #   prev/   the previous release, built from its tag (version PREV, the tag's own schema)
+#   guard/  the last release whose launcher and server put a backup back by themselves
+#           (v0.3.162: the next one, v0.3.163, has #1605), as it shipped them, whatever the
+#           previous release is: scenarios 21 and 21b (with --guard-src)
 #   cur/    this commit as the next release (version PREV+2; its API takes the rehearsal's
 #           test-only migration, slot REV+1, for its own)
 #   next/   this commit as the release after it (version PREV+3; the same API: a payload
@@ -22,11 +25,12 @@
 #   plugins/   this commit's maktaba-plugind and its well-behaved test guest (hello.wasm),
 #           for scenario 15 (Epic 54, story 54.07 §8): one host serves cur, next and after,
 #           built from the same tree; none when cargo or the plugin host is missing
-#   versions.env   PREV, FAILED (PREV+1: the newer release the scenario of the live Mac's
+#   versions.env   PREV, GUARD (guard/'s, "" with none), FAILED (PREV+1: the newer release the scenario of the live Mac's
 #           state has rolled back from), CUR, NEXT, AFTER, PLATFORM (the packs'), REV (this
 #           commit's newest migration)
 #
-# usage: build.sh --prev-src DIR --prev-version X.Y.Z --cur-src DIR --out DIR
+# usage: build.sh --prev-src DIR --prev-version X.Y.Z [--guard-src DIR --guard-version X.Y.Z] --cur-src DIR --out DIR
+#   --guard-src  a checkout of --guard-version's tag
 #   --prev-src   a checkout of the previous release's tag (git worktree add DIR vX.Y.Z)
 #   --cur-src    the tree to rehearse (default: this repository; the proof runs point it at
 #                a tree from before a fix)
@@ -35,20 +39,23 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
-prev_src="" prev_version="" cur_src="$repo" out=""
+prev_src="" prev_version="" guard_src="" guard_version="" cur_src="$repo" out=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --prev-src) prev_src="$2"; shift 2 ;;
         --prev-version) prev_version="${2#v}"; shift 2 ;;
+        --guard-src) guard_src="$2"; shift 2 ;;
+        --guard-version) guard_version="${2#v}"; shift 2 ;;
         --cur-src) cur_src="$2"; shift 2 ;;
         --out) out="$2"; shift 2 ;;
         *) echo "build.sh: unknown option $1" >&2; exit 2 ;;
     esac
 done
 [ -n "$prev_src" ] && [ -n "$prev_version" ] && [ -n "$out" ] || {
-    echo "usage: build.sh --prev-src DIR --prev-version X.Y.Z [--cur-src DIR] --out DIR" >&2
+    echo "usage: build.sh --prev-src DIR --prev-version X.Y.Z [--guard-src DIR --guard-version X.Y.Z] [--cur-src DIR] --out DIR" >&2
     exit 2
 }
+[ -n "$guard_src" ] || guard_version=""
 [[ "$prev_version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || {
     echo "build.sh: --prev-version must be X.Y.Z (a stable release), not $prev_version" >&2
     exit 2
@@ -97,6 +104,9 @@ build() {
 }
 
 build "$prev_src" "$out/prev" "$prev_version" 0
+if [ -n "$guard_src" ]; then
+    build "$guard_src" "$out/guard" "$guard_version" 0
+fi
 build "$cur_src" "$out/cur" "$cur" $((rev + 1))
 build "$cur_src" "$out/next" "$next" $((rev + 1))
 # story 51.18 (scenario 13): a release after the failing one that passes. It carries the
@@ -171,6 +181,7 @@ fi
 
 cat >"$out/versions.env" <<EOF
 PREV=$prev_version
+GUARD=$guard_version
 FAILED=$failed
 CUR=$cur
 NEXT=$next

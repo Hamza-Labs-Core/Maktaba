@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -125,27 +126,44 @@ func HomeBlockers(db *sql.DB, supervisor string, hc *http.Client) []Blocker {
 }
 
 // CopyingBlocker holds automatic runs while a joined machine copies a table of the home's
-// database (its copy's first sync, or one made anew: a table sync, whose slot on the home
-// is pg_<subscription>_sync_<table>_<system>). The update's migrations would end that
-// copy's walsender (it holds one snapshot for the whole COPY of a table, which an index
-// build waits on) and the machine would copy the table again; on 2026-11-23 such copies
-// were what the migrations waited on (research E4, E8). The run starts once the copies
-// are done; an admin's Update now does not wait. A database with no replication slots
-// view (SQLite), or a role that cannot read it, is not held.
+// database (its copy's first sync, or one made anew): an update restarts the bundled
+// Postgres, which ends that COPY, and the machine starts that table again; its walsender's
+// one snapshot for the whole COPY is also what an index build waits on (2026-11-23,
+// research E4, E8). The run starts once no copy runs, and a day on at most (CopyHoldMax);
+// an admin's Update now does not wait. A copy that starts later meets the restart's own
+// wait (Driver.copyWait).
 type CopyingBlocker struct{ DB *sql.DB }
 
-// tableSyncSlots counts the table syncs that stream from the home now (logical
-// replication's initial copy). Not every slot: such a slot is permanent, and one whose
-// machine went away mid-copy stays, inactive, until the home drops it (its WAL past the
-// home's cap, or lost: cluster.Copies' beat) or the machine is back; it holds nothing an
-// update waits on, and must never hold updates back.
-const tableSyncSlots = `SELECT count(*) FROM pg_replication_slots
-    WHERE slot_type = 'logical' AND active AND database = current_database() AND slot_name ~ '^pg_[0-9]+_sync_[0-9]+_[0-9]+$'`
+// CopyHoldMax is how long machines' copies hold automatic runs from when the scheduler
+// first held one for them: a machine that makes its copy anew again and again, or went to
+// sleep in the middle of one, must not keep the home off its updates. Under a day, so a
+// daily window held once is not held the next day.
+const CopyHoldMax = 20 * time.Hour
+
+// runningCopies counts the COPYs that run now for the machines' replication roles
+// (maktaba_rep_<id>, slot 0147): logical replication's initial copy of a table is a COPY
+// in the machine's table sync's walsender, and those roles run no other. Not the table
+// syncs' slots (pg_<sub>_sync_<table>_<system>): such a slot is not active while its COPY
+// runs (only while it is made and while the sync catches up, which an update costs
+// nothing), and it is permanent: a machine that went away leaves it, and it must never
+// hold an update. What it reads of other roles' sessions (pid, usename) every role may.
+const runningCopies = `SELECT count(*) FROM pg_stat_activity a
+    WHERE a.datname = current_database() AND a.usename LIKE 'maktaba\_rep\_%'
+      AND EXISTS (SELECT 1 FROM pg_stat_progress_copy c WHERE c.pid = a.pid)`
+
+// machinesCopying is how many tables the joined machines copy from db now. None on a
+// database that cannot tell (SQLite, PostgreSQL before 14).
+func machinesCopying(ctx context.Context, db *sql.DB) int {
+	var n int
+	if db == nil || db.QueryRowContext(ctx, runningCopies).Scan(&n) != nil {
+		return 0
+	}
+	return n
+}
 
 // Blocked implements Blocker.
 func (b CopyingBlocker) Blocked(ctx context.Context) (string, error) {
-	var n int
-	if b.DB == nil || b.DB.QueryRowContext(ctx, tableSyncSlots).Scan(&n) != nil || n == 0 {
+	if machinesCopying(ctx, b.DB) == 0 {
 		return "", nil
 	}
 	return BlockMachineCopying, nil
@@ -259,6 +277,9 @@ type Service struct {
 	// staleChecked and staleSince are the scheduler's own: when a held install read the list
 	// again last, and since when it is held (zero: not)
 	staleChecked, staleSince time.Time
+	// copySince is when a due automatic run was first held for the machines' copies
+	// (CopyHoldMax; zero: none is held).
+	copySince time.Time
 
 	// lastTick is the scheduler's last decision (the Updates page shows why nothing
 	// starts: a blocker, a retry's pause)
@@ -351,26 +372,28 @@ func (s *Service) Plan(ctx context.Context) (Plan, Policy, string, error) {
 
 // blockedFor runs the blockers for a run of version; the first reason wins: an active run that only waits for desktop apps
 // and that version supersedes does not block it (start supersedes it, once the release's
-// re-check passed).
-func (s *Service) blockedFor(ctx context.Context, version string) (string, error) {
+// re-check passed). A reason in past does not either; those met are passed.
+func (s *Service) blockedFor(ctx context.Context, version string, past ...string) (why string, passed []string, err error) {
 	if a, err := s.Store.ActiveRun(ctx); err != nil {
-		return "", err
+		return "", nil, err
 	} else if a != nil {
 		sp, ok := s.Starter.(superseder)
 		if version == "" || !ok || !sp.Supersedable(ctx, version) {
-			return BlockActiveRun, nil
+			return BlockActiveRun, nil, nil
 		}
 	}
 	for _, b := range s.Blockers {
 		why, err := b.Blocked(ctx)
-		if err != nil {
-			return "", err
-		}
-		if why != "" {
-			return why, nil
+		switch {
+		case err != nil:
+			return "", nil, err
+		case slices.Contains(past, why):
+			passed = append(passed, why) // the next may still hold it
+		case why != "":
+			return why, nil, nil
 		}
 	}
-	return "", nil
+	return "", passed, nil
 }
 
 // Decision is what one scheduler tick did.
@@ -413,10 +436,11 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 	if wait := s.retryWait(ctx, pol, pl.Target.Version); wait != "" {
 		return Decision{Action: "none", Reason: wait, Version: pl.Target.Version}, nil
 	}
-	why, err := s.blockedFor(ctx, pl.Target.Version)
+	why, passed, err := s.blockedFor(ctx, pl.Target.Version, s.pastCopies()...)
 	if err != nil {
 		return Decision{Action: "none"}, err
 	}
+	s.noteCopies(why, passed)
 	if why != "" {
 		return Decision{Action: "blocked", Reason: why, Version: pl.Target.Version}, nil
 	}
@@ -431,6 +455,9 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 		s.staleHeld(ctx, pl.Target.Version)
 		return Decision{Action: "none", Reason: WaitCatalogStale, Version: pl.Target.Version}, nil
 	}
+	for _, p := range passed {
+		s.Store.Audit(ctx, "", "system", "update_past_"+p, pl.Target.Version, map[string]any{"held_since": s.copySince})
+	}
 	run, err := s.start(ctx, *pl.Target, pol, TriggerAuto, "")
 	if err != nil {
 		var w *withdrawnError
@@ -443,6 +470,29 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 		return Decision{Action: "failed", Reason: err.Error(), Version: pl.Target.Version, RunID: run.ID}, err
 	}
 	return Decision{Action: "started", Version: run.Version, RunID: run.ID}, nil
+}
+
+// pastCopies are the blockers a due automatic run goes past now: the machines' copies,
+// once they held one for CopyHoldMax.
+func (s *Service) pastCopies() []string {
+	if s.copySince.IsZero() || s.now().Sub(s.copySince) < CopyHoldMax {
+		return nil
+	}
+	return []string{BlockMachineCopying}
+}
+
+// noteCopies keeps when the machines' copies began to hold a due automatic run.
+func (s *Service) noteCopies(why string, passed []string) {
+	switch {
+	case why == BlockMachineCopying:
+		if s.copySince.IsZero() || s.copySince.After(s.now()) {
+			s.copySince = s.now()
+			s.log().Info("updates: automatic install held: a machine copies the home's database",
+				"event", "update_held_copying", "max_hold", CopyHoldMax.String())
+		}
+	case why == "" && len(passed) == 0:
+		s.copySince = time.Time{} // no copy runs: a hold later is another one
+	}
 }
 
 // checkEvery is the cadence of the home's background checks (0: none).
@@ -632,8 +682,8 @@ type noOrchestrator struct{}
 
 func (noOrchestrator) Start(context.Context, string) error { return ErrOrchestratorUnavailable }
 
-// RunNow is "Update now" (story 35.3 AC7): the same run at once, ignoring only the
-// window and the release age, never the checks. version "" is the planned target; a
+// RunNow is "Update now" (story 35.3 AC7): the same run at once, ignoring the window, the
+// release age, a recent crash and the machines' copies, never the checks. version "" is the planned target; a
 // held contract release is approved by it.
 func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error) {
 	if !AutoInstallAvailable() {
@@ -678,18 +728,22 @@ func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error
 	if target == nil {
 		return Run{}, ErrNoTarget
 	}
-	why, err := s.blockedFor(ctx, target.Version)
+	// a recent crash is the running release's: it holds an automatic run (the new one
+	// would be judged on a home already failing), not an admin's, whose update may be
+	// the cure; the new release is still judged on its own health and rolled back. A
+	// machine's copy of the database holds an automatic run only, too: it can take hours,
+	// and a machine that makes it again and again would hold the admin for as long (the
+	// home's restart waits for it, CopyWait at most, then ends it: that machine copies that
+	// table again)
+	why, passed, err := s.blockedFor(ctx, target.Version, BlockRecentCrash, BlockMachineCopying)
 	if err != nil {
 		return Run{}, err
 	}
-	// a recent crash is the running release's: it holds an automatic run (the new one
-	// would be judged on a home already failing), not an admin's, whose update may be
-	// the cure; the new release is still judged on its own health and rolled back
-	if why != "" && why != BlockRecentCrash {
+	if why != "" {
 		return Run{}, &BlockedError{Reason: why}
 	}
-	if why == BlockRecentCrash {
-		s.Store.Audit(ctx, actor, "admin", "update_past_recent_crash", target.Version, nil)
+	for _, p := range passed {
+		s.Store.Audit(ctx, actor, "admin", "update_past_"+p, target.Version, nil)
 	}
 	if target.BreaksPreviousHome() && target.ApprovedAt == nil {
 		if err := s.Store.Approve(ctx, target.Version, actor); err != nil {

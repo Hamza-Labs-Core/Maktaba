@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -91,7 +92,7 @@ func (c *Client) Verify(ctx context.Context, token, remoteIP string) error {
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode >= 500 {
+	if resp.StatusCode >= 500 || resp.StatusCode == http.StatusTooManyRequests {
 		return fmt.Errorf("%w: siteverify answered %d", ErrUnavailable, resp.StatusCode)
 	}
 	var a siteverifyAnswer
@@ -99,6 +100,13 @@ func (c *Client) Verify(ctx context.Context, token, remoteIP string) error {
 		return fmt.Errorf("%w: siteverify's answer: %v", ErrUnavailable, err)
 	}
 	if !a.Success {
+		// our secret, or siteverify itself: not the person's failure
+		for _, c := range a.ErrorCodes {
+			switch c {
+			case "missing-input-secret", "invalid-input-secret", "bad-request", "internal-error":
+				return fmt.Errorf("%w: siteverify answered %s", ErrUnavailable, c)
+			}
+		}
 		return ErrFailed
 	}
 	if len(c.Hostnames) > 0 && !contains(c.Hostnames, a.Hostname) {
@@ -152,6 +160,8 @@ func (g *Guard) Check(r *http.Request, token string) error {
 	case err == nil:
 		return nil
 	case errors.Is(err, ErrUnavailable):
+		// every web sign-in is closed meanwhile: said for the operator, never with the token
+		slog.Default().Error("turnstile: the bot check could not be asked", "err", err, "event", "turnstile_unavailable")
 		return ErrUnavailable
 	default:
 		return ErrFailed

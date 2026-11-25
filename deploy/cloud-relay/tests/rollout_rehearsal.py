@@ -42,7 +42,9 @@ ROLLOUT = "/usr/local/sbin/maktaba-rollout"
 REGISTRY = "localhost:5000/maktaba-cloud"
 APP = "app.rehearsal.test"
 NAMES = {"RELAY_DOMAIN": "relay.rehearsal.test", "API_DOMAIN": "api.rehearsal.test", "APP_DOMAIN": APP,
-         "ACME_EMAIL": "rehearsal@rehearsal.test", "RELAY_TLS": "internal", "RELAY_PLANS_ENFORCE": "false"}
+         "ACME_EMAIL": "rehearsal@rehearsal.test", "RELAY_TLS": "internal", "RELAY_PLANS_ENFORCE": "false",
+         # the mail driver as production has it, over a key that is none and a list nobody is on
+         "RESEND_API_KEY": "re_rehearsal_not_a_key", "MAIL_ALLOW": "@rehearsal.invalid", "MAIL_SUBJECT_PREFIX": "[rehearsal]"}
 WATCH = "30"
 MUTATE = os.environ.get("MUTATE", "")
 
@@ -77,9 +79,10 @@ def psql(sql: str) -> str:
 
 # --- one guarantee at a time, taken out (MUTATE) ----------------------------------------------
 
-# name: (the file, what it says, what it says instead, the cases that must notice)
+# name: (the file, what it says, what it says instead, the cases that must notice: none here for what only
+# reboot_rehearsal.py's machine can show)
 MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
-    "no-backup": ("ops/rollout.sh", r"DEPLOY_DIR=\"\$DEPLOY_DIR\" ROLLOUT_LOCKED=1 bash \"\$src/ops/backup\.sh\"", "true",
+    "no-backup": ("ops/rollout.sh", r"DEPLOY_DIR=\"\$DEPLOY_DIR\" ROLLOUT_LOCKED=1 [^\n]*bash \"\$src/ops/backup\.sh\"", "true",
                   ["its tests fail after it went live"]),
     "no-lock": ("ops/rollout.sh", r"flock (-w [^\n]*?|-n) 9(?= )", "true", ["one command at a time"]),
     "drop-in-place": ("ops/rollout.sh", r"mv -T \"\$STATE/pending\" \"\$STATE/dropped/\$\(date \+%s\)\.\$\$\" \|\| return 1",
@@ -90,12 +93,33 @@ MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
     "keeps-no-backup": ("ops/backup.sh", r"-mtime \+\"\$KEEP_DAYS\" -delete", '! -name "*$ts*" -delete', ["backup, restored and spoiled"]),
     "in-the-session": ("ops/rollout.sh", r"systemd-run --quiet .*?\n.*?\n\s*--setenv=HOME=\"\$\{HOME:-/root\}\" ", "", ["a cut session"]),
     "no-watch": ("ops/rollout.sh", r"ExecStart=\$SELF watch", "ExecStart=/bin/true", ["a lost runner"]),
-    "boot-starts-anyway": ("ops/rollout.sh", r"flock -w \"\$\{BOOT_WAIT:-30\}\" 9 \|\| exit 1", 'flock -w "${BOOT_WAIT:-30}" 9 || exit 0', ["a boot during a rollback"]),
-    "hold-by-compose": ("ops/rollout.sh", r"stop_all \"\$\{APP\[@\]\}\" \|\| stopped=", 'dc stop "${APP[@]}" >/dev/null 2>&1 || stopped=', ["a hold with a broken compose file"]),
+    "boot-starts-anyway": ("ops/rollout.sh", r"flock -w \"\$\{BOOT_WAIT:-30\}\" 9 \|\| exit 255", 'flock -w "${BOOT_WAIT:-30}" 9 || exit 0', ["a boot during a rollback"]),
+    "hold-by-compose": ("ops/rollout.sh", r"if ! stop_all \"\$\{what\[@\]\}\"; then", 'if ! dc stop "${APP[@]}" >/dev/null 2>&1; then', ["a hold with a broken compose file"]),
     "first-by-what-runs": ("ops/rollout.sh", r"\n\t! has_database\n", "\n\t! running maktaba-cloud\n", ["a node nobody committed"]),
     "truncated-dump": ("ops/backup.sh", r"\[ \"\$\(sha256sum [^\n]*\n\tpg pg_restore -f /dev/null [^\n]*", "pg pg_restore --list <\"$tmp/dump\" >/dev/null",
                        ["backup, restored and spoiled"]),
     "no-reserve": ("ops/rollout.sh", r"if ! fallocate [^\n]*", "true", ["the disk fills after begin"]),
+    "no-answer-is-stopped": ("ops/rollout.sh", r"if ! ids=\"\$\(containers -a \"\$s\" 2>/dev/null\)\"; then left=[^\n]*\n\t\t\telif", 'ids="$(containers -a "$s" 2>/dev/null)" || ids=""\n\t\t\tif',
+                             ["a first rollback without docker", "a rollback without docker"]),
+    "stopped-not-gone": ("ops/rollout.sh", r"containers -a \"\$s\"", 'containers "$s"', ["a first deploy with a role down"]),
+    "held-and-forgotten": ("ops/rollout.sh", r"stop_held \|\| true", "true", ["a rollback without docker"]),
+    "boot-gives-up": ("ops/rollout.sh", r"\|\| exit 255", "|| exit 1", ["docker restarted while a command waits"]),
+    "one-postgres-only": ("ops/rollout.sh", r"\[ \"\$first\" = yes \] \|\| die \"begin: the database does not come up", 'die "begin: the database does not come up', ["a first deploy that breaks Postgres"]),
+    "boots-only-committed": ("ops/rollout.sh", r"\[ -f \"\$STATE/no-release\" \] && \[ ! -f \"\$STATE/committed\" \]", '[ ! -f "$STATE/committed" ]',
+                             ["a node set up by hand, a reboot"]),
+    "first-while-it-serves": ("ops/rollout.sh", r" && nothing_runs maktaba-cloud api; then return 0", "; then return 0", ["a node a person started"]),
+    "unhold-keeps-no-release": ("ops/rollout.sh", r"if \[ \"\$runs\" = yes \]; then rm -f \"\$STATE/no-release\"", "if false; then true", ["unhold after a failed first deploy"]),
+    "unhold-serves-it": ("ops/rollout.sh", r"elif \[ -f \"\$STATE/pending/first\" \]; then touch \"\$STATE/no-release\"", "elif false; then true", ["a first rollback without docker"]),
+    "never-afresh": ("ops/rollout.sh", r"\t\t\tafresh \"\$db\" \"\$broken\"", '\t\t\tdie "begin: the database $broken"', ["a database whose first start failed"]),
+    "afresh-unsure": ("ops/rollout.sh", r"n=\"\" # whatever it had printed[^\n]*", "true", ["a database that can't be shown empty"]),
+    "afresh-over-databases": ("ops/rollout.sh", r"\[ \"\$n\" = 0 \] && \[ \"\$t\" = 0 \] \|\| not=[^\n]*", "true", ["a database that can't be shown empty"]),
+    "afresh-beside-a-backup": ("ops/rollout.sh", r"if compgen -G \"/var/backups[^\n]*then", "if false; then", ["a database whose first start failed"]),
+    "afresh-over-a-tablespace": ("ops/rollout.sh", r"\[ -z \"\$\(ls -A pg_tblspc[^\n]*", "true", ["a database whose first start failed"]),
+    "afresh-any-layout": ("ops/rollout.sh", r"\*\) echo \"what postgres does not make[^\n]*", "*) ;;", ["a database whose first start failed"]),
+    "afresh-over-a-table": ("ops/rollout.sh", r"\[ \"\$n\" -lt 16384 \] \|\| \{ echo \"a table[^\n]*", "true", ["a database whose first start failed"]),
+    "afresh-anyway": ("ops/rollout.sh", r"\[ \"\$files\" = nothing \] \|\| not=[^\n]*", "true", ["a database that can't be shown empty"]),
+    "no-volume-is-no-database": ("ops/rollout.sh", r"\|\| die \"docker does not say which volumes[^\n]*", '|| volumes=""', ["an answer docker does not give"]),
+    "any-failed-inspect": ("ops/rollout.sh", r"case \"\$said\" in [^\n]*", "true", ["an answer docker does not give"]),
     "boots-a-failed-first": ("ops/rollout.sh", r"if \[ -f \"\$STATE/no-release\" \] && \[ ! -f \"\$STATE/committed\" \]; then", "if false; then",
                              ["a failed first deploy stays down", "a first deploy, a reboot in its tests"]),
     "first-unsaved": ("ops/rollout.sh", r"if has_database; then", "if ! first_deploy; then", ["a failed first deploy stays down"]),
@@ -106,11 +130,12 @@ MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
                       ["a commit of a deploy being restored"]),
     "one-pass": ("ops/rollout.sh", r"if \[ \"\$rc\" = 1 \]; then", "if false; then", ["docker restarted during a rollback"]),
     "boot-knows-no-commit": ("ops/rollout.sh", r"finish_commit # the power went[^\n]*", "true", ["a commit without its last line"]),
-    "id-twice": ("ops/rollout.sh", r"if compgen -G [^\n]*", "true", ["a deploy's name used twice"]),
+    "id-twice": ("ops/rollout.sh", r"if compgen -G \"\$STATE/jobs[^\n]*", "true", ["a deploy's name used twice"]),
     "commit-left-over": ("ops/rollout.sh", r"if \[ \"\$\(cat \"\$STATE/committed-id\" 2>/dev/null\)\" = \"\$\(pending_id\)\" \]; then rm -f [^\n]*", "true",
                          ["a commit that was cut off"]),
     "reserve-for-nothing": ("ops/rollout.sh", r"if \[ \"\$cmd\" = rollback \] && [^\n]*", "true", ["the state disk fills"]),
     "boot-never-waits": ("ops/rollout.sh", r"flock -w \"\$\{BOOT_WAIT:-30\}\" 9", "flock -n 9", ["a boot waits for the watch"]),
+    "half-removed": ("ops/rollout.sh", r"heal_docker\(\) \{\n", "heal_docker() {\n\treturn 0\n", []),
     "downgrades": ("ops/rollout.sh", r"\[ \"\$now\" -lt \"\$was\" \]", "false", ["an older release"]),
 }
 
@@ -223,7 +248,7 @@ def begin(release: str, edit: Callable[[Path], None] | None = None, extra: dict[
     before = dumps()
     database = rc("docker volume inspect maktaba-relay_pg_data")[0] == 0
     code, out = rc(f"bash {SRC}/ops/rollout.sh begin", env={**env_for(release), "DEPLOY_ID": ID, **(extra or {})})
-    if code == 0 and database and "the database is empty" not in out:
+    if code == 0 and database and "the database is empty" not in out and "made afresh" not in out:
         assert dumps() - before, "begin took no backup"
     return code, out
 
@@ -423,6 +448,269 @@ def failed_first_stays_down() -> str:
     return "down after a reboot, its database backed up"
 
 
+def broken_postgres(src: Path) -> None:
+    f = src / "docker-compose.yml"
+    text = f.read_text()
+    assert text.count("    image: postgres:") == 1
+    f.write_text(text.replace("    image: postgres:", '    command: ["postgres", "-c", "no_such_setting=1"]\n    image: postgres:'))
+
+
+def in_the_volume(cmd: str) -> str:
+    """cmd in the database's folder, with postgres gone."""
+    image = next(line.split("image: ", 1)[1].strip() for line in (REPO / "deploy/cloud-relay/docker-compose.yml").read_text().splitlines()
+                 if line.strip().startswith("image: postgres:"))
+    sh("docker ps -aq --filter label=com.docker.compose.project=maktaba-relay --filter label=com.docker.compose.service=postgres | xargs -r docker rm -f")
+    return sh(f"docker run --rm -v maktaba-relay_pg_data:/d -w /d --entrypoint sh {image} -c '{cmd}'")
+
+
+def has_volume() -> bool:
+    return rc("docker volume inspect maktaba-relay_pg_data")[0] == 0
+
+
+def refused_to_remake(why: str, extra: dict[str, str] | None = None) -> None:
+    code, out = begin("a", extra=extra)
+    assert code != 0 and f"be shown that nothing is in it: {why}" in out and "docker volume rm maktaba-relay_pg_data" in out, f"{why}: {out[-2500:]}"
+    not_pending()
+    assert has_volume(), f"{why}: a database was removed"
+
+
+def first_start_of_the_database_failed() -> str:
+    """Postgres made its folder and never the database: its first start failed, or was cut before its control
+    file was written. The next deploy makes it afresh, unless anything says that somebody's is in it."""
+    for how in ("its first start failed", "cut while its folder was made"):
+        code, out = deploy("a", "app a", broken_postgres)
+        assert code != 0 and "first deploy failed" in out, out[-2000:]
+        assert has_volume()
+        if how.startswith("cut"):
+            in_the_volume("rm global/pg_control")
+            for put, take, why in (
+                ("mkdir pg_tblspc/99999", "rmdir pg_tblspc/99999", "its folder has a tablespace"),
+                ("mkdir pgdata", "rmdir pgdata", "its folder has what postgres does not make (pgdata)"),
+                ("touch base/5/16400", "rm base/5/16400", "its folder has a table of somebody (base/5/16400)"),
+            ):
+                in_the_volume(put)
+                refused_to_remake(why)
+                in_the_volume(take)
+            backup = Path("/var/backups/maktaba-cloud/db-20260101T000000Z.dump")
+            backup.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            backup.touch()
+            refused_to_remake("a backup of a database of this node")
+            backup.unlink()
+        code, out = begin("a")
+        assert code == 0 and "made afresh" in out, f"{how}: {out[-2500:]}"
+        assert not has_volume(), "the folder is there still"
+        assert list(Path("/var/backups/maktaba-cloud").glob("unfinished-*.tar.gz")), "no copy of it"
+        code, out = rollback()
+        assert code == 0, out[-1500:]
+    return "made afresh, twice; refused for four things in it"
+
+
+def stand_in(rules: str) -> dict[str, str]:
+    """A docker that answers some questions as `rules` says (bash case arms over its arguments)."""
+    shim = Path("/root/shim")
+    shim.mkdir(exist_ok=True)
+    (shim / "docker").write_text(f'#!/bin/bash\ncase "$*" in\n{rules}\nesac\nexec {sh("command -v docker").strip()} "$@"\n')
+    (shim / "docker").chmod(0o755)
+    return {"PATH": f"{shim}:{os.environ['PATH']}"}
+
+
+def database_that_cannot_be_shown_empty() -> str:
+    """A database that exists and can't be read, on a node that never committed: refused, with what to do,
+    and nothing touched."""
+    assert has_volume() and not dumps()
+    in_the_volume("mv global/pg_control pg_control.away")
+    refused_to_remake("its folder has what postgres does not make (pg_control.away)")
+    in_the_volume("mv pg_control.away /tmp/x && cp /tmp/x global/pg_control.kept && rm -f global/pg_control")
+    refused_to_remake("its folder has database 16384")
+    in_the_volume("mv global/pg_control.kept global/pg_control && chown 70:70 global/pg_control")
+    # under another name
+    dc("up -d --wait postgres </dev/null")
+    super_psql = f"cd {DEPLOY} && docker compose --env-file .env exec -T postgres psql -X -q -U maktaba -d postgres -c"
+    sh(f"{super_psql} 'ALTER DATABASE maktaba RENAME TO other' </dev/null")
+    refused_to_remake("postgres has 1 database(s)")
+    dc("up -d --wait postgres </dev/null")
+    sh(f"{super_psql} 'ALTER DATABASE other RENAME TO maktaba' </dev/null")
+    # an answer that was printed by a command that then failed is no answer
+    refused_to_remake("its folder has database 16384", stand_in(
+        '*"FROM pg_database"*) echo 0; exit 1 ;;\n*"count(*) FROM pg_tables"*) exit 1 ;;'))
+    code, out = begin("a")
+    assert code == 0 and "the database is empty" in out, out[-2500:]
+    code, out = rollback()
+    assert code == 0, out[-1500:]
+    return "refused four times, with the steps"
+
+
+def answer_docker_does_not_give() -> str:
+    """One question docker fails to answer (a timeout, say) is not answered "no"."""
+    before = snapshot()
+    for fails in ("volume ls", "volume inspect"):
+        code, out = begin("b", extra=stand_in(f'"{fails}"*) echo "context deadline exceeded" >&2; exit 1 ;;'))
+        if fails == "volume ls":
+            assert code != 0 and "docker does not say" in out, f"{code}: {out[-2000:]}"
+        else:
+            assert code == 0, out[-2000:]  # it takes its backup: the helper looked
+            code, out = rollback()
+            assert code == 0, out[-2000:]
+        not_pending()
+    ids = sh("docker ps -q --no-trunc | sort")
+    daemon = sh("systemctl show -p MainPID --value docker")
+    code, out = rc(f"{ROLLOUT} boot", env=stand_in('"inspect --type container"*) echo "context deadline exceeded" >&2; exit 1 ;;'))
+    assert code == 0 and "half removed" not in out, out
+    assert daemon == sh("systemctl show -p MainPID --value docker") and ids == sh("docker ps -q --no-trunc | sort"), "docker was restarted for it"
+    ready()
+    same(before, snapshot())
+    return "refused, or asked again"
+
+
+def first_deploy_breaks_postgres() -> str:
+    """A failed first deploy whose own compose file breaks Postgres: the next one, which does not, is not
+    kept out by it, and backs the database up."""
+    code, out = deploy("a", "app a", broken_postgres)
+    assert code != 0 and "first deploy failed" in out, out[-2000:]
+    code, out = begin("a")  # it checks that a backup was taken
+    assert code == 0 and "with this one's" in out, out[-2000:]
+    code, out = rollback()
+    assert code == 0, out[-2000:]
+    nothing_serves()
+    return "the next one began, and backed the database up"
+
+
+@contextmanager
+def docker_away() -> Iterator[None]:
+    """Nothing on the node can reach Docker; what it runs goes on."""
+    os.rename("/run/docker.sock", "/run/docker.sock.away")
+    try:
+        yield
+    finally:
+        os.rename("/run/docker.sock.away", "/run/docker.sock")
+
+
+def held_without_docker(served: str) -> None:
+    with docker_away():
+        code, out = rollback()
+        assert code != 0 and "HELD" in out and "NOT ALL" in out, f"{code}: {out[-2000:]}"
+        assert "are stopped." not in out and pending(), out[-2000:]
+        assert served in page(), "the rollback reached Docker after all"
+    wait_for("the watch stops it", lambda: not app_running() and "are stopped." in sh(f"{ROLLOUT} status"), 180)
+    assert not (STATE / "not-stopped").exists()
+    reboot()
+    assert not app_running(), "a held node started at boot"
+
+
+def first_rollback_without_docker() -> str:
+    code, out = deploy("a", "app a")
+    assert code == 0 and (STATE / "pending/first").exists(), out[-3000:]
+    (STATE / "no-release").unlink(missing_ok=True)  # as on a node where no other ever failed
+    held_without_docker("app a")
+    nothing_serves()
+    out = sh(f"{ROLLOUT} unhold")
+    assert "no release was ever committed" in out, out
+    reboot()
+    nothing_serves()  # a refused release, also after a person unheld the node
+    return "held, said so, stopped when docker answered, and stays so"
+
+
+def rollback_without_docker() -> str:
+    before = snapshot()
+    code, out = deploy("b", "app b")
+    assert code == 0, out[-3000:]
+    held_without_docker("app b")
+    sh(f"{ROLLOUT} unhold")
+    code, out = deploy("a", "app a")
+    assert code == 0, out[-3000:]
+    commit()
+    sh(f"rm -rf {STATE}/held-set")
+    ready()
+    same(before, snapshot())
+    return "held, said so, and stopped when docker answered"
+
+
+def docker_restarted_while_a_command_waits() -> str:
+    """Docker restarted while a deploy's command holds the lock for longer than the unit waits: the unit
+    tries again, and the node serves."""
+    before = snapshot()
+    code, out = reboot()
+    assert code == 0 and rc("systemctl is-active maktaba-relay")[0] == 0, out
+    p = subprocess.Popen(["flock", str(STATE / "lock"), "sleep", "60"])
+    time.sleep(0.5)
+    sh("systemctl reset-failed docker maktaba-relay || true; systemctl restart docker", timeout=300)
+    p.wait()
+
+    def serves() -> bool:
+        return rc("systemctl is-active maktaba-relay")[0] == 0 and page() == "app a"
+
+    took = wait_for("the node serves", serves, 120)
+    ready()
+    same(before, snapshot())
+    return f"it served {took:.0f} s after"
+
+
+@contextmanager
+def nobody_committed(first_failed: bool) -> Iterator[None]:
+    was = (STATE / "committed").read_text()
+    (STATE / "committed").unlink()
+    if first_failed:
+        (STATE / "no-release").touch()
+    try:
+        yield
+    finally:
+        (STATE / "committed").write_text(was)
+        (STATE / "no-release").unlink(missing_ok=True)
+
+
+def by_hand_then_a_reboot() -> str:
+    before = snapshot()
+    with nobody_committed(first_failed=False):
+        code, out = reboot()
+        assert code == 0, out
+        ready()
+        same(before, snapshot())
+    return "it serves"
+
+
+def node_a_person_started() -> str:
+    """A failed first deploy's node that serves by now (a person started it): no first deploy any more."""
+    before = snapshot()
+    with nobody_committed(first_failed=True):
+        code, out = begin("b")
+        assert code == 0 and "a first deploy" not in out, out[-2000:]
+        code, out = rollback()
+        assert code == 0 and "nothing to go back to" not in out, out[-2000:]
+        ready()
+        same(before, snapshot())
+    return "its set saved, and back"
+
+
+def unhold_after_a_failed_first() -> str:
+    before = snapshot()
+    with nobody_committed(first_failed=True):
+        (STATE / "held").write_text("HELD for the rehearsal\n")
+        sh(f"{ROLLOUT} unhold")
+        assert not (STATE / "no-release").exists(), "boot would start nothing"
+        code, out = reboot()
+        assert code == 0, out
+        ready()
+        same(before, snapshot())
+    return "the node is as the person left it, also at boot"
+
+
+def first_with_a_role_down() -> str:
+    """A role that had failed when its first deploy went back: docker was never told to stop it, and does
+    not start it at the next boot."""
+    code, out = deploy("a", "app a")
+    assert code == 0 and (STATE / "pending/first").exists(), out[-3000:]
+    worker = dc("ps -q worker").strip()
+    sh(f"docker update --restart=no {worker}")
+    os.kill(int(sh(f"docker inspect --format '{{{{.State.Pid}}}}' {worker}").strip()), signal.SIGKILL)
+    wait_for("the worker is down", lambda: "false" in sh(f"docker inspect --format '{{{{.State.Running}}}}' {worker}"), 30)
+    sh(f"docker update --restart=unless-stopped {worker}")
+    code, out = rollback()
+    assert code == 0 and "first deploy failed" in out, out[-2000:]
+    reboot()
+    nothing_serves()
+    return "not started by docker either"
+
+
 def first_reboot_in_its_tests() -> str:
     code, out = deploy("a", "app a")
     assert code == 0 and (STATE / "pending/first").exists(), out[-3000:]
@@ -442,9 +730,17 @@ def first_deploy() -> str:
     assert code == 0, out[-3000:]
     ready()
     assert "app a" in page()
+    # the mail provider's key: the cloud user's alone, read by the api (which refuses to start on the
+    # resend driver without one), and in no log
+    key = DEPLOY / "secrets/resend.key"
+    assert key.read_text() == NAMES["RESEND_API_KEY"] and key.stat().st_mode & 0o777 == 0o600 and key.owner() == "maktaba"
+    toml = (DEPLOY / "cloud.toml").read_text()
+    assert re.search(r'^driver += "resend"$', toml, re.M) and '["@rehearsal.invalid"]' in toml
+    said = out + dc("logs --no-color")
+    assert NAMES["RESEND_API_KEY"] not in said + toml + (DEPLOY / ".env").read_text(), "the mail key was told"
     commit()
     not_pending()
-    return "release a serves"
+    return "release a serves, with the mail driver's key"
 
 
 def redeploy() -> str:
@@ -501,6 +797,9 @@ def unhealthy() -> str:
     before = snapshot()
     code, out = deploy("bad", "app bad")
     assert code != 0 and "restored" in out, out[-3000:]
+    assert "the relay's /readyz does not answer 200" in out, "it does not say what was not ready"
+    kept = STATE / "last-logs/maktaba-cloud.log"  # the refused release's own words: its container is gone
+    assert IMAGES["bad"].split("@")[0] in kept.read_text(), "its log was not kept"
     not_pending()
     ready()
     same(before, snapshot())
@@ -613,7 +912,7 @@ def a_crash_while_restoring() -> str:
     psql("INSERT INTO rehearsal_new VALUES (1)")  # the schema is kept
     subprocess.Popen(["bash", "-c", f"{ROLLOUT} job {ID} rollback 0 >/dev/null 2>&1"])
     wait_for("the rollback settles the migrations", lambda: (STATE / "pending/settled").exists(), 120)
-    sh("systemctl stop maktaba-rollout-watch.timer")
+    sh("systemctl stop maktaba-rollout-watch.timer maktaba-rollout-watch.service")
     sh(f"systemctl kill -s KILL maktaba-rollout-rollback-{ID}")
     sh(f"rm -rf {DEPLOY}/.env {DEPLOY}/Caddyfile && mkdir -p {DEPLOY}/secrets.restore")
     sh("systemctl start maktaba-rollout-watch.timer")
@@ -733,7 +1032,7 @@ def one_at_a_time() -> str:
         assert code != 0 and "at work" in out, out[-1500:]
         not_pending()
         code, out = rc(f"{ROLLOUT} boot", env={"BOOT_WAIT": "1"})
-        assert code == 1, f"a boot while a command is at work: {code} {out}"
+        assert code == 255, f"a boot while a command is at work: {code} {out}"
     finally:
         os.killpg(held_by.pid, signal.SIGKILL)
         held_by.wait()
@@ -806,7 +1105,7 @@ def commit_of_a_deploy_being_restored() -> str:
     for mark in ("restoring", "applying"):
         code, out = deploy("b", "app b")
         assert code == 0, out[-3000:]
-        sh("systemctl stop maktaba-rollout-watch.timer")
+        sh("systemctl stop maktaba-rollout-watch.timer maktaba-rollout-watch.service")
         (STATE / f"pending/{mark}").touch()
         code, out = job("commit")
         assert code != 0 and pending(), f"{mark}: committed: {out}"
@@ -890,21 +1189,31 @@ def docker_restarted_during_a_rollback() -> str:
     """Docker restarted at several moments of a rollback (an unattended upgrade): a healthy previous
     release is not held for it."""
     before = snapshot()
-    for delay in (1.0, 6.0, 12.0):
+    for moment in ("at its start", "as the previous release starts", "later", "and it does not answer for a while"):
         code, out = deploy("expand", "app expand", add_header)
         assert code == 0, out[-3000:]
         p = subprocess.Popen(["bash", "-c", f"{ROLLOUT} job {ID} rollback 0 >/dev/null 2>&1"], env={**os.environ, **JOB_ENV})
         wait_for("the rollback is at work", lambda: (STATE / "pending/restoring").exists(), 60)
-        time.sleep(delay)
-        sh("systemctl reset-failed docker || true; systemctl restart docker")
+        log = STATE / f"jobs/{ID}.rollback/log"
+        if moment.startswith(("as", "and")):
+            wait_for("the migrations are back", lambda: log.exists() and "undone by" in log.read_text(), 120)
+        if moment.startswith("and"):  # whatever the pass is at, it can't go on
+            with docker_away():
+                wait_for("the pass ends", lambda: "once more, when docker answers" in log.read_text() or (STATE / "held").exists(), 300)
+        else:
+            if moment.startswith("as"):
+                wait_for("the previous release starts", lambda: "maktaba-cloud" in app_running(), 60)
+            else:
+                time.sleep(1 if moment == "at its start" else 12)
+            sh("systemctl reset-failed docker || true; systemctl restart docker")
         wait_for("the rollback ends", lambda: not pending() or (STATE / "held").exists(), 500)
         p.wait()
         code, out = rollback()
-        assert code == 0 and "HELD" not in out, f"after {delay} s:\n{out[-3000:]}"
+        assert code == 0 and "HELD" not in out, f"{moment}:\n{out[-3000:]}"
         not_pending()
         ready()
         same(before, snapshot())
-    return "back, three times"
+    return "back, each time"
 
 
 def boot_during_a_rollback() -> str:
@@ -921,7 +1230,7 @@ def boot_during_a_rollback() -> str:
     while p.poll() is None:
         code, out = rc(f"{ROLLOUT} boot", env={"BOOT_WAIT": "0"})
         if pending():  # the rollback was still at work when boot answered
-            assert code == 1, f"boot would start the stack in the middle of a rollback: {code} {out}"
+            assert code == 255, f"boot would start the stack in the middle of a rollback: {code} {out}"
             asked += 1
         rc("systemctl reset-failed maktaba-relay; timeout 5 systemctl start maktaba-relay")
         time.sleep(0.3)
@@ -1364,10 +1673,15 @@ def main() -> int:
     sh(f"mkdir -p {DEPLOY} && truncate -s 160M /root/rehearsal-disk && mkfs.ext4 -q -F /root/rehearsal-disk && mount -o loop /root/rehearsal-disk {DEPLOY} && rmdir {DEPLOY}/lost+found")
     build_releases()
     first: list[tuple[str, Callable[[], str | None]]] = [
+        ("a database whose first start failed", first_start_of_the_database_failed),
         ("a first deploy cut off", first_deploy_cut_off),
+        ("a database that can't be shown empty", database_that_cannot_be_shown_empty),
         ("a first deploy that fails", first_deploy_fails),
         ("a failed first deploy stays down", failed_first_stays_down),
+        ("a first deploy that breaks Postgres", first_deploy_breaks_postgres),
         ("a first deploy, a reboot in its tests", first_reboot_in_its_tests),
+        ("a first deploy with a role down", first_with_a_role_down),
+        ("a first rollback without docker", first_rollback_without_docker),
         ("the first deploy", first_deploy),
         ("log caps merged", log_caps),
     ]
@@ -1387,6 +1701,9 @@ def main() -> int:
         ("migrated outside apply", migrated_outside_apply),
         ("a configuration change alone", config_only),
         ("a node nobody committed", node_nobody_committed),
+        ("a node set up by hand, a reboot", by_hand_then_a_reboot),
+        ("a node a person started", node_a_person_started),
+        ("unhold after a failed first deploy", unhold_after_a_failed_first),
         ("backup, restored and spoiled", backup_and_check),
         ("the tests' accounts ended", test_accounts),
         ("a new release", new_release),
@@ -1418,18 +1735,27 @@ def main() -> int:
         ("a deploy's name used twice", name_used_twice),
         ("the state disk fills", state_disk_fills),
         ("docker restarted during a rollback", docker_restarted_during_a_rollback),
+        ("docker restarted while a command waits", docker_restarted_while_a_command_waits),
+        ("a rollback without docker", rollback_without_docker),
+        ("an answer docker does not give", answer_docker_does_not_give),
         ("backups during a deploy", backups_during_a_deploy),
         ("two failed in a row, the schema kept", two_failed_in_a_row_with_a_kept_schema),
     ]
     every = first + part1 + part2 + part3
     todo = {"1": part1, "2": part2, "3": part3}.get(os.environ.get("PART", ""), part1 + part2 + part3)
     base = ""
+    if os.environ.get("PART", "1") != "1" and not MUTATE:  # the ways a first deploy fails: part 1's
+        first = [c for c in first if c[0] in ("the first deploy", "log caps merged")]
     if MUTATE:
         names = MUTATIONS[MUTATE][3]
         assert set(names) <= {n for n, _ in every}, names
         todo = [c for c in part1 + part2 + part3 if c[0] in names]
         # what the named ones start from: the first deploy, or the failed one before it
-        base = "a first deploy that fails" if set(names) <= {n for n, _ in first} - {"the first deploy"} else "the first deploy"
+        early = ["a database whose first start failed", "a first deploy cut off", "a database that can't be shown empty"]
+        if set(names) <= set(early):
+            base = "a first deploy cut off"
+        else:
+            base = "a first deploy that fails" if set(names) <= {n for n, _ in first} - {"the first deploy"} else "the first deploy"
         first = [c for c in first if c[0] in names or c[0] == base]
     for name, fn in first + todo:
         case(name, fn)
@@ -1442,7 +1768,10 @@ def main() -> int:
     print(f"\n{len(results) - len(bad)} of {len(results)} cases pass" + (f"; failed: {', '.join(bad)}" if bad else ""), flush=True)
     if MUTATE:
         # by a case that names it, on a node that was set up: one that was not says nothing
-        noticed = set(bad) & set(MUTATIONS[MUTATE][3]) if base not in bad else set()
+        ran = [r["case"] for r in results]
+        named = MUTATIONS[MUTATE][3]
+        set_up = base not in bad or ran.index(base) > min(ran.index(n) for n in named)  # it counts where it came first
+        noticed = set(bad) & set(named) if set_up else set()
         print(f"{MUTATE}: {'noticed by ' + ', '.join(sorted(noticed)) if noticed else 'NOT NOTICED'}", flush=True)
         return 0 if noticed else 1
     return 1 if bad or len(results) != len(first) + len(todo) else 0

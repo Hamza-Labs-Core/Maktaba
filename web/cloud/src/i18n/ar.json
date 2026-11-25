@@ -196,6 +196,8 @@
   "error.too_many_attempts": "محاولات كثيرة. حاول لاحقًا.",
   "error.too_many_attempts_wait": "محاولات كثيرة. حاول بعد {minutes} دقيقة.",
   "error.rate_limited": "طلبات كثيرة. انتظر قليلًا ثم حاول مجددًا.",
+  "error.rate_limited_wait": "طلبات كثيرة من شبكتك. حاول مجددًا بعد {minutes} دقيقة.",
+  "error.rate_limited_hours": "طلبات كثيرة من شبكتك. حاول مجددًا بعد {hours} ساعة.",
   "error.not_found": "غير موجود.",
   "error.turnstile_failed": "تعذّر التحقق من أنك إنسان. أعد تحميل الصفحة وحاول مجددًا.",
   "error.turnstile_unavailable": "تسجيل الدخول غير متاح مؤقتًا. حاول مجددًا بعد دقيقة.",

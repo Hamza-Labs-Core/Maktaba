@@ -69,7 +69,7 @@ func NewRouter(logger *slog.Logger, pool *db.Pool, mig *db.Migrator, build Build
 	}
 
 	r.Get("/healthz", healthzHandler(build))
-	ready := readyzHandler(pool, mig)
+	ready := readyzHandler(pool, mig, o.mail)
 	if o.lenient != nil {
 		ready = o.lenient.handler(pool, mig)
 	}
@@ -108,6 +108,21 @@ type routerOptions struct {
 	// the public forms' routes and the origins that may post to them (50.24)
 	formPaths, formOrigins []string
 	gate                   func(http.Handler) http.Handler
+	mail                   *MailStatus
+}
+
+// MailStatus is how the api role's mails go, on /readyz: never a key, an address or a count (a
+// count would tell whether a request caused a mail).
+type MailStatus struct {
+	Driver   string `json:"driver"`   // "log" or "resend"
+	Delivers bool   `json:"delivers"` // really sent, or only logged
+	// Recipients is "all", or "listed": only mail.allow_recipients (QA).
+	Recipients string `json:"recipients"`
+}
+
+// WithMail adds the mail's status to a ready /readyz.
+func WithMail(m MailStatus) RouterOption {
+	return func(o *routerOptions) { o.mail = &m }
 }
 
 // WithGate runs gate on every request after the platform's middleware and before any route, the
@@ -297,7 +312,7 @@ func (l *LenientReadiness) handler(pool *db.Pool, mig *db.Migrator) http.Handler
 // Recheck runs the background check now (tests).
 func (l *LenientReadiness) Recheck(pool *db.Pool, mig *db.Migrator) { l.check(pool, mig) }
 
-func readyzHandler(pool *db.Pool, mig *db.Migrator) http.HandlerFunc {
+func readyzHandler(pool *db.Pool, mig *db.Migrator, mail *MailStatus) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 		defer cancel()
@@ -313,7 +328,11 @@ func readyzHandler(pool *db.Pool, mig *db.Migrator) http.HandlerFunc {
 			_ = json.NewEncoder(w).Encode(map[string]any{"status": "down", "reason": "migrations_behind"})
 			return
 		}
-		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
+		out := map[string]any{"status": "ready"}
+		if mail != nil {
+			out["mail"] = mail
+		}
+		_ = json.NewEncoder(w).Encode(out)
 	}
 }
 

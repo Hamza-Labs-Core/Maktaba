@@ -25,8 +25,10 @@
 # Settings a deploy hands in (.github/workflows/cloud-deploy.yml), written into .env when set
 # in this script's environment, never printed: RELAY_DOMAIN, API_DOMAIN, APP_DOMAIN,
 # ACME_EMAIL, RELAY_TLS, RELAY_PLANS_ENFORCE, MAKTABA_CLOUD_TAG, MAKTABA_CADDY_TAG (and
-# MAKTABA_CLOUD_IMAGE, MAKTABA_CADDY_IMAGE: another registry, the rehearsal's) and the
-# secrets CF_API_TOKEN and LICENSE_SIGNING_KEY.
+# MAKTABA_CLOUD_IMAGE, MAKTABA_CADDY_IMAGE: another registry, the rehearsal's), MAIL_ALLOW,
+# MAIL_SUBJECT_PREFIX, MAIL_DAILY_LIMIT, MAIL_MONTHLY_LIMIT and the secrets CF_API_TOKEN,
+# LICENSE_SIGNING_KEY, RESEND_API_KEY and TURNSTILE_SECRET_KEY (with TURNSTILE_SITE_KEY); the
+# last three set but empty: this node has none any more.
 set -euo pipefail
 
 DEPLOY_DIR=${DEPLOY_DIR:-/opt/maktaba-relay}
@@ -160,6 +162,12 @@ for k in RELAY_DOMAIN API_DOMAIN APP_DOMAIN ACME_EMAIL RELAY_TLS RELAY_PLANS_ENF
 		set_env "$k" "${!k}"
 	fi
 done
+# (a setting handed in empty is none: a line taken out of the target's file does not stay)
+for k in MAIL_ALLOW MAIL_SUBJECT_PREFIX MAIL_DAILY_LIMIT MAIL_MONTHLY_LIMIT TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY; do
+	if [ -n "${!k+x}" ]; then
+		set_env "$k" "${!k}"
+	fi
+done
 if [ -n "$(get_env RELAY_DOMAIN)" ]; then
 	set_env MAKTABA_CLOUD_PUBLIC_URL "https://$(get_env RELAY_DOMAIN)"
 fi
@@ -230,6 +238,90 @@ if [ ! -s "$LOG_KEY" ]; then
 	openssl rand 32 > "$LOG_KEY"
 fi
 
+# --- mail: begin (tools/ci/tests/test_cloud_deploy.py runs this block)
+# The mail provider's key (docs/cloud-mail.md), never printed: the api reads the file at each
+# send. The node sends mail only with a key, a stated MAIL_ALLOW ("everyone", or the addresses
+# and @domains it may write to) and a release that can (asked of its image: an older one refuses
+# to start on a driver it does not know); else its driver stays log, and this says so.
+RESEND_KEY="$DEPLOY_DIR/secrets/resend.key"
+if [ -n "${RESEND_API_KEY:-}" ]; then
+	[[ "$RESEND_API_KEY" == re_* ]] || die "RESEND_API_KEY is not a Resend key (it begins with re_)"
+	( umask 077; printf '%s' "$RESEND_API_KEY" > "$RESEND_KEY.new" )
+	mv "$RESEND_KEY.new" "$RESEND_KEY"
+elif [ -n "${RESEND_API_KEY+x}" ]; then
+	rm -f "$RESEND_KEY"
+fi
+# release_sends: the release's image says it has the driver. One from before the question exits 2
+# at once (it serves, and no role is named); anything else is no answer, and nothing goes on.
+release_sends() {
+	local image tag out rc=0
+	image="$(get_env MAKTABA_CLOUD_IMAGE)"; tag="$(get_env MAKTABA_CLOUD_TAG)"
+	image="${image:-ghcr.io/hamza-labs-core/maktaba-cloud}:${tag:-latest}"
+	# (a hand-run setup may not have it yet: its pull has no clock on it)
+	docker image inspect "$image" >/dev/null 2>&1 || docker pull -q "$image" >/dev/null || die "the release's image can't be pulled"
+	out="$(timeout -k 5 60 docker run --rm --pull never --network none "$image" mail drivers </dev/null 2>"$DEPLOY_DIR/.drivers.err")" || rc=$?
+	if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
+		warn "$(head -c 400 "$DEPLOY_DIR/.drivers.err")"
+		rm -f "$DEPLOY_DIR/.drivers.err"
+		die "the release's image could not be asked for its mail drivers ($rc)"
+	fi
+	rm -f "$DEPLOY_DIR/.drivers.err"
+	[ "$rc" = 0 ] && [[ $'\n'"$out"$'\n' == *$'\nresend\n'* ]]
+}
+MAIL_DRIVER=log
+MAIL_ALLOW_TOML=""
+mail_to=everyone
+mail_allow="$(get_env MAIL_ALLOW)"
+mail_prefix="$(get_env MAIL_SUBJECT_PREFIX)"
+mail_day="$(get_env MAIL_DAILY_LIMIT)"; mail_day="${mail_day:-80}"
+mail_month="$(get_env MAIL_MONTHLY_LIMIT)"; mail_month="${mail_month:-2700}"
+mail_entry='[A-Za-z0-9._+-]*@[A-Za-z0-9-]+([.][A-Za-z0-9-]+)+'
+[ -z "$mail_allow" ] || [[ "$mail_allow" =~ ^(everyone|$mail_entry(,$mail_entry)*)$ ]] || die "MAIL_ALLOW is everyone, or addresses and @domains with commas"
+[[ "$mail_prefix" =~ ^[][A-Za-z0-9\ ._-]*$ ]] || die "MAIL_SUBJECT_PREFIX holds a character it may not"
+for n in "$mail_day" "$mail_month"; do
+	[[ "$n" =~ ^[1-9][0-9]*$ ]] || die "MAIL_DAILY_LIMIT and MAIL_MONTHLY_LIMIT are numbers above 0"
+done
+if [ -n "$mail_allow" ] && [ "$mail_allow" != everyone ]; then
+	mail_to="the listed ones only"
+	MAIL_ALLOW_TOML="\"${mail_allow//,/\", \"}\""
+fi
+if [ ! -s "$RESEND_KEY" ]; then
+	warn "mail: no RESEND_API_KEY for this node: the mail driver is log (mails go to the api's log, nothing is delivered)"
+elif [ -z "$mail_allow" ]; then
+	warn "mail: MAIL_ALLOW is not set: the mail driver is log (nothing is delivered)"
+elif ! release_sends; then
+	warn "mail: this release has no resend driver: the mail driver is log (nothing is delivered)"
+else
+	MAIL_DRIVER=resend
+	log "mail: the driver is resend (recipients: $mail_to; at most $mail_day a day, $mail_month in 30 days)"
+fi
+# The bot check on the web app's sign-up, reset, resend and sign-in pages (Cloudflare Turnstile):
+# on with both its keys, for a release that leaves the node's private console out of it. Without
+# it strangers' mails have a smaller share of the day (docs/cloud-mail.md).
+TURNSTILE_ENABLED=false
+turnstile_site="$(get_env TURNSTILE_SITE_KEY)"
+turnstile_secret="$(get_env TURNSTILE_SECRET_KEY)"
+[[ "$turnstile_site" =~ ^[A-Za-z0-9._-]*$ ]] || die "TURNSTILE_SITE_KEY holds a character it may not"
+[[ "$turnstile_secret" =~ ^[A-Za-z0-9._-]*$ ]] || die "TURNSTILE_SECRET_KEY holds a character it may not"
+if [ -z "$turnstile_site" ] || [ -z "$turnstile_secret" ]; then
+	warn "bot check: TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY are not both set: it is off"
+elif ! release_sends; then
+	warn "bot check: this release is from before it could be used here: it is off"
+else
+	# a wrong secret closes every web sign-in: Cloudflare is asked once, with a token that is none
+	# (on stdin, not on a command line). A good secret's answer is about the token.
+	answer="$(printf 'secret=%s&response=deploy-check' "$turnstile_secret" | curl -sS -m 20 --retry 2 --data-binary @- \
+		https://challenges.cloudflare.com/turnstile/v0/siteverify 2>/dev/null)" || answer=""
+	case "$answer" in
+		*invalid-input-secret* | *missing-input-secret*) die "TURNSTILE_SECRET_KEY is not a secret Cloudflare knows (is it the site key?)" ;;
+		*invalid-input-response* | *'"success":true'* | *'"success": true'*) ;;
+		*) warn "bot check: Cloudflare could not be asked about TURNSTILE_SECRET_KEY; it is not checked" ;;
+	esac
+	TURNSTILE_ENABLED=true
+	log "bot check: on (Turnstile)"
+fi
+# --- mail: end
+
 # cloud.toml, from its template and .env's names (the compose mounts it read-only into every
 # role). Only the named placeholders are replaced.
 RELAY_PLANS_ENFORCE_V="$(get_env RELAY_PLANS_ENFORCE)"
@@ -238,6 +330,13 @@ sed -e "s|\${RELAY_DOMAIN}|$(get_env RELAY_DOMAIN)|g" \
 	-e "s|\${API_DOMAIN}|$(get_env API_DOMAIN)|g" \
 	-e "s|\${APP_DOMAIN}|$(get_env APP_DOMAIN)|g" \
 	-e "s|\${RELAY_PLANS_ENFORCE}|${RELAY_PLANS_ENFORCE_V:-false}|g" \
+	-e "s|\${MAIL_DRIVER}|$MAIL_DRIVER|g" \
+	-e "s|\${TURNSTILE_ENABLED}|$TURNSTILE_ENABLED|g" \
+	-e "s|\${TURNSTILE_SITE_KEY}|$turnstile_site|g" \
+	-e "s|\${MAIL_ALLOW}|$MAIL_ALLOW_TOML|g" \
+	-e "s|\${MAIL_SUBJECT_PREFIX}|$mail_prefix|g" \
+	-e "s|\${MAIL_DAILY_LIMIT}|$mail_day|g" \
+	-e "s|\${MAIL_MONTHLY_LIMIT}|$mail_month|g" \
 	"$DEPLOY_DIR/cloud.toml.template" > "$DEPLOY_DIR/cloud.toml.new"
 mv "$DEPLOY_DIR/cloud.toml.new" "$DEPLOY_DIR/cloud.toml"
 # what the containers read as files: compose recreates a container when its file changed

@@ -199,6 +199,7 @@
     <string name="w_updates_code_previous_app_not_restored">فشل التحديث وتعذّرت إعادة التطبيق إلى مجلده</string>
     <string name="w_updates_waiting_tv_busy">بانتظار ألّا يشاهد أحد التلفاز.</string>
     <string name="w_updates_waiting_tv_swapping">إعادة التشغيل تنتظر انتهاء تغيير في التلفاز من تبديل القنوات (دقيقتان على الأكثر).</string>
+    <string name="w_updates_waiting_machine_copying">إعادة التشغيل تنتظر أن ينهي جهاز نسخ جدول من قاعدة بيانات الجهاز الرئيسي (عشر دقائق على الأكثر).</string>
     <string name="w_updates_waiting_outside_window">بانتظار النافذة الهادئة.</string>
     <string name="w_updates_waiting_retry_backoff">فشلت المحاولة الأخيرة: المحاولة التالية بعد دقائق.</string>
     <string name="w_updates_waiting_retry_next_window">جُرّب بما يكفي في هذه النافذة: النافذة التالية تحاول مجدداً.</string>
@@ -221,7 +222,7 @@
     <string name="w_updates_blocker_recent_crash">تعطّل جزء من خادم المنزل خلال الدقائق العشر الأخيرة</string>
     <string name="w_updates_blocker_supervisor_unreachable">مشرف المنزل لا يجيب</string>
     <string name="w_updates_blocker_switchover_open">يجري نقل المنزل إلى جهاز آخر</string>
-    <string name="w_updates_blocker_machine_copying">جهاز ينسخ قاعدة بيانات الجهاز الرئيسي: يبدأ التحديث حين تنتهي نسخته</string>
+    <string name="w_updates_blocker_machine_copying">جهاز ينسخ قاعدة بيانات الجهاز الرئيسي: ينتظر التحديث انتهاء نسخته، يومًا على الأكثر. أما «حدّث الآن» فينتظر عشر دقائق على الأكثر، ثم يعيد ذلك الجهاز نسخ الجدول الذي كان ينسخه</string>
     <string name="w_queue_waiting_paused">متوقف مؤقتًا</string>
     <string name="w_queue_waiting_paused_all">كل شيء متوقف مؤقتًا</string>
     <string name="w_queue_waiting_pool_full">بانتظار عامل متاح</string>

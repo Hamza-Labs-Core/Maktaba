@@ -38,7 +38,7 @@ EXEMPT: dict[tuple[str, str], str] = {
 
 # a repository secret only one deploy step takes, with why
 PATH_ONLY: dict[str, str] = {
-    "RELAY_SSH_USER": "the pair's login; the single node's is a variable (cloud-deploy.yml)",
+    "RELAY_SSH_USER": "the pair's login; the single node's is root (cloud-deploy.yml)",
     "RELAY_HOST_A": "the pair's first node",
     "RELAY_HOST_B": "the pair's second node",
     "CLOUDFLARE_TUNNEL_TOKEN": "the Tunnel fronts the pair (story 50.31); the single VPS runs Caddy",

@@ -344,6 +344,10 @@ class SayTest {
         val id = WebWords.blocker.getValue("machine_copying")
         assertTrue(XmlLookup.english.text(id).contains("copying the home's database"))
         assertTrue(XmlLookup.arabic.text(id).contains("ينسخ قاعدة بيانات"))
+        // a run whose restart waits for one
+        val waits = WebWords.updateWaiting.getValue("machine_copying")
+        assertTrue(XmlLookup.english.text(waits).contains("ten minutes at most"))
+        assertTrue(XmlLookup.arabic.text(waits).contains("عشر دقائق على الأكثر"))
     }
 
     // #1605: an update that stopped and asks says why (nothing put back by itself)

@@ -178,8 +178,8 @@ Product decisions are marked **decided**; the rest were proposed by the first dr
   installed).
 - R4.3 A run starts only inside the window, only for a verified release that is newer than the
   watermark, at least `min_release_age_hours` old, not skipped, not past a pin, and not deferred.
-- R4.4 "Update now" (admin, confirmed) starts the same run immediately, ignoring the window and the
-  release age, never the checks.
+- R4.4 "Update now" (admin, confirmed) starts the same run immediately, ignoring the window, the
+  release age, a recent crash and a machine's copy of the home's database, never the checks.
 - R4.5 With `auto_install = false` the home only checks and notifies (Epic 28 behaviour).
 
 ### R5 — The home's update

@@ -163,7 +163,7 @@ jobs:
           set -euo pipefail
           MAKTABA_TEST_PG_BIN="$RUNNER_TEMP/pg18" go test -count=1 -v -timeout 20m ./internal/dbsafe/ | tee "$RUNNER_TEMP/dbsafe18.out"
           ../../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/dbsafe18.out"
-          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRestoreWithMachineCopies TestRestoreLeavesWhatIsOutsidePublic; do
+          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRestoreWithMachineCopies TestRestoreLeavesWhatIsOutsidePublic TestRestoreInsidePublic; do
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/dbsafe18.out" || { echo "::error::$t did not run on PostgreSQL 18"; exit 1; }
           done
 
@@ -341,7 +341,7 @@ jobs:
           set -euo pipefail
           go test -count=1 -v -timeout 20m ./internal/dbsafe/ | tee "$RUNNER_TEMP/dbsafe.out"
           ../../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/dbsafe.out"
-          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRehearsalSkipsAndLeftovers TestRestoreWithMachineCopies TestSpaceForTheDatabaseWork TestEndSessionsAndTheLockTimeout TestMigrationBlockersEnded TestRestoreKilledPartWayCommitsNothing TestRestoreLeavesWhatIsOutsidePublic; do
+          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRehearsalSkipsAndLeftovers TestRestoreWithMachineCopies TestSpaceForTheDatabaseWork TestEndSessionsAndTheLockTimeout TestMigrationBlockersEnded TestRestoreKilledPartWayCommitsNothing TestRestoreLeavesWhatIsOutsidePublic TestRestoreInsidePublic TestRestoreInsidePublicThatFailsCommitsNothing TestRestoreInsidePublicIsRefusedUpFront TestRestoreInsideAnothersPublic TestRehearsalSkipsWhatTheUserMayNotMake; do
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/dbsafe.out" || { echo "::error::$t did not run"; exit 1; }
           done
 

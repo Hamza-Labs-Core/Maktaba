@@ -147,7 +147,7 @@ func TestModerationNoticeTakedownCounterRestore(t *testing.T) {
 	if e.count(`SELECT count(*) FROM moderation_statements WHERE server_id = $1 AND kind = 'takedown'`, home.id) != 1 {
 		t.Fatal("no statement of reasons")
 	}
-	if _, ok := e.mail.Last("moderation_takedown", "owner@example.test"); !ok {
+	if _, ok := e.lastMail("moderation_takedown", "owner@example.test"); !ok {
 		t.Error("the publisher was not mailed")
 	}
 
@@ -196,7 +196,7 @@ func TestModerationNoticeTakedownCounterRestore(t *testing.T) {
 		t.Fatalf("another home's counter-notice = %d", r.code)
 	}
 	home.agent.mustStatus(home.agent.do("POST", "/v1/broadcast/moderation/counter-notices", counter), http.StatusCreated)
-	if _, ok := e.mail.Last("moderation_counter_notice_copy", "rights@studio.test"); !ok {
+	if _, ok := e.lastMail("moderation_counter_notice_copy", "rights@studio.test"); !ok {
 		t.Error("the claimant was not sent a copy")
 	}
 	if r := admin.do("POST", "/v1/admin/moderation/actions/"+aid+"/restore", map[string]string{"reason": "counter-notice"}); r.code != http.StatusConflict ||

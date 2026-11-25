@@ -1,0 +1,4 @@
+{
+  "protocol": 1,
+  "about": "This release can put a backup back inside the public schema, on a Postgres the home does not bundle whose database user may not make that schema and its extensions again. A backup that needs it is not put back on a release without this file. See cmd/maktaba-server/internal/dbsafe/inside.go."
+}

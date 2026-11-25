@@ -163,6 +163,38 @@ func TestSchedulerBlockers(t *testing.T) {
 		}
 	})
 
+	// a machine's copy of the home's database holds an automatic run, never an admin's Update
+	// now (v0.3.163's was refused as long as any machine copied); what else holds it still does
+	t.Run("a machine copying", func(t *testing.T) {
+		t.Parallel()
+		copying := BlockerFunc(func(context.Context) (string, error) { return BlockMachineCopying, nil })
+		f := newFixture(t, sqliteDB(t))
+		seed(t, f.store, rel("1.5.0"))
+		f.svc.Blockers = append(f.svc.Blockers, copying)
+		if d, _ := f.svc.Tick(ctx); d.Action != "blocked" || d.Reason != BlockMachineCopying {
+			t.Fatalf("automatic: %+v", d)
+		}
+		enableAutoInstall(t)
+		other := ""
+		f.svc.Blockers = append(f.svc.Blockers, BlockerFunc(func(context.Context) (string, error) { return other, nil }))
+		for _, other = range []string{BlockRoleNotRunning, BlockSupervisorUnreachable, BlockSwitchover} {
+			var blk *BlockedError
+			if _, err := f.svc.RunNow(ctx, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ""); !errors.As(err, &blk) || blk.Reason != other {
+				t.Fatalf("%s behind a machine copying: %v", other, err)
+			}
+		}
+		other = BlockRecentCrash // passed too
+		if run, err := f.svc.RunNow(ctx, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ""); err != nil || run.Version != "1.5.0" {
+			t.Fatalf("update now past a machine copying: %+v %v", run, err)
+		}
+		for _, action := range []string{"update_past_machine_copying", "update_past_recent_crash"} {
+			var n int
+			if err := f.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = $1`, action).Scan(&n); err != nil || n != 1 {
+				t.Errorf("%s audited %d times (%v)", action, n, err)
+			}
+		}
+	})
+
 	t.Run("deferral", func(t *testing.T) {
 		t.Parallel()
 		f := newFixture(t, sqliteDB(t))

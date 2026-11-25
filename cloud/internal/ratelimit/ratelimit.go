@@ -9,7 +9,9 @@ package ratelimit
 
 import (
 	"net/http"
+	"net/netip"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -149,6 +151,25 @@ func (l *Limiter) retryAfter() int {
 		s = 1
 	}
 	return s
+}
+
+// NetKey keys a request by the network its client address is in (IPv4 /24, IPv6 /56): one
+// household or host that asks from many addresses of its own is one requester.
+func NetKey(r *http.Request) string {
+	ip, err := netip.ParseAddr(strings.TrimPrefix(IPKey(r), "ip:"))
+	if err != nil {
+		return IPKey(r)
+	}
+	ip = ip.Unmap().WithZone("")
+	bits := 56
+	if ip.Is4() {
+		bits = 24
+	}
+	p, err := ip.Prefix(bits)
+	if err != nil {
+		return IPKey(r)
+	}
+	return "net:" + p.String()
 }
 
 // IPKey keys a request by its client address as resolved by

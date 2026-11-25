@@ -10,14 +10,14 @@
 
 | | QA | Production |
 |---|---|---|
-| Host | `QA_HOST` (Hetzner, Helsinki) | `RELAY_HOST` (Hetzner, Helsinki) |
+| Host (Hetzner, Helsinki) | environment `qa`'s secret `NODE_HOST` | environment `prod`'s secret `NODE_HOST` |
 | Size | 1 vCPU, 2 GB | 2 vCPU, 4 GB |
 | Names | `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev`, `staging-app.maktaba.dev` | `relay.maktaba.tv`, `*.relay.maktaba.tv`, `api.maktaba.tv`, `app.maktaba.tv` |
 | Who uses it | the deploy's tests, never people | the household |
 
 Both run Ubuntu 26.04 and the same files (`deploy/cloud-relay`), with each target's names in
 `deploy/cloud-relay/targets/<target>.env`. SSH is root with the `RELAY_SSH_KEY` secret, and the
-host key is pinned (`QA_SSH_KNOWN_HOSTS`, `RELAY_SSH_KNOWN_HOSTS`). Nothing reaches a node by
+host key is pinned (each environment's secret `NODE_KNOWN_HOSTS`). Nothing reaches a node by
 hand; every change goes through the workflow below.
 
 ## What runs on a node
@@ -48,6 +48,12 @@ without it generates its own key, which no released home trusts: such a home sta
 its `cloud.relay` component off, and it never reports its linked accounts, so signing in through
 the cloud fails (the e2e's `link`).
 
+### The bot check
+
+With the environment's `TURNSTILE_SECRET_KEY` and `TURNSTILE_SITE_KEY` secrets the web app's sign-up,
+reset, resend and sign-in pages ask for Cloudflare Turnstile's check ([`cloud-mail.md`](cloud-mail.md)).
+Without both it is off, and the deploy says so.
+
 ### Certificates
 
 `RELAY_TLS` in `.env`. With the `CLOUDFLARE_DNS_TOKEN` secret (a token with Zone → DNS → Edit on
@@ -71,9 +77,10 @@ CA, which the tests trust).
 - **No Floating IP, no standby, no witness.** The relay's drain is off
   (there is no second relay to move homes to): a restart drops the tunnels, and homes dial back
   within seconds (the test fails past a minute).
-- **No mail.** The only mail driver writes to the log, which redacts the address and the link's
-  code, so no sign-up can confirm its email. The operator confirms an account by hand (below)
-  until the cloud sends mail.
+- **Mail through Resend, with the node's key.** Each GitHub environment's `RESEND_API_KEY` secret
+  goes to the node's `secrets/resend.key`; production writes to anyone, QA only to its own list
+  ([`cloud-mail.md`](cloud-mail.md)). Without the secret the mail driver is `log`: no sign-up can
+  confirm its email, and the operator confirms an account by hand (below).
 
 ## Deploying
 
@@ -131,12 +138,33 @@ A rollback, on the node:
    restarted under it) is done once more when Docker answers, before the node is held.
 
 A **held** node has its relay, api and worker stopped, refuses deploys and does not start at boot;
-`maktaba-rollout status` says why and where the saved set and the backups are. A dump is never put
-back by itself. A person sets the node right, then `maktaba-rollout unhold`. A node that reboots
+`maktaba-rollout status` says why and where the saved set and the backups are. When Docker did not
+answer, it says that not all of them could be stopped, and the node goes on trying each minute and at
+boot. The stopped containers are removed (their last lines are in
+`/var/lib/maktaba-cloud-deploy/last-logs`), so that Docker can't start one again. A dump is never put
+back by itself. A person sets the node right, then `maktaba-rollout unhold`; a first release that was refused still starts
+for nobody after it, unless a person has started it. A node that reboots
 during a deploy restores first (the stack's unit asks before it starts, and never starts anything
 while a command is at work), and a deploy that finds an earlier one cut off undoes it before it
 begins. A failed first deploy has nothing to go back to: the stack stops, stays stopped at every boot
 until a release is committed, and what its database holds is backed up before the next deploy.
+A power cut can leave a container half removed, which Docker lists and compose then fails on: boot, a
+restore and the next deploy take it out first.
+
+**A database that does not come up.** `begin` starts the database to back it up, and refuses when it can't,
+with nothing changed. On a node that never committed a release, a first start of Postgres that was cut or
+failed leaves a folder Postgres does not finish by itself: `begin` makes it afresh when it can show that
+nothing is in it (no backup was ever taken, and Postgres has no database but its own, or, when it can't
+start, its folder holds only what a new cluster's does), and keeps a copy in
+`/var/backups/maktaba-cloud`. When it can't show that, it says why and refuses. Then, on the node:
+
+- nobody needs what is in it: `docker ps -aq --filter volume=maktaba-relay_pg_data | xargs -r docker rm -f`,
+  then `docker volume rm maktaba-relay_pg_data`, and deploy again;
+- otherwise look first at `docker logs` of the Postgres container, and keep a copy of the volume before
+  anything else. The newest backup (`/var/backups/maktaba-cloud`) is what a new volume is filled from:
+  start Postgres alone (`docker compose --env-file .env up -d --wait postgres` in `/opt/maktaba-relay`) on it
+  and read the dump in (`docker compose --env-file .env exec -T postgres pg_restore -U maktaba -d maktaba
+  --no-owner < db-….dump`).
 
 What does not go back: the DNS records, the firewall, Docker's settings and the systemd units.
 Each failure is rehearsed in CI (`cloud-rehearsal.yml`, the `single-node` jobs:
@@ -156,7 +184,7 @@ production (no relay restart, no load):
 | Check | What it proves |
 |---|---|
 | tls | the relay's apex, the api and the app answer HTTPS with a valid certificate; later a home's name (the wildcard) |
-| health | `/healthz` and `/readyz` on the relay and the api; the web app's page |
+| health | `/healthz` and `/readyz` on the relay and the api, and how mails go (QA that sends with no recipients' list fails); the web app's page |
 | firewall | from outside, of 1,040 TCP ports only 22, 80 and 443 answer; UFW is active and denies incoming; only Caddy publishes a port |
 | backup | the timer is on; a backup taken now restores into a scratch database, every table's rows equal to those recorded in the dump's own snapshot, and its keys into a scratch folder, every file whole and the password good for the database |
 | account | a new account is refused sign-in until confirmed; the operator tool confirms it and gives it Basic |
@@ -184,9 +212,16 @@ nothing secret is printed:
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py verify-email   # confirm the account's email
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py set-plan pro    # free, basic or pro
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py account         # id, plan, confirmed
+echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py reset-link       # a password reset link, once, on a terminal only
+/opt/maktaba-relay/ops/cloud-ops.py mail-status                                  # how mails go, and what became of them
+echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py mail-test ar     # a test mail (docs/cloud-mail.md)
 /opt/maktaba-relay/ops/cloud-ops.py end-test-accounts                            # the deploy tests' own (ci-e2e-*)
 maktaba-rollout status                                                          # committed, pending or held
 ```
+
+`reset-link` is for when no mail can arrive: it prints a link like a mailed one (an hour, once),
+keeps only its SHA-256, and writes its audit row (`cli`, `auth.password_reset_link`) in the same
+transaction. It prints on a terminal only, so over SSH it needs `ssh -t`, and never in a CI run.
 
 `verify-email` changes the account and writes its audit row (`cli`, `auth.email_verified`) in
 one transaction. `set-plan` goes through the operator console's API on the private listener,

@@ -99,6 +99,9 @@ or a release you rolled back by hand that refuses the newer schema.
     Backups) and try again.
   - It may still remove other, older backups by its own normal rules (docs/updates.md): copy elsewhere any
     that must stay.
+- **`restore_database_user`** (a Postgres of your own): its user may not put this backup back as it is set
+  up; the detail says what is missing. Grant it, or make the user a superuser for the restore. Nothing was
+  changed.
 - The machines copy the restored database anew.
 - **What it loses**: every change made since the backup was taken — added videos, watch history,
   settings, jobs done. A `pre-<from>-to-<to>.dump` is from right before that update's switch.

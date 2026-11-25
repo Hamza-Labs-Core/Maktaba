@@ -218,6 +218,7 @@ internal object WebWords {
     val updateWaiting: Map<String, Int> = mapOf(
         "tv_busy" to R.string.w_updates_waiting_tv_busy,
         "tv_swapping" to R.string.w_updates_waiting_tv_swapping,
+        "machine_copying" to R.string.w_updates_waiting_machine_copying,
         "outside_window" to R.string.w_updates_waiting_outside_window,
         "retry_backoff" to R.string.w_updates_waiting_retry_backoff,
         "retry_next_window" to R.string.w_updates_waiting_retry_next_window,

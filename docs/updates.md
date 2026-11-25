@@ -427,8 +427,24 @@ One lock covers asking for a restore, giving one up and the start's own try, and
 before the release is switched. On a Postgres the home does not bundle, the restore's transaction
 commits as the script's own last line, once psql ran all of it: a server killed in the middle of it
 commits nothing. Only its `public` schema is made again. Extensions in other schemas (pg_textsearch, where
-an operator made it) stay; one in `public` that needs a superuser (pgvector) is made again, so the
-database user has to be one, or the restore changes nothing and says so.
+an operator made it) stay, but for one that depends on an extension in `public`.
+
+**A database user who may not make `public` again** (no superuser, with an extension in it that needs one,
+as pgvector does, or a schema that is another's) has the backup put back inside it. In the same transaction
+what is in `public` and no extension's own is dropped (tables, views, sequences, functions, types and the
+like, and the user's default privileges there), and the dump goes in without the items that make the schema and
+the extensions: they stay, at the version they have (a dump does not say which its data needs; one it
+cannot use is an error, and nothing is committed). Refused before anything is touched, with the reason, when
+it cannot work: no `psql`; something in `public` that is another user's, or something of another's elsewhere
+that would go with what is there (a view on a table, a column of a type, a partition); no `CREATE` on
+`public`; an extension the backup needs that the database lacks and cannot have; rows of an extension's own
+table. For any user who is no superuser, the grants on an extension's own objects that are another's, and
+other users' default privileges, are left out of what is put back, and stay as they are there. The same is looked at when the restore is asked (`restore_database_user`). A release from before this (no
+`restore_protocol` in its `release.json`, nor in its migrations' `meta/restore.json`) is not asked to do it:
+another kept one of the backup's schema that can is, or the running one. The migrations' own table tells such a database from the one before (`data_table`), since the
+schema stays; and before the commit the record's `data_id` gets a mark, so a release that goes by that
+alone takes it for another database and never offers to give the restore up. The rehearsal on a copy is skipped for a user who may not make the extensions in a scratch
+database, and says so: it does not fail the update.
 
 **Backups moved to another folder** while a restore is not done: it goes on from there at the next start.
 
@@ -481,14 +497,22 @@ from before it counts nothing; the release stops pushing the deadline itself at 
   three tries running, and the update put a 35 GB backup back (2 h 44 min). An index build cut
   short leaves an INVALID index; the next try drops it and builds it again, where `IF NOT
   EXISTS` had taken it for done.
-- **The machines' copies wait, then pause (since 2026-11-24).** An automatic update does not
-  start while a machine is copying a table of the home's database (its first copy, or one made
-  anew: `machine_copying` on Admin → Updates); **Update now** does not wait. Before the
-  migrations the home waits for the table syncs still running, 10 minutes at most whatever the
-  database does, then keeps the machines' copies out until the schema is settled: `pg_hba.conf`
-  rejects their replication roles (`/^maktaba_rep_`; never the app role) and their sessions are
-  ended. It is `pg_hba.conf` and not the roles, since a machine asks for its copy again and again
-  and the home's answer (`cluster_node_replica_grant`) sets `LOGIN` on its role.
+- **The machines' copies are waited for, then paused (since 2026-11-24).** An update restarts the
+  bundled Postgres, which ends the copy of a table a machine is making (its first copy, or one
+  made anew: one `COPY` for each table); that machine starts that table again. So an automatic
+  update does not start while a machine copies a table (`machine_copying` on Admin → Updates): a
+  day at most (20 hours from when the first was held; then it goes past it, audited
+  `update_past_machine_copying`). **Update now** goes past it (v0.3.163's is refused until the
+  copy is done). Either way the home waits for a running copy once more, 10 minutes at most, right
+  before its restart, while the library still serves; then it goes on (audited `copy_wait_over`).
+  An update that does not come by the home's own run (an app replaced by hand) waits for none.
+  Until v0.3.163 the home looked for the table syncs' slots, which are not active while their
+  `COPY` runs, after the restart that had already ended it: neither wait saw a copy.
+- **Their copies stay out while the schema changes.** Before the migrations the home keeps the
+  machines' copies out until the schema is settled: `pg_hba.conf` rejects their replication roles
+  (`/^maktaba_rep_`; never the app role) and their sessions are ended. It is `pg_hba.conf` and not
+  the roles, since a machine asks for its copy again and again and the home's answer
+  (`cluster_node_replica_grant`) sets `LOGIN` on its role.
   - They come back when the database's record says the schema is settled: the migrations ran, or
     failed and were kept or undone, or the restore a person asked for is done. Each goes on from
     where it stopped (its slot kept the changes, under the home's cap).
@@ -501,9 +525,10 @@ from before it counts nothing; the release stops pushing the deadline itself at 
   - When they cannot be kept out (the file cannot be written, the server does not reload it), that
     is logged at level=error and the migrations run all the same, as before this rule: what they
     wait on is ended, and their index builds wait on no snapshot.
-  - Only a table sync that streams now counts. Its slot is permanent: one left by a machine that
-    went away holds nothing up, and goes when its machine is back, or when its WAL is past the
-    home's cap (`rules.cluster.replica_wal_keep_gb`) or lost, which the home looks at on its own.
+  - Only a `COPY` that runs now counts (`pg_stat_progress_copy`, of a machine's replication role).
+    The slot of a table sync is permanent: one left by a machine that went away holds nothing up,
+    and goes when its machine is back, or when its WAL is past the home's cap
+    (`rules.cluster.replica_wal_keep_gb`) or lost, which the home looks at on its own.
 - **Index builds are plain while the library is stopped (since 2026-11-24).** The migrations
   run before any role starts, so their `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
   run without `CONCURRENTLY` (`MAKTABA_MIGRATE_OFFLINE=1`, set by the database step and the

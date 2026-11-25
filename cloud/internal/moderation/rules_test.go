@@ -204,17 +204,16 @@ func TestSignInstructions(t *testing.T) {
 // T09 (the mails): every mail has its English and its Arabic, filled in.
 func TestMailsInEnglishAndArabic(t *testing.T) {
 	for kind := range mails {
-		body, ok := MailText(kind, map[string]any{"programme": "Film X", "count": 2, "limit": 3, "claimant": "",
+		en, ar, ok := MailText(kind, map[string]any{"programme": "Film X", "count": 2, "limit": 3, "claimant": "",
 			"notice_id": "n-1", "name": "P", "address": "A", "explanation": "E", "restore_after": "2026-11-27", "scope": "item"})
-		if !ok || strings.Contains(body, "{") {
-			t.Errorf("%s: %q", kind, body)
+		if !ok || strings.Contains(en+ar, "{") {
+			t.Errorf("%s: %q %q", kind, en, ar)
 		}
-		en, ar, found := strings.Cut(body, "———")
-		if !found || strings.TrimSpace(en) == "" || !strings.ContainsAny(ar, "ابتثجحخدذرزسشصضطظعغفقكلمنهوي") {
-			t.Errorf("%s has no Arabic half: %q", kind, body)
+		if strings.TrimSpace(en) == "" || !strings.ContainsAny(ar, "ابتثجحخدذرزسشصضطظعغفقكلمنهوي") {
+			t.Errorf("%s has no Arabic half: %q %q", kind, en, ar)
 		}
 	}
-	if _, ok := MailText("nope", nil); ok {
+	if _, _, ok := MailText("nope", nil); ok {
 		t.Error("an unknown mail")
 	}
 	if Urgent(CategoryCopyright) || !Urgent(CategoryIllegal) {

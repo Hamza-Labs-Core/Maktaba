@@ -15,11 +15,10 @@ import (
 
 // The machines' copies of the home's database (Epic 37: logical replication, each
 // machine's own replication role maktaba_rep_<id>) during an update's migrations (research
-// item 5, E4 and E8). Before the migrations the database step waits for every table sync to
-// end (a machine's first copy of a table, or one made anew: its walsender holds one snapshot
-// for the whole COPY, which an index build waits on, and ending it makes the machine copy
-// the table again), then keeps the copies out until the schema is settled: pg_hba.conf
-// rejects their roles, and their sessions are ended.
+// item 5, E4 and E8). Before the migrations the database step keeps the copies out until
+// the schema is settled (a table sync's walsender holds one snapshot for its whole COPY,
+// which an index build waits on): pg_hba.conf rejects their roles, and their sessions are
+// ended.
 //
 // It is pg_hba.conf, not the roles: a machine asks for its copy again and again
 // (cluster_node_replica_grant, slot 0147), which sets LOGIN on its role, and no released
@@ -54,15 +53,6 @@ func (b Bundle) pausedHBA() string {
 		fmt.Sprintf("%-7s %-12s %-16s %-15s reject\n", "host", "all", replicaRoles, "all")
 }
 
-// TableSyncsSQL counts the table syncs that stream from the app database now: their slots
-// are pg_<subscription>_sync_<table>_<system>. Only the active ones: such a slot is
-// permanent, and one whose machine is gone stays, inactive, until the home drops it (its
-// WAL is past the home's cap, or lost: api/internal/cluster's copies beat) or its machine
-// comes back and ends its copy. It holds no snapshot and nothing waits on it.
-const TableSyncsSQL = `SELECT count(*) FROM pg_replication_slots
-    WHERE slot_type = 'logical' AND active AND database = '` + AppDatabase + `'
-      AND slot_name ~ '^pg_[0-9]+_sync_[0-9]+_[0-9]+$'`
-
 // endCopiesSQL ends the sessions of the machines' replication roles and counts those that
 // were there (a walsender takes a moment to go).
 const endCopiesSQL = `SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FROM pg_stat_activity
@@ -71,19 +61,6 @@ const endCopiesSQL = `SELECT count(*) FROM (SELECT pg_terminate_backend(pid) FRO
 // pauseQuery bounds one question of a pause (a server that does not answer is no reason to
 // wait without end).
 const pauseQuery = 15 * time.Second
-
-// TableSyncs counts the table syncs streaming from the app database (TableSyncsSQL).
-func (b Bundle) TableSyncs(ctx context.Context) (int, error) {
-	q, err := b.NewQuerier()
-	if err != nil {
-		return 0, err
-	}
-	s, err := askOne(ctx, q, TableSyncsSQL)
-	if err != nil {
-		return 0, err
-	}
-	return strconv.Atoi(s)
-}
 
 // askOne asks for one value, pauseQuery at most.
 func askOne(ctx context.Context, q asker, sql string) (string, error) {

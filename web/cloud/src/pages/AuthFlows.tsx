@@ -6,7 +6,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { Input } from "@ds/components/Input/Input";
-import { api, CloudApiError } from "../shared/api";
+import { api } from "../shared/api";
 import { useI18n } from "../shared/i18n";
 import { useProviders } from "../providers";
 import { useSession } from "../shared/session";
@@ -188,14 +188,10 @@ export function ForgotPassword() {
       await api.post("/v1/auth/password/forgot", body, { auth: false });
       setSent(true);
     } catch (err) {
-      // the bot check's refusal is the page's own, shown so the person can try again; any
-      // other answer is the same 202 for every address, so it shows the same state
-      if (err instanceof CloudApiError && err.code.startsWith("turnstile_")) {
-        setError(err);
-        setTurnstileReset((n) => n + 1);
-      } else {
-        setSent(true);
-      }
+      // every address is answered 202: a refusal is the network's, the bot check's or the
+      // cloud's, and nothing was sent
+      setError(err);
+      setTurnstileReset((n) => n + 1);
     } finally {
       setBusy(false);
     }

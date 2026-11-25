@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
@@ -465,6 +467,7 @@ func TestTheRecordSaysWhatTheRestoreDid(t *testing.T) {
 		{"dropped", []string{pgbundle.StepGone}, false, apppayload.DataGone, "db_restore_backup_gone"},
 		{"dropped, then in part", []string{pgbundle.StepGone, pgbundle.StepReplaced}, false, apppayload.DataReplaced, "db_restore_backup_part"},
 		{"committed, then found not whole", []string{pgbundle.StepReplaced}, false, apppayload.DataReplaced, "db_restore_backup_part"},
+		{"a commit inside public that did not happen", []string{pgbundle.StepInside}, true, apppayload.DataUntouched, "db_restore_backup_failed"},
 		{"a commit that did not happen", []string{pgbundle.StepReplaced}, true, apppayload.DataUntouched, "db_restore_backup_failed"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -473,7 +476,7 @@ func TestTheRecordSaysWhatTheRestoreDid(t *testing.T) {
 			e.f.steps = c.steps
 			e.f.onRestore = func(context.Context) error {
 				rec := e.rec()
-				if n := len(c.steps); n > 0 && rec.Data != c.steps[n-1] {
+				if n := len(c.steps); n > 0 && rec.Data != replacing(apppayload.Database{}, c.steps[n-1]).Data {
 					t.Errorf("the record says %q while the restore is past %v", rec.Data, c.steps)
 				}
 				e.f.mu.Lock()
@@ -1325,6 +1328,134 @@ func TestThePlanSaysAnOlderRelease(t *testing.T) {
 		if strings.Contains(out.String(), "its own rules") != older {
 			t.Errorf("on %s:\n%s", running, out.String())
 		}
+	}
+}
+
+// A backup the database's user could not put back, on the release that would, is refused when it
+// is asked: nothing restarts for it. A database that does not answer is no reason.
+func TestARestoreTheUserCouldNotDoIsRefused(t *testing.T) {
+	const why = "the public schema is not the database user maktaba's to make again"
+	for name, c := range map[string]struct {
+		running string
+		inside  bool // of the kept release
+		check   func(context.Context, string) (bool, error)
+		want    string
+	}{
+		"not a Postgres of the person's own": {"0.3.0", false, nil, ""},
+		"made again":                         {"0.3.0", false, func(context.Context, string) (bool, error) { return false, nil }, ""},
+		"inside, by a release that can":      {"0.3.0", true, func(context.Context, string) (bool, error) { return true, nil }, ""},
+		"inside, by one from before":         {"0.3.0", false, func(context.Context, string) (bool, error) { return true, nil }, "0.2.0, the release that puts this backup back, cannot"},
+		"inside, by the one running":         {"0.2.0", false, func(context.Context, string) (bool, error) { return true, nil }, ""},
+		"not at all":                         {"0.2.0", true, func(context.Context, string) (bool, error) { return false, dbsafe.Cannot(why) }, why},
+		"no answer":                          {"0.3.0", false, func(context.Context, string) (bool, error) { return false, errors.New("connection refused") }, ""},
+	} {
+		e := newExitsRig(t)
+		e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
+		e.inst.running, e.inst.kept[0].Inside, e.r.check = c.running, c.inside, c.check
+		e.inst.kept[1].Schema = 141 // the other that could
+		_, err := e.r.restore(context.Background(), firstBackup, "admin", true, false)
+		if (c.want == "") != (err == nil) || err != nil && (restoreCode(err) != "restore_database_user" || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: %v", name, err)
+		}
+		if c.want != "" && (e.rec().State != apppayload.DatabaseMigrated || len(e.inst.ran) != 0) {
+			t.Errorf("%s: %+v", name, e.rec())
+		}
+	}
+}
+
+// When the release a backup was taken from cannot put it back inside public, another kept one of
+// its schema that can does, or the one running.
+func TestARestoreInsidePublicGoesToAReleaseThatCan(t *testing.T) {
+	for name, set := range map[string]func(e *exitsRig){
+		"another kept":    func(e *exitsRig) { e.inst.kept[1].Inside = true },
+		"the one running": func(e *exitsRig) { e.inst.running = "0.2.1" },
+	} {
+		e := newExitsRig(t)
+		e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
+		e.r.check = func(context.Context, string) (bool, error) { return true, nil }
+		set(e)
+		pl, err := e.r.plan(context.Background(), firstBackup) // taken from 0.2.0
+		if err != nil || pl.Release != "0.2.1" {
+			t.Errorf("%s: %+v %v", name, pl, err)
+		}
+		e.r.check = func(context.Context, string) (bool, error) { return false, nil }
+		if pl, err := e.r.plan(context.Background(), firstBackup); err != nil || pl.Release != "0.2.0" {
+			t.Errorf("%s, where it takes none of it: %+v %v", name, pl, err)
+		}
+	}
+}
+
+// The home's own restorer looks before a restore on a Postgres the home does not bundle, and on
+// no other.
+func TestNewRestorerLooksBeforeARestore(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Server.DataDir = t.TempDir()
+	for name, c := range map[string]struct {
+		db    *dbsafe.Target
+		looks bool
+	}{
+		"a person's own": {&dbsafe.Target{URL: "postgres://u@127.0.0.1:1/db"}, true},
+		"the bundled":    {&dbsafe.Target{URL: "postgres://u@127.0.0.1:1/db", Data: "/data/pg"}, false},
+		"none":           {nil, false},
+	} {
+		if r := newRestorer(cfg, c.db, nil, nil); (r.check != nil) != c.looks {
+			t.Errorf("%s: looks %v", name, r.check != nil)
+		}
+	}
+}
+
+// A restore inside public leaves the schema where it is: the table of the migrations tells the
+// database it left from the one before. A record from a release that did not look at the table
+// goes by the rest, and has it from then on.
+func TestTheTableTellsTheDataApart(t *testing.T) {
+	ctx := context.Background()
+	at := func(id string) dataProbe {
+		return dataProbe{identity: func(context.Context) (string, int64, error) { return id, 140, nil }}
+	}
+	for name, c := range map[string]struct {
+		rec       apppayload.Database
+		id        string
+		data, tbl string
+	}{
+		"the same":                           {apppayload.Database{DataID: "1/2/3", DataTable: "77"}, "1/2/3#77", apppayload.DataUntouched, "77"},
+		"put back inside public":             {apppayload.Database{DataID: "1/2/3", DataTable: "77", Data: apppayload.DataUntouched}, "1/2/3#99", apppayload.DataReplaced, "77"},
+		"another schema":                     {apppayload.Database{DataID: "1/2/3", DataTable: "77"}, "1/2/4#77", apppayload.DataReplaced, "77"},
+		"a record with no table":             {apppayload.Database{DataID: "1/2/3"}, "1/2/3#77", apppayload.DataUntouched, "77"},
+		"may be put back inside, and is not": {apppayload.Database{DataID: "1/2/3/inside", DataTable: "77"}, "1/2/3#77", apppayload.DataUntouched, "77"},
+		"asked with no database up":          {apppayload.Database{Data: apppayload.DataUntouched}, "1/2/3#77", apppayload.DataUntouched, "77"},
+	} {
+		rec, err := settleData(ctx, c.rec, at(c.id))
+		if err != nil || rec.Data != c.data || rec.DataTable != c.tbl || rec.DataID != "1/2/3" {
+			t.Errorf("%s: %+v %v", name, rec, err)
+		}
+	}
+	// put back inside public, the process gone before it could say so: a release that goes by
+	// DataID alone, and drops the table, reads another database, and so does this one after it
+	rec := replacing(apppayload.Database{DataID: "1/2/3", DataTable: "77", Data: apppayload.DataUntouched}, pgbundle.StepInside)
+	if rec.DataID == "1/2/3" || rec.Data != apppayload.DataReplaced {
+		t.Fatalf("%+v", rec)
+	}
+	for _, table := range []string{"77", ""} {
+		rec.DataTable = table
+		rec, err := settleData(ctx, rec, at("1/2/3#99"))
+		if err != nil || rec.Data != apppayload.DataReplaced {
+			t.Errorf("table %q: %+v %v", table, rec, err)
+		}
+	}
+	// the table dropped, it cannot be told even where nothing was committed
+	rec.DataTable = ""
+	if rec, err := settleData(ctx, rec, at("1/2/3#77")); err != nil || rec.Data != apppayload.DataReplaced {
+		t.Errorf("%+v %v", rec, err)
+	}
+	// and the record keeps it
+	e := newExitsRig(t)
+	e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
+	e.f.id, e.f.schema = "1/2/3#77", 149
+	if _, err := e.r.restore(ctx, firstBackup, "admin", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.rec(); rec.DataID != "1/2/3" || rec.DataTable != "77" {
+		t.Fatalf("%+v", rec)
 	}
 }
 

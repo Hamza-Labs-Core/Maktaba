@@ -32,7 +32,9 @@ Design: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.
 - **AC5** The scheduler ticks every minute and starts a run only when: `auto_install`, a target exists,
   its age ≥ `min_release_age_hours`, now inside `window` and ≥ 30 min before its end, `deferred_until`
   passed, no active run, every home role running and no crash in 10
-  min. *Amended (2026-10-28: a TV change never blocks an update):* a TV change never holds a
+  min. *Amended (2026-11-25):* nor while a joined machine copies a table of the home's database
+  (`machine_copying`: a `COPY` of a machine's replication role that runs now, never a slot), a day at
+  most. *Amended (2026-10-28: a TV change never blocks an update):* a TV change never holds a
   run (the `tv_change_in_flight` blocker is removed). The run starts; the TV change controller sets
   the change in flight aside while the update holds the TV (a draft or a ready one is left as it is, a
   staged or verifying one is cancelled cleanly back to draft with its staging slot released) and checks
@@ -43,8 +45,10 @@ Design: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.
 - **AC6** Just before starting, the GitHub release is re-read: gone, turned prerelease on `stable`, or a
   different `checksums.txt` → `withdrawn_at` set, not installed, notified.
 - **AC7** "Update now" (`POST /api/cluster/updates/run {version?, confirm:true}`, admin) skips only the
-  window and age conditions and a recent crash (the running release's, which the update may cure;
-  audited `update_past_recent_crash`); `POST /api/admin/system/update` maps to it and returns `{run_id}`.
+  window and age conditions, a recent crash (the running release's, which the update may cure;
+  audited `update_past_recent_crash`) and a machine's copy of the home's database (audited
+  `update_past_machine_copying`: it may take hours; the home's restart waits for it, 10 minutes at
+  most, then ends it, and that machine copies that table again); `POST /api/admin/system/update` maps to it and returns `{run_id}`.
 - **AC8** Skip (`/skip {version}`), defer (`/defer {until}`), pin (settings) are audited; a pin below the
   watermark is rejected (400 `pin_below_installed`); switching `beta → stable` never selects a lower
   version.

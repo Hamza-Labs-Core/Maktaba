@@ -248,7 +248,7 @@ func TestUpdateRehearsal19ConcurrentIndexBehindACopy(t *testing.T) {
 			t.Errorf("the log lacks %q", want)
 		}
 	}
-	if strings.Contains(log, "table syncs run (a machine copying the database)") {
+	if strings.Contains(log, "update_machine_copying") {
 		t.Errorf("the update waited for the slot of a machine that went away")
 	}
 	// while paused nothing of the copy ran: no migration had a walsender to end

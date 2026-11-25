@@ -19,6 +19,11 @@ when it lands later (`Migrator.Up` allows missing versions): Epic 50's 0050 can 
 Epic 51's 0051. `Up` then records the newest version last again: releases up to v0.3.163 take the
 version recorded last for the schema's, and are not ready on one that says less.
 
+A migration that may reach a database already past its number takes a number **above the newest**:
+`/readyz` (`Migrator.AtHead`) reads goose's current version, which is the last one applied, so after
+a lower one is applied late the role, and the release before it when a deploy goes back, answers
+`migrations_behind` ([#1715](https://github.com/Hamza-Labs-Core/Maktaba/issues/1715)).
+
 ## Concurrency
 
 `Migrator.Up` takes `pg_advisory_xact_lock(8472612)` in a transaction it keeps open for the
@@ -55,3 +60,4 @@ heartbeat.
 | 0051 | 51.14 usage data components | telemetry_server_reports.bundle and .components (a home's bundle and enabled component ids) |
 | 0053 | 53.16 problem reports | problem_reports (the reports homes chose to send, scrubbed; 90 days); symbol_tables (the symbols of a release's Apple dSYMs, Android R8 mappings and native libraries, for the reports' crashes; each table's kind and a library's whole build id) |
 | 0058 | 58.03 TV codes | tv_codes (the codes TVs show to sign in through the cloud: a home claims one and leaves it a sealed payload, delivered once; swept an hour after expiry) |
+| 0058 (`00580002`) | 25.2 account mails | mail_outbox (the mails to send and, for the limits, those of the last 35 days; sealed, the address hashed). Numbered after the newest, not in a slot of its own: see below |

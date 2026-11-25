@@ -20,13 +20,15 @@
 #            load and sizing), smoke on production (the same without the restart and the load)
 #   record   QA: the digests and the deploy tree that passed, for production's gate
 #
-# Secrets: RELAY_SSH_KEY (both nodes), CLOUDFLARE_DNS_TOKEN (Zone → DNS → Edit on maktaba.tv
+# Secrets: RESEND_API_KEY (each environment's own, qa and prod: the key its mails are sent with;
+# without it the node's mail driver stays log), TURNSTILE_SECRET_KEY and TURNSTILE_SITE_KEY (each
+# environment's own: the bot check on the web app's pages, off without both), RELAY_SSH_KEY (both nodes), CLOUDFLARE_DNS_TOKEN (Zone → DNS → Edit on maktaba.tv
 # and maktaba.dev; without it QA runs on Caddy's own CA and production does not deploy unless
 # the CLOUD_TLS variable is "http" with the records made by hand), MAKTABA_LICENSE_SIGNING_KEY
 # (the licence signing seed whose public half releases embed, docs/licensing.md: without it a
 # node signs with its own key, which no released home trusts), MAKTABA_SYMBOLS_TOKEN.
-# Variables: QA_HOST, QA_SSH_USER, QA_SSH_KNOWN_HOSTS; RELAY_HOST, RELAY_SSH_USER,
-# RELAY_SSH_KNOWN_HOSTS. Each target's names are in deploy/cloud-relay/targets/<target>.env.
+# Each environment's own secrets (qa, prod): NODE_HOST and NODE_KNOWN_HOSTS, the node's address and its
+# pinned host key. Each target's names are in deploy/cloud-relay/targets/<target>.env.
 name: Cloud deploy
 run-name: cloud deploy ${{ inputs.target || 'qa' }} ${{ inputs.tag || 'latest release' }}
 
@@ -297,33 +299,27 @@ jobs:
       - name: The target
         id: target
         env:
-          QA_HOST: ${{ vars.QA_HOST }}
-          QA_USER: ${{ vars.QA_SSH_USER }}
-          QA_KH: ${{ vars.QA_SSH_KNOWN_HOSTS }}
-          PROD_HOST: ${{ vars.RELAY_HOST }}
-          PROD_USER: ${{ vars.RELAY_SSH_USER }}
-          PROD_KH: ${{ vars.RELAY_SSH_KNOWN_HOSTS }}
+          # the target's environment has its own two (secrets, so that no public log prints them)
+          NODE_HOST: ${{ secrets.NODE_HOST }}
+          NODE_KNOWN_HOSTS: ${{ secrets.NODE_KNOWN_HOSTS }}
           HAS_DNS_TOKEN: ${{ secrets.CLOUDFLARE_DNS_TOKEN != '' }}
           CLOUD_TLS: ${{ vars.CLOUD_TLS }}
         run: |
           set -euo pipefail
           grep -E '^[A-Z_]+=' "deploy/cloud-relay/targets/$TARGET.env" >> "$GITHUB_ENV"
-          if [ "$TARGET" = prod ]; then host="$PROD_HOST" user="$PROD_USER" kh="$PROD_KH"; else host="$QA_HOST" user="$QA_USER" kh="$QA_KH"; fi
-          [ -n "$host" ] && [ -n "$user" ] && [ -n "$kh" ] || { echo "::error::the $TARGET host, user or known_hosts variable is not set"; exit 1; }
+          [ -n "$NODE_HOST" ] && [ -n "$NODE_KNOWN_HOSTS" ] || { echo "::error::the $TARGET environment's NODE_HOST or NODE_KNOWN_HOSTS secret is not set"; exit 1; }
           if [ "$HAS_DNS_TOKEN" = true ]; then tls=dns
           elif [ "$CLOUD_TLS" = http ]; then tls=http
           elif [ "$TARGET" = qa ]; then tls=internal
           else echo "::error::production needs public certificates: the CLOUDFLARE_DNS_TOKEN secret (or CLOUD_TLS=http with the records made by hand)"; exit 1
           fi
-          # every run's log is public; the node's address is nobody's business there
-          echo "::add-mask::$host"
           {
-            echo "NODE_IP=$host"
-            echo "NODE_USER=$user"
+            echo "NODE_IP=$NODE_HOST"
+            echo "NODE_USER=root"
             echo "RELAY_TLS=$tls"
           } >> "$GITHUB_ENV"
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "$kh" > ~/.ssh/known_hosts_node
+          printf '%s\n' "$NODE_KNOWN_HOSTS" > ~/.ssh/known_hosts_node
           echo "node: $TARGET, certificates: $tls"
 
       - name: SSH to the node (the pinned host key)
@@ -375,14 +371,24 @@ jobs:
         env:
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_TOKEN }}
           LICENSE_SIGNING_KEY: ${{ secrets.MAKTABA_LICENSE_SIGNING_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
           CLOUD_REF: ${{ needs.resolve.outputs.cloud_ref }}
           CADDY_REF: ${{ needs.resolve.outputs.caddy_ref }}
         run: |
           set -euo pipefail
+          # production without it would stop everyone's mail: a warning there
+          level=notice; [ "$TARGET" != prod ] || level=warning
+          [ -n "${RESEND_API_KEY:-}" ] || echo "::$level::the $TARGET environment has no RESEND_API_KEY: the node's mail driver is log (nothing is delivered)"
+          { [ -n "${TURNSTILE_SECRET_KEY:-}" ] && [ -n "${TURNSTILE_SITE_KEY:-}" ]; } || echo "::$level::the $TARGET environment has not both TURNSTILE_SECRET_KEY and TURNSTILE_SITE_KEY: the bot check is off, and strangers' mails have a smaller share"
           # the token on stdin, never on a command line; the names expand here, on purpose
           # shellcheck disable=SC2029
-          printf '%s\n%s\n' "${CF_API_TOKEN:-}" "${LICENSE_SIGNING_KEY:-}" | ssh node "read -r t; read -r k; \
-            [ -z \"\$t\" ] || export CF_API_TOKEN=\"\$t\"; [ -z \"\$k\" ] || export LICENSE_SIGNING_KEY=\"\$k\"; \
+          printf '%s\n' "${CF_API_TOKEN:-}" "${LICENSE_SIGNING_KEY:-}" "${RESEND_API_KEY:-}" "${TURNSTILE_SECRET_KEY:-}" "${TURNSTILE_SITE_KEY:-}" | \
+            ssh node "read -r t; read -r k; read -r m; read -r ts; read -r tk; \
+            [ -z \"\$t\" ] || export CF_API_TOKEN=\"\$t\"; [ -z \"\$k\" ] || export LICENSE_SIGNING_KEY=\"\$k\"; export RESEND_API_KEY=\"\$m\"; \
+            export TURNSTILE_SECRET_KEY=\"\$ts\" TURNSTILE_SITE_KEY=\"\$tk\"; \
+            MAIL_ALLOW='${MAIL_ALLOW:-}' MAIL_SUBJECT_PREFIX='${MAIL_SUBJECT_PREFIX:-}' MAIL_DAILY_LIMIT='${MAIL_DAILY_LIMIT:-}' MAIL_MONTHLY_LIMIT='${MAIL_MONTHLY_LIMIT:-}' \
             RELAY_DOMAIN='$RELAY_DOMAIN' API_DOMAIN='$API_DOMAIN' \
             APP_DOMAIN='$APP_DOMAIN' ACME_EMAIL='$ACME_EMAIL' RELAY_TLS='$RELAY_TLS' \
             RELAY_PLANS_ENFORCE='$RELAY_PLANS_ENFORCE' MAKTABA_CLOUD_TAG='$CLOUD_REF' MAKTABA_CADDY_TAG='$CADDY_REF' \
@@ -460,7 +466,7 @@ jobs:
         if: failure() || cancelled()
         run: |
           mkdir -p "$RUNNER_TEMP/e2e"
-          ssh node 'cd /opt/maktaba-relay && docker compose --env-file .env ps -a; docker compose --env-file .env logs --tail 300 --no-color' \
+          ssh node 'cd /opt/maktaba-relay && docker compose --env-file .env ps -a; docker compose --env-file .env logs --tail 300 --no-color; tail -n 300 /var/lib/maktaba-cloud-deploy/last-logs/*.log /var/lib/maktaba-cloud-deploy/last-logs.old/*.log 2>/dev/null' \
             </dev/null > "$RUNNER_TEMP/e2e/node-compose.log" 2>&1 || true
 
       - name: Commit (the node's set is this one)
@@ -495,8 +501,34 @@ jobs:
         if: always()
         run: rm -f ~/.ssh/node_key
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      # a log is masked, a file that is uploaded is not: ssh and a dial that fails name the address
+      - name: The node's address out of what is uploaded
+        id: cleaned
         if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/e2e"
+          known="$HOME/.ssh/known_hosts_node"
+          { printf '%s\n' "${NODE_IP:-}"
+            if [ -s "$known" ]; then
+              cut -d' ' -f3 "$known"
+              ssh-keygen -l -E sha256 -f "$known" | cut -d' ' -f2
+              ssh-keygen -l -E md5 -f "$known" | cut -d' ' -f2
+            fi
+          } | python3 -I -c '
+          import pathlib, sys
+          out = [w.encode() for w in sys.stdin.read().split()]
+          for f in pathlib.Path(sys.argv[1]).rglob("*"):
+              if f.is_file() and not f.is_symlink():
+                  data = new = f.read_bytes()
+                  for w in out:
+                      new = new.replace(w, b"***")
+                  if new != data:
+                      f.write_bytes(new)
+          ' "$RUNNER_TEMP/e2e"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.cleaned.outcome == 'success'
         with:
           name: e2e-${{ inputs.target || 'qa' }}
           path: ${{ runner.temp }}/e2e

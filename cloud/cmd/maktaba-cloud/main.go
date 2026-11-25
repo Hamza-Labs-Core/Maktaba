@@ -12,6 +12,7 @@
 //	maktaba-cloud migrate undo 500025 500026   (the Down scripts of these, when they lose nothing)
 //	maktaba-cloud staff add|grant|revoke|disable|enable|reset-mfa|unlock|list   # console staff (50.33)
 //	maktaba-cloud license issue|pubkey|revoke|unrevoke  # Epic 16 licenses
+//	maktaba-cloud mail status|test   # the account mails
 //	maktaba-cloud version
 package main
 
@@ -68,6 +69,8 @@ func main() {
 		runRelayDNS(os.Args[2:])
 	case "license":
 		runLicense(os.Args[2:])
+	case "mail":
+		runMail(os.Args[2:])
 	case "logs":
 		// W's role (53.17): every node's lines, kept and indexed
 		runLogs(os.Args[2:])
