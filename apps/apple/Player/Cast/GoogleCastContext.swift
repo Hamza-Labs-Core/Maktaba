@@ -7,7 +7,8 @@ import MaktabaKit
 /// receiver id (the SDK takes it at setup only, so an older home's cast goes to the same
 /// receiver as a plain load). Made only on an iPhone or iPad whose build names a receiver
 /// (`CastConfig.isEnabled`): an empty id never starts the SDK. Discovery starts after the
-/// local network screen (`CastController.interstitialContinued`), never at launch.
+/// local network screen (`CastController.interstitialContinued`), never at launch before it;
+/// once a person passed it, the SDK searches from the next launch on.
 @MainActor
 final class GoogleCastContext: NSObject, CastContexting {
     var events: ((CastEvent) -> Void)?
@@ -15,17 +16,25 @@ final class GoogleCastContext: NSObject, CastContexting {
     private var found: [String: GCKDevice] = [:]
     private var channel: GCKGenericChannel?
     private weak var media: GCKRemoteMediaClient?
+    #if DEBUG
+    /// Set before `make` by a UI test of the SDK itself (`-maktaba-cast real`).
+    static var watch: CastSDKWatch?
+    #endif
 
     private var cast: GCKCastContext { GCKCastContext.sharedInstance() }
 
     static func make(appID: String) -> GoogleCastContext {
         if !GCKCastContext.isSharedInstanceInitialized() {
-            let options = GCKCastOptions(discoveryCriteria: GCKDiscoveryCriteria(applicationID: appID))
+            let criteria = GCKDiscoveryCriteria(applicationID: appID)
+            let options = GCKCastOptions(discoveryCriteria: criteria)
             options.physicalVolumeButtonsWillControlDeviceVolume = true
             // the Player's own picker starts discovery, after the local network screen
             options.startDiscoveryAfterFirstTapOnCastButton = true
             GCKCastContext.setSharedInstanceWith(options)
             GCKLogger.sharedInstance().delegate = nil
+            #if DEBUG
+            if let watch, GCKCastContext.isSharedInstanceInitialized() { watch.start(criteria) }
+            #endif
         }
         let c = GoogleCastContext()
         c.cast.sessionManager.add(c)
@@ -133,6 +142,45 @@ final class GoogleCastContext: NSObject, CastContexting {
         }
     }
 }
+
+#if DEBUG
+extension GoogleCastContext {
+    var sdk: CastSDKState? {
+        guard let watch = Self.watch, GCKCastContext.isSharedInstanceInitialized() else { return nil }
+        let d = cast.discoveryManager
+        return CastSDKState(receivers: watch.receivers,
+                            running: d.discoveryState == .running && d.isDiscoveryActive(forDeviceCategory: kGCKCastDeviceCategory),
+                            errors: watch.errors, devices: devices.map(\.id))
+    }
+}
+
+/// Keeps why the SDK's Bonjour browser could not search, which only its log says: its
+/// discovery manager answers the same whether iOS lets it search or not.
+final class CastSDKWatch: NSObject, GCKLoggerDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var failed: Set<Int> = []
+    private var ids: [String] = []
+
+    var errors: [Int] { lock.withLock { failed.sorted() } }
+    var receivers: [String] { lock.withLock { ids } }
+
+    func start(_ criteria: GCKDiscoveryCriteria) {
+        let found = criteria.applicationIDs?.array as? [String] ?? []
+        lock.withLock { ids = found }
+        let filter = GCKLoggerFilter()
+        filter.minimumLevel = .verbose
+        let logger = GCKLogger.sharedInstance()
+        logger.filter = filter
+        logger.loggingEnabled = true
+        logger.delegate = self
+    }
+
+    func logMessage(_ message: String, at level: GCKLoggerLevel, fromFunction function: String, location: String) {
+        guard let code = CastSDKState.searchError(function: function, message: message) else { return }
+        lock.withLock { _ = failed.insert(code) }
+    }
+}
+#endif
 
 extension GoogleCastContext: @preconcurrency GCKDiscoveryManagerListener {
     func didUpdateDeviceList() { listChanged() }

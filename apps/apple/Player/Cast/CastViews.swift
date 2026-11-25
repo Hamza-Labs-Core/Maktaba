@@ -68,6 +68,28 @@ extension View {
     }
 }
 
+private extension View {
+    /// The SDK's own state for the UI tests of the real SDK (a Debug build only, and only when
+    /// such a test asked for it).
+    @ViewBuilder func castSDKState(_ cast: CastController) -> some View {
+        #if DEBUG
+        overlay(alignment: .topLeading) {
+            if cast.sdk != nil {
+                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                    Color.clear.frame(width: 1, height: 1)
+                        .accessibilityElement()
+                        .accessibilityLabel(Text(verbatim: "cast sdk"))
+                        .accessibilityValue(Text(verbatim: cast.sdk?.text ?? ""))
+                        .accessibilityIdentifier("cast.sdk")
+                }
+            }
+        }
+        #else
+        self
+        #endif
+    }
+}
+
 private struct CastSheets: ViewModifier {
     @Bindable var cast: CastController
     let player: AVPlayer?
@@ -122,6 +144,7 @@ struct CastInterstitial: View {
         }
         .padding(24)
         .frame(maxWidth: 520)
+        .castSDKState(cast)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("cast.interstitial")
     }
@@ -200,6 +223,7 @@ struct CastPicker: View {
             }
         }
         .accessibilityIdentifier("cast.picker")
+        .castSDKState(cast)
         .task {
             try? await Task.sleep(for: .seconds(5))
             looked = true

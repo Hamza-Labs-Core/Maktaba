@@ -11,10 +11,11 @@
 //
 // Every page is in English and Arabic: /x/ in English, /ar/x/ in Arabic (right to left), each
 // linking the other. A guide's Arabic is its twin file (name.ar.md), the changelog's is
-// CHANGELOG.ar.md, the API reference's prose is shared/api/openapi.ar.json, the wiki's is its
-// Arabic database (web/wiki-app/public/db/ar/, generated from the translation store in
-// docs/wiki/db/ar/), and the portal's own pages are scripts/strings.mjs. The parity checks
-// (scripts/parity.mjs) fail the build when the two languages drift.
+// CHANGELOG.ar.md and each fragment's own twin (changelog.d/, scripts/changelog.mjs), the API
+// reference's prose is shared/api/openapi.ar.json, the wiki's is its Arabic database
+// (web/wiki-app/public/db/ar/, generated from the translation store in docs/wiki/db/ar/), and
+// the portal's own pages are scripts/strings.mjs. The parity checks (scripts/parity.mjs) fail
+// the build when the two languages drift.
 //
 //   npm run build            (web/wiki-app needs `npm ci` once first)
 
@@ -30,6 +31,7 @@ const { renderSvg } = await import("../../../../tools/plugin-sdk/js/src/flowchar
 import { STRINGS } from "./strings.mjs";
 import { APPS, appShots } from "./apps.mjs";
 import { pluginFindings, pluginReference, readPluginSources } from "./plugins.mjs";
+import { changelogPage, checkFragments, fragmentReleases, readFragments } from "./changelog.mjs";
 import { scanDir } from "./scan.mjs";
 import { ORIGIN, isSafeUrl } from "./urls.mjs";
 import {
@@ -99,6 +101,10 @@ const GUIDES = {
   ],
   security: ["conformance.md"],
 };
+let released;
+/** The release that brought each fragment, read from git once. */
+const releasedFragments = () => (released ??= fragmentReleases(REPO));
+
 export const DOCS = [
   ...Object.entries(GUIDES).flatMap(([group, files]) =>
     files.map((file) => ({
@@ -120,6 +126,17 @@ export const DOCS = [
   {
     src: "CHANGELOG.md",
     ar: "CHANGELOG.ar.md",
+    // the file, and the fragments in changelog.d/ in their releases
+    gen: (lang) =>
+      changelogPage(
+        fs.readFileSync(
+          path.join(REPO, lang === "ar" ? "CHANGELOG.ar.md" : "CHANGELOG.md"),
+          "utf8"
+        ),
+        lang,
+        readFragments(REPO),
+        releasedFragments()
+      ),
     out: "changelog/",
     titleKey: "changelog.title",
     group: "changelog",
@@ -643,7 +660,7 @@ function renderDoc(doc, lang, published, groups) {
   const title = doc.titleKey
     ? t(doc.titleKey)
     : (md.match(/^# (.+)$/m)?.[1] ?? srcPath).replace(/[*`]/g, "");
-  const src = doc.gen ? `${GITHUB}/tree/main/${doc.source}` : `${GITHUB}/blob/main/${srcPath}`;
+  const src = doc.source ? `${GITHUB}/tree/main/${doc.source}` : `${GITHUB}/blob/main/${srcPath}`;
   const article = `<article class="doc">\n${html}\n<p class="note"><a href="${src}">${esc(t("doc.source"))}</a></p>\n</article>`;
   const group = groups.get(doc.group) ?? [];
   let body = article;
@@ -782,6 +799,7 @@ export function checkSources() {
   }
   findings.push(...pluginFindings(readPluginSources(REPO)));
   findings.push(...checkApps(APPS, appShots(), appImage));
+  findings.push(...checkFragments(readFragments(REPO)));
   findings.push(...checkChangelog(read("CHANGELOG.md"), read("CHANGELOG.ar.md")));
   findings.push(
     ...checkOverlay(
@@ -807,7 +825,7 @@ const fail = (what, findings) => {
 
 export function build() {
   for (const d of [
-    ...DOCS.filter((d) => !d.gen).flatMap((d) => [d.src, d.ar]),
+    ...DOCS.filter((d) => !d.source).flatMap((d) => [d.src, d.ar]),
     ...FILES.map((f) => f[0]),
   ]) {
     if (NEVER.some((re) => re.test(d))) throw new Error(`build: ${d} is never published`);
@@ -893,7 +911,7 @@ export function build() {
   buildWiki();
   pages.push(...LANGS.map((lang) => localPath(lang, "/wiki/")));
 
-  // Expires rolls with each build, and devportal-deploy.yml deploys monthly, so the live
+  // Expires rolls with each build, and devportal-deploy.yml deploys at least monthly, so the live
   // file is always 10 to 11 months from expiring. No date to edit by hand.
   const policy = readDisclosurePolicy();
   if (policy.expires.getTime() <= Date.now())
