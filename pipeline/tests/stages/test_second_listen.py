@@ -342,6 +342,51 @@ async def test_a_video_stopped_for_a_sentence_without_words_is_transcribed_again
     assert fake.calls == 2 and len(heard) == 2
 
 
+@pytest.mark.parametrize("tries", [0, 1])
+@pytest.mark.asyncio
+async def test_a_job_queued_before_the_update_leaves_it_to_transcribe(
+    db: Database,
+    tmp_path: Path,
+    fake: FakeTranscriber,
+    monkeypatch: pytest.MonkeyPatch,
+    tries: int,
+) -> None:
+    """The sweep takes the mark but leaves a video with an open job alone: that job does not
+    hear the old words, makes no try, and the next sweep queues transcribe."""
+    heard = _hears(monkeypatch)
+    rt = await core_runtime(db)
+    vid = await _left_out(db, rt, tmp_path, monkeypatch, tr.NO_WORDS_BEFORE)
+    res = await enqueue_job(
+        db,
+        subject_kind="video",
+        subject_id=vid,
+        stage="second_listen",
+        payload={tr.RELISTEN: True},
+    )
+    await db.execute(
+        "UPDATE relisten_attempts SET attempts = 2, stopped_at = NULL, ended_at = NULL,"
+        " wait_s = 3600, last_job_id = $2 WHERE video_id = $1",
+        str(vid),
+        res.job_id,
+    )
+    assert await _sweep(db, monkeypatch) == 0 and await _fixed(db) == 1
+    await db.execute(
+        "UPDATE relisten_attempts SET attempts = $2 WHERE video_id = $1", str(vid), tries
+    )
+    assert await drain_core(db, rt, only={"transcribe", "second_listen"}) == ["second_listen"]
+    assert heard == [] and fake.calls == 1
+    meta = _meta(await _active(db, vid))
+    assert meta["refine"]["skipped"] == tr.NO_WORDS_BEFORE and "words" not in meta
+
+    assert await _sweep(db, monkeypatch) == 1
+    made = await db.fetchval("SELECT attempts FROM relisten_attempts WHERE video_id = $1", str(vid))
+    assert made == 1  # this one's
+    ran = await drain_core(db, rt, only={"transcribe", "second_listen"})
+    assert ran == ["transcribe", "second_listen"] and fake.calls == 2 and len(heard) == 1
+    assert _meta(await _active(db, vid))["refine"]["source"] == "hf"
+    assert await _sweep(db, monkeypatch) == 0
+
+
 @pytest.mark.asyncio
 async def test_a_video_stopped_for_another_reason_stays_stopped(
     db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch

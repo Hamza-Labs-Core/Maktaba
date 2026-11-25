@@ -546,9 +546,10 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
     ``finished_at``; now when the job is gone), so a job that waited in the queue does not
     use up the wait. A job that ended without running (``skipped_unchanged``: workers
     without the second listen, or without room for it, gave it back until it was a day
-    old) was no try, and does not count. Returns how many."""
+    old) was no try, and does not count; nor does a second listen that left its
+    transcript to be transcribed again (``waiting_inputs``), which nothing waits after. Returns how many."""
     rows = await db.fetch(
-        "SELECT r.video_id, r.attempts, r.wait_s, j.finished_at, j.outcome"
+        "SELECT r.video_id, r.attempts, r.wait_s, j.stage, j.finished_at, j.outcome"
         " FROM relisten_attempts r LEFT JOIN processing_jobs j ON j.id = r.last_job_id"
         f" WHERE r.ended_at IS NULL AND NOT {_open_job('r.video_id')}"
     )
@@ -556,7 +557,9 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
 
     for r in rows:
         ended = parse_ts(r["finished_at"]) or now()
-        wait = r["wait_s"]
+        # (transcribe's own waiting_inputs, for extract's WAV, is a try: extract queues it)
+        left = r["stage"] == "second_listen" and r["outcome"] == "waiting_inputs"
+        wait = 0.0 if left else r["wait_s"]
         if wait is None:  # a try queued before slot 0146
             wait = compute_backoff(
                 max(1, int(r["attempts"])),
@@ -572,7 +575,7 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
             uid(r["video_id"]),
             to_ts(db, ended),
             to_ts(db, ended + timedelta(seconds=float(wait))),
-            1 if r["outcome"] == "skipped_unchanged" else 0,
+            1 if left or r["outcome"] == "skipped_unchanged" else 0,
         )
     return len(rows)
 
@@ -657,16 +660,17 @@ async def _retranscribe_wordless(db: Any) -> int:
         )
         if seen is None:
             return 0
+        # transcripts first, as both stages' stores take them
+        rows = await db.fetch(
+            f"UPDATE transcripts SET metadata = {unmarked}"
+            f" WHERE is_active AND {reason} = $1 RETURNING video_id",
+            NO_WORDS_BEFORE,
+        )
         await db.execute(
             "UPDATE relisten_attempts SET attempts = 0, stopped_at = NULL, next_at = $1"
             f" WHERE video_id IN (SELECT video_id FROM transcripts WHERE is_active"
             f" AND {reason} = $2)",
             at,
-            NO_WORDS_BEFORE,
-        )
-        rows = await db.fetch(
-            f"UPDATE transcripts SET metadata = {unmarked}"
-            f" WHERE is_active AND {reason} = $1 RETURNING video_id",
             NO_WORDS_BEFORE,
         )
     if rows:

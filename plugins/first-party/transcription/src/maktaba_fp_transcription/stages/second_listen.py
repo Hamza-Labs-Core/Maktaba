@@ -149,6 +149,19 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     if isinstance(refine, dict) and refine.get("source") in ("hf", "share"):
         # corrected already (by this stage, or inside transcribe before the split)
         return StageResult(output_hash=out, summary={"second_listen": "done already"})
+    if (
+        isinstance(refine, dict)
+        and refine.get("skipped") == tr.NO_WORDS_BEFORE
+        and "words" not in meta
+    ):
+        # its words are another sentence's (issue #1756): a job queued before the sweep took
+        # their mark (tr._retranscribe_wordless) leaves it, no try made, and the sweep
+        # transcribes it again
+        return StageResult(
+            output_hash=out,
+            outcome="waiting_inputs",
+            summary={"second_listen": "left to be transcribed again"},
+        )
     fingerprint = await input_fingerprint(db, job.subject)
     relisten = bool((job.payload or {}).get(tr.RELISTEN))
     if not tr.runs_second_listen():

@@ -135,9 +135,11 @@ def test_merge_respells_what_cohere_heard() -> None:
 
 def test_chunks_group_whole_sentences_up_to_the_limit() -> None:
     ss = [sentence("ا ب", 0), sentence("ج د", 10), sentence("ه و", 25), sentence("ز", 40)]
-    ss.insert(2, Sentence(20, 21, "…", -1, 0.9, None))  # no words: splits the stretch
+    ss.insert(2, Sentence(20, 21, "بلا كلمات", -1, 0.9, None))  # no words: splits the stretch
     assert rf.chunks(ss, limit=28) == [[0, 1], [3, 4]]
     assert rf.chunks(ss, limit=10) == [[0], [1], [3], [4]]
+    ss[2].text = "…"  # nothing said there: it ends no stretch
+    assert rf.chunks(ss, limit=28) == [[0, 1, 3], [4]]
 
 
 def transcript(*ss: Sentence) -> Transcript:

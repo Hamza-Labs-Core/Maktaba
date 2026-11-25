@@ -258,7 +258,8 @@ def chunks(sentences: Sequence[Sentence], limit: float = CHUNK_SEC) -> list[list
     """Consecutive sentences grouped into stretches of at most ``limit`` seconds (a
     longer sentence is a stretch on its own). A sentence whose words do not cover it
     (:func:`~.word_data.covers`) is left out: there is nothing to align it on. No stretch
-    runs over one: what it says would be merged into its neighbours."""
+    runs over one: what it says would be merged into its neighbours. One of punctuation
+    alone says nothing: it is left out, and ends no stretch."""
     out: list[list[int]] = []
     cur: list[int] = []
     usable = [covers(s.text, s.words) for s in sentences]
@@ -268,6 +269,8 @@ def chunks(sentences: Sequence[Sentence], limit: float = CHUNK_SEC) -> list[list
         if not ok and spoken(s.text)
     )
     for i, s in enumerate(sentences):
+        if not spoken(s.text):  # punctuation alone: nothing to hear, so it ends no stretch
+            continue
         if not usable[i] or _hits(unheard, *_span(s)):
             if cur:
                 out.append(cur)
