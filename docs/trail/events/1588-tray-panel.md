@@ -23,6 +23,8 @@ The second build story of the approved desktop design (#1556), D2.
 - **A panel that re-renders on every download percent must not move focus on render**: focus only when it opens.
 - **Lazy chunks are a failure point for a tiny always-ready window**: import it statically.
 - **Focus set in a passive effect races the first picture**: CI met the panel before its first action had the focus. `useLayoutEffect` sets it with the first picture, so a key pressed at once is not lost either.
+- **The window-state plugin restores a window inside its own build**, whatever the builder says: one with no state kept is shown with the focus, one with a state gets its physical size back on any scale. A shell window with a size of its own goes on its denylist.
+- **`emit_to` is not private**: a page that listens for every window's events hears it too. An event carries nothing, and the page asks the shell.
 
 ## Keep doing
 - A pure placement function with table tests for every taskbar edge and screen; the window code only applies it.
