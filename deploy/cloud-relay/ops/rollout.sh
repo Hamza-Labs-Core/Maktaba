@@ -400,6 +400,7 @@ cmd_apply() {
 	# </dev/null everywhere: this script can reach bash on stdin, and a command that read it would
 	# end the deploy at exit 0 with nothing rolled out
 	dc run --rm -T --no-deps maktaba-cloud migrate --config /etc/maktaba/cloud/cloud.toml up </dev/null || fail "a migration failed"
+	sync # its container's removal (heal_docker)
 	log "the stack"
 	dc up -d --wait --remove-orphans </dev/null || fail "the stack does not come up healthy"
 	log "its health, for ${WATCH_SECONDS} s"

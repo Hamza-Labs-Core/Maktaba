@@ -14,6 +14,7 @@ whatever it had not written to its disk. The node must come back to a known stat
 """
 from __future__ import annotations
 
+import difflib
 import io
 import json
 import os
@@ -253,8 +254,8 @@ def snapshot() -> str:
 
 def same(before: str) -> None:
     after = snapshot()
-    assert before == after, "the node is not what it was:\n" + "\n".join(
-        f"- {a}\n+ {b}" for a, b in zip(before.splitlines(), after.splitlines()) if a != b)
+    diff = [line[:240] for line in difflib.unified_diff(before.splitlines(), after.splitlines(), lineterm="", n=0)][2:]
+    assert before == after, "the node is not what it was:\n" + "\n".join(diff)[:3000]
 
 
 def status() -> str:
@@ -348,12 +349,14 @@ def half_removed_container() -> str:
     """The power goes while a container is removed: its layer is gone, its folder is back. Docker lists it
     and knows nothing of it; compose can do nothing while it does."""
     before = snapshot()
-    half = (f"cd {DEPLOY} && c=$(docker compose --env-file .env ps -q --no-trunc worker) && [ ${{#c}} = 64 ] && "
-            "cp -a /var/lib/docker/containers/$c /root/half && docker rm -f $c >/dev/null && mv /root/half /var/lib/docker/containers/$c && sync")
-    for deployed in (False, True):  # a node that serves, and one in a deploy's tests
+    half = ("[ ${#c} = 64 ] && cp -a /var/lib/docker/containers/$c /root/half && docker rm -f $c >/dev/null && "
+            "mv /root/half /var/lib/docker/containers/$c && sync && docker ps -aq --no-trunc")
+    one_off = "docker compose --env-file .env run -d -T --no-deps maktaba-cloud migrate --config /etc/maktaba/cloud/cloud.toml up </dev/null 2>/dev/null"
+    for deployed, which in ((False, "docker compose --env-file .env ps -q --no-trunc worker"),  # a role, on a node that serves
+                            (True, f"docker inspect --format '{{{{.Id}}}}' $({one_off})")):  # the migrations' container, in a deploy
         if deployed:
             live("expand")
-        on(half)
+        on(f"cd {DEPLOY} && c=$({which}) && {half}")
         power_cut()
         settled()
         same(before)
