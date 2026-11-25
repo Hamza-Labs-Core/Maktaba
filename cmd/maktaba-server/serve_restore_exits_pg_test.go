@@ -226,8 +226,10 @@ var pgDamages = []damage{
 	{"a table's rows are cut", "external without psql", cutRows, apppayload.DataGone, "db_restore_backup_gone"},
 	// the bundled one is checked before it takes the database's place
 	{"it comes out not whole", "bundled", shortRows, apppayload.DataUntouched, "db_restore_backup_failed"},
-	// another is committed first
-	{"it comes out not whole", "external|external without psql", shortRows, apppayload.DataReplaced, "db_restore_backup_part"},
+	// another's rows are counted before its commit
+	{"it comes out not whole", "external", shortRows, apppayload.DataUntouched, "db_restore_backup_failed"},
+	// without psql it is committed first
+	{"it comes out not whole", "external without psql", shortRows, apppayload.DataReplaced, "db_restore_backup_part"},
 	{"the database dropped for room, then no room all the same", "bundled", func(e *pgExits) func() {
 		prev := restoreDump
 		restoreDump = func(ctx context.Context, b pgbundle.Bundle, _ string, before func(string) error, _ io.Writer) error {

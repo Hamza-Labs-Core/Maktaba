@@ -344,25 +344,47 @@ func VerifyRestore(ctx context.Context, dump, list string, query QueryFunc) erro
 	return m
 }
 
+// wantRows are the rows each table of the dump is to hold, by its counts (none: it has none).
+func wantRows(dump, list string) (map[string]int64, error) {
+	var dataTables []string
+	for _, e := range ParseTOC(list) {
+		if e.Desc == "TABLE DATA" && e.Schema == "public" {
+			dataTables = append(dataTables, e.Name)
+		}
+	}
+	return wantOf(dump, dataTables)
+}
+
+// wantOf is wantRows of the tables whose rows pg_dump wrote, and the chunked ones.
+func wantOf(dump string, dataTables []string) (map[string]int64, error) {
+	counts, err := readCounts(dump)
+	if err != nil {
+		return nil, err
+	}
+	want := map[string]int64{}
+	for _, t := range dataTables {
+		if n, ok := counts["public."+t]; ok {
+			want["public."+t] = n
+		}
+	}
+	for table := range Chunks(dump) {
+		if n, ok := counts[table]; ok {
+			want[table] = n
+		}
+	}
+	return want, nil
+}
+
 // verifyRows checks every table's rows against the dump's counts; a dump without them: the
 // chunked tables hold rows when their chunks do (the outage's empty segment_embeddings).
 func verifyRows(ctx context.Context, dump string, dataTables []string, query QueryFunc, m *Missing) error {
-	counts, err := readCounts(dump)
+	want, err := wantOf(dump, dataTables)
 	if err != nil {
 		return err
 	}
-	want := map[string]int64{}
-	if counts != nil {
-		for _, t := range dataTables {
-			if n, ok := counts["public."+t]; ok {
-				want["public."+t] = n
-			}
-		}
-	}
 	nonEmpty := map[string]bool{}
 	for table, files := range Chunks(dump) {
-		if n, ok := counts[table]; ok {
-			want[table] = n
+		if _, ok := want[table]; ok {
 			continue
 		}
 		var size int64

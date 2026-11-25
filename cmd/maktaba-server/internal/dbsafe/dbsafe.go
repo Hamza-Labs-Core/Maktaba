@@ -617,6 +617,9 @@ func (t Target) restoreInto(ctx context.Context, db, dump string) error {
 	if len(chunks) == 0 {
 		return restore()
 	}
+	if err := pgbundle.CheckChunks(dump, ""); err != nil {
+		return err
+	}
 	if err := restore("--section=pre-data", "--section=data"); err != nil {
 		return err
 	}
@@ -697,8 +700,15 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 	if _, err := os.Stat(dump); err != nil {
 		return err
 	}
-	// a damaged dump is refused before the database is touched
-	if err := pgbundle.CheckCounts(dump); err != nil {
+	// a damaged dump is refused before anything is touched
+	list, err := t.list(ctx, dump)
+	if err == nil {
+		err = pgbundle.CheckCounts(dump)
+	}
+	if err == nil {
+		err = pgbundle.CheckChunks(dump, list)
+	}
+	if err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
 	}
 	d, err := t.open(ctx, "")
@@ -715,7 +725,7 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 	_, _ = d.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 		WHERE datname = current_database() AND pid <> pg_backend_pid()`)
 	if havePSQL(t.bin("psql")) {
-		if err := t.restoreAtomic(ctx, dump, tell, log); err != nil {
+		if err := t.restoreAtomic(ctx, dump, list, tell, log); err != nil {
 			return err
 		}
 		_, _ = d.ExecContext(ctx, `ANALYZE`)
@@ -926,13 +936,14 @@ var havePSQL = func(psql string) bool {
 // committed. A psql that stops first (an
 // SQL error, ON_ERROR_STOP) stops pg_restore too (it would write into a pipe nobody reads
 // for ever), and its own words are the error. The dump is streamed
-// in its sections: its tables, their rows (copyScan reads them too: one whose rows are cut short
-// goes no further), a \copy of each chunk of its chunked tables (pgbundle.Chunked), then its
-// indexes and constraints.
-func (t Target) restoreAtomic(ctx context.Context, dump string, tell func(step string) error, log io.Writer) error {
+// in three parts: its tables and their rows (copyScan reads them too: one whose rows are cut
+// short goes no further), a \copy of each chunk of its chunked tables (pgbundle.Chunked;
+// CheckChunks refused a damaged one before), with every table's rows counted, and its indexes
+// and constraints.
+func (t Target) restoreAtomic(ctx context.Context, dump, list string, tell func(step string) error, log io.Writer) error {
 	pctx, kill := context.WithCancel(ctx)
 	defer kill()
-	list, err := t.list(ctx, dump)
+	counts, err := pgbundle.CountsScript(dump, list)
 	if err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
 	}
@@ -942,8 +953,8 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, tell func(step s
 			tables++
 		}
 	}
-	const chunkPart = "" // marks the chunks, after the other tables' rows
-	parts := []string{"pre-data", "data", chunkPart, "post-data"}
+	// one run of the tables and their rows: pg_restore gives their grants after them both
+	const dataPart, chunkPart, postPart = 0, 1, 2
 	cmd, err := t.command(pctx, "psql", "", "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1", "--file=-")
 	if err != nil {
 		return err
@@ -999,14 +1010,19 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, tell func(step s
 		"\\warn " + at.word + " :mk_pid :mk_server\nDROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"); err != nil {
 		return stopped(err)
 	}
-	for _, section := range parts {
-		if section == chunkPart {
-			if err := write(pgbundle.CopyScript(pgbundle.Chunks(dump))); err != nil {
+	for part := dataPart; part <= postPart; part++ {
+		args := []string{"--no-owner", "--no-publications", "--section=post-data", "--file=-", dump}
+		switch part {
+		case chunkPart:
+			// the chunks, then every table's rows counted, before the indexes are built
+			if err := write(pgbundle.CopyScript(pgbundle.Chunks(dump)) + counts); err != nil {
 				return stopped(err)
 			}
 			continue
+		case dataPart:
+			args = []string{"--no-owner", "--no-publications", "--section=pre-data", "--section=data", "--file=-", dump}
 		}
-		gen := exec.CommandContext(pctx, t.bin("pg_restore"), "--no-owner", "--no-publications", "--section="+section, "--file=-", dump)
+		gen := exec.CommandContext(pctx, t.bin("pg_restore"), args...)
 		script, err := gen.StdoutPipe()
 		if err != nil {
 			return stopped(err)
@@ -1031,7 +1047,7 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, tell func(step s
 			<-ended
 			return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
 		}
-		if section == "data" {
+		if part == dataPart {
 			if err := scan.whole(tables); err != nil {
 				// psql takes what comes next for rows: nothing more goes to it
 				kill()

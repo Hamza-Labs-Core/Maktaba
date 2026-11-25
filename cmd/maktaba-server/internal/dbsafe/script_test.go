@@ -11,6 +11,9 @@ func TestCopyScan(t *testing.T) {
 		return "--\n-- Data for Name: " + table + "; Type: TABLE DATA; Schema: public; Owner: -\n--\n\nCOPY public." + table +
 			" (id, title) FROM stdin;\n" + rows + "\\.\n\n\n"
 	}
+	cut := func(table, rows string) string { // its COPY's end is not there
+		return strings.TrimSuffix(block(table, rows), "\\.\n\n\n")
+	}
 	head := "SET statement_timeout = 0;\nSELECT pg_catalog.set_config('search_path', '', false);\n"
 	end := "SELECT pg_catalog.setval('public.s', 1, true);\n--\n-- PostgreSQL database dump complete\n--\n\n"
 	for name, c := range map[string]struct {
@@ -23,10 +26,11 @@ func TestCopyScan(t *testing.T) {
 		"a row that looks like a COPY":    {head + block("a", "COPY public.b (id) FROM stdin;\n") + end, 1, true},
 		"a row that looks like an end":    {head + block("a", "1\t\\\\.\n") + end, 1, true},
 		"a very long row":                 {head + block("a", "1\t"+strings.Repeat("x", 3<<20)+"\n") + block("b", "2\ty\n") + end, 2, true},
+		"a function that holds a COPY":    {head + "CREATE FUNCTION public.f() RETURNS text LANGUAGE sql AS $$\nSELECT '\nCOPY public.b (id) FROM stdin;\n'\n$$;\n" + block("a", "1\n") + "GRANT SELECT ON TABLE public.a TO r;\n" + end, 1, true},
 		"no rows at all":                  {head + end, 0, true},
-		"the last table cut":              {head + block("a", "1\tx\n") + "COPY public.b (id) FROM stdin;\n2", 2, false},
-		"the last table cut, then SQL":    {head + "COPY public.b (id) FROM stdin;\n2\n" + end, 1, false},
-		"a table cut, the next one whole": {head + "COPY public.a (id) FROM stdin;\n1\n" + block("b", "2\ty\n") + end, 2, false},
+		"the last table cut":              {head + block("a", "1\tx\n") + cut("b", "2"), 2, false},
+		"the last table cut, then SQL":    {head + cut("b", "2\n") + end, 1, false},
+		"a table cut, the next one whole": {head + cut("a", "1\n") + block("b", "2\ty\n") + end, 2, false},
 		"a table's rows missing":          {head + block("a", "1\tx\n") + end, 2, false},
 	} {
 		for _, size := range []int{1, 7, 4096, 1 << 30} {
