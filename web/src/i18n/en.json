@@ -3774,6 +3774,7 @@
   "updates.blocker.recent_crash": "a part of the home's server crashed in the last ten minutes",
   "updates.blocker.supervisor_unreachable": "the home's supervisor does not answer",
   "updates.blocker.switchover_open": "the home is being switched to another machine",
+  "updates.blocker.machine_copying": "a machine is copying the home's database: the update starts once its copy is done",
   "updates.tick.notStarted": "Not started now: {reason}",
   "updates.blocked.title": "{version} is blocked: {reason}",
   "updates.blocked.reason.attempts": "it failed in three windows",

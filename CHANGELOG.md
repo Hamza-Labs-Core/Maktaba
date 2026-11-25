@@ -4621,6 +4621,16 @@ when the two differ.
   launcher or release puts it back from. A held update stays held when the switch back
   fails. In English and Arabic.
 
+- **An update's migrations no longer fight the machines' copies of the home's database.** An
+  automatic update waits while a machine is still making its copy of a table, and the
+  migrations wait up to 10 minutes for such copies, then keep the machines' copies out until the
+  database is settled (an update that stopped and asks included), so a copy no longer comes
+  straight back or holds an index build up. Since the
+  migrations run with the library stopped, their index builds now run plainly: they wait for no
+  older session and leave no half-built index behind. The machines go on from where they
+  stopped. The Updates page says when an update waits for a machine's copy, in English and
+  Arabic.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

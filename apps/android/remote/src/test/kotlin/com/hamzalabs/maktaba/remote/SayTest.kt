@@ -322,6 +322,14 @@ class SayTest {
         assertEquals("solar flare", ar.trigger("solar_flare"))
     }
 
+    // research item 5: an automatic update that waits for a machine's copy of the database
+    @Test
+    fun aMachineCopyingIsSaid() {
+        val id = WebWords.blocker.getValue("machine_copying")
+        assertTrue(XmlLookup.english.text(id).contains("copying the home's database"))
+        assertTrue(XmlLookup.arabic.text(id).contains("ينسخ قاعدة بيانات"))
+    }
+
     // #1605: an update that stopped and asks says why (nothing put back by itself)
     @Test
     fun aHeldUpdateSaysWhy() {

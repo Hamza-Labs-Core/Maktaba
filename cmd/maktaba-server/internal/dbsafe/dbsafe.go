@@ -494,7 +494,11 @@ func (t Target) rehearse(ctx context.Context, api, dir string, maxBytes int64, l
 	defer cancel()
 	// the URL in the environment without its password, never on the command line
 	cmd := exec.CommandContext(mctx, api, "migrate", "--dir", dir, "--timeout", "30m", "up")
-	env, err := dsn.ProcessEnv(append(withoutNodeMode(os.Environ()), "DATABASE_URL="+scratchURL), config.KeysDir())
+	// the scratch copy has no other user, and the update's own migrations run with the
+	// library stopped: both build their indexes plainly (api/migrate_offline.go), so the
+	// rehearsal runs what the update will
+	env, err := dsn.ProcessEnv(append(withoutNodeMode(os.Environ()), "DATABASE_URL="+scratchURL,
+		"MAKTABA_MIGRATE_OFFLINE=1"), config.KeysDir())
 	if err != nil {
 		return r, err
 	}

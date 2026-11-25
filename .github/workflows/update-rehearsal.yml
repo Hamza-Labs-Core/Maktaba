@@ -392,9 +392,10 @@ jobs:
           MAKTABA_TEST_PG_HOME: ${{ env.KIT }}/pg18
         run: |
           set -o pipefail
-          go test -count=1 -timeout 20m -run '^(TestMigrationsDownAfterPartialUp|TestHomeFailureOf0235UndoneByDownScripts)$' -v . 2>&1 | tee "$RUNNER_TEMP/down.out"
+          go test -count=1 -timeout 20m -run '^(TestMigrationsDownAfterPartialUp|TestHomeFailureOf0235UndoneByDownScripts|TestOfflineRepairOfARecordedInvalidIndexWaitsForNoSnapshot)$' -v . 2>&1 | tee "$RUNNER_TEMP/down.out"
           grep -q -- '--- PASS: TestMigrationsDownAfterPartialUp' "$RUNNER_TEMP/down.out"
           grep -q -- '--- PASS: TestHomeFailureOf0235UndoneByDownScripts' "$RUNNER_TEMP/down.out"
+          grep -q -- '--- PASS: TestOfflineRepairOfARecordedInvalidIndexWaitsForNoSnapshot' "$RUNNER_TEMP/down.out"
 
       - name: Pack the kit
         run: tar -C "$KIT/.." -cf "$RUNNER_TEMP/rh-kit.tar" "$(basename "$KIT")"

@@ -3774,6 +3774,7 @@
   "updates.blocker.recent_crash": "تعطّل جزء من خادم المنزل خلال الدقائق العشر الأخيرة",
   "updates.blocker.supervisor_unreachable": "مشرف المنزل لا يجيب",
   "updates.blocker.switchover_open": "يجري نقل المنزل إلى جهاز آخر",
+  "updates.blocker.machine_copying": "جهاز ينسخ قاعدة بيانات الجهاز الرئيسي: يبدأ التحديث حين تنتهي نسخته",
   "updates.tick.notStarted": "لم يبدأ الآن: {reason}",
   "updates.blocked.title": "{version} محظور: {reason}",
   "updates.blocked.reason.attempts": "فشل في ثلاث نوافذ",

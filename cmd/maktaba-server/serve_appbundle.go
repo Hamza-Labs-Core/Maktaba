@@ -891,9 +891,13 @@ const migrateLockTimeout = "2m"
 // bounds an update's: updater.pendingCap), but none waits on another session's lock
 // longer than migrateLockTimeout. Their output goes to the server's log; an error
 // carries their last lines.
+//
+// The library is stopped while they run (this step runs before any role), so they build
+// their indexes plainly, not CONCURRENTLY (MAKTABA_MIGRATE_OFFLINE: api/migrate_offline.go):
+// a plain build waits for no older snapshot and leaves no INVALID index when it is cut short.
 func runMigrateUp(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout, "up")
-	cmd.Env, cmd.Dir = api.Env, api.Dir
+	cmd.Env, cmd.Dir = append(envOrOS(api.Env), envMigrateOffline+"=1"), api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
 	cmd.Stderr = cmd.Stdout
@@ -912,11 +916,24 @@ func runMigrateUp(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	return errors.New(msg)
 }
 
+// envMigrateOffline tells `maktaba-api migrate up` that nothing else uses the database
+// (api/migrate_offline.go): its CREATE INDEX CONCURRENTLY statements run as plain builds.
+const envMigrateOffline = "MAKTABA_MIGRATE_OFFLINE"
+
+// envOrOS is env, or this process's environment when env is nil (exec.Cmd's own rule),
+// copied so an append never writes into the caller's.
+func envOrOS(env []string) []string {
+	if env == nil {
+		return os.Environ()
+	}
+	return append([]string(nil), env...)
+}
+
 // runDropInvalid is `maktaba-api migrate drop-invalid` with the api's binary and
 // environment: the INVALID indexes the pending migrations' cancelled builds left, dropped.
 func runDropInvalid(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout, "drop-invalid")
-	cmd.Env, cmd.Dir = api.Env, api.Dir
+	cmd.Env, cmd.Dir = append(envOrOS(api.Env), envMigrateOffline+"=1"), api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
 	cmd.Stderr = cmd.Stdout
@@ -1019,6 +1036,15 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	// a restart of Postgres (the machines' reach changed) would cut the dump, the
 	// migrations or a restore short: it waits until this step is done
 	defer pgbundle.Hold()()
+	// the machines' copies come back once the step leaves a settled schema
+	defer func() {
+		if g.api != nil && ctx.Err() == nil {
+			if err == nil {
+				clearDownFailed(g.stateDir) // this release's migrations ran to their end
+			}
+			g.resumeCopies()
+		}
+	}()
 	cur := g.version
 	rec, err := g.record()
 	if err != nil {
@@ -1040,6 +1066,12 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 			return supervisor.Halt(downgrade(cur, rec))
 		}
 		return nil
+	}
+	switch rec.State {
+	case apppayload.DatabaseMigrating, apppayload.DatabaseRestoring, apppayload.DatabaseHeld:
+		// a schema part way (migrations cut short, a restore not done, a held update): the
+		// machines' copies wait until it is settled
+		g.pauseCopies(ctx, 0)
 	}
 	// a start of another release that never finished (stopped during its dump, or the
 	// launcher went back from it) ends failed: this start is cur's
@@ -1189,6 +1221,12 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		report(detail("db_checking", "Checking the library database", cur))
 	}
 	migStart := time.Now()
+	if migrating {
+		// the machines' copies wait out their table syncs, then pause until the schema is
+		// settled: the migrations done, or undone (their Down scripts, backWithoutDump, wait
+		// on the same locks), or a person's choice on a held update carried out (run)
+		g.pauseCopies(ctx, copySyncWait)
+	}
 	err = g.migrate(ctx, cur, migrating, report)
 	if err == nil && migrating {
 		// the update's migrations, for /metrics (story 35.15)

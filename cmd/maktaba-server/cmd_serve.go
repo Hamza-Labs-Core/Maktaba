@@ -548,6 +548,8 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		// what the cluster's machines may reach of it follows the cluster: it listens
 		// beyond this machine only while one may connect (a start again to change that)
 		go pg.WatchReach(ctx, pgbundle.ReachEvery, func() error { return sup.Restart(supervisor.RolePostgres, "") }, os.Stderr)
+		// and no machine's copy stays kept out of it once its schema is settled
+		go pg.WatchCopies(ctx, pgbundle.CopiesEvery, func() bool { return schemaSettled(cfg.StateDir()) }, os.Stderr)
 	}
 	var stopCopy func()
 	if cp != nil {

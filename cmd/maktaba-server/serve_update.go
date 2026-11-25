@@ -546,7 +546,12 @@ func startUpdates(ctx context.Context, cfg config.Config, releaseDir string, hom
 	m.Packs = &updater.Packs{M: newPacksManager(cfg, releaseDir, os.Stderr), Source: src}
 	if home {
 		m.Records = recordFile(apppayload.DatabasePath(cfg.StateDir()))
-		m.MigrateDown = u.migrateDown
+		m.MigrateDown = func(ctx context.Context, j *updater.Journal, schema int64) error {
+			// the machines' copies pause for the Down scripts too (no wait for their table
+			// syncs: the home is down until it is back; such a machine copies its table again)
+			g := &migrationGate{stateDir: cfg.StateDir(), version: j.From, pg: pg, log: os.Stderr}
+			return u.migrateDown(ctx, j, schema, g)
+		}
 		u.r = newRestorer(cfg, homeDatabase(cfg, pg), inst, exit)
 		u.r.run = func() *updater.Journal { return m.Status().Journal }
 		if t := homeDatabase(cfg, pg); t != nil {
@@ -664,8 +669,11 @@ func (u *updates) setAPI(procs []supervisor.Process) {
 // migrateDown runs this release's Down scripts back to schema (updater.Machine.MigrateDown):
 // the api, the pipeline and the streaming role stop first (their writes, and the locks the
 // ALTERs wait for), then `maktaba-api migrate down-to schema` runs with this release's
-// migrations, the ones that made the schema.
-func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema int64) error {
+// migrations, the ones that made the schema. The machines' copies are paused meanwhile
+// (migrationGate.pauseCopies), and stay so when a Down script
+// failed.
+func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema int64,
+	g *migrationGate) error {
 	u.mu.Lock()
 	api := u.api
 	u.mu.Unlock()
@@ -675,7 +683,19 @@ func (u *updates) migrateDown(ctx context.Context, _ *updater.Journal, schema in
 	if err := u.stopDatabaseRoles(ctx); err != nil {
 		return err
 	}
-	return runMigrateDownTo(ctx, api, schema, os.Stderr)
+	defer pgbundle.Hold()()
+	g.pauseCopies(ctx, 0)
+	if err := runMigrateDownTo(ctx, api, schema, os.Stderr); err != nil {
+		// the copies stay paused: the schema is part way (the update is held, when it has a
+		// backup to hold for)
+		if nerr := noteDownFailed(g.stateDir); nerr != nil {
+			fmt.Fprintf(os.Stderr, "[serve] level=error the Down script that failed cannot be recorded: %v\n", nerr)
+		}
+		return err
+	}
+	clearDownFailed(g.stateDir)
+	g.resumeCopies()
+	return nil
 }
 
 // runMigrateDownTo is `maktaba-api migrate down-to schema` with the api's binary,
@@ -702,7 +722,8 @@ var runMigrateDownTo = func(ctx context.Context, api *exec.Cmd, schema int64, lo
 var runMigrateUndoFailed = func(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout,
 		"undo-failed")
-	cmd.Env, cmd.Dir = withoutEnv(api.Env, "MAKTABA_DISABLE_DOWN"), api.Dir
+	// offline: what it drops or builds again of the INVALID leftovers, it does plainly
+	cmd.Env, cmd.Dir = append(withoutEnv(envOrOS(api.Env), "MAKTABA_DISABLE_DOWN"), envMigrateOffline+"=1"), api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
 	cmd.Stderr = cmd.Stdout
