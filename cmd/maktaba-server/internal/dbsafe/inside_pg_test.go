@@ -86,7 +86,21 @@ func (r *insideRig) schema(t *testing.T) string {
 		t.Fatalf("%v %s", err, errs.String())
 	}
 	// pg_dump's word of its own each time, and the parentheses an expression read again loses
-	return regexp.MustCompile(`(?m)^\\(un)?restrict .*$|[()]`).ReplaceAllString(out.String(), "")
+	text := regexp.MustCompile(`(?m)^\\(un)?restrict .*$|[()]`).ReplaceAllString(out.String(), "")
+	// grants on the schema taken back and made again are in another order
+	lines := strings.Split(text, "\n")
+	var at []int
+	var grants []string
+	for i, l := range lines {
+		if strings.HasPrefix(l, "GRANT USAGE ON SCHEMA public ") {
+			at, grants = append(at, i), append(grants, l)
+		}
+	}
+	slices.Sort(grants)
+	for i, n := range at {
+		lines[n] = grants[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (r *insideRig) extensions(t *testing.T) string {
@@ -120,6 +134,7 @@ const leftInPublic = `
 	ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO PUBLIC;
 	ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE ON TYPES TO maktaba_worker;
 	GRANT SELECT ON users TO maktaba_worker;
+	REVOKE USAGE ON SCHEMA public FROM maktaba_worker;
 	ALTER TABLE videos ADD COLUMN after_col after_enum;
 	DROP TABLE app_settings CASCADE;`
 
@@ -285,6 +300,7 @@ func TestRestoreInsidePublicIsRefusedUpFront(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.exec(t, r.t, `DROP EXTENSION pgstattuple`)
+	r.exec(t, r.tg, `CREATE TYPE mine_t AS ENUM ('a')`)
 	noPSQL := r.tg
 	noPSQL.Bin = func(n string) string {
 		if n == "psql" {
@@ -305,8 +321,12 @@ func TestRestoreInsidePublicIsRefusedUpFront(t *testing.T) {
 	for name, c := range map[string]struct{ do, undo, dump, want string }{
 		"another's table":                    {`CREATE TABLE public.theirs (id int)`, `DROP TABLE public.theirs`, dump, "table public.theirs (" + pgbundle.SuperUser + ")"},
 		"another's function":                 {`CREATE FUNCTION public.theirs() RETURNS int LANGUAGE sql AS 'SELECT 1'`, `DROP FUNCTION public.theirs()`, dump, "function public.theirs()"},
-		"another's default privileges":       {`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO maktaba_worker`, `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE SELECT ON TABLES FROM maktaba_worker`, dump, "the default privileges of " + pgbundle.SuperUser},
 		"an extension the database lacks":    {`SELECT 1`, `SELECT 1`, more, "the extension pgstattuple, which the database lacks"},
+		"another's view elsewhere":           {`CREATE SCHEMA rep; CREATE VIEW rep.v AS SELECT id FROM public.users`, `DROP SCHEMA rep CASCADE`, dump, "view rep.v (" + pgbundle.SuperUser + ")"},
+		"another's column of a type there":   {`CREATE TYPE public.mine AS ENUM ('a'); ALTER TYPE public.mine OWNER TO ` + pgbundle.AppRole + `; CREATE SCHEMA rep; CREATE TABLE rep.t (id int, c public.mine)`, `DROP SCHEMA rep CASCADE; DROP TYPE public.mine`, dump, "table column rep.t.c (" + pgbundle.SuperUser + ")"},
+		"another's partition":                {`CREATE TABLE public.parts (id int) PARTITION BY RANGE (id); ALTER TABLE public.parts OWNER TO ` + pgbundle.AppRole + `; CREATE SCHEMA rep; CREATE TABLE rep.p PARTITION OF public.parts FOR VALUES FROM (0) TO (9); INSERT INTO rep.p VALUES (1)`, `DROP TABLE public.parts; DROP SCHEMA rep`, dump, "table rep.p (" + pgbundle.SuperUser + ")"},
+		"another's key to a table there":     {`CREATE SCHEMA rep; CREATE TABLE rep.k (id uuid REFERENCES public.videos (id))`, `DROP SCHEMA rep CASCADE`, dump, "rep.k (" + pgbundle.SuperUser + ")"},
+		"a member of an extension":           {`CREATE FUNCTION public.member(a public.mine_t) RETURNS int LANGUAGE sql AS 'SELECT 1'; ALTER EXTENSION pgcrypto ADD FUNCTION public.member(public.mine_t)`, `ALTER EXTENSION pgcrypto DROP FUNCTION public.member(public.mine_t); DROP FUNCTION public.member(public.mine_t)`, dump, "extension pgcrypto"},
 		"a public it may make nothing in":    {`ALTER SCHEMA public OWNER TO ` + pgbundle.SuperUser + `; REVOKE CREATE ON SCHEMA public FROM PUBLIC, ` + pgbundle.AppRole, `ALTER SCHEMA public OWNER TO pg_database_owner`, dump, "GRANT CREATE ON SCHEMA public TO " + pgbundle.AppRole},
 		"another's with the schema in order": {`CREATE TYPE public.theirs AS ENUM ('a')`, `DROP TYPE public.theirs`, dump, "type public.theirs"},
 	} {
@@ -410,4 +430,229 @@ func TestRestoreInsideAnothersPublic(t *testing.T) {
 		coalesce(to_regclass('public.more')::text, '')`).Scan(&rows, &owner, &more); err != nil || rows != 1 || owner != pgbundle.SuperUser || more != "" {
 		t.Fatalf("%d rows, public is %s's, more %q, %v", rows, owner, more, err)
 	}
+}
+
+// Grants on an extension's own objects, which its owner made, are the owner's: a user who could
+// only be warned of them is given the whole backup without them, and it is found whole.
+func TestRestoreLeavesOthersGrantsOut(t *testing.T) {
+	ctx := context.Background()
+	restored := func(t *testing.T, tg Target, dump string) {
+		t.Helper()
+		for range 2 {
+			var log bytes.Buffer
+			if err := tg.Restore(ctx, dump, &log); err != nil {
+				t.Fatalf("%v\n%s", err, log.String())
+			}
+		}
+	}
+	const onAll = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO maktaba_worker`
+	t.Run("demoted", func(t *testing.T) { // who made 0103's grants on them; then an administrator made the extension again
+		r := newInsideRig(t)
+		r.exec(t, r.t, `ALTER ROLE `+pgbundle.AppRole+` SUPERUSER`)
+		r.exec(t, r.tg, onAll)
+		r.exec(t, r.t, `ALTER ROLE `+pgbundle.AppRole+` NOSUPERUSER`)
+		dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+		if err := r.tg.Dump(ctx, dump); err != nil {
+			t.Fatal(err)
+		}
+		ext := r.one(t, `SELECT e.extname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+			WHERE n.nspname = 'public' AND e.extname IN ('vector', 'pageinspect')`)
+		r.exec(t, r.t, `DROP EXTENSION `+ext+` CASCADE; CREATE EXTENSION `+ext+` SCHEMA public`)
+		restored(t, r.tg, dump)
+	})
+	t.Run("new database", func(t *testing.T) {
+		r := newInsideRig(t)
+		of := func(db string) (super, plain Target) {
+			t.Helper()
+			r.exec(t, r.t, `CREATE DATABASE `+db+` OWNER `+pgbundle.AppRole+` TEMPLATE template0`)
+			t.Cleanup(func() {
+				if d, err := r.t.open(ctx, ""); err == nil {
+					_, _ = d.Exec(`DROP DATABASE IF EXISTS ` + db + ` WITH (FORCE)`)
+					_ = d.Close()
+				}
+			})
+			super, plain = r.t, r.tg
+			var err error
+			if super.URL, err = r.t.urlFor(db); err != nil {
+				t.Fatal(err)
+			}
+			if plain.URL, err = r.tg.urlFor(db); err != nil {
+				t.Fatal(err)
+			}
+			r.exec(t, super, `CREATE EXTENSION pageinspect SCHEMA public`)
+			return super, plain
+		}
+		super, plain := of("grants_from")
+		r.exec(t, plain, `CREATE TABLE own (id int); INSERT INTO own VALUES (1), (2);
+			CREATE FUNCTION mine(a int) RETURNS int LANGUAGE sql AS 'SELECT 1'; REVOKE EXECUTE ON FUNCTION mine(int) FROM PUBLIC`)
+		r.exec(t, super, onAll)
+		dump := filepath.Join(r.t.Backups, "from.dump")
+		if err := plain.Dump(ctx, dump); err != nil {
+			t.Fatal(err)
+		}
+		super, plain = of("grants_to")
+		restored(t, plain, dump)
+		d, err := super.open(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer d.Close()
+		var rows int
+		var mine string
+		if err := d.QueryRow(`SELECT (SELECT count(*) FROM own), (SELECT proacl::text FROM pg_proc WHERE proname = 'mine')`).Scan(&rows, &mine); err != nil ||
+			rows != 2 || !strings.Contains(mine, "maktaba_worker=X") || strings.Contains(mine, "{=X") {
+			t.Fatalf("%d rows, the user's own function's grants %s, %v", rows, mine, err)
+		}
+	})
+	t.Run("taken back", func(t *testing.T) {
+		r := newInsideRig(t)
+		fn := r.one(t, `SELECT p.oid::regprocedure::text FROM pg_proc p JOIN pg_depend x ON x.classid = 'pg_proc'::regclass AND x.objid = p.oid AND x.deptype = 'e'
+			JOIN pg_extension e ON e.oid = x.refobjid WHERE e.extname IN ('vector', 'pageinspect') ORDER BY 1 LIMIT 1`)
+		r.exec(t, r.t, `GRANT EXECUTE ON FUNCTION `+fn+` TO maktaba_worker`)
+		dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+		if err := r.tg.Dump(ctx, dump); err != nil {
+			t.Fatal(err)
+		}
+		r.exec(t, r.t, `REVOKE EXECUTE ON FUNCTION `+fn+` FROM maktaba_worker`)
+		restored(t, r.tg, dump)
+	})
+	t.Run("trusted", func(t *testing.T) { // a trusted one, in a public that is the user's
+		r := newInsideRig(t)
+		r.exec(t, r.t, `CREATE DATABASE grants_trusted OWNER `+pgbundle.AppRole+` TEMPLATE template0`)
+		t.Cleanup(func() {
+			if d, err := r.t.open(ctx, ""); err == nil {
+				_, _ = d.Exec(`DROP DATABASE IF EXISTS grants_trusted WITH (FORCE)`)
+				_ = d.Close()
+			}
+		})
+		super, plain := r.t, r.tg
+		var err error
+		if super.URL, err = r.t.urlFor("grants_trusted"); err != nil {
+			t.Fatal(err)
+		}
+		if plain.URL, err = r.tg.urlFor("grants_trusted"); err != nil {
+			t.Fatal(err)
+		}
+		r.exec(t, plain, `CREATE EXTENSION hstore; CREATE TABLE own (id int, h hstore); INSERT INTO own VALUES (1, 'a=>1')`)
+		r.exec(t, super, onAll)
+		dump := filepath.Join(r.t.Backups, "trusted.dump")
+		if err := plain.Dump(ctx, dump); err != nil {
+			t.Fatal(err)
+		}
+		if inside, err := plain.CheckRestore(ctx, dump); err != nil || inside {
+			t.Fatalf("inside %v, %v", inside, err)
+		}
+		restored(t, plain, dump)
+	})
+}
+
+// Default privileges of another user, an administrator's for this one or for all it makes, are
+// neither in the way nor taken: a backup with them goes in without, and those there stay.
+func TestRestoreLeavesOthersDefaultPrivileges(t *testing.T) {
+	r := newInsideRig(t)
+	ctx := context.Background()
+	const common = `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ` + pgbundle.AppRole
+	r.exec(t, r.t, common+`; ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO maktaba_worker`)
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.tg.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	want := r.schema(t)
+	if err := r.tg.Restore(ctx, dump, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.schema(t); got != want {
+		t.Fatalf("another schema:\n%s", diffLines(want, got))
+	}
+	// in the backup only
+	r.exec(t, r.t, strings.Replace(common, "GRANT ALL ON TABLES TO", "REVOKE ALL ON TABLES FROM", 1)+
+		`; ALTER DEFAULT PRIVILEGES REVOKE SELECT ON TABLES FROM maktaba_worker`)
+	want = r.schema(t)
+	if err := r.tg.Restore(ctx, dump, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.schema(t); got != want {
+		t.Fatalf("then: another schema:\n%s", diffLines(want, got))
+	}
+}
+
+// A backup that needs an extension the database lacks is refused up front, where public is the
+// user's to make again too.
+func TestRestoreRefusesAMissingExtension(t *testing.T) {
+	r := newInsideRig(t)
+	ctx := context.Background()
+	if _, err := r.db.Exec(`CREATE DATABASE lacks_check OWNER ` + pgbundle.AppRole + ` TEMPLATE template0`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if d, err := r.t.open(ctx, ""); err == nil {
+			_, _ = d.Exec(`DROP DATABASE IF EXISTS lacks_check WITH (FORCE)`)
+			_ = d.Close()
+		}
+	})
+	super, plain := r.t, r.tg
+	var err error
+	if super.URL, err = r.t.urlFor("lacks_check"); err != nil {
+		t.Fatal(err)
+	}
+	if plain.URL, err = r.tg.urlFor("lacks_check"); err != nil {
+		t.Fatal(err)
+	}
+	r.exec(t, super, `CREATE EXTENSION pageinspect; CREATE EXTENSION hstore`)
+	r.exec(t, plain, `CREATE TABLE own (id int); INSERT INTO own VALUES (1)`)
+	dump := filepath.Join(r.t.Backups, "lacks.dump")
+	if err := plain.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	r.exec(t, super, `DROP EXTENSION pageinspect; DROP EXTENSION hstore`)
+	noPSQL := plain
+	noPSQL.Bin = func(n string) string {
+		if n == "psql" {
+			return filepath.Join(t.TempDir(), "no-such-psql")
+		}
+		return r.t.bin(n)
+	}
+	for _, tg := range []Target{plain, noPSQL} {
+		if err := tg.Restore(ctx, dump, nil); !CannotRestore(err) || !strings.Contains(err.Error(), "the extension pageinspect, which the database lacks") {
+			t.Fatal(err)
+		}
+	}
+	// made there by one who may, with a trusted one the user makes itself, it goes on
+	r.exec(t, super, `CREATE EXTENSION pageinspect`)
+	if err := plain.Restore(ctx, dump, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The script that empties public stops, with nothing dropped, when an extension would go with it,
+// or something is there when it ends: what the look before it did not see.
+func TestEmptyPublicStops(t *testing.T) {
+	r := newInsideRig(t)
+	ctx := context.Background()
+	run := func(want string) {
+		t.Helper()
+		d, err := r.t.open(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer d.Close()
+		tx, err := d.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = tx.Exec(emptyPublic())
+		_ = tx.Rollback()
+		if want == "" && err != nil || want != "" && (err == nil || !strings.Contains(err.Error(), want)) {
+			t.Fatalf("%v, want %q", err, want)
+		}
+	}
+	run("")
+	r.exec(t, r.t, `CREATE TYPE public.mine_t AS ENUM ('a'); CREATE FUNCTION public.member(a public.mine_t) RETURNS int LANGUAGE sql AS 'SELECT 1';
+		ALTER EXTENSION pgcrypto ADD FUNCTION public.member(public.mine_t)`)
+	run("an extension depends on")
+	r.exec(t, r.t, `ALTER EXTENSION pgcrypto DROP FUNCTION public.member(public.mine_t)`)
+	r.exec(t, r.t, `CREATE SCHEMA hook; CREATE FUNCTION hook.again() RETURNS event_trigger LANGUAGE plpgsql AS $$ BEGIN CREATE TABLE IF NOT EXISTS public.again (id int); END $$;
+		CREATE EVENT TRIGGER again ON sql_drop EXECUTE FUNCTION hook.again()`)
+	defer r.exec(t, r.t, `DROP EVENT TRIGGER again`)
+	run("could not be emptied")
 }

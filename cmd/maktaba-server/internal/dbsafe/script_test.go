@@ -107,3 +107,21 @@ func TestWithoutItems(t *testing.T) {
 		t.Error("changed though nothing of it is there")
 	}
 }
+
+// What a grant of a dump is on, as the item that defines it names it.
+func TestGrantedOn(t *testing.T) {
+	for _, c := range [][4]string{
+		{"FUNCTION", "f(a integer, b public.vector)", "FUNCTION", "f"},
+		{"AGGREGATE", "agg(*)", "FUNCTION", "agg"},
+		{"PROCEDURE", `"Odd ""One"()`, "FUNCTION", `Odd "One`},
+		{"TABLE", `"Odd Name"`, "TABLE", "Odd Name"},
+		{"MATERIALIZED VIEW", "m", "TABLE", "m"},
+		{"COLUMN", "users.password_hash", "TABLE", "users"},
+		{"DOMAIN", "d", "TYPE", "d"},
+		{"SCHEMA", "public", "", ""},
+	} {
+		if kind, of := grantedOn(c[0], c[1]); kind != c[2] || of != c[3] {
+			t.Errorf("%s %s: %q %q", c[0], c[1], kind, of)
+		}
+	}
+}

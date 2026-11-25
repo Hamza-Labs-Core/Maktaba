@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -1351,12 +1352,54 @@ func TestARestoreTheUserCouldNotDoIsRefused(t *testing.T) {
 		e := newExitsRig(t)
 		e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
 		e.inst.running, e.inst.kept[0].Inside, e.r.check = c.running, c.inside, c.check
+		e.inst.kept[1].Schema = 141 // the other that could
 		_, err := e.r.restore(context.Background(), firstBackup, "admin", true, false)
 		if (c.want == "") != (err == nil) || err != nil && (restoreCode(err) != "restore_database_user" || !strings.Contains(err.Error(), c.want)) {
 			t.Errorf("%s: %v", name, err)
 		}
 		if c.want != "" && (e.rec().State != apppayload.DatabaseMigrated || len(e.inst.ran) != 0) {
 			t.Errorf("%s: %+v", name, e.rec())
+		}
+	}
+}
+
+// When the release a backup was taken from cannot put it back inside public, another kept one of
+// its schema that can does, or the one running.
+func TestARestoreInsidePublicGoesToAReleaseThatCan(t *testing.T) {
+	for name, set := range map[string]func(e *exitsRig){
+		"another kept":    func(e *exitsRig) { e.inst.kept[1].Inside = true },
+		"the one running": func(e *exitsRig) { e.inst.running = "0.2.1" },
+	} {
+		e := newExitsRig(t)
+		e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
+		e.r.check = func(context.Context, string) (bool, error) { return true, nil }
+		set(e)
+		pl, err := e.r.plan(context.Background(), firstBackup) // taken from 0.2.0
+		if err != nil || pl.Release != "0.2.1" {
+			t.Errorf("%s: %+v %v", name, pl, err)
+		}
+		e.r.check = func(context.Context, string) (bool, error) { return false, nil }
+		if pl, err := e.r.plan(context.Background(), firstBackup); err != nil || pl.Release != "0.2.0" {
+			t.Errorf("%s, where it takes none of it: %+v %v", name, pl, err)
+		}
+	}
+}
+
+// The home's own restorer looks before a restore on a Postgres the home does not bundle, and on
+// no other.
+func TestNewRestorerLooksBeforeARestore(t *testing.T) {
+	cfg := config.Config{}
+	cfg.Server.DataDir = t.TempDir()
+	for name, c := range map[string]struct {
+		db    *dbsafe.Target
+		looks bool
+	}{
+		"a person's own": {&dbsafe.Target{URL: "postgres://u@127.0.0.1:1/db"}, true},
+		"the bundled":    {&dbsafe.Target{URL: "postgres://u@127.0.0.1:1/db", Data: "/data/pg"}, false},
+		"none":           {nil, false},
+	} {
+		if r := newRestorer(cfg, c.db, nil, nil); (r.check != nil) != c.looks {
+			t.Errorf("%s: looks %v", name, r.check != nil)
 		}
 	}
 }

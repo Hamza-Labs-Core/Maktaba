@@ -763,7 +763,7 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 			return err
 		}
 		_, _ = d.ExecContext(ctx, `ANALYZE`)
-		return t.verifyRestore(ctx, d, dump)
+		return t.verifyRestore(ctx, d, dump, how.list)
 	}
 	if err := tell(pgbundle.StepGone); err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
@@ -786,7 +786,7 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 		return fmt.Errorf("pg_restore %s: %v: %s", dump, err, tail(out.Bytes()))
 	}
 	_, _ = d.ExecContext(ctx, `ANALYZE`)
-	return t.verifyRestore(ctx, d, dump)
+	return t.verifyRestore(ctx, d, dump, how.list)
 }
 
 // psqlLookEvery is how often a restore looks at its psql's session (tests look more often),
@@ -908,14 +908,10 @@ func (s *signal) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// verifyRestore checks the database put back against the dump (pgbundle.VerifyRestore:
-// every object, grant and default privilege, every table's rows): a restore is recorded
-// done only when it is whole, and one that is not says what it lacks.
-func (t Target) verifyRestore(ctx context.Context, d *sql.DB, dump string) error {
-	toc, err := t.list(ctx, dump)
-	if err != nil {
-		return err
-	}
+// verifyRestore checks the database put back against the dump, by the list it was restored by
+// (pgbundle.VerifyRestore: every object, grant and default privilege, every table's rows): a
+// restore is recorded done only when it is whole, and one that is not says what it lacks.
+func (t Target) verifyRestore(ctx context.Context, d *sql.DB, dump, toc string) error {
 	query := func(ctx context.Context, q string) ([]string, error) {
 		rows, err := d.QueryContext(ctx, q)
 		if err != nil {

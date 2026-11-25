@@ -249,7 +249,10 @@ func (r *restorer) plan(ctx context.Context, name string) (restorePlan, error) {
 	if err != nil {
 		return restorePlan{}, err
 	}
-	if err := r.mayRestore(ctx, p, rel); err != nil {
+	if rel, err = r.mayRestore(ctx, p, rel, func() (updater.KeptRelease, error) {
+		able := slices.DeleteFunc(slices.Clone(kept), func(k updater.KeptRelease) bool { return !r.restoresInside(k) })
+		return chooseRelease(able, schema, b.From)
+	}); err != nil {
 		return restorePlan{}, err
 	}
 	pl := restorePlan{Backup: name, Schema: schema, Release: rel.Version, Running: r.running(), At: st.ModTime().UTC()}
@@ -267,22 +270,33 @@ func (r *restorer) plan(ctx context.Context, name string) (restorePlan, error) {
 	return pl, nil
 }
 
-// mayRestore refuses a backup that the database's user could not put back on release rel, before
-// the home restarts on it for that. A database that does not answer now says nothing: the restore
-// itself looks again before it touches anything.
-func (r *restorer) mayRestore(ctx context.Context, path string, rel updater.KeptRelease) error {
+// mayRestore is the release that can put a backup back as the database's user: rel, or, when it
+// takes a restore inside public that rel does not do, another that does (able). It refuses when
+// there is none, before the home restarts for it. A database that does not answer now says
+// nothing: the restore itself looks again before it touches anything.
+func (r *restorer) mayRestore(ctx context.Context, path string, rel updater.KeptRelease, able func() (updater.KeptRelease, error)) (updater.KeptRelease, error) {
 	if r.check == nil {
-		return nil
+		return rel, nil
 	}
 	inside, err := r.check(ctx, path)
 	switch {
 	case dbsafe.CannotRestore(err):
-		return refuse("restore_database_user", "the database cannot take the backup back as it is: %v", err)
-	case err == nil && inside && !rel.Inside && !sameRelease(rel.Version, r.running()):
-		return refuse("restore_database_user", "the database's user may not make the public schema and its extensions again, and "+
-			"%s, the release that puts this backup back, cannot do without: make the user a superuser for the restore", rel.Version)
+		return rel, refuse("restore_database_user", "the database cannot take the backup back as it is: %v", err)
+	case err == nil && inside && !r.restoresInside(rel):
+		other, oerr := able()
+		if oerr != nil {
+			return rel, refuse("restore_database_user", "the database's user may not make the public schema and its extensions again, "+
+				"and %s, the release that puts this backup back, cannot do without, nor is another kept that can: put back a backup "+
+				"that a newer release puts back, or make the user a superuser for the restore", rel.Version)
+		}
+		return other, nil
 	}
-	return nil
+	return rel, nil
+}
+
+// restoresInside reports whether release k can put a backup back inside public.
+func (r *restorer) restoresInside(k updater.KeptRelease) bool {
+	return k.Inside || sameRelease(k.Version, r.running())
 }
 
 // journal is the update run under way, nil when none is.

@@ -432,14 +432,16 @@ an operator made it) stay, but for one that depends on an extension in `public`.
 **A database user who may not make `public` again** (no superuser, with an extension in it that needs one,
 as pgvector does, or a schema that is another's) has the backup put back inside it. In the same transaction
 what is in `public` and no extension's own is dropped (tables, views, sequences, functions, types and the
-like, and the default privileges there), and the dump goes in without the items that make the schema and
+like, and the user's default privileges there), and the dump goes in without the items that make the schema and
 the extensions: they stay, at the version they have (a dump does not say which its data needs; one it
 cannot use is an error, and nothing is committed). Refused before anything is touched, with the reason, when
-it cannot work: no `psql`, something in `public` or a default privilege there that is another user's, no
-`CREATE` on `public`, an extension the backup needs and the database lacks, rows of an extension's own
-table. The same is looked at when the restore is asked (`restore_database_user`), and a release from before
-this (no `restore_protocol` in its `release.json`, nor in its migrations' `meta/restore.json`) is not asked
-to do it. The migrations' own table tells such a database from the one before (`data_table`), since the
+it cannot work: no `psql`; something in `public` that is another user's, or something of another's elsewhere
+that would go with what is there (a view on a table, a column of a type, a partition); no `CREATE` on
+`public`; an extension the backup needs that the database lacks and cannot have; rows of an extension's own
+table. For any user who is no superuser, the grants on an extension's own objects that are another's, and
+other users' default privileges, are left out of what is put back, and stay as they are there. The same is looked at when the restore is asked (`restore_database_user`). A release from before this (no
+`restore_protocol` in its `release.json`, nor in its migrations' `meta/restore.json`) is not asked to do it:
+another kept one of the backup's schema that can is, or the running one. The migrations' own table tells such a database from the one before (`data_table`), since the
 schema stays; and before the commit the record's `data_id` gets a mark, so a release that goes by that
 alone takes it for another database and never offers to give the restore up. The rehearsal on a copy is skipped for a user who may not make the extensions in a scratch
 database, and says so: it does not fail the update.
