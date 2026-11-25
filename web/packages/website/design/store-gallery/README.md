@@ -30,7 +30,7 @@ make test-tokens
 | PNG (`png/`, `.en` and `.ar`)               | Shows                                                                             |
 | ------------------------------------------- | --------------------------------------------------------------------------------- |
 | `apple-player-iphone`                       | the Player's 7 shots at 1320 × 2868 (the required 1206 × 2622 is the same layout) |
-| `apple-player-ipad`                         | the iPad Player's 7 at 2752 × 2064                                                |
+| `apple-player-ipad`                         | the Player's 7 on iPad (one universal app) at 2752 × 2064                         |
 | `apple-player-mac`                          | the Mac Player's 6 at 2880 × 1800                                                 |
 | `apple-remote-iphone`                       | the Remote's 6                                                                    |
 | `apple-tv`                                  | the TV's 7 at 3840 × 2160, captioned                                              |

@@ -4,11 +4,9 @@ SwiftUI apps that talk to a home's REST API, like the TV apps.
 
 | Scheme | Platform | Bundle ID | What it is |
 |---|---|---|---|
-| Maktaba Player | iPhone (iPhone Duo included) | `com.hamzalabs.maktaba.player` | browse and watch |
-| Maktaba Player iPad | iPad | `com.hamzalabs.maktaba.player.tablet` | browse and watch |
+| Maktaba Player | iPhone (iPhone Duo included) and iPad: one universal app | `com.hamzalabs.maktaba.player` | browse and watch |
 | Maktaba Player Mac | macOS 15+, Apple silicon | `com.hamzalabs.maktaba.player.mac` | browse and watch |
-| Maktaba Remote | iPhone (iPhone Duo included) | `com.hamzalabs.maktaba.remote` | run a home (its admins only): needs attention, the queue and its running jobs, libraries, machines, the home's state, its updates and processes |
-| Maktaba Remote iPad | iPad | `com.hamzalabs.maktaba.remote.tablet` | the same, on iPad |
+| Maktaba Remote | iPhone (iPhone Duo included) and iPad: one universal app | `com.hamzalabs.maktaba.remote` | run a home (its admins only): needs attention, the queue and its running jobs, libraries, machines, the home's state, its updates and processes |
 | Maktaba TV | Apple TV (tvOS 27) | `com.hamzalabs.maktaba.tv` | browse and watch on the television; sources in [`apps/tv/tvos`](../tv/tvos/) |
 
 `MaktabaKit/` is the Swift package they share: the API client (Bearer tokens, one refresh on
@@ -142,9 +140,10 @@ person again after every rebuild), which needs the `keychain-access-groups` enti
 a provisioning profile: the Mac you build on must be registered with the team (Xcode offers
 "Register Device"; `xcodebuild … -allowProvisioningDeviceRegistration` does it once).
 `xcodebuild test -scheme "Maktaba Player Mac"` runs its hosted tests (the player surface, the
-keychain). The iPhone and iPad schemes run the UI tests (`UITests/`, against `MockHome` on
-127.0.0.1, no real home): `-scheme "Maktaba Remote iPad"` on an iPad simulator covers the
-queue's two panes.
+keychain). The Player and Remote schemes run the UI tests (`UITests/`, against `MockHome` on
+127.0.0.1, no real home) on an iPhone or an iPad simulator: `-scheme "Maktaba Remote"` on an
+iPad simulator covers the queue's two panes. Each is one universal app (App Review 4.3(a));
+the iPad-only `.tablet` apps are retired (`docs/testflight.md`).
 
 From the command line Xcode's account is used with `-allowProvisioningUpdates`:
 

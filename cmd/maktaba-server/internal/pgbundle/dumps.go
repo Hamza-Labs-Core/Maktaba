@@ -88,6 +88,9 @@ func DeleteDump(dir, name string) error {
 	if err != nil {
 		return err
 	}
+	if err := RemoveDump(KeptPath(dir, name)); err != nil { // a link of it would hold its room
+		return err
+	}
 	return RemoveDump(p)
 }
 

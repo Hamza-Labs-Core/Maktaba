@@ -355,4 +355,22 @@ class SayTest {
             assertTrue(code, XmlLookup.arabic.text(id).contains("لم يُرجَع شيء تلقائيًا"))
         }
     }
+
+    // #1670: a restore that failed says what the library database is since, and the backup
+    @Test
+    fun aFailedRestoreSaysWhatTheDatabaseIs() {
+        for ((code, en, ar) in listOf(
+            Triple("db_restore_backup_failed", "Nothing was changed", "لم يتغيّر شيء"),
+            Triple("db_restore_backup_part", "may hold a part of it", "وقد تحوي القاعدة جزءًا منها"),
+            Triple("db_restore_backup_gone", "the database is gone", "ولم تعد القاعدة موجودة"),
+            Triple("db_restore_no_copy", "no copy of the library as it is now could be kept", "تعذّر الاحتفاظ بنسخة من المكتبة كما هي الآن"),
+        )) {
+            val t = WebWords.processDetail.getValue(code)
+            assertEquals(code, listOf("dump"), t.args)
+            val e = XmlLookup.english.text(t.id, "pre-1-to-2.dump")
+            val a = XmlLookup.arabic.text(t.id, "pre-1-to-2.dump")
+            assertTrue("$code en: $e", e.contains(en) && e.contains("pre-1-to-2.dump"))
+            assertTrue("$code ar: $a", a.contains(ar) && a.contains("pre-1-to-2.dump"))
+        }
+    }
 }

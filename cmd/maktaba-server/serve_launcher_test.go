@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,6 +81,107 @@ func TestConfirmRecordOnceNothingTakesTheReleaseBack(t *testing.T) {
 	waitUntil(t, "the record naming its backup", func() bool { return strings.Contains(read(), `"dump": "/b/d.dump"`) })
 	if strings.Contains(read(), "dump_unconfirmed") {
 		t.Fatalf("record %s", read())
+	}
+}
+
+// The start's own wiring: the release that runs is the record's, and it is named once nothing
+// takes it back. (cmd_serve.go calls it: TestServeStartsTheConfirms.)
+func TestStartConfirmsNamesTheRunningReleasesBackup(t *testing.T) {
+	spawnsPrograms(t)
+	t.Setenv("MAKTABA_CONFIRM_AFTER", "1ms")
+	root := t.TempDir()
+	t.Setenv(envLauncherRoot, root)
+	prev := confirmRecordEvery
+	t.Cleanup(func() { confirmRecordEvery = prev })
+	confirmRecordEvery = 5 * time.Millisecond
+	sup, stop := runningAPI(t)
+	defer stop()
+	releaseDir := filepath.Join(t.TempDir(), "bin", "releases", "0.3.0")
+	if err := os.MkdirAll(releaseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "database.json")
+	if err := os.WriteFile(path, []byte(`{"version":"v0.3.0","state":"migrated","from":"v0.2.0","dump_unconfirmed":"/b/d.dump"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := layout.WriteGuard(root, layout.Guard{Version: "0.3.0", RunID: "r", Since: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var asked atomic.Int32
+	startConfirms(ctx, sup, path, "", releaseDir, func() *updater.Journal { asked.Add(1); return nil })
+	waitUntil(t, "the run asked for", func() bool { return asked.Load() > 2 })
+	read := func() string { b, _ := os.ReadFile(path); return string(b) }
+	if !strings.Contains(read(), "dump_unconfirmed") {
+		t.Fatalf("named while the launcher's guard names it: %s", read())
+	}
+	if err := layout.ClearGuard(root); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, "the record naming its backup", func() bool { return strings.Contains(read(), `"dump": "/b/d.dump"`) })
+}
+
+func TestServeStartsTheConfirms(t *testing.T) {
+	f, err := parser.ParseFile(token.NewFileSet(), "cmd_serve.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	ast.Inspect(f, func(n ast.Node) bool {
+		if c, ok := n.(*ast.CallExpr); ok {
+			if id, ok := c.Fun.(*ast.Ident); ok && id.Name == "startConfirms" {
+				called = true
+			}
+		}
+		return true
+	})
+	if !called {
+		t.Fatal("serve starts nothing that confirms the running release")
+	}
+}
+
+// Nothing is named before the API ran: until then the database step may still hold the update.
+func TestConfirmRecordWaitsForTheAPI(t *testing.T) {
+	spawnsPrograms(t)
+	t.Setenv("MAKTABA_CONFIRM_AFTER", "1ms")
+	prev := confirmRecordEvery
+	t.Cleanup(func() { confirmRecordEvery = prev })
+	confirmRecordEvery = time.Millisecond
+	path := filepath.Join(t.TempDir(), "database.json")
+	const rec = `{"version":"v0.3.0","state":"migrated","from":"v0.2.0","dump_unconfirmed":"/b/d.dump"}`
+	if err := os.WriteFile(path, []byte(rec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	// an API that has not started
+	sup := supervisor.New([]supervisor.Process{{Role: supervisor.RoleAPI, Cmd: exec.Command("never")}}, supervisor.DefaultPolicy(),
+		supervisor.WithLog(&strings.Builder{}))
+	confirmRecord(ctx, sup, path, "v0.3.0", func() bool { return false })
+	if b, _ := os.ReadFile(path); string(b) != rec {
+		t.Fatalf("named before the API ran: %s", b)
+	}
+}
+
+// runningAPI is a supervisor whose API runs (a real child); the func stops it.
+func runningAPI(t *testing.T) (*supervisor.Supervisor, func()) {
+	t.Helper()
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	child := exec.Command(self)
+	child.Env = append(os.Environ(), "MAKTABA_TEST_APPBUNDLE_CHILD=1")
+	sup := supervisor.New([]supervisor.Process{{Role: supervisor.RoleAPI, Cmd: child}}, supervisor.DefaultPolicy(),
+		supervisor.WithLog(&strings.Builder{}))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- sup.Run(ctx, 5*time.Second) }()
+	waitUntil(t, "the API running", func() bool { return apiRanFor(sup.Snapshot(), time.Millisecond) })
+	return sup, func() {
+		cancel()
+		<-done
 	}
 }
 

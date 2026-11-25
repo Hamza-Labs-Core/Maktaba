@@ -1,7 +1,7 @@
-"""testflight.yml uploads the iPhone, iPad, Mac and Apple TV apps, each in its own leg.
+"""testflight.yml uploads the iPhone and iPad, Mac and Apple TV apps, each in its own leg.
 
-Every `v*` tag archives, signs and uploads Maktaba Player (iPhone), Maktaba Player iPad,
-Maktaba Remote (iPhone), Maktaba Remote iPad, Maktaba Player Mac (macOS) and Maktaba TV (tvOS)
+Every `v*` tag archives, signs and uploads Maktaba Player and Maktaba Remote (each one app for
+iPhone and iPad), Maktaba Player Mac (macOS) and Maktaba TV (tvOS)
 to App Store Connect.
 Each is its own matrix leg with fail-fast off, so one app's failed upload (its App Store
 Connect record not made yet, say) leaves the others' alone. Each leg archives for its scheme's
@@ -82,9 +82,7 @@ def test_every_app_is_in_the_matrix_once() -> None:
     assert sorted(schemes) == [
         "Maktaba Player",
         "Maktaba Player Mac",
-        "Maktaba Player iPad",
         "Maktaba Remote",
-        "Maktaba Remote iPad",
         "Maktaba TV",
     ]
 
@@ -328,6 +326,20 @@ def test_the_upload_checks_the_archives_sdk_before_uploading() -> None:
     run = STEPS["The archive was built with the 27 SDK"]["run"]
     assert run == f'python3 tools/apple/xcode.py check-sdk {XCODE_MIN} "$RUNNER_TEMP/app.xcarchive"'
     assert "continue-on-error" not in STEPS["The archive was built with the 27 SDK"]
+
+
+def test_the_upload_checks_the_players_cast_receiver_before_uploading() -> None:
+    names = [s.get("name") for s in UPLOAD["steps"]]
+    step = "The archive's Cast receiver is shared/cast/app.json's"
+    assert names.index(step) < names.index("Sign and upload to TestFlight")
+    # the one app with Google Cast: iPhone and iPad's Player, one app
+    assert STEPS[step]["if"] == "matrix.scheme == 'Maktaba Player'"
+    casts = [leg["scheme"] for leg in LEGS if any(d.get("package") == "GoogleCast" for d in _target(leg).get("dependencies", []))]
+    assert casts == ["Maktaba Player"]
+    run = STEPS[step]["run"]
+    assert run == 'python3 tools/apple/cast-app-id.py --built "$RUNNER_TEMP/app.xcarchive/Products/Applications/$SCHEME.app"'
+    # no archive names a receiver of its own
+    assert "MAKTABA_CAST" not in (ROOT / ".github/workflows/testflight.yml").read_text(encoding="utf-8")
 
 
 def test_the_xcode_helpers_self_test_runs_in_ci() -> None:

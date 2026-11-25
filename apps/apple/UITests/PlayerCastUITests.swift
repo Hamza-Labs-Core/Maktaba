@@ -132,8 +132,16 @@ final class PlayerCastUITests: PlayerUITestCase {
         XCTAssertEqual(before.problems(receiver: Self.defaultMediaReceiver), ["discovery is not running"],
                        "no search before the local network screen's Continue (\(before.text))")
         go.tap()
+        // the search begins when the SDK has read the network's state, which it does at
+        // background priority (`CastSDKState.searching`): on a runner with no CPU to spare that
+        // took over a minute, and no query was sent until then (#1615, #1632: no TV in 60 s). So
+        // the wait is for the SDK to begin, and it leaves the CPU alone: a look each 5 s, where
+        // `waitForExistence` takes a snapshot of the app each second
+        let searching = try waitForTheSearch(upTo: 240)
+        XCTAssertEqual(searching.problems(receiver: Self.defaultMediaReceiver), [], searching.text)
+        // then it finds the TV within one of its 2 s looks at what it has found
         let row = app.buttons["cast.device.\(tv.id)"]
-        let found = row.waitForExistence(timeout: 60)
+        let found = row.waitForExistence(timeout: 30)
         let after = try sdk()
         XCTAssertEqual(after.problems(receiver: Self.defaultMediaReceiver), [], after.text)
         XCTAssertTrue(found, "the advertised TV in the list (\(after.text))")
@@ -146,22 +154,27 @@ final class PlayerCastUITests: PlayerUITestCase {
     func testTheDiscoveryCheckNamesWhatIsWrong() {
         let id = Self.defaultMediaReceiver
         func problems(_ s: CastSDKState) -> [String] { s.problems(receiver: id) }
-        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true)), [])
+        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, searching: true)), [])
+        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true)),
+                       ["the Bonjour search has not begun: the SDK has not read the network's state yet"])
         XCTAssertEqual(problems(CastSDKState()), ["the SDK is not set up", "discovery is not running"])
-        XCTAssertEqual(problems(CastSDKState(receivers: ["ABCD1234"], running: true)), ["the SDK is set up for ABCD1234, not \(id)"])
+        XCTAssertEqual(problems(CastSDKState(receivers: ["ABCD1234"], running: true, searching: true)), ["the SDK is set up for ABCD1234, not \(id)"])
         XCTAssertEqual(problems(CastSDKState(receivers: [id])), ["discovery is not running"])
-        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, errors: [CastSDKState.undeclared])),
+        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, searching: true, errors: [CastSDKState.undeclared])),
                        ["a Bonjour service is missing from NSBonjourServices (-72008)"])
-        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, errors: [CastSDKState.denied])),
+        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, searching: true, errors: [CastSDKState.denied])),
                        ["local network access is denied (-65570)"])
-        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, errors: [0])), ["a Bonjour search failed (0)"])
+        XCTAssertEqual(problems(CastSDKState(receivers: [id], running: true, searching: true, errors: [0])), ["a Bonjour search failed (0)"])
         // the line the SDK logs (4.8.6), and its other lines
         let line = "Failed to search for net services with error dictionary {\n    NSNetServicesErrorCode = \"-72008\";\n    NSNetServicesErrorDomain = 10;\n}"
         let function = "-[GCKBonjourServiceBrowser netServiceBrowser:didNotSearch:]"
         XCTAssertEqual(CastSDKState.searchError(function: function, message: line), CastSDKState.undeclared)
         XCTAssertEqual(CastSDKState.searchError(function: function, message: "no code"), 0)
         XCTAssertNil(CastSDKState.searchError(function: "-[GCKDeviceProvider(Protected) notifyDidStartDiscovery]", message: "didStartDiscovery"))
-        for s in [CastSDKState(), CastSDKState(receivers: [id], running: true, errors: [-72008, 0], devices: ["a", "b"])] {
+        XCTAssertTrue(CastSDKState.beganSearch(function: "-[GCKCastDeviceMDNSScanner MDNSServiceBrowser:didSendDiscoveryQueryWithSubtypes:unicastResponse:transactionID:packetCount:]"))
+        XCTAssertFalse(CastSDKState.beganSearch(function: function), "a refused search is not begun")
+        XCTAssertFalse(CastSDKState.beganSearch(function: "-[GCKDeviceProvider(Protected) notifyDidStartDiscovery]"))
+        for s in [CastSDKState(), CastSDKState(receivers: [id], running: true, searching: true, errors: [-72008, 0], devices: ["a", "b"])] {
             XCTAssertEqual(CastSDKState(text: s.text), s)
         }
         XCTAssertNil(CastSDKState(text: ""))
@@ -170,6 +183,20 @@ final class PlayerCastUITests: PlayerUITestCase {
     /// Google's Default Media Receiver: public, registered by Google, no console needed. CI's
     /// UI-test build names it (`MAKTABA_CAST_APP_ID`, `_apple-apps.yml`).
     static let defaultMediaReceiver = "CC1AD845"
+
+    /// The SDK's state once its Bonjour search began or failed, else its last one.
+    private func waitForTheSearch(upTo timeout: TimeInterval) throws -> CastSDKState {
+        let start = Date()
+        while true {
+            let state = try sdk()
+            let took = Int(Date().timeIntervalSince(start))
+            if state.searching || !state.errors.isEmpty || took >= Int(timeout) {
+                XCTContext.runActivity(named: "The Cast SDK's search: \(took) s after Continue (\(state.text))") { _ in }
+                return state
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(5))
+        }
+    }
 
     private func sdk() throws -> CastSDKState {
         let e = element("cast.sdk")

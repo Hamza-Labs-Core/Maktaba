@@ -226,7 +226,7 @@ export const SHEETS = {
     rows: [{ height: 760, shots: gallery("apple", "iphone-6.9", "player", "iphone") }],
   },
   "apple-player-ipad": {
-    title: 'App Store · Maktaba Player for iPad · iPad 13"',
+    title: 'App Store · Maktaba Player · iPad 13"',
     note: "2752 × 2064, landscape. Stand-ins: the Android tablet's screens until the iPad captures exist.",
     rows: [{ height: 360, shots: gallery("apple", "ipad-13", "player", "ipad") }],
   },
@@ -237,7 +237,7 @@ export const SHEETS = {
   },
   "apple-remote-iphone": {
     title: "App Store · Maktaba Remote · iPhone",
-    note: "1320 × 2868 (and 1206 × 2622). The iPad Remote uses the same beats at 2752 × 2064.",
+    note: "1320 × 2868 (and 1206 × 2622). On iPad (the same universal app) the same beats at 2752 × 2064.",
     rows: [{ height: 760, shots: gallery("apple", "iphone-6.9", "remote", "iphone") }],
   },
   "apple-tv": {

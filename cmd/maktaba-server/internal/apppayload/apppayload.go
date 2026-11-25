@@ -138,6 +138,31 @@ type Database struct {
 	// then the release whose database is replaced and From the one the dump is put back
 	// for.
 	By string `json:"by,omitempty"`
+	// Before is the record that restore replaced (nil: asked on a release from before
+	// 2026-11-25), and Data and DataID what is known of the data since: Data one of the
+	// Data* states, written before each step that changes it, DataID the identity of the
+	// database the restore found there (dbsafe's Identity), which proves that it is still
+	// that one, whatever ran since. Every way out of a restore that cannot finish is allowed
+	// or refused by them alone (serve_restore_exits.go). Aside is the dump the replaced
+	// database was set aside in (once for a restore, however often it is tried),
+	// RestoreError why its last try failed and TriedBy the release that tried.
+	Before *Database `json:"before,omitempty"`
+	Data   string    `json:"data,omitempty"`
+	DataID string    `json:"data_id,omitempty"`
+	// MaybeSchemas are the schemas of the backups asked before this one while the data was not
+	// known (0: one whose schema cannot be told): any of them may be what is there.
+	MaybeSchemas []int64 `json:"maybe_schemas,omitempty"`
+	Aside        string  `json:"aside,omitempty"`
+	// AsideBytes is Aside's size: another, or none, is not that copy.
+	AsideBytes int64 `json:"aside_bytes,omitempty"`
+	// NoCopy: the person confirmed a restore with no copy kept of the database it replaces:
+	// when there is no room for one (NoCopyRoom), or whatever the last try said kept it from
+	// being taken (NoCopyAny); CopyError why its last try could not keep one (that try
+	// stopped before it touched anything).
+	NoCopy       string `json:"no_copy,omitempty"`
+	CopyError    string `json:"copy_error,omitempty"`
+	RestoreError string `json:"restore_error,omitempty"`
+	TriedBy      string `json:"tried_by,omitempty"`
 	// KeptFor is the older release a rollback left this database for with nothing put
 	// back (layout.MarkRecordKept): Version's migrations were all rollback-safe, so KeptFor
 	// starts on the newer schema (its api told it may: MAKTABA_SCHEMA_AHEAD_OK), and
@@ -190,6 +215,26 @@ const (
 	// until a person chooses: put Dump back (`maktaba-server restore`, a restore asked:
 	// restoring, By), or install a release newer than Failed, which goes on from it.
 	DatabaseHeld = "held"
+)
+
+// What the data is while a restore a person asked for is not done (Database.Data).
+const (
+	// DataUnknown: no release that keeps track of it has looked yet, and what can be told
+	// now does not say (the restore may have been tried by an older release).
+	DataUnknown = ""
+	// DataUntouched: the database as it was when the restore was asked.
+	DataUntouched = "untouched"
+	// DataReplaced: the backup's data is in its place, in part or whole, not known to be
+	// whole (pgbundle.StepReplaced).
+	DataReplaced = "replaced"
+	// DataGone: dropped, or empty (pgbundle.StepGone).
+	DataGone = "gone"
+)
+
+// What a person confirmed of the copy a restore keeps (Database.NoCopy).
+const (
+	NoCopyRoom = "space"
+	NoCopyAny  = "error"
 )
 
 // DatabasePath is the database's record: the record of the cluster this install runs on

@@ -41,6 +41,8 @@ const NOT_PROBLEM_CODES: Record<string, string> = {
     "Maktaba Cloud's relay names it in its own `error` field (story 50.19), not an API problem",
   home_reconnecting:
     "Maktaba Cloud's relay names it in its own `error` field (story 50.13), not an API problem",
+  restore_no_copy:
+    "the supervisor's refusal of a restore, passed on by the API (about:blank#…); its words are updates.backups.refused.*",
   media_err_2: "a playback fault's code (the browser's MediaError), classified in errorKind.ts",
 };
 

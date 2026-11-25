@@ -150,17 +150,20 @@ extension GoogleCastContext {
         let d = cast.discoveryManager
         return CastSDKState(receivers: watch.receivers,
                             running: d.discoveryState == .running && d.isDiscoveryActive(forDeviceCategory: kGCKCastDeviceCategory),
-                            errors: watch.errors, devices: devices.map(\.id))
+                            searching: watch.searching, errors: watch.errors, devices: devices.map(\.id))
     }
 }
 
-/// Keeps why the SDK's Bonjour browser could not search, which only its log says: its
-/// discovery manager answers the same whether iOS lets it search or not.
+/// Keeps when the SDK's Bonjour browser began to search and why it could not, which only its
+/// log says: its discovery manager answers the same before it searches and whether iOS lets it
+/// or not.
 final class CastSDKWatch: NSObject, GCKLoggerDelegate, @unchecked Sendable {
     private let lock = NSLock()
     private var failed: Set<Int> = []
     private var ids: [String] = []
+    private var sent = false
 
+    var searching: Bool { lock.withLock { sent } }
     var errors: [Int] { lock.withLock { failed.sorted() } }
     var receivers: [String] { lock.withLock { ids } }
 
@@ -176,6 +179,7 @@ final class CastSDKWatch: NSObject, GCKLoggerDelegate, @unchecked Sendable {
     }
 
     func logMessage(_ message: String, at level: GCKLoggerLevel, fromFunction function: String, location: String) {
+        if CastSDKState.beganSearch(function: function) { lock.withLock { sent = true } }
         guard let code = CastSDKState.searchError(function: function, message: message) else { return }
         lock.withLock { _ = failed.insert(code) }
     }

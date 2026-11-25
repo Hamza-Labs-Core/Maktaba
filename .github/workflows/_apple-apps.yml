@@ -1,6 +1,6 @@
 # Reusable gate for the native Apple apps (Epic 42, `apps/apple` and the Apple TV app in
-# `apps/tv/tvos`): MaktabaKit's tests, a build of each app (Maktaba Remote for iPhone and
-# iPad, Maktaba Player for iPhone and the Mac, Maktaba TV), and their String Catalogs in
+# `apps/tv/tvos`): MaktabaKit's tests, a build of each app (Maktaba Remote and Maktaba
+# Player, each one app for iPhone and iPad; the Mac Player; Maktaba TV), and their String Catalogs in
 # English and Arabic; and, in other jobs, the Player's UI tests on throwaway iPhone and iPad
 # simulators and the Apple TV app's Live TV, Home and Libraries UI tests on a throwaway Apple
 # TV simulator.
@@ -122,7 +122,6 @@ jobs:
             echo "::endgroup::"
           }
           build "Maktaba Remote" "generic/platform=iOS Simulator"
-          build "Maktaba Remote iPad" "generic/platform=iOS Simulator"
           build "Maktaba Player" "generic/platform=iOS Simulator"
           build "Maktaba Player Mac" "platform=macOS"
           build "Maktaba TV" "generic/platform=tvOS Simulator"
@@ -217,7 +216,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - { device: ipad, scheme: "Maktaba Player iPad" }
+          # the same universal app as the iPhone's (one app for iPhone and iPad), built again
+          # here so each device's shards need only their own build
+          - { device: ipad, scheme: "Maktaba Player" }
     env: *player-ui-build-env
     steps: *player-ui-build-steps
 
@@ -280,6 +281,25 @@ jobs:
             echo "UDID=$udid" >> "$GITHUB_ENV"
             boot "$udid"
           fi
+          # two of the simulator's own services are turned off, which no test here uses:
+          # - PosterBoard draws every wallpaper of the gallery a few minutes after a first boot
+          #   (the background task `com.apple.springboard.posterboardupdate.prewarm`; with it off
+          #   the task ends at once). On these runners, with no GPU and 7 GB, that is about two
+          #   minutes in which xcodebuild, testmanagerd and the app hardly run. Five failures of
+          #   five began in it ("Failed to terminate" in runs 45492257208, 45444285100 and
+          #   45495588048, twice; "does not have a process ID" in 45513857454).
+          # - apsd retries its push connection 8 to 17 times a second for good: it has no device
+          #   identity here. Each try writes some 80 log lines. It and diagnosticd, which reads
+          #   them, held more than one of the three cores, and kept 3 of 8 simulators from ever
+          #   settling below.
+          for service in com.apple.PosterBoard com.apple.apsd; do
+            xcrun simctl spawn "$udid" launchctl disable "user/foreground/$service" || true
+            xcrun simctl spawn "$udid" launchctl bootout "user/foreground/$service" || true
+            running=$(xcrun simctl spawn "$udid" launchctl list || true)
+            if grep -q "[[:space:]]$service\$" <<< "$running"; then
+              echo "::warning::$service still runs in the simulator: its load can fail a test (#1678)"
+            fi
+          done
           xcrun simctl ui "$udid" appearance dark
           # the simulator keeps the app's info and debug lines too (its subsystem is its bundle
           # id; a parent's config is not inherited): by default `log show` finds its errors and
@@ -287,7 +307,7 @@ jobs:
           # audits timed out), and the other subsystems stay as they are
           case "$device" in
             iphone) bundle=com.hamzalabs.maktaba.player ;;
-            ipad) bundle=com.hamzalabs.maktaba.player.tablet ;;
+            ipad) bundle=com.hamzalabs.maktaba.player ;;
           esac
           xcrun simctl spawn "$udid" log config --subsystem "$bundle" --mode "level:debug,persist:debug"
           # the keyboard types only what a test types: no suggestions, autocorrection or
@@ -354,7 +374,7 @@ jobs:
           device="${{ matrix.device }}" shard="${{ matrix.shard }}" shards="${{ matrix.shards }}"
           case "$device" in
             iphone) scheme="Maktaba Player" target="Maktaba Player UITests" ;;
-            ipad) scheme="Maktaba Player iPad" target="Maktaba Player iPad UITests" ;;
+            ipad) scheme="Maktaba Player" target="Maktaba Player UITests" ;;
           esac
           tar -xf "$RUNNER_TEMP/player-ui-build.tar" -C "$PRODUCTS"
           only=()
@@ -798,7 +818,7 @@ jobs:
           retention-days: 14
 
   # The Remote's product screenshots on iPad (RemoteDemoShotsUITests, stories 60.09 and 60.14:
-  # the store gallery's iPad Remote), on a throwaway iPad simulator made, settled and deleted
+  # the store gallery's iPad set of the one Remote app), on a throwaway iPad simulator made, settled and deleted
   # here, as `product-shots-ipad-remote`. The diagnostics tests stay the iPhone job's.
   remote-ui-ipad:
     name: Remote UI tests (ipad)
@@ -824,7 +844,7 @@ jobs:
           defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool false
           xcrun simctl bootstatus "$udid" -b > /dev/null
           xcrun simctl ui "$udid" appearance dark
-          xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.remote.tablet --mode "level:debug,persist:debug"
+          xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.remote --mode "level:debug,persist:debug"
           for key in KeyboardAutocorrection KeyboardPrediction KeyboardShowPredictionBar KeyboardCheckSpelling \
                      KeyboardAutocapitalization KeyboardContinuousPathEnabled; do
             xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
@@ -840,9 +860,9 @@ jobs:
           xcrun simctl status_bar "$UDID" override --time 2026-06-15T12:00:00.000Z --dataNetwork wifi --wifiMode active \
             --wifiBars 3 --cellularMode notSupported --batteryState charged --batteryLevel 100 \
             || echo "::warning::the status bar override failed: the shots keep the simulator's own"
-          only=(-only-testing "Maktaba Remote iPad UITests/RemoteDemoShotsUITests")
+          only=(-only-testing "Maktaba Remote UITests/RemoteDemoShotsUITests")
           printf '%s\n' "${only[@]}" > "$RESULTS/remote-ipad.selection"
-          xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Remote iPad" \
+          xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Remote" \
             -destination "id=$UDID" -derivedDataPath "$DERIVED" -resultBundlePath "$RESULTS/remote-ipad.xcresult" \
             CODE_SIGNING_ALLOWED=NO "${only[@]}"
 

@@ -289,7 +289,10 @@
     <string name="w_setup_starting_detail_db_restore_failed">لم يتمكن التحديث إلى %1$s من تعديل قاعدة بيانات المكتبة، وفشلت إعادتها من %2$s أيضًا. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة.</string>
     <string name="w_setup_starting_detail_db_restore_unfinished">جارٍ إعادة قاعدة بيانات المكتبة كما كانت قبل التحديث إلى %1$s (من %2$s): شغّل الخادم كاملًا لإتمام ذلك.</string>
     <string name="w_setup_starting_detail_db_restoring_backup">جارٍ إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s، بطلب من %2$s.</string>
-    <string name="w_setup_starting_detail_db_restore_backup_failed">فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s. لم يتغيّر شيء؛ تبقى مكتبة متوقفة ويعيد تشغيلها التالي المحاولة.</string>
+    <string name="w_setup_starting_detail_db_restore_backup_failed">فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s. لم يتغيّر شيء. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة. وتعرض صفحة الاستعادة ما يمكنك فعله غير ذلك.</string>
+    <string name="w_setup_starting_detail_db_restore_backup_part">فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s، وقد تحوي القاعدة جزءًا منها. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة. ويمكنك في صفحة الاستعادة إعادة نسخة احتياطية أخرى.</string>
+    <string name="w_setup_starting_detail_db_restore_backup_gone">فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s، ولم تعد القاعدة موجودة. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة. ويمكنك في صفحة الاستعادة إعادة نسخة احتياطية أخرى.</string>
+    <string name="w_setup_starting_detail_db_restore_no_copy">توقفت إعادة النسخة الاحتياطية %1$s: تعذّر الاحتفاظ بنسخة من المكتبة كما هي الآن. لم تغيّر هذه المحاولة شيئًا. وتبيّن صفحة الاستعادة السبب وما يمكنك فعله.</string>
     <string name="w_setup_starting_detail_db_no_cluster">لم يتمكن التحديث إلى %1$s من تعديل قاعدة بيانات المكتبة، ولا تشغّل هذه النسخة من مكتبة قاعدة بيانات خاصة بها لإعادة %2$s إليها.</string>
     <string name="w_setup_starting_detail_db_record_failed">تتعذّر قراءة سجل قاعدة بيانات المكتبة (%1$s) أو حفظه.</string>
     <string name="w_setup_starting_detail_pg_unreadable">تتعذّر قراءة قاعدة بيانات المكتبة (%1$s).</string>
