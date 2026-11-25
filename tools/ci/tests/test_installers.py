@@ -659,6 +659,14 @@ def test_the_player_build_themes_its_msi() -> None:
         assert "tools/release/msi/theme_msi.py --check" in (ROOT / wf).read_text(encoding="utf-8"), wf
 
 
+def test_the_arabic_msi_is_installed_by_windows_installer() -> None:
+    # MsiDatabaseApplyTransform (theme_msi.py --check) is not msiexec: CI's Player job installs it
+    wf = (ROOT / ".github/workflows/_desktop-player.yml").read_text(encoding="utf-8")
+    assert wf.index("theme_msi.py --check") < wf.index("tools/release/msi/install-arabic.ps1")
+    script = (ROOT / "tools/release/msi/install-arabic.ps1").read_text(encoding="utf-8")
+    for want in ("TRANSFORMS=:1025", "/qn", "/l*v", "'/x'", "ProductLanguage = 1025"):
+        assert want in script, want
+
 
 # --- the .dmg ------------------------------------------------------------------------------
 
