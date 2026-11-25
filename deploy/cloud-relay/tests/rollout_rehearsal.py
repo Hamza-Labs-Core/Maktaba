@@ -10,6 +10,7 @@ and ready. A reboot is the node's own: docker and the unit started again with an
     sudo REPO=$PWD python3 deploy/cloud-relay/tests/rollout_rehearsal.py
 
     PART=1|2|3          a third of the cases (the CI's jobs)
+    PART=4              from the last release's image: this commit's over it, and back
     MUTATE=<name>       the rehearsal rehearsed: the node's scripts with one guarantee taken out
                         (MUTATIONS below), and the cases that must notice. Passes when one fails.
 
@@ -112,7 +113,7 @@ MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
     "unhold-serves-it": ("ops/rollout.sh", r"elif \[ -f \"\$STATE/pending/first\" \]; then touch \"\$STATE/no-release\"", "elif false; then true", ["a first rollback without docker"]),
     "never-afresh": ("ops/rollout.sh", r"\t\t\tafresh \"\$db\" \"\$broken\"", '\t\t\tdie "begin: the database $broken"', ["a database whose first start failed"]),
     "afresh-unsure": ("ops/rollout.sh", r"n=\"\" # whatever it had printed[^\n]*", "true", ["a database that can't be shown empty"]),
-    "afresh-over-databases": ("ops/rollout.sh", r"\[ \"\$n\" = 0 \] && \[ \"\$t\" = 0 \] \|\| not=[^\n]*", "true", ["a database that can't be shown empty"]),
+    "afresh-over-databases": ("ops/rollout.sh", r"\[ \"\$n\" = 0 \] && \[ \"\$t\" = 00 \] \|\| not=[^\n]*", "true", ["a database that can't be shown empty"]),
     "afresh-beside-a-backup": ("ops/rollout.sh", r"if compgen -G \"/var/backups[^\n]*then", "if false; then", ["a database whose first start failed"]),
     "afresh-over-a-tablespace": ("ops/rollout.sh", r"\[ -z \"\$\(ls -A pg_tblspc[^\n]*", "true", ["a database whose first start failed"]),
     "afresh-any-layout": ("ops/rollout.sh", r"\*\) echo \"what postgres does not make[^\n]*", "*) ;;", ["a database whose first start failed"]),
@@ -162,6 +163,8 @@ MIGRATIONS = {
     "both-contract": "-- contract: nothing reads it\n-- +goose Up\nALTER TABLE users DROP COLUMN display_name;\n-- +goose Down\nALTER TABLE users ADD COLUMN display_name TEXT;\n",
     "both-seeded": "-- +goose Up\nCREATE TABLE rehearsal_seeded (id INT);\nINSERT INTO rehearsal_seeded VALUES (1);\n-- +goose Down\nDROP TABLE rehearsal_seeded;\n",
     "slow": "-- +goose Up\nCREATE TABLE rehearsal_slow (id INT);\n-- +goose Down\nSELECT pg_sleep(15);\nDROP TABLE rehearsal_slow;\n",
+    # a slot below what the last release applied (one that lands late: cloud/migrations/README.md)
+    "late": "-- +goose Up\nALTER TABLE users ADD COLUMN rehearsal_late INT;\n-- +goose Down\nALTER TABLE users DROP COLUMN rehearsal_late;\n",
     "downfails": "-- +goose Up\nCREATE TABLE rehearsal_down (id INT);\n-- +goose Down\nSELECT no_such_function();\n",
 }
 
@@ -184,10 +187,10 @@ def build_releases(only: set[str] | None = None) -> None:
         build("b", str(REPO))  # another version, no migration
     if not only or "bad" in only:
         build("bad", str(REPO), "--build-arg BUILD_TAGS=rehearsalbad")  # its readiness fails 20 s after it starts
-    numbers = {name: f"9999000{i + 1}" for i, name in enumerate(MIGRATIONS)}
+    numbers = {**{name: f"9999000{i + 1}" for i, name in enumerate(MIGRATIONS)}, "late": "00049998"}
     for name, migrations in {"expand": ["expand"], "upfails": ["upfails"], "contract": ["contract"],
-                             "both": ["both-contract", "both-seeded"], "slow": ["slow"], "downfails": ["downfails"]}.items():
-        if only and name not in only or MUTATE and name not in ("expand", "slow"):
+                             "both": ["both-contract", "both-seeded"], "slow": ["slow"], "downfails": ["downfails"], "late": ["late"]}.items():
+        if not only and name == "late" or only and name not in only or MUTATE and name not in ("expand", "slow"):
             continue  # the cases that notice a mutation need no more
         with tempfile.TemporaryDirectory() as d:
             sh(f"git -C {REPO} -c safe.directory={REPO} archive HEAD cloud shared tools/healthcheck | tar -x -C {d}")
@@ -199,6 +202,20 @@ def build_releases(only: set[str] | None = None) -> None:
                if line.startswith("MAKTABA_CADDY_TAG="))
     ref = f"ghcr.io/hamza-labs-core/maktaba-caddy:{tag}"
     CADDY = f"{tag}@" + json.loads(sh(f"docker buildx imagetools inspect {ref} --format '{{{{json .Manifest}}}}' 2>/dev/null"))["digest"]
+
+
+def last_release() -> str:
+    """The newest published release's image, as `last` in the rehearsal's registry."""
+    tags = re.findall(r"refs/tags/(v\d+\.\d+\.\d+)$", sh(f"git -C {REPO} -c safe.directory={REPO} ls-remote --tags --refs origin 'v*'"), re.M)
+    for tag in sorted(tags, key=lambda t: [int(n) for n in t[1:].split(".")], reverse=True)[:5]:
+        ref = f"ghcr.io/hamza-labs-core/maktaba-cloud:{tag}"
+        if rc(f"docker pull -q {ref}")[0] != 0:
+            continue  # its release is being built
+        sh(f"docker tag {ref} {REGISTRY}:last && docker push -q {REGISTRY}:last")
+        IMAGES["last"] = "last@" + sh(f"docker image inspect --format '{{{{range .RepoDigests}}}}{{{{println .}}}}{{{{end}}}}' {REGISTRY}:last | grep '^{REGISTRY}@'").strip().split("@")[1]
+        print(f"release last ({tag}): {IMAGES['last']}", flush=True)
+        return tag
+    raise AssertionError("no release's image can be pulled")
 
 
 # --- a deploy, as the workflow does one -----------------------------------------------------
@@ -530,14 +547,23 @@ def database_that_cannot_be_shown_empty() -> str:
     refused_to_remake("postgres has 1 database(s)")
     dc("up -d --wait postgres </dev/null")
     sh(f"{super_psql} 'ALTER DATABASE other RENAME TO maktaba' </dev/null")
+    # tables in postgres's own databases
+    sh(f"{super_psql} 'DROP DATABASE maktaba' </dev/null")
+    for own in ("postgres", "template1"):
+        in_own = super_psql.replace("-d postgres", f"-d {own}")
+        sh(f"{in_own} 'CREATE TABLE somebodys (id INT)' </dev/null")
+        refused_to_remake("postgres has 0 database(s)")
+        dc("up -d --wait postgres </dev/null")
+        sh(f"{in_own} 'DROP TABLE somebodys' </dev/null")
+    sh(f"{super_psql} 'CREATE DATABASE maktaba' </dev/null")
     # an answer that was printed by a command that then failed is no answer
-    refused_to_remake("its folder has database 16384", stand_in(
+    refused_to_remake("its folder has database ", stand_in(
         '*"FROM pg_database"*) echo 0; exit 1 ;;\n*"count(*) FROM pg_tables"*) exit 1 ;;'))
     code, out = begin("a")
     assert code == 0 and "the database is empty" in out, out[-2500:]
     code, out = rollback()
     assert code == 0, out[-1500:]
-    return "refused four times, with the steps"
+    return "refused six times, with the steps"
 
 
 def answer_docker_does_not_give() -> str:
@@ -800,6 +826,16 @@ def unhealthy() -> str:
     assert "the relay's /readyz does not answer 200" in out, "it does not say what was not ready"
     kept = STATE / "last-logs/maktaba-cloud.log"  # the refused release's own words: its container is gone
     assert IMAGES["bad"].split("@")[0] in kept.read_text(), "its log was not kept"
+    # two begins that refuse leave it where it is; one that goes through puts it aside
+    for _ in range(2):
+        code, out = begin("b", extra={"MIN_FREE_MB": "99999999"})
+        assert code != 0 and kept.exists(), "a begin that refused moved it"
+    code, out = begin("b", extra=stand_in('*"exec -T postgres pg_restore"*) exit 1 ;;'))
+    assert code != 0 and "backup" in out and kept.exists(), f"a begin that refused moved it: {out[-800:]}"
+    code, out = begin("b")
+    assert code == 0 and (STATE / "last-logs.old/maktaba-cloud.log").exists() and not kept.exists(), out[-1500:]
+    code, out = rollback()
+    assert code == 0, out[-1500:]
     not_pending()
     ready()
     same(before, snapshot())
@@ -1657,7 +1693,72 @@ def log_caps() -> str:
     return json.dumps(d)
 
 
+def from_the_last_release() -> str:
+    code, out = deploy("last", "app last")
+    assert code == 0, out[-3000:]
+    commit()
+    ready()
+    return LAST
+
+
+HELD_BY_A_CONTRACT = False
+
+
+def this_over_the_last_and_back() -> str:
+    """This commit over the last release's database: ready (a new database hides what a late lower slot
+    breaks), and back to what was there."""
+    global HELD_BY_A_CONTRACT
+    before = snapshot()
+    code, out = deploy("a", "app a")
+    assert code == 0, out[-3000:]
+    ready()
+    code, out = rollback()
+    if code != 0 and "can't be undone" in out:  # a contract migration of this release: held, as it is meant to be
+        HELD_BY_A_CONTRACT = True
+        sh(f"{ROLLOUT} unhold")
+        return "this release has a contract migration: held"
+    assert code == 0, out[-3000:]
+    not_pending()
+    ready()
+    same(before, snapshot(), but=("migrations", "tables") if "KEPT" in out else ())
+    return "ready, and back"
+
+
+def late_and_kept() -> str:
+    """Back to the last release on a schema that was kept, with a migration of a lower slot applied last:
+    it is ready there."""
+    if HELD_BY_A_CONTRACT:
+        return "not from here: the release before was held"
+    before = snapshot()
+    code, out = deploy("late", "app late")
+    assert code == 0, out[-3000:]
+    ready()
+    psql("INSERT INTO users (email, email_verified, rehearsal_late) VALUES ('late@example.org', true, 1)")
+    code, out = rollback()
+    assert code == 0 and "KEPT" in out and "HELD" not in out, out[-3000:]
+    not_pending()
+    ready()
+    same(before, snapshot(), but=("migrations", "tables"))
+    assert psql("SELECT rehearsal_late FROM users WHERE email = 'late@example.org'") == "1", "what was written is gone"
+    return "the schema kept, and the last release ready on it"
+
+
+def this_over_the_last_for_good() -> str:
+    code, out = deploy("a", "app a")
+    assert code == 0, out[-3000:]
+    commit()
+    code, out = reboot()
+    assert code == 0, out
+    ready()
+    assert "app a" in page()
+    return "committed, and it serves after a reboot"
+
+
+LAST = ""
+
+
 def main() -> int:
+    global LAST
     OUT.mkdir(parents=True, exist_ok=True)
     if os.geteuid() != 0 or not os.environ.get("CI"):
         sys.exit("only as root, on a CI runner")
@@ -1671,7 +1772,10 @@ def main() -> int:
     # the deploy folder on a small disk of its own, so that it can be filled
     sh(f"mkdir -p {STATE} && truncate -s 300M /root/rehearsal-state && mkfs.ext4 -q -F /root/rehearsal-state && mount -o loop /root/rehearsal-state {STATE} && rmdir {STATE}/lost+found")
     sh(f"mkdir -p {DEPLOY} && truncate -s 160M /root/rehearsal-disk && mkfs.ext4 -q -F /root/rehearsal-disk && mount -o loop /root/rehearsal-disk {DEPLOY} && rmdir {DEPLOY}/lost+found")
-    build_releases()
+    part = os.environ.get("PART", "")
+    build_releases({"late"} if part == "4" else None)
+    if part == "4":
+        LAST = last_release()
     first: list[tuple[str, Callable[[], str | None]]] = [
         ("a database whose first start failed", first_start_of_the_database_failed),
         ("a first deploy cut off", first_deploy_cut_off),
@@ -1741,11 +1845,19 @@ def main() -> int:
         ("backups during a deploy", backups_during_a_deploy),
         ("two failed in a row, the schema kept", two_failed_in_a_row_with_a_kept_schema),
     ]
+    part4: list[tuple[str, Callable[[], str | None]]] = [
+        ("the last release", from_the_last_release),
+        ("this release over the last, and back", this_over_the_last_and_back),
+        ("a late lower migration, kept", late_and_kept),
+        ("this release over the last, for good", this_over_the_last_for_good),
+    ]
     every = first + part1 + part2 + part3
     todo = {"1": part1, "2": part2, "3": part3}.get(os.environ.get("PART", ""), part1 + part2 + part3)
     base = ""
     if os.environ.get("PART", "1") != "1" and not MUTATE:  # the ways a first deploy fails: part 1's
         first = [c for c in first if c[0] in ("the first deploy", "log caps merged")]
+    if part == "4":
+        first, todo = [], part4
     if MUTATE:
         names = MUTATIONS[MUTATE][3]
         assert set(names) <= {n for n, _ in every}, names

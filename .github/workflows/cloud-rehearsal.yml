@@ -273,7 +273,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: ['1', '2', '3']
+        part: ['1', '2', '3', '4'] # 4: from the last release's image
     steps:
       - uses: actions/checkout@v6.0.2
         with:
