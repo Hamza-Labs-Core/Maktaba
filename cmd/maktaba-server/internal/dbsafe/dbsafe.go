@@ -943,38 +943,56 @@ var havePSQL = func(psql string) bool {
 // schema it could use).
 const publicAfresh = "DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\nGRANT USAGE ON SCHEMA public TO PUBLIC;\n"
 
+// withPublic are the extensions that go with the public schema: those in it, and those in other
+// schemas that depend on one that goes.
+const withPublic = `WITH RECURSIVE gone(oid) AS (
+	SELECT e.oid FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE n.nspname = 'public'
+	UNION
+	SELECT d.objid FROM pg_depend d JOIN gone g ON d.refobjid = g.oid
+	WHERE d.classid = 'pg_extension'::regclass AND d.refclassid = 'pg_extension'::regclass)
+`
+
 // mayMakeAgain refuses a restore without psql (not one transaction: the database is gone by the
 // time it fails) that looks unable to make again an extension that goes with public: pgvector,
-// made there by a superuser, for a database user that is none. With psql the server says it, and
-// the transaction rolls back (a hosted Postgres may let a user make one it says needs a
-// superuser).
+// made there by a superuser, for a database user that is none, or one that is no longer
+// installed. With psql the server says it, and the transaction rolls back (a hosted Postgres may
+// let a user make one it says needs a superuser).
 func (t Target) mayMakeAgain(ctx context.Context, d *sql.DB, list string) error {
-	rows, err := d.QueryContext(ctx, `SELECT e.extname, current_user FROM pg_extension e
-		JOIN pg_namespace n ON n.oid = e.extnamespace AND n.nspname = 'public'
-		JOIN pg_available_extension_versions v ON v.name = e.extname AND v.version = e.extversion
-		WHERE v.superuser AND NOT (v.trusted AND has_database_privilege(current_database(), 'CREATE'))
-		  AND NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)`)
+	rows, err := d.QueryContext(ctx, withPublic+`SELECT e.extname, current_user, r.rolsuper, has_database_privilege(current_database(), 'CREATE'),
+		v.name IS NOT NULL, coalesce(v.superuser, true), coalesce(v.trusted, false)
+		FROM gone g JOIN pg_extension e USING (oid) JOIN pg_roles r ON r.rolname = current_user
+		LEFT JOIN pg_available_extensions a ON a.name = e.extname
+		LEFT JOIN pg_available_extension_versions v ON v.name = a.name AND v.version = a.default_version`)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var ext, user string
-		if err := rows.Scan(&ext, &user); err != nil {
+		var super, create, available, needsSuper, trusted bool
+		if err := rows.Scan(&ext, &user, &super, &create, &available, &needsSuper, &trusted); err != nil {
 			return err
 		}
-		if strings.Contains(list, " EXTENSION - "+ext+" ") {
-			return fmt.Errorf("the restore makes the public schema again, with the extension %s in it, which needs a superuser "+
-				"and the database user %s is none; with no psql beside pg_restore it could not be undone. Install the PostgreSQL "+
-				"client programs (or set MAKTABA_PG_BIN), or make %s a superuser for the restore", ext, user, user)
+		if mayMake(super, create, available, needsSuper, trusted) || !strings.Contains(list, " EXTENSION - "+ext+" ") {
+			continue
 		}
+		return fmt.Errorf("the restore makes the public schema again, with the extension %s, which the database user %s may not "+
+			"make (it needs a superuser, or is no longer installed); with no psql beside pg_restore it could not be undone. "+
+			"Install the PostgreSQL client programs (or set MAKTABA_PG_BIN), or make %s a superuser for the restore", ext, user, user)
 	}
 	return rows.Err()
 }
 
+// mayMake reports whether a database user (super: a superuser, create: with CREATE on the
+// database) may make an extension (available: installed, needsSuper and trusted: as its control
+// file says).
+func mayMake(super, create, available, needsSuper, trusted bool) bool {
+	return available && (super || !needsSuper || (trusted && create))
+}
+
 // restoreOnly is a list of the dump's items for pg_restore (its file, "" for all of them):
-// without the extensions and schemas outside public that the database has. Only public is made
-// afresh, so they are there still, and making one again would fail: pg_textsearch's, which an
+// without the schemas outside public that the database has, and the extensions that stay. Only
+// public is made afresh, so they are there still, and making one again would fail: pg_textsearch's, which an
 // operator's own PostgreSQL 18 may have in a schema of its own.
 func (t Target) restoreOnly(ctx context.Context, d *sql.DB, list string) (string, error) {
 	names := func(q string) (map[string]bool, error) {
@@ -997,7 +1015,7 @@ func (t Target) restoreOnly(ctx context.Context, d *sql.DB, list string) (string
 	if err != nil {
 		return "", err
 	}
-	extensions, err := names(`SELECT e.extname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE n.nspname <> 'public'`)
+	extensions, err := names(withPublic + `SELECT extname FROM pg_extension WHERE oid NOT IN (SELECT oid FROM gone)`)
 	if err != nil {
 		return "", err
 	}

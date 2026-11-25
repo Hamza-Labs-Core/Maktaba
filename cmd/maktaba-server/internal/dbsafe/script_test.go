@@ -52,6 +52,22 @@ func TestCopyScan(t *testing.T) {
 	}
 }
 
+// Who may make an extension again.
+func TestMayMake(t *testing.T) {
+	for _, c := range []struct{ super, create, available, needsSuper, trusted, want bool }{
+		{super: true, available: true, needsSuper: true, want: true},
+		{super: true, needsSuper: true}, // its package is gone
+		{create: true, available: true, needsSuper: true},
+		{create: true, available: true, needsSuper: true, trusted: true, want: true},
+		{available: true, needsSuper: true, trusted: true},
+		{available: true, want: true}, // superuser = false
+	} {
+		if mayMake(c.super, c.create, c.available, c.needsSuper, c.trusted) != c.want {
+			t.Errorf("%+v", c)
+		}
+	}
+}
+
 // What makes a schema or an extension that is there, its grants and comments, is left out of the
 // list; all else stays, what is commented out already too.
 func TestWithoutThere(t *testing.T) {

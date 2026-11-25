@@ -387,6 +387,7 @@ func TestMovedDump(t *testing.T) {
 		filepath.Join(from, "pre-v2-to-v3.dump"): filepath.Join(to, "pre-v2-to-v3.dump"),
 		KeptPath(from, "pre-v2-to-v3.dump"):      filepath.Join(to, "pre-v2-to-v3.dump"),
 		filepath.Join(from, "pre-v3-to-v4.dump"): filepath.Join(from, "pre-v3-to-v4.dump"), // nowhere
+		KeptPath(from, "pre-v1-to-v2.dump"):      filepath.Join(from, "pre-v1-to-v2.dump"), // not moved: not the other of its name
 	} {
 		if got := MovedDump(to, path); got != want {
 			t.Errorf("%s: %s, want %s", path, got, want)

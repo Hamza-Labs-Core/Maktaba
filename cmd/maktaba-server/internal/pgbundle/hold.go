@@ -94,14 +94,16 @@ func KeepOnly(dir string, names ...string) error {
 	return nil
 }
 
-// MovedDump is where the dump path is: there, or, when the backups were moved since (MoveDumps),
-// in dir under its name.
+// MovedDump is where the dump path is: there, or in its own folder (it was kept for a restore),
+// or, when the backups were moved since (MoveDumps), in dir under its name.
 func MovedDump(dir, path string) string {
 	if path == "" {
 		return path
 	}
-	if _, err := os.Lstat(path); err == nil {
-		return path
+	for _, p := range []string{path, OriginalPath(path)} {
+		if _, err := os.Lstat(p); err == nil {
+			return p
+		}
 	}
 	if info, err := os.Lstat(filepath.Join(dir, filepath.Base(path))); err == nil && IsDump(info) {
 		return filepath.Join(dir, filepath.Base(path))

@@ -1315,7 +1315,7 @@ func TestRestoreLeavesWhatIsOutsidePublic(t *testing.T) {
 		}
 	}
 	must(r.db, `CREATE DATABASE outside_check OWNER `+pgbundle.AppRole+` TEMPLATE template0`)
-	must(r.db, `CREATE ROLE outside_reader NOLOGIN`)
+	must(r.db, `CREATE ROLE outside_reader NOLOGIN; CREATE ROLE outside_maker NOLOGIN`)
 	t.Cleanup(func() {
 		d, err := r.t.open(ctx, "")
 		if err != nil {
@@ -1323,7 +1323,7 @@ func TestRestoreLeavesWhatIsOutsidePublic(t *testing.T) {
 		}
 		defer d.Close()
 		_, _ = d.Exec(`DROP DATABASE IF EXISTS outside_check WITH (FORCE)`)
-		_, _ = d.Exec(`DROP ROLE IF EXISTS outside_reader`)
+		_, _ = d.Exec(`DROP ROLE IF EXISTS outside_reader, outside_maker`)
 	})
 	super, err := r.t.open(ctx, "outside_check")
 	if err != nil {
@@ -1331,7 +1331,8 @@ func TestRestoreLeavesWhatIsOutsidePublic(t *testing.T) {
 	}
 	defer super.Close()
 	must(super, `CREATE SCHEMA outside; GRANT USAGE ON SCHEMA outside TO `+pgbundle.AppRole+`;
-		CREATE EXTENSION pageinspect SCHEMA outside; COMMENT ON SCHEMA outside IS 'the operator''s'`)
+		CREATE EXTENSION pageinspect SCHEMA outside; COMMENT ON SCHEMA outside IS 'the operator''s';
+		GRANT CREATE ON SCHEMA public TO outside_maker`)
 	tg := r.t
 	if tg.URL, err = (Target{URL: u}).urlFor("outside_check"); err != nil {
 		t.Fatal(err)
@@ -1384,13 +1385,14 @@ func TestRestoreLeavesWhatIsOutsidePublic(t *testing.T) {
 		if err := d.QueryRow(`SELECT (SELECT count(*) FROM own),
 			EXISTS (SELECT FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'pageinspect' AND n.nspname = 'outside'
 				AND has_schema_privilege('`+pgbundle.AppRole+`', n.oid, 'USAGE')),
-			has_schema_privilege('outside_reader', 'public', 'USAGE') AND NOT has_schema_privilege('outside_reader', 'public', 'CREATE')`).
+			has_schema_privilege('outside_reader', 'public', 'USAGE') AND NOT has_schema_privilege('outside_reader', 'public', 'CREATE')
+				AND has_schema_privilege('outside_maker', 'public', 'CREATE')`).
 			Scan(&rows, &there, &uses); err != nil {
 			t.Fatal(err)
 		}
 		_ = d.Close()
 		if rows != 2 || !there || !uses {
-			t.Errorf("%s: %d rows, the extension there %v, public's use %v", name, rows, there, uses)
+			t.Errorf("%s: %d rows, the extension there %v, public's grants %v", name, rows, there, uses)
 		}
 	}
 	if left, _ := filepath.Glob(filepath.Join(lists, "maktaba-restore-list-*")); len(left) != 0 {
@@ -1467,7 +1469,7 @@ func TestRestoreOfAnExtensionItMayNotMakeTouchesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sd.Close()
-	if _, err := sd.Exec(`CREATE EXTENSION pageinspect; CREATE EXTENSION hstore`); err != nil { // the second is trusted
+	if _, err := sd.Exec(`CREATE EXTENSION hstore`); err != nil { // trusted
 		t.Fatal(err)
 	}
 	tg := r.t
@@ -1482,7 +1484,13 @@ func TestRestoreOfAnExtensionItMayNotMakeTouchesNothing(t *testing.T) {
 	if _, err := d.Exec(`CREATE TABLE own (id int); INSERT INTO own VALUES (1)`); err != nil {
 		t.Fatal(err)
 	}
-	dump := filepath.Join(r.t.Backups, "ext.dump")
+	earlier, dump := filepath.Join(r.t.Backups, "earlier.dump"), filepath.Join(r.t.Backups, "ext.dump")
+	if err := tg.Dump(ctx, earlier); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sd.Exec(`CREATE EXTENSION pageinspect`); err != nil {
+		t.Fatal(err)
+	}
 	if err := tg.Dump(ctx, dump); err != nil {
 		t.Fatal(err)
 	}
@@ -1519,7 +1527,39 @@ func TestRestoreOfAnExtensionItMayNotMakeTouchesNothing(t *testing.T) {
 		t.Fatalf("with psql: %d rows, %v", n, err)
 	}
 	_ = d.Close()
+	// a backup from before it was made needs none of it
+	if err := without.Restore(ctx, earlier, nil); err != nil {
+		t.Fatal(err)
+	}
 	if err := super.Restore(ctx, dump, nil); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// An extension in a schema of its own that depends on one in public goes with public, and is made
+// again, not left out.
+func TestRestoreMakesWhatGoesWithPublicAgain(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	if _, err := r.db.Exec(`CREATE EXTENSION cube; CREATE SCHEMA outside; CREATE EXTENSION earthdistance SCHEMA outside`); err != nil {
+		t.Fatal(err)
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, dump, &log); err != nil {
+		t.Fatalf("%v\n%s", err, log.String())
+	}
+	d, err := r.t.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	var in string
+	if err := d.QueryRow(`SELECT string_agg(n.nspname, ' ' ORDER BY e.extname) FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+		WHERE e.extname IN ('cube', 'earthdistance')`).Scan(&in); err != nil || in != "public outside" {
+		t.Fatalf("in %q, %v", in, err)
 	}
 }
