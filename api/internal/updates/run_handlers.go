@@ -3,6 +3,7 @@ package updates
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
@@ -22,7 +24,56 @@ var (
 	ErrNotHeld    = errors.New("nothing_held")
 	ErrNoMachine  = errors.New("no_such_machine")
 	ErrOffline    = errors.New("machine_offline")
+	// ErrCancelFailed: the home did not take a cancel, for another reason than its switch.
+	ErrCancelFailed = errors.New("cancel_failed")
+	// ErrHomeBehind: the machines of a run whose release the home does not run (they
+	// follow it).
+	ErrHomeBehind = errors.New("home_behind")
+	// A machine that gave no answer to an order, which may have reached it: its connection
+	// was lost, or it took too long.
+	ErrMachineLost   = errors.New("machine_lost")
+	ErrMachineSilent = errors.New("machine_timeout")
 )
+
+// MachineRefusal is what a machine answered to an order it did not take: its code, when it
+// is one that has words, else machine_refused; Detail its own words.
+type MachineRefusal struct{ Code, Detail string }
+
+func (e *MachineRefusal) Error() string { return e.Code + ": " + e.Detail }
+
+// machineRefused reads a machine's answer to an order it did not take: {"error": "code:
+// words", "status": …} (its update commands), or a plain string (its agent's own).
+func machineRefused(raw json.RawMessage) error {
+	var doc struct {
+		Error string `json:"error"`
+	}
+	said := ""
+	if json.Unmarshal(raw, &said) != nil && json.Unmarshal(raw, &doc) == nil {
+		said = doc.Error
+	}
+	if said == "disconnected" { // the agent's: the session ended with the order under way
+		return ErrMachineLost
+	}
+	code, rest, _ := strings.Cut(said, ":")
+	switch code {
+	case "no_rollback", "update_no_run":
+		return &MachineRefusal{Code: code, Detail: strings.TrimSpace(rest)}
+	}
+	return &MachineRefusal{Code: "machine_refused", Detail: said}
+}
+
+// machineGone is err as what is known of the machine (its session, its answer).
+func machineGone(err error) error {
+	switch {
+	case errors.Is(err, agent.ErrSessionLost):
+		return ErrMachineLost
+	case errors.Is(err, agent.ErrNoSession):
+		return ErrOffline
+	case errors.Is(err, agent.ErrCmdTimeout):
+		return ErrMachineSilent
+	}
+	return err
+}
 
 // Cancel stops a run before the home switches (story 35.4 AC1: before migrate; here
 // before the apply, the moment the home's database step may begin; for a home's
@@ -52,9 +103,12 @@ func (d *Driver) Cancel(ctx context.Context, id, actor string) error {
 		}
 	case RunHomeApplying:
 		// the home's app stages its order (or waits for its go): the order is withdrawn;
-		// once the home switched, the abort is refused
-		if err := d.abortHome(ctx, run); err != nil {
+		// once the home switched, the abort is refused. Any other error is no answer to
+		// where the home is (its supervisor unreachable, say)
+		if err := d.abortHome(ctx, run); err != nil && strings.Contains(err.Error(), ErrPastSwitch.Error()) {
 			return fmt.Errorf("%w: the run is %s", ErrPastSwitch, run.State)
+		} else if err != nil {
+			return fmt.Errorf("%w: %s", ErrCancelFailed, err.Error())
 		}
 	case RunHomeCommitted, RunRollingOut:
 		if targets, err := d.Store.Targets(ctx, id); err == nil {
@@ -167,10 +221,10 @@ func (d *Driver) TargetAction(ctx context.Context, id, node, action, actor strin
 		}
 		okc, raw, err := d.Cluster.Command(ctx, sid, "update.rollback", map[string]any{"run_id": id}, 30*time.Second)
 		if err != nil {
-			return nil, err
+			return nil, machineGone(err)
 		}
 		if !okc {
-			return nil, fmt.Errorf("%w: %s", ErrMachineRefused, string(raw))
+			return nil, machineRefused(raw)
 		}
 		noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, id, node, TargetChange{State: TargetRolledBack,
 			Error: map[string]any{"code": "admin_rollback", "by": actor}}))
@@ -373,6 +427,9 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 		httperror.Write(w, r, httperror.NotFound("update run"))
 	case errors.Is(err, ErrPastSwitch):
 		httperror.Write(w, r, httperror.Conflict("about:blank#past_switch", err.Error()).With("code", "past_switch"))
+	case errors.Is(err, ErrCancelFailed):
+		httperror.Write(w, r, httperror.Conflict("about:blank#cancel_failed",
+			strings.TrimPrefix(err.Error(), ErrCancelFailed.Error()+": ")).With("code", ErrCancelFailed.Error()))
 	default:
 		httperror.Write(w, r, httperror.Internal("cancel").Wrap(err))
 	}
@@ -395,6 +452,7 @@ func (h *Handler) Resume(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) retryAnswer(w http.ResponseWriter, r *http.Request, run Run, err error) {
 	var wd *withdrawnError
+	var no *MachineRefusal
 	switch {
 	case err == nil:
 		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"run_id": run.ID, "version": run.Version})
@@ -408,8 +466,14 @@ func (h *Handler) retryAnswer(w http.ResponseWriter, r *http.Request, run Run, e
 		httperror.Write(w, r, httperror.Conflict("about:blank#home_behind", err.Error()).With("code", ErrHomeBehind.Error()))
 	case errors.As(err, &wd):
 		httperror.Write(w, r, httperror.Conflict("about:blank#withdrawn", "the release was withdrawn: "+wd.reason).With("code", "release_withdrawn"))
-	case errors.Is(err, ErrMachineRefused):
-		httperror.Write(w, r, httperror.Conflict("about:blank#machine_refused", strings.TrimPrefix(err.Error(), ErrMachineRefused.Error()+": ")).With("code", ErrMachineRefused.Error()))
+	case errors.As(err, &no):
+		httperror.Write(w, r, httperror.Conflict("about:blank#"+no.Code, no.Detail).With("code", no.Code))
+	case errors.Is(err, ErrMachineLost):
+		httperror.Write(w, r, httperror.Conflict("about:blank#machine_lost",
+			"the connection to the machine was lost before it answered").With("code", ErrMachineLost.Error()))
+	case errors.Is(err, ErrMachineSilent):
+		httperror.Write(w, r, httperror.Conflict("about:blank#machine_timeout",
+			"the machine did not answer in time").With("code", ErrMachineSilent.Error()))
 	case errors.Is(err, ErrOffline):
 		httperror.Write(w, r, httperror.Conflict("about:blank#machine_offline", "the machine is not connected").With("code", "machine_offline"))
 	default:

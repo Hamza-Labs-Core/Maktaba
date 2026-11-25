@@ -178,8 +178,9 @@ func TestACommandToAClosingSessionEndsAtOnce(t *testing.T) {
 	f.hub.Session(a.Session).closeWith(CloseReplaced, "")
 	select {
 	case err := <-done:
-		if !errors.Is(err, ErrNoSession) {
-			t.Fatalf("err = %v, want ErrNoSession", err)
+		// sent, and the session lost with it under way: it may have been carried out
+		if !errors.Is(err, ErrSessionLost) || !errors.Is(err, ErrNoSession) {
+			t.Fatalf("err = %v, want ErrSessionLost, an ErrNoSession", err)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("the command waited on a closed session")
@@ -224,5 +225,13 @@ func TestMachineAgentsNamesTheLiveNewerSession(t *testing.T) {
 	old.closeWith(CloseReplaced, "")
 	if got, ok := f.hub.MachineAgents()[node]; ok {
 		t.Fatalf("both closed: named %q, want no agent", got)
+	}
+}
+
+// A command to a session that is not there was never sent: no session, not one lost.
+func TestACommandToNoSessionIsNotALostOne(t *testing.T) {
+	_, err := (&Hub{}).CommandWithin(context.Background(), "gone", "ping", nil, "system", time.Second)
+	if !errors.Is(err, ErrNoSession) || errors.Is(err, ErrSessionLost) {
+		t.Fatalf("err = %v, want ErrNoSession alone", err)
 	}
 }

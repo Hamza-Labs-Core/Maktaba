@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 )
 
 // Research item 5: no automatic run starts while a machine copies a table of the home's
@@ -422,8 +423,91 @@ func TestRefusedMachineActionsHaveTheirOwnCodes(t *testing.T) {
 	if code, _ := answer(err); code != "release_withdrawn" {
 		t.Fatalf("a withdrawn release: %q (%v)", code, err)
 	}
-	if code, detail := answer(fmt.Errorf("%w: %s", ErrMachineRefused, "nothing to go back to")); code != "machine_refused" ||
-		detail != "nothing to go back to" {
-		t.Fatalf("a machine's refusal: %q %q", code, detail)
+	if err := r.f.store.InsertTarget(ctx, Target{RunID: run.ID, NodeID: "n1", ToVersion: "1.5.0"}); err != nil {
+		t.Fatal(err)
 	}
+	for _, c := range []struct {
+		name         string
+		raw          string // a machine's answer (cmd/maktaba-server, updates.command), or its agent's
+		err          error
+		code, detail string
+	}{
+		{"not committed", `{"error":"no_rollback: the run is applying","status":{"state":"applying","journal":{"job":{"run_id":"r"}},"attempts":[]}}`,
+			nil, "no_rollback", "the run is applying"},
+		{"another run", `{"error":"update_no_run","status":{"attempts":[]}}`, nil, "update_no_run", ""},
+		{"another reason", `{"error":"bad request: x","status":null}`, nil, "machine_refused", "bad request: x"},
+		{"an old agent", `"the machine agent does not run update.rollback"`, nil, "machine_refused",
+			"the machine agent does not run update.rollback"},
+		{"the session ended", `"disconnected"`, nil, "machine_lost", "the connection to the machine was lost before it answered"},
+		{"the session ended before it answered", ``, agent.ErrSessionLost, "machine_lost",
+			"the connection to the machine was lost before it answered"},
+		{"no session", ``, agent.ErrNoSession, "machine_offline", "the machine is not connected"},
+		{"too long", ``, agent.ErrCmdTimeout, "machine_timeout", "the machine did not answer in time"},
+	} {
+		r.d.Cluster = answering{r.cluster, json.RawMessage(c.raw), c.err}
+		_, err := r.d.TargetAction(ctx, run.ID, "n1", "rollback", "admin")
+		if code, detail := answer(err); code != c.code || detail != c.detail {
+			t.Errorf("%s: %q %q, want %q %q", c.name, code, detail, c.code, c.detail)
+		}
+	}
+}
+
+// answering is a cluster whose machines take no rollback.
+type answering struct {
+	*clusterFake
+	raw json.RawMessage
+	err error
+}
+
+func (c answering) Command(ctx context.Context, sid, name string, args any, d time.Duration) (bool, json.RawMessage, error) {
+	if name == "update.rollback" {
+		return false, c.raw, c.err
+	}
+	return c.clusterFake.Command(ctx, sid, name, args, d)
+}
+
+// A cancel the home did not take says past_switch only when the home said so.
+func TestCancelSaysPastSwitchOnlyWhenTheHomeDoes(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.home.asks, r.home.appSlow = true, true
+	_, _ = r.f.svc.Tick(ctx)
+	r.stepN(5)
+	run := r.active(t)
+	if run.State != RunHomeApplying || r.home.state() != MOrdered {
+		t.Fatalf("%s %s", run.State, r.home.state())
+	}
+	home := r.d.Home
+	for said, want := range map[string]error{
+		"supervisor unreachable: connection refused": ErrCancelFailed,
+		"update_no_run":                    ErrCancelFailed,
+		"past_switch: the run is applying": ErrPastSwitch,
+	} {
+		r.d.Home = refusing{home, errors.New(said)}
+		if err := r.d.Cancel(ctx, run.ID, ""); !errors.Is(err, want) {
+			t.Errorf("%s: %v, want %v", said, err, want)
+		}
+	}
+	if got := r.active(t); got.State != RunHomeApplying {
+		t.Fatalf("a cancel that was not taken left the run %s", got.State)
+	}
+	// it answers again: cancelled
+	r.d.Home = home
+	if err := r.d.Cancel(ctx, run.ID, ""); err != nil || r.home.state() != MAborted {
+		t.Fatalf("%v %s", err, r.home.state())
+	}
+}
+
+// refusing is a home that takes no abort.
+type refusing struct {
+	HomeSupervisor
+	err error
+}
+
+func (h refusing) Do(ctx context.Context, op string, body any) (*MachineStatus, error) {
+	if op == "abort" {
+		return nil, h.err
+	}
+	return h.HomeSupervisor.Do(ctx, op, body)
 }

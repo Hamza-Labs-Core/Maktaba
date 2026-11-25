@@ -508,7 +508,7 @@ from before it counts nothing; the release stops pushing the deadline itself at 
   serves; then it goes on (audited `copy_wait_over`). A copy that begins during the backup is ended
   by the restart all the same.
   An update that does not come by the home's own run (an app replaced by hand) waits for none.
-  Until v0.3.163 the home looked for the table syncs' slots, which are not active while their
+  Up to v0.3.164 the home looked for the table syncs' slots, which are not active while their
   `COPY` runs, after the restart that had already ended it: neither wait saw a copy.
 - **Their copies stay out while the schema changes.** Before the migrations the home keeps the
   machines' copies out until the schema is settled: `pg_hba.conf` rejects their replication roles

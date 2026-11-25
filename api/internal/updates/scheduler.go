@@ -601,13 +601,6 @@ func (e *withdrawnError) Error() string { return "release_withdrawn: " + e.reaso
 // ErrNoTarget: Update now with nothing to install.
 var ErrNoTarget = errors.New("no_update")
 
-// ErrHomeBehind: the machines of a run whose release the home does not run (they follow it).
-// ErrMachineRefused: what a machine answered to an order it did not take.
-var (
-	ErrHomeBehind     = errors.New("home_behind")
-	ErrMachineRefused = errors.New("machine_refused")
-)
-
 // BlockedError: a run cannot start now.
 type BlockedError struct{ Reason string }
 
@@ -741,9 +734,9 @@ func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error
 	// would be judged on a home already failing), not an admin's, whose update may be
 	// the cure; the new release is still judged on its own health and rolled back. A
 	// machine's copy of the database holds an automatic run only, too: it can take hours,
-	// and a machine that makes it again and again would hold the admin for as long (the
-	// home's restart waits for it, CopyWait at most, then ends it: that machine copies that
-	// table again)
+	// and a machine that makes it again and again would hold the admin for as long (the home
+	// waits for it before it applies the release, CopyWait at most; the restart ends what
+	// still runs then, and that machine copies that table again)
 	why, passed, err := s.blockedFor(ctx, target.Version, BlockRecentCrash, BlockMachineCopying)
 	if err != nil {
 		return Run{}, err

@@ -74,6 +74,10 @@ var (
 	ErrCmdTimeout = errors.New("agent: the process did not answer in time")
 )
 
+// ErrSessionLost: the session ended with the command under way, which may have reached the
+// process.
+var ErrSessionLost = fmt.Errorf("%w: it ended before it answered", ErrNoSession)
+
 // CmdResult is a process's answer (cmd.result).
 type CmdResult struct {
 	ID     string          `json:"id"`
@@ -184,7 +188,7 @@ func (h *Hub) CommandWithin(ctx context.Context, sessionID, name string, args js
 		select {
 		case res = <-ch: // its answer came in just before it closed
 		default:
-			err = ErrNoSession
+			err = ErrSessionLost
 		}
 	}
 	if err != nil {
