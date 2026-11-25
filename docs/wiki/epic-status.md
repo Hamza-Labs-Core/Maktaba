@@ -155,7 +155,7 @@
 | 45.23 PIN profiles / extra parental limits | Explicitly shelved on the same decision. |
 | 52.07 LLM judge | Removed on 2026-11-03; no story replaces it. |
 | 54.35 Wave 8 Plex/dizqueTV | Removed by #969; only Plex Live TV remains. The spec still describes the full wave. |
-| 56.07 Plex collections | Removed by #969; only rendering of existing Plex collections remains. The spec still describes the import. |
+| 56.07 Plex collections | Removed by #969; the apps no longer show a Plex collection's badge or a Plex kind, and the browse API has no `plex` kind (an older client's `kind=plex` gets an empty list). The spec still describes the import. |
 | 57.16 Home rules through Screen Time | Waits for Apple's Family Controls entitlement. |
 | 58.18 Vega OS | Waits for Vega devices to be a real share of TVs. |
 | 50.24 Takedown, reports, repeat infringers | Deferred on 2026-11-24 with broadcasting, which stays off; its code is built and dormant, and nothing about copyright is shown. |
@@ -1281,7 +1281,7 @@ Main implementation **#669** (spec #651), with big-screen integration #1234. Cur
 | 56.04 Series grouping | Done | #669; `api/internal/handlers/videos/group.go`; `api/internal/router/epic56_pg_test.go` |
 | 56.05 Sort/filter/categories | Done | #669; browse routes/tests; TV category tests |
 | 56.06 YouTube collections | Done | #669; `pipeline/src/maktaba_pipeline/engine/sourced_collections.py`; sourced-collection tests |
-| 56.07 Plex collections | **removed by #969** | #669 originally added `plex_collections_import`, admin counts and tests. Merged **#969** removed the import stage and `/plex-missing`; `api/internal/handlers/libraries/manage_test.go` now asserts no `plex_collections` answer. Only rendering legacy `source_kind='plex'` rows remains. The specified ongoing Plex import/synchronization is absent. |
+| 56.07 Plex collections | **removed by #969** | #669 originally added `plex_collections_import`, admin counts and tests. Merged **#969** removed the import stage and `/plex-missing`; `api/internal/handlers/libraries/manage_test.go` now asserts no `plex_collections` answer. Since then the apps show no Plex badge or kind, the browse API has no `plex` kind (an older client's `kind=plex` gets an empty list), and a legacy `source_kind='plex'` row lists as an ordinary curated collection. The specified ongoing Plex import/synchronization is absent. |
 | 56.08 TV collections | Done | #669, #1234; `web/src/bigscreen/screens/Collection.tsx`; native/web collection tests |
 | 56.09 Smart playlists | Done | #669; `api/internal/handlers/browse/smartplaylists.go`; Epic56 PG tests |
 | 56.10 TV playlists | Done | #669; playlist APIs and TV tests |

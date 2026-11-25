@@ -284,8 +284,7 @@ struct CollectionsTab: View {
     @Environment(\.client) private var client
     @State private var kind: String?
     @State private var items: [LibraryCollection] = []
-    private let kinds: [(String?, LocalizedStringKey)] = [(nil, "All"), ("youtube", "From YouTube"), ("plex", "From Plex"),
-                                                         ("curated", "Curated"), ("topic", "Topics"), ("filler", "Clips")]
+    private let kinds: [(String?, LocalizedStringKey)] = [(nil, "All"), ("youtube", "From YouTube"), ("curated", "Curated"), ("topic", "Topics"), ("filler", "Clips")]
     private let columns = Array(repeating: GridItem(.fixed(VideoCard.width), spacing: 56), count: 4)
 
     var body: some View {
@@ -322,8 +321,6 @@ struct CollectionsTab: View {
     static func badge(_ c: LibraryCollection) -> String? {
         switch (c.sourceKind, c.kind) {
         case ("youtube_playlist", _): String(localized: "YouTube playlist")
-        case ("youtube_channel", _): String(localized: "YouTube channel")
-        case ("plex", _): String(localized: "Plex collection")
         case (_, "smart"): String(localized: "Smart")
         case (_, "topic"): String(localized: "Topics")
         case (_, "clip"): String(localized: "Clips")

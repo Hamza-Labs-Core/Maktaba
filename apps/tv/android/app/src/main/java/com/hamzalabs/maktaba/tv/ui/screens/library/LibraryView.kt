@@ -360,7 +360,7 @@ fun <T> PagedGrid(
 fun CollectionsTab(api: TvApi, library: String) {
     val nav = LocalTvNav.current
     val kinds = listOf(
-        null to R.string.collections_kind_all, "youtube" to R.string.collections_kind_youtube, "plex" to R.string.collections_kind_plex,
+        null to R.string.collections_kind_all, "youtube" to R.string.collections_kind_youtube,
         "curated" to R.string.collections_kind_curated, "topic" to R.string.collections_kind_topics, "filler" to R.string.collections_kind_clips,
     )
     var kind by remember(library) { mutableIntStateOf(0) }
@@ -393,12 +393,10 @@ fun CollectionsTab(api: TvApi, library: String) {
     }
 }
 
-/** A collection's badge: YouTube playlist or channel, Plex, Smart, Topics, Clips. */
+/** A collection's badge: YouTube playlist, Smart, Topics, Clips (a channel's collection has none). */
 @Composable
 fun collectionBadge(c: TvCollection): String? = when {
     c.sourceKind == "youtube_playlist" -> stringResource(R.string.collections_badge_youtube_playlist)
-    c.sourceKind == "youtube_channel" -> stringResource(R.string.collections_badge_youtube_channel)
-    c.sourceKind == "plex" -> stringResource(R.string.collections_badge_plex)
     c.kind == "smart" -> stringResource(R.string.collections_badge_smart)
     c.kind == "topic" -> stringResource(R.string.collections_kind_topics)
     c.kind == "clip" -> stringResource(R.string.collections_kind_clips)

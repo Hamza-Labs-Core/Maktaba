@@ -241,17 +241,11 @@ export function LibraryCollectionCard({
           ) : (
             <span>{t("libraries.videos", { n: n(c.videos ?? 0) })}</span>
           )}
-          {c.source_kind ? (
-            <Badge tone="neutral">
-              {t(
-                c.source_kind === "plex"
-                  ? "collections.badge.plex"
-                  : c.source_kind === "youtube_channel"
-                    ? "collections.badge.youtubeChannel"
-                    : "collections.badge.youtubePlaylist"
-              )}
-            </Badge>
+          {/* a YouTube channel's collection carries no source badge */}
+          {c.source_kind === "youtube_playlist" ? (
+            <Badge tone="neutral">{t("collections.badge.youtubePlaylist")}</Badge>
           ) : (
+            !c.source_kind &&
             c.automatic && (
               <Badge tone="neutral" title={t("collections.automatic.hint")}>
                 {t("collections.automatic")}
@@ -306,8 +300,8 @@ export function CollectionsTab({ libraryId }: { libraryId: string }) {
       {counts && counts.all > 0 && (
         <div className="mkt-chips" role="group" aria-label={t("collections.kindFilter")}>
           {(["all", ...COLLECTION_FILTERS] as const)
-            // YouTube's and Plex's chips only where the library has some
-            .filter((k) => (k !== "youtube" && k !== "plex") || counts[k] > 0 || kind === k)
+            // YouTube's chip only where the library has some
+            .filter((k) => k !== "youtube" || counts[k] > 0 || kind === k)
             .map((k) => (
               <button
                 key={k}

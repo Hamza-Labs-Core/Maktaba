@@ -102,8 +102,6 @@ fun CollectionsList(client: ApiClient, library: String) {
 
 fun collectionBadge(c: PlayerCollection): Int? = when {
     c.sourceKind == "youtube_playlist" -> R.string.collections_badge_youtube_playlist
-    c.sourceKind == "youtube_channel" -> R.string.collections_badge_youtube_channel
-    c.sourceKind == "plex" -> R.string.collections_badge_plex
     c.kind == "smart" -> R.string.collections_badge_smart
     else -> null
 }
