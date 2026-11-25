@@ -969,7 +969,6 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, tell func(
 	cmd.WaitDelay = 10 * time.Second // its output pipe, should a child outlive it
 	cmd.Stdout = io.MultiWriter(&out, orDiscard(log), ran, at)
 	cmd.Stderr = cmd.Stdout
-	cmd.WaitDelay = 10 * time.Second // its output pipe, should a child outlive it
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("psql: %w", err)
 	}
