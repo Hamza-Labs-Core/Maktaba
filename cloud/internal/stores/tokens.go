@@ -36,19 +36,16 @@ type MailTokens struct {
 
 func NewMailTokens(db *sql.DB) *MailTokens { return &MailTokens{DB: db} }
 
-// Issue mints a token for userID and purpose, retiring any earlier
-// unused token of the same purpose so only the newest link works.
-func (s *MailTokens) Issue(ctx context.Context, userID, purpose string, ttl time.Duration) (string, error) {
+// IssueTx mints a token for userID and purpose, retiring any earlier
+// unused token of the same purpose so only the newest link works. It is the
+// caller's transaction (the mail outbox): the link and the mail that carries
+// it are kept together or not at all.
+func (s *MailTokens) IssueTx(ctx context.Context, tx *sql.Tx, userID, purpose string, ttl time.Duration) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
 	}
 	tok := base64.RawURLEncoding.EncodeToString(raw)
-	tx, err := s.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = tx.Rollback() }()
 	if _, err := tx.ExecContext(ctx, `UPDATE email_verifications SET used_at = now() WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL`, userID, purpose); err != nil {
 		return "", err
 	}
@@ -56,7 +53,7 @@ func (s *MailTokens) Issue(ctx context.Context, userID, purpose string, ttl time
 		hashMailToken(tok), userID, purpose, time.Now().UTC().Add(ttl)); err != nil {
 		return "", err
 	}
-	return tok, tx.Commit()
+	return tok, nil
 }
 
 // Redeem consumes a token atomically and returns its user id.

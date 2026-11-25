@@ -1,6 +1,6 @@
 # Maktaba Cloud, one node: the cloud.toml every role reads (relay, api, worker).
 # setup.sh writes /opt/maktaba-relay/cloud.toml from this file, putting in RELAY_DOMAIN,
-# API_DOMAIN, APP_DOMAIN and RELAY_PLANS_ENFORCE from .env; edit this template, not the copy.
+# API_DOMAIN, APP_DOMAIN, RELAY_PLANS_ENFORCE and the MAIL_ settings from .env; edit this template, not the copy.
 # Secrets never go here: they come from .env (MAKTABA_CLOUD_*) and the read-only secrets/
 # mount.
 
@@ -22,8 +22,16 @@ admin_listen_addr = "172.30.77.10:8091"
 admin_host        = "admin.internal"
 
 [mail]
-# the only driver: a mail is written to the api's log, never delivered
-driver = "log"
+# "resend" when the node has the provider's key and MAIL_ALLOW says whom it may write to; else
+# "log": a mail is written to the api's log, never delivered (setup.sh, docs/cloud-mail.md)
+driver               = "${MAIL_DRIVER}"
+from                 = "Maktaba <no-reply@maktaba.tv>"
+reply_to             = "support@maktaba.tv"
+resend_api_key_path  = "/etc/maktaba/cloud/secrets/resend.key"
+allow_recipients     = [${MAIL_ALLOW}]
+subject_prefix       = "${MAIL_SUBJECT_PREFIX}"
+daily_limit          = ${MAIL_DAILY_LIMIT}
+monthly_limit        = ${MAIL_MONTHLY_LIMIT}
 
 [billing]
 provider = "none"

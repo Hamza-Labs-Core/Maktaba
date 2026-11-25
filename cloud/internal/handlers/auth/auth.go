@@ -7,7 +7,9 @@
 // stores.Users (DB), argon2id (hashing), password (policy), sessions
 // (refresh tokens), token (access tokens), stores.MailTokens (mailed
 // links) and abuse (lockout, replay). Handlers only orchestrate these
-// layers, set HTTP cookies, and shape JSON responses.
+// layers, set HTTP cookies, and shape JSON responses. No handler writes or sends a mail: it asks
+// the outbox (mail/outbox) for one, the same way whether or not the address has an account, so
+// neither the answer nor its time tells which addresses have signed up.
 package auth
 
 import (
@@ -36,19 +38,28 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
 )
 
+// Mail is the outbox's part the handlers use.
+type Mail interface {
+	// Request asks for a verification link or a password reset for addr, in lang ("": the
+	// account's). It looks no account up.
+	Request(ctx context.Context, kind, addr, lang string) error
+	// Register creates the account and asks for its verification mail, or, when the address
+	// has one already, for the notice to its owner.
+	Register(ctx context.Context, email, passwordHash, displayName, lang string) error
+}
+
 // Deps bundles the collaborators each handler needs.
 type Deps struct {
-	Users     *stores.Users
-	Sessions  *sessions.Store
-	Signer    *token.Signer
-	Tokens    *stores.MailTokens
-	Mailer    mailpkg.Mailer
-	Templates mailpkg.Templates
-	Abuse     *abuse.Detector
-	Audit     *audit.Log
-	Logger    *slog.Logger
-	Google    *oauth.GoogleFlow
-	Apple     *oauth.AppleFlow
+	Users    *stores.Users
+	Sessions *sessions.Store
+	Signer   *token.Signer
+	Tokens   *stores.MailTokens
+	Mail     Mail
+	Abuse    *abuse.Detector
+	Audit    *audit.Log
+	Logger   *slog.Logger
+	Google   *oauth.GoogleFlow
+	Apple    *oauth.AppleFlow
 	// WebURL is the cloud web app's origin; OAuth callbacks land there.
 	WebURL       string
 	CookieDomain string
@@ -152,8 +163,8 @@ func normalizeEmail(s string) string {
 	return strings.ToLower(s)
 }
 
-// Register creates an unverified account and mails a verification link.
-// It answers 202 whether or not the address already has an account (the
+// Register creates an unverified account and asks for its verification mail.
+// It answers 202, as soon, whether or not the address already has an account (the
 // owner gets a notice instead), so the endpoint cannot be used to find
 // out who has signed up.
 func (d *Deps) Register(w http.ResponseWriter, r *http.Request) {
@@ -189,17 +200,10 @@ func (d *Deps) Register(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, r, "hash", err)
 		return
 	}
-	u, err := d.Users.Create(r.Context(), email, hash, name, false)
-	if err != nil {
-		if !isUniqueViolation(err) {
-			d.fail(w, r, "create user", err)
-			return
-		}
-		d.send(r.Context(), d.Templates.AlreadyRegistered(email))
-		writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending_verification"})
+	if err := d.Mail.Register(r.Context(), email, hash, name, requestLang(r)); err != nil {
+		d.fail(w, r, "create user", err)
 		return
 	}
-	d.sendVerification(r.Context(), u)
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending_verification"})
 }
 
@@ -225,18 +229,10 @@ func (d *Deps) signupFlooded(ctx context.Context, ip string) bool {
 	return block
 }
 
-func (d *Deps) sendVerification(ctx context.Context, u stores.User) {
-	tok, err := d.Tokens.Issue(ctx, u.ID, stores.PurposeVerifyEmail, stores.VerifyEmailTTL)
-	if err != nil {
-		d.Logger.Error("auth: issue verification token", "user_id", u.ID, "err", err)
-		return
-	}
-	d.send(ctx, d.Templates.VerifyEmail(u.Email, tok))
-}
-
-func (d *Deps) send(ctx context.Context, m mailpkg.Message) {
-	if err := d.Mailer.Send(ctx, m); err != nil {
-		d.Logger.Error("auth: send mail", "kind", m.Kind, "err", err)
+// request asks the outbox for a mail. Its failure is the log's: the answer is the same.
+func (d *Deps) request(r *http.Request, kind, email string) {
+	if err := d.Mail.Request(r.Context(), kind, email, requestLang(r)); err != nil {
+		d.Logger.Error("auth: ask for a mail", "kind", kind, "err", err)
 	}
 }
 
@@ -280,10 +276,7 @@ func (d *Deps) ResendVerification(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if email := normalizeEmail(req.Email); email != "" {
-		u, err := d.Users.ByEmail(r.Context(), email)
-		if err == nil && !u.EmailVerified && u.Status == stores.StatusActive {
-			d.sendVerification(r.Context(), u)
-		}
+		d.request(r, mailpkg.KindVerifyEmail, email)
 	}
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -481,15 +474,7 @@ func (d *Deps) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if email := normalizeEmail(req.Email); email != "" {
-		u, err := d.Users.ByEmail(r.Context(), email)
-		if err == nil && u.Status == stores.StatusActive {
-			tok, err := d.Tokens.Issue(r.Context(), u.ID, stores.PurposePasswordReset, stores.PasswordResetTTL)
-			if err != nil {
-				d.Logger.Error("auth: issue reset token", "user_id", u.ID, "err", err)
-			} else {
-				d.send(r.Context(), d.Templates.PasswordReset(u.Email, tok))
-			}
-		}
+		d.request(r, mailpkg.KindPasswordReset, email)
 	}
 	w.WriteHeader(http.StatusAccepted)
 }

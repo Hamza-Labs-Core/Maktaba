@@ -46,6 +46,7 @@ End users of Controller-operated home servers; Controller's operators.
 | [Cloud/IaaS provider] | Hosting / compute / database | [region] |
 | Apple Push Notification service (APNs) | iOS push delivery | USA |
 | Firebase Cloud Messaging (FCM) | Android/web push delivery | USA |
+| Resend | Account mail delivery (email address and the mail's content) | EU (eu-west-1) |
 | [CDN/edge provider] | TLS termination, edge country derivation | [region] |
 
 ## 7. Security measures (Art. 32)

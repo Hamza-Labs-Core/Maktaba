@@ -41,7 +41,7 @@ func TestRegisterVerifyLogin(t *testing.T) {
 	// Registering the same address again: same 202, and the owner is told.
 	c2 := e.client()
 	c2.mustStatus(c2.do("POST", "/v1/auth/register", map[string]string{"email": "ALICE@example.test", "password": goodPassword}), http.StatusAccepted)
-	if _, ok := e.mail.Last("already_registered", email); !ok {
+	if _, ok := e.lastMail("already_registered", email); !ok {
 		t.Fatal("existing owner not notified of the duplicate sign-up")
 	}
 
@@ -174,7 +174,7 @@ func TestPasswordReset(t *testing.T) {
 	other.login(email, goodPassword)
 
 	c.mustStatus(c.do("POST", "/v1/auth/password/forgot", map[string]string{"email": "ghost@example.test"}), http.StatusAccepted)
-	if _, ok := e.mail.Last("password_reset", "ghost@example.test"); ok {
+	if _, ok := e.lastMail("password_reset", "ghost@example.test"); ok {
 		t.Fatal("mailed an unknown address")
 	}
 	c.mustStatus(c.do("POST", "/v1/auth/password/forgot", map[string]string{"email": email}), http.StatusAccepted)

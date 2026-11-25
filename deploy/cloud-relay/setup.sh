@@ -25,8 +25,9 @@
 # Settings a deploy hands in (.github/workflows/cloud-deploy.yml), written into .env when set
 # in this script's environment, never printed: RELAY_DOMAIN, API_DOMAIN, APP_DOMAIN,
 # ACME_EMAIL, RELAY_TLS, RELAY_PLANS_ENFORCE, MAKTABA_CLOUD_TAG, MAKTABA_CADDY_TAG (and
-# MAKTABA_CLOUD_IMAGE, MAKTABA_CADDY_IMAGE: another registry, the rehearsal's) and the
-# secrets CF_API_TOKEN and LICENSE_SIGNING_KEY.
+# MAKTABA_CLOUD_IMAGE, MAKTABA_CADDY_IMAGE: another registry, the rehearsal's), MAIL_ALLOW,
+# MAIL_SUBJECT_PREFIX, MAIL_DAILY_LIMIT, MAIL_MONTHLY_LIMIT and the secrets CF_API_TOKEN,
+# LICENSE_SIGNING_KEY and RESEND_API_KEY (set but empty: this node has none any more).
 set -euo pipefail
 
 DEPLOY_DIR=${DEPLOY_DIR:-/opt/maktaba-relay}
@@ -155,7 +156,8 @@ is_placeholder() {
 # The settings a deploy hands in (see the header): each one set in this script's environment
 # replaces its line in .env. CF_API_TOKEN is a secret: written, never echoed.
 for k in RELAY_DOMAIN API_DOMAIN APP_DOMAIN ACME_EMAIL RELAY_TLS RELAY_PLANS_ENFORCE \
-	MAKTABA_CLOUD_TAG MAKTABA_CADDY_TAG MAKTABA_CLOUD_IMAGE MAKTABA_CADDY_IMAGE CF_API_TOKEN; do
+	MAKTABA_CLOUD_TAG MAKTABA_CADDY_TAG MAKTABA_CLOUD_IMAGE MAKTABA_CADDY_IMAGE CF_API_TOKEN \
+	MAIL_ALLOW MAIL_SUBJECT_PREFIX MAIL_DAILY_LIMIT MAIL_MONTHLY_LIMIT; do
 	if [ -n "${!k:-}" ]; then
 		set_env "$k" "${!k}"
 	fi
@@ -230,6 +232,39 @@ if [ ! -s "$LOG_KEY" ]; then
 	openssl rand 32 > "$LOG_KEY"
 fi
 
+# --- mail: begin (tools/ci/tests/test_cloud_deploy.py runs this block)
+# The mail provider's key (docs/cloud-mail.md), never printed: the api reads the file at each
+# send. The node sends mail only with a key and a stated MAIL_ALLOW ("everyone", or the
+# addresses and @domains it may write to); else its driver stays log, and this says so.
+RESEND_KEY="$DEPLOY_DIR/secrets/resend.key"
+if [ -n "${RESEND_API_KEY:-}" ]; then
+	( umask 077; printf '%s' "$RESEND_API_KEY" > "$RESEND_KEY.new" )
+	mv "$RESEND_KEY.new" "$RESEND_KEY"
+elif [ -n "${RESEND_API_KEY+x}" ]; then
+	rm -f "$RESEND_KEY"
+fi
+MAIL_DRIVER=log
+MAIL_ALLOW_TOML=""
+mail_allow="$(get_env MAIL_ALLOW)"
+mail_prefix="$(get_env MAIL_SUBJECT_PREFIX)"
+mail_day="$(get_env MAIL_DAILY_LIMIT)"; mail_day="${mail_day:-80}"
+mail_month="$(get_env MAIL_MONTHLY_LIMIT)"; mail_month="${mail_month:-2700}"
+[[ "$mail_allow" =~ ^[A-Za-z0-9@._+,-]*$ ]] || die "MAIL_ALLOW is everyone, or addresses and @domains with commas"
+[[ "$mail_prefix" =~ ^[][A-Za-z0-9\ ._-]*$ ]] || die "MAIL_SUBJECT_PREFIX holds a character it may not"
+[[ "$mail_day" =~ ^[1-9][0-9]*$ ]] && [[ "$mail_month" =~ ^[1-9][0-9]*$ ]] || die "MAIL_DAILY_LIMIT and MAIL_MONTHLY_LIMIT are numbers above 0"
+if [ -n "$mail_allow" ] && [ "$mail_allow" != everyone ]; then
+	MAIL_ALLOW_TOML="\"${mail_allow//,/\", \"}\""
+fi
+if [ ! -s "$RESEND_KEY" ]; then
+	warn "mail: no RESEND_API_KEY for this node: the mail driver is log (mails go to the api's log, nothing is delivered)"
+elif [ -z "$mail_allow" ]; then
+	warn "mail: MAIL_ALLOW is not set: the mail driver is log (nothing is delivered)"
+else
+	MAIL_DRIVER=resend
+	log "mail: the driver is resend (recipients: $([ "$mail_allow" = everyone ] && echo everyone || echo 'the listed ones only'); at most $mail_day a day, $mail_month in 30 days)"
+fi
+# --- mail: end
+
 # cloud.toml, from its template and .env's names (the compose mounts it read-only into every
 # role). Only the named placeholders are replaced.
 RELAY_PLANS_ENFORCE_V="$(get_env RELAY_PLANS_ENFORCE)"
@@ -238,6 +273,11 @@ sed -e "s|\${RELAY_DOMAIN}|$(get_env RELAY_DOMAIN)|g" \
 	-e "s|\${API_DOMAIN}|$(get_env API_DOMAIN)|g" \
 	-e "s|\${APP_DOMAIN}|$(get_env APP_DOMAIN)|g" \
 	-e "s|\${RELAY_PLANS_ENFORCE}|${RELAY_PLANS_ENFORCE_V:-false}|g" \
+	-e "s|\${MAIL_DRIVER}|$MAIL_DRIVER|g" \
+	-e "s|\${MAIL_ALLOW}|$MAIL_ALLOW_TOML|g" \
+	-e "s|\${MAIL_SUBJECT_PREFIX}|$mail_prefix|g" \
+	-e "s|\${MAIL_DAILY_LIMIT}|$mail_day|g" \
+	-e "s|\${MAIL_MONTHLY_LIMIT}|$mail_month|g" \
 	"$DEPLOY_DIR/cloud.toml.template" > "$DEPLOY_DIR/cloud.toml.new"
 mv "$DEPLOY_DIR/cloud.toml.new" "$DEPLOY_DIR/cloud.toml"
 # what the containers read as files: compose recreates a container when its file changed

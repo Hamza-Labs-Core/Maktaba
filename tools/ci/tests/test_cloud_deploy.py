@@ -326,3 +326,133 @@ def test_every_mutation_still_finds_what_it_takes_out(tmp_path: Path, monkeypatc
         m.mutate(src)  # it fails when nothing is taken out, or what is left does not parse
         changed = m.MUTATIONS[name][0]
         assert (src / changed).read_text() != (NODE / changed).read_text(), name
+
+
+# --- mail
+
+
+def target_env(name: str) -> dict[str, str]:
+    return dict(line.split("=", 1) for line in (NODE / f"targets/{name}.env").read_text().splitlines() if re.match(r"[A-Z_]+=", line))
+
+
+def mail_block(tmp: Path, env: dict[str, str], dotenv: str = "") -> tuple[int, str, dict[str, Any]]:
+    """setup.sh's mail block, then its cloud.toml: (exit, what it said, [mail])."""
+    import tomllib
+
+    text = (NODE / "setup.sh").read_text()
+    block = text[text.index("# --- mail: begin") : text.index("# --- mail: end")]
+    helpers = text[text.index("# get_env KEY") : text.index("# is_placeholder VALUE")]
+    loop = re.search(r"^for k in RELAY_DOMAIN .*?^done$", text, re.S | re.M)
+    render = re.search(r"^sed -e .*?cloud\.toml\.new\"$", text, re.S | re.M)
+    assert loop and render
+    (tmp / "secrets").mkdir(exist_ok=True)
+    (tmp / "cloud.toml.template").write_text((NODE / "cloud.toml.template").read_text())
+    if dotenv or not (tmp / ".env").exists():
+        (tmp / ".env").write_text(dotenv)
+    script = "\n".join([
+        "set -euo pipefail", f"DEPLOY_DIR={tmp}", 'ENV_FILE="$DEPLOY_DIR/.env"',
+        'log() { echo "$*"; }', 'warn() { echo "!! $*" >&2; }', 'die() { echo "xx $*" >&2; exit 1; }',
+        helpers, loop[0], block, 'RELAY_PLANS_ENFORCE_V=false', render[0], 'mv "$DEPLOY_DIR/cloud.toml.new" "$DEPLOY_DIR/cloud.toml"'])
+    p = subprocess.run(["bash", "-c", script], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True)
+    said = p.stdout + p.stderr
+    toml = tomllib.loads((tmp / "cloud.toml").read_text())["mail"] if p.returncode == 0 else {}
+    return p.returncode, said, toml
+
+
+KEY = "re_9f_a-key.that/is+none"
+
+
+def test_a_node_with_the_key_sends_mail_to_whom_its_target_says(tmp_path: Path) -> None:
+    for target, allow, prefix in (("qa", ["@maktaba.tv", "delivered@resend.dev", "bounced@resend.dev"], "[QA]"), ("prod", [], "")):
+        tmp = tmp_path / target
+        tmp.mkdir()
+        t = target_env(target)
+        mail_env = {k: v for k, v in t.items() if k.startswith("MAIL_")}
+        code, said, toml = mail_block(tmp, {"RESEND_API_KEY": KEY, **mail_env})
+        assert code == 0, said
+        assert toml["driver"] == "resend" and toml["from"] == "Maktaba <no-reply@maktaba.tv>" and toml["reply_to"] == "support@maktaba.tv"
+        assert toml["allow_recipients"] == allow and toml["subject_prefix"] == prefix
+        key = tmp / "secrets/resend.key"
+        assert key.read_text() == KEY and key.stat().st_mode & 0o777 == 0o600
+        # nowhere else, and never said
+        assert KEY not in said + (tmp / ".env").read_text() + (tmp / "cloud.toml").read_text()
+        assert "resend" in said and ("everyone" in said) == (target == "prod")
+        # a setup that names no key keeps the node's; one that says there is none takes it away
+        assert mail_block(tmp, {})[2]["driver"] == "resend"
+        code, said, toml = mail_block(tmp, {"RESEND_API_KEY": ""})
+        assert code == 0 and toml["driver"] == "log" and not key.exists() and "no RESEND_API_KEY" in said
+
+
+def test_a_node_without_the_key_or_a_list_keeps_the_log_and_says_so(tmp_path: Path) -> None:
+    code, said, toml = mail_block(tmp_path, {"MAIL_ALLOW": "everyone"})
+    assert code == 0 and toml["driver"] == "log" and "driver is log" in said
+    assert toml["daily_limit"] > 0 and toml["monthly_limit"] > 0, "the template reads without any MAIL_ setting"
+    (tmp_path / ".env").write_text("")
+    code, said, toml = mail_block(tmp_path, {"RESEND_API_KEY": KEY})
+    assert code == 0 and toml["driver"] == "log" and "MAIL_ALLOW is not set" in said
+
+
+@pytest.mark.parametrize("bad", [{"MAIL_ALLOW": 'a@b.test"] #'}, {"MAIL_ALLOW": "a|b"}, {"MAIL_SUBJECT_PREFIX": "x|y"},
+                                 {"MAIL_SUBJECT_PREFIX": "a&b"}, {"MAIL_DAILY_LIMIT": "0"}, {"MAIL_MONTHLY_LIMIT": "lots"}])
+def test_a_setting_that_is_none_is_refused(tmp_path: Path, bad: dict[str, str]) -> None:
+    code, said, _ = mail_block(tmp_path, {"RESEND_API_KEY": KEY, "MAIL_ALLOW": "everyone", **bad})
+    assert code != 0 and "MAIL_" in said and KEY not in said
+
+
+def test_qa_mails_no_stranger_and_both_targets_fit_the_plan() -> None:
+    qa, prod = target_env("qa"), target_env("prod")
+    assert qa["MAIL_ALLOW"] and "everyone" not in qa["MAIL_ALLOW"]
+    for e in qa["MAIL_ALLOW"].split(","):
+        assert e.endswith(("@maktaba.tv", "@resend.dev")) and e != "@resend.dev", e
+    assert prod["MAIL_ALLOW"] == "everyone"
+    # one provider account: 100 mails a day, 3,000 a month (docs/cloud-mail.md)
+    assert int(qa["MAIL_DAILY_LIMIT"]) + int(prod["MAIL_DAILY_LIMIT"]) <= 100
+    assert int(qa["MAIL_MONTHLY_LIMIT"]) + int(prod["MAIL_MONTHLY_LIMIT"]) <= 3000
+
+
+def test_the_mail_key_is_the_environments_and_goes_on_stdin_only() -> None:
+    users = []
+    for name, job in wf()["jobs"].items():
+        for s in job["steps"]:
+            if "secrets.RESEND_API_KEY" in json.dumps(s):
+                users.append((name, s["name"], job.get("environment")))
+    assert [u[:2] for u in users] == [("deploy", "Set up the node (setup.sh, idempotent)")]
+    assert users[0][2], "the job is in the target's environment, whose own secret it is"
+    step = named("deploy", "Set up the node")
+    assert step["env"]["RESEND_API_KEY"] == "${{ secrets.RESEND_API_KEY }}"
+    run = step["run"]
+    assert run.count("RESEND_API_KEY:-") == 2 and '"${RESEND_API_KEY:-}" | ssh node' in run
+    # on the node it is read from stdin: the remote command holds only the variable's name
+    remote = run[run.index('ssh node "') :]
+    assert "$RESEND_API_KEY" not in remote and 'export RESEND_API_KEY=\\"\\$m\\"' in remote
+    for k in ("MAIL_ALLOW", "MAIL_SUBJECT_PREFIX", "MAIL_DAILY_LIMIT", "MAIL_MONTHLY_LIMIT"):
+        assert k in remote, k
+
+
+def test_the_remote_setup_hands_the_key_over_whole(tmp_path: Path) -> None:
+    """The step itself, with an ssh that runs the remote command here and a setup that says what it got."""
+    (tmp_path / "ssh").write_text('#!/bin/sh\nshift\nexec bash -c "$1"\n')
+    (tmp_path / "ssh").chmod(0o755)
+    (tmp_path / "rollout").write_text('#!/bin/sh\nprintf "%s|" "$RESEND_API_KEY" "${CF_API_TOKEN-unset}" "$MAIL_ALLOW" "$MAIL_SUBJECT_PREFIX" "$MAIL_DAILY_LIMIT"\n')
+    (tmp_path / "rollout").chmod(0o755)
+    run = named("deploy", "Set up the node")["run"].replace("/usr/local/sbin/maktaba-rollout", str(tmp_path / "rollout"))
+    for target in ("qa", "prod"):
+        t = target_env(target)
+        for key in (KEY, ""):
+            p = subprocess.run(["bash", "-c", run], capture_output=True, text=True, env={
+                "PATH": f"{tmp_path}:{os.environ['PATH']}", "TARGET": target, "DEPLOY_ID": "1", "RELAY_TLS": "dns", "CLOUD_REF": "c", "CADDY_REF": "c",
+                "RESEND_API_KEY": key, **t})
+            assert p.returncode == 0, p.stderr
+            said = p.stdout.splitlines()[-1]
+            assert said.endswith(f"{key}|unset|{t['MAIL_ALLOW']}|{t.get('MAIL_SUBJECT_PREFIX', '')}|{t['MAIL_DAILY_LIMIT']}|"), said
+            assert ("::notice::" in p.stdout) == (key == "")
+
+
+def test_e2e_refuses_a_qa_that_could_mail_a_stranger(e2e: Any) -> None:
+    sends = {"driver": "resend", "delivers": True}
+    assert "listed" in e2e.mail_status({"mail": {**sends, "recipients": "listed"}}, True)
+    assert "not delivered" in e2e.mail_status({"mail": {"driver": "log", "delivers": False, "recipients": "all"}}, True)
+    assert e2e.mail_status({"status": "ready"}, True) == "mail not stated"
+    assert "all" in e2e.mail_status({"mail": {**sends, "recipients": "all"}}, False)
+    with pytest.raises(AssertionError, match="stranger"):
+        e2e.mail_status({"mail": {**sends, "recipients": "all"}}, True)

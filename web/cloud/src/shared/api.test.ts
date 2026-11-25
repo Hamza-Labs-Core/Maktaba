@@ -113,6 +113,25 @@ describe("cloud api client", () => {
     );
   });
 
+  it("asks for the app's own language, so a mail the call causes is written in it", async () => {
+    const f = stubFetch({ "POST /v1/auth/register": [202, {}] });
+    const was = document.documentElement.lang;
+    try {
+      for (const lang of ["ar", "en", "fr", ""]) {
+        document.documentElement.lang = lang;
+        await api.post("/v1/auth/register", {}, { auth: false });
+      }
+    } finally {
+      document.documentElement.lang = was;
+    }
+    expect(f.find("POST", "/v1/auth/register").map((c) => c.headers["Accept-Language"])).toEqual([
+      "ar",
+      "en",
+      undefined,
+      undefined,
+    ]);
+  });
+
   it("sends no change headers unless a bundle sets them (the user app)", async () => {
     const f = stubFetch({ "POST /v1/account/sessions/revoke-all": [204] });
     await api.post("/v1/account/sessions/revoke-all");

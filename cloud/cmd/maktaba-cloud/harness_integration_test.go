@@ -381,9 +381,22 @@ func (c *client) login(email, pw string) {
 	c.token = r.json(c.e.t)["access_token"].(string)
 }
 
+// lastMail is the newest mail of that kind to an address, once the outbox is empty.
+func (e *env) lastMail(kind, to string) (mail.Message, bool) {
+	e.t.Helper()
+	for end := time.Now().Add(10 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if e.count(`SELECT count(*) FROM mail_outbox WHERE state IN ('queued', 'ready', 'sending')`) == 0 {
+			return e.mail.Last(kind, to)
+		}
+		if time.Now().After(end) {
+			e.t.Fatal("the mail outbox did not empty")
+		}
+	}
+}
+
 func (e *env) mailedToken(kind, to string) string {
 	e.t.Helper()
-	m, ok := e.mail.Last(kind, to)
+	m, ok := e.lastMail(kind, to)
 	if !ok {
 		e.t.Fatalf("no %s mail to %s", kind, to)
 	}

@@ -71,9 +71,10 @@ CA, which the tests trust).
 - **No Floating IP, no standby, no witness.** The relay's drain is off
   (there is no second relay to move homes to): a restart drops the tunnels, and homes dial back
   within seconds (the test fails past a minute).
-- **No mail.** The only mail driver writes to the log, which redacts the address and the link's
-  code, so no sign-up can confirm its email. The operator confirms an account by hand (below)
-  until the cloud sends mail.
+- **Mail through Resend, with the node's key.** Each GitHub environment's `RESEND_API_KEY` secret
+  goes to the node's `secrets/resend.key`; production writes to anyone, QA only to its own list
+  ([`cloud-mail.md`](cloud-mail.md)). Without the secret the mail driver is `log`: no sign-up can
+  confirm its email, and the operator confirms an account by hand (below).
 
 ## Deploying
 
@@ -156,7 +157,7 @@ production (no relay restart, no load):
 | Check | What it proves |
 |---|---|
 | tls | the relay's apex, the api and the app answer HTTPS with a valid certificate; later a home's name (the wildcard) |
-| health | `/healthz` and `/readyz` on the relay and the api; the web app's page |
+| health | `/healthz` and `/readyz` on the relay and the api, and how mails go (QA that sends with no recipients' list fails); the web app's page |
 | firewall | from outside, of 1,040 TCP ports only 22, 80 and 443 answer; UFW is active and denies incoming; only Caddy publishes a port |
 | backup | the timer is on; a backup taken now restores into a scratch database, every table's rows equal to those recorded in the dump's own snapshot, and its keys into a scratch folder, every file whole and the password good for the database |
 | account | a new account is refused sign-in until confirmed; the operator tool confirms it and gives it Basic |
@@ -184,6 +185,8 @@ nothing secret is printed:
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py verify-email   # confirm the account's email
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py set-plan pro    # free, basic or pro
 echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py account         # id, plan, confirmed
+/opt/maktaba-relay/ops/cloud-ops.py mail-status                                  # how mails go, and what became of them
+echo 'someone@example.com' | /opt/maktaba-relay/ops/cloud-ops.py mail-test ar     # a test mail (docs/cloud-mail.md)
 /opt/maktaba-relay/ops/cloud-ops.py end-test-accounts                            # the deploy tests' own (ci-e2e-*)
 maktaba-rollout status                                                          # committed, pending or held
 ```

@@ -3,9 +3,11 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
@@ -63,6 +65,32 @@ func clearRefreshCookie(w http.ResponseWriter, _ string, secure bool) {
 		MaxAge:   -1,
 	}
 	http.SetCookie(w, c)
+}
+
+// requestLang is the language the request asks for, of the ones the mails are written in: the
+// Accept-Language the web app sends in the app's own language, or the browser's or the app's.
+// "" when it names neither.
+func requestLang(r *http.Request) string {
+	best, bestQ := "", 0.0
+	for _, part := range strings.Split(r.Header.Get("Accept-Language"), ",") {
+		tag, params, _ := strings.Cut(part, ";")
+		lang := mailpkg.Lang(tag)
+		if lang == "" {
+			continue
+		}
+		q := 1.0
+		if v, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				continue
+			}
+			q = f
+		}
+		if q > bestQ {
+			best, bestQ = lang, q
+		}
+	}
+	return best
 }
 
 // isUniqueViolation matches the lib/pq error string. We don't import

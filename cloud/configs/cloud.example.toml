@@ -116,9 +116,19 @@ project_id           = ""
 service_account_path = ""
 
 [mail]
-# "log" writes account mails (verification, reset) to the api log instead of
-# delivering them. It is the only driver today.
+# "log" writes account mails (verification, reset) to the api log instead of delivering them.
+# "resend" sends them through resend.com (docs/cloud-mail.md): its key is never in this file, but
+# in the file below or in MAKTABA_CLOUD_RESEND_API_KEY, and server.web_url is https.
 driver = "log"
+# from                = "Maktaba <no-reply@maktaba.tv>"
+# reply_to            = "support@maktaba.tv"
+# resend_api_key_path = "/etc/maktaba/cloud/secrets/resend.key"
+# the only addresses and @domains to write to; empty is everyone
+# allow_recipients    = ["@maktaba.tv", "delivered@resend.dev"]
+# subject_prefix      = "[QA]"
+# mails sent in 24 hours and in 30 days
+# daily_limit         = 80
+# monthly_limit       = 2700
 
 [entitlement]
 # Ed25519 key path; private key never touches client-readable mounts.

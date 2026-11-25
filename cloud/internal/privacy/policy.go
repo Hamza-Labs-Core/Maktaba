@@ -100,6 +100,20 @@ func ProcessingRecords() []ProcessingActivity {
 				"Access restricted to operator email domain",
 			},
 		},
+		{
+			Name:    "Account mail",
+			Purpose: "Confirm an account's email, reset its password and send its notices.",
+			Categories: []string{
+				"Email address and the mail's content (to the recipient)",
+				"Kind, language, time and outcome of each mail; the address as a keyed hash",
+			},
+			Recipients: []string{"The account's owner", "Resend (delivery, EU region)"},
+			Retention:  "The content until the mail is sent or given up, sealed; the rest 35 days.",
+			Safeguards: []string{
+				"Content sealed at rest and cleared once sent; no address, link or content in logs",
+				"No open or click tracking, no remote images",
+			},
+		},
 	}
 }
 
