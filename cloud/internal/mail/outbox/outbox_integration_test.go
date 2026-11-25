@@ -529,10 +529,26 @@ func TestTheLimitsOfOneAddress(t *testing.T) {
 	if err := w.o.DB.QueryRow(`SELECT count(*) FROM mail_outbox WHERE state = 'dropped' AND (to_hash <> '' OR sealed IS NOT NULL)`).Scan(&kept); err != nil || kept != 0 {
 		t.Errorf("%d asks nothing came of keep their address: %v", kept, err)
 	}
-	// a day later they, and every network, are gone
-	w.at = w.at.Add(25 * time.Hour)
-	if err := w.o.Sweep(context.Background()); err != nil {
+	// a day later they, and every network, are gone; a mail sent still counts
+	if err := w.o.Request(context.Background(), mail.Ask{Kind: mail.KindPasswordReset, To: "b@example.test", Net: "net:203.0.113.0/24"}); err != nil {
 		t.Fatal(err)
+	}
+	w.work()
+	nets := func() (n int) {
+		t.Helper()
+		if err := w.o.DB.QueryRow(`SELECT count(*) FROM mail_outbox WHERE net_hash <> ''`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	for _, late := range []time.Duration{23 * time.Hour, 25 * time.Hour} {
+		w.at = w.at.Add(late)
+		if err := w.o.Sweep(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if n := nets(); n != map[bool]int{true: 1, false: 0}[late < 24*time.Hour] {
+			t.Errorf("%d networks kept %s on", n, late)
+		}
 	}
 	if strings.Contains(w.states(), "dropped") {
 		t.Error(w.states())
