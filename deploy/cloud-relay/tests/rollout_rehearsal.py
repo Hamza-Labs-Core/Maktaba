@@ -316,7 +316,8 @@ def pending() -> bool:
 
 
 def app_running() -> set[str]:
-    out = sh("docker ps --filter label=com.docker.compose.project=maktaba-relay --format '{{.Label \"com.docker.compose.service\"}}'")
+    # (the container that undoes migrations is the relay's service too, but a one-off)
+    out = sh("docker ps --filter label=com.docker.compose.project=maktaba-relay --filter label=com.docker.compose.oneoff=False --format '{{.Label \"com.docker.compose.service\"}}'")
     return set(out.split()) & {"maktaba-cloud", "api", "worker"}
 
 
@@ -411,7 +412,7 @@ def failed_first_stays_down() -> str:
     nothing_serves()
     assert "committed: none" in sh(f"{ROLLOUT} status")
     dc("up -d --wait postgres </dev/null")
-    psql("INSERT INTO users (email, email_verified) VALUES ('first@example.com', true)")
+    psql("INSERT INTO users (email, email_verified) VALUES ('first@example.org', true)")
     code, out = begin("a")  # it checks that a backup was taken
     assert code == 0 and "a first deploy" in out, out[-2000:]
     newest = sorted(Path("/var/backups/maktaba-cloud").glob("db-*.counts"))[-1]
