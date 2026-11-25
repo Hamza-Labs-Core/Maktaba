@@ -142,7 +142,9 @@ function useWords() {
     if (!(e instanceof ApiError)) return t("common.error");
     const c = e.problem.code ?? "";
     if (has(`updates.blocker.${c}`)) return t("update.blocked", { reason: word("blocker", c) });
-    return has(`updates.refused.${c}`) ? t(`updates.refused.${c}`) : e.message;
+    return has(`updates.refused.${c}`)
+      ? t(`updates.refused.${c}`, { detail: e.problem.detail ?? "" })
+      : e.message;
   };
   return {
     t,

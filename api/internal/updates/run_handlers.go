@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -92,10 +93,10 @@ func (d *Driver) Retry(ctx context.Context, id string, nodes []string, actor str
 		return Run{}, err
 	}
 	if wm == "" || CompareVersions(wm, run.Version) < 0 {
-		return Run{}, fmt.Errorf("%w: the home does not run %s", ErrNoTarget, run.Version)
+		return Run{}, fmt.Errorf("%w: the home does not run %s", ErrHomeBehind, run.Version)
 	}
 	if rel, err := d.Store.Get(ctx, run.Version); err == nil && rel.WithdrawnAt != nil {
-		return Run{}, fmt.Errorf("%w: %s was withdrawn (%s)", ErrNoTarget, run.Version, rel.BlockedReason)
+		return Run{}, &withdrawnError{reason: rel.BlockedReason}
 	}
 	nr, err := d.Store.InsertRunWith(ctx, run.Version, run.Version, TriggerRetry, actor,
 		RunDetail{NoHome: true, Targets: nodes})
@@ -169,7 +170,7 @@ func (d *Driver) TargetAction(ctx context.Context, id, node, action, actor strin
 			return nil, err
 		}
 		if !okc {
-			return nil, fmt.Errorf("%w: %s", ErrNoTarget, string(raw))
+			return nil, fmt.Errorf("%w: %s", ErrMachineRefused, string(raw))
 		}
 		noteStore(d.log(), "UpdateTarget", d.Store.UpdateTarget(ctx, id, node, TargetChange{State: TargetRolledBack,
 			Error: map[string]any{"code": "admin_rollback", "by": actor}}))
@@ -393,6 +394,7 @@ func (h *Handler) Resume(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) retryAnswer(w http.ResponseWriter, r *http.Request, run Run, err error) {
+	var wd *withdrawnError
 	switch {
 	case err == nil:
 		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"run_id": run.ID, "version": run.Version})
@@ -402,8 +404,12 @@ func (h *Handler) retryAnswer(w http.ResponseWriter, r *http.Request, run Run, e
 		httperror.Write(w, r, httperror.Conflict("about:blank#run_active", "an update is running").With("code", BlockActiveRun))
 	case errors.Is(err, ErrNotHeld):
 		httperror.Write(w, r, httperror.Conflict("about:blank#nothing_held", "no machine of this run waits").With("code", "nothing_held"))
-	case errors.Is(err, ErrNoTarget):
-		httperror.Write(w, r, httperror.Conflict("about:blank#no_update", err.Error()).With("code", "no_update"))
+	case errors.Is(err, ErrHomeBehind):
+		httperror.Write(w, r, httperror.Conflict("about:blank#home_behind", err.Error()).With("code", ErrHomeBehind.Error()))
+	case errors.As(err, &wd):
+		httperror.Write(w, r, httperror.Conflict("about:blank#withdrawn", "the release was withdrawn: "+wd.reason).With("code", "release_withdrawn"))
+	case errors.Is(err, ErrMachineRefused):
+		httperror.Write(w, r, httperror.Conflict("about:blank#machine_refused", strings.TrimPrefix(err.Error(), ErrMachineRefused.Error()+": ")).With("code", ErrMachineRefused.Error()))
 	case errors.Is(err, ErrOffline):
 		httperror.Write(w, r, httperror.Conflict("about:blank#machine_offline", "the machine is not connected").With("code", "machine_offline"))
 	default:

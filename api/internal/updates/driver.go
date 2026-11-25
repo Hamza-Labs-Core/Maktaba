@@ -884,10 +884,11 @@ func (d *Driver) tvSwapWait(ctx context.Context, run Run, det *RunDetail) bool {
 	return false
 }
 
-// CopyWait is how long the home's restart waits for a joined machine's copy of a table
-// (machinesCopying), from when it first saw one: the restart ends the COPY, and that
-// machine starts that table again. Here, before the bundled Postgres is stopped and while
-// the library serves: the new release's own start has nothing left to wait for.
+// CopyWait is how long the home waits, before it applies a release, for a joined machine's
+// copy of a table (machinesCopying), from when it first saw one: the restart ends the COPY,
+// and that machine starts that table again. Here, while the library serves: the new release's
+// own start has nothing left to wait for. A copy that begins after it, during the backup an
+// update with migrations takes first, is ended all the same.
 const CopyWait = 10 * time.Minute
 
 // WaitMachineCopying is the restart's wait for a machine's copy.
@@ -908,18 +909,20 @@ func (d *Driver) copyWait(ctx context.Context, run Run, det *RunDetail) bool {
 			"run_id", run.ID, "copies", n, "max_wait", CopyWait.String())
 	}
 	wait := n > 0 && now.Sub(*det.CopySince) < CopyWait
-	if wait == (det.Waiting == WaitMachineCopying) {
+	past := n > 0 && !wait && !det.CopyPast // said once, whatever waited meanwhile (a watched TV)
+	if wait == (det.Waiting == WaitMachineCopying) && !past {
 		return wait
 	}
 	if wait {
 		det.Waiting = WaitMachineCopying
-	} else {
+	} else if det.Waiting == WaitMachineCopying {
 		det.Waiting = ""
 	}
+	det.CopyPast = det.CopyPast || past
 	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
-	if n > 0 && !wait {
+	if past {
 		waited := now.Sub(*det.CopySince)
-		d.log().Warn("update restart goes on: a machine still copies the home's database and starts that table again",
+		d.log().Warn("update goes on: a machine still copies the home's database and starts that table again",
 			"event", "update_copy_wait_over", "run_id", run.ID, "copies", n, "waited", waited.String())
 		d.audit(ctx, run, "copy_wait_over", map[string]any{"copies": n, "waited_sec": int(waited.Seconds())})
 	}

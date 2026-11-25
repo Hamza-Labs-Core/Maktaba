@@ -135,7 +135,8 @@ func HomeBlockers(db *sql.DB, supervisor string, hc *http.Client) []Blocker {
 type CopyingBlocker struct{ DB *sql.DB }
 
 // CopyHoldMax is how long machines' copies hold automatic runs from when the scheduler
-// first held one for them: a machine that makes its copy anew again and again, or went to
+// first held one for them (whichever machine's: only a due run that finds none copying
+// begins it anew): a machine that makes its copy anew again and again, or went to
 // sleep in the middle of one, must not keep the home off its updates. Under a day, so a
 // daily window held once is not held the next day.
 const CopyHoldMax = 20 * time.Hour
@@ -455,9 +456,6 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 		s.staleHeld(ctx, pl.Target.Version)
 		return Decision{Action: "none", Reason: WaitCatalogStale, Version: pl.Target.Version}, nil
 	}
-	for _, p := range passed {
-		s.Store.Audit(ctx, "", "system", "update_past_"+p, pl.Target.Version, map[string]any{"held_since": s.copySince})
-	}
 	run, err := s.start(ctx, *pl.Target, pol, TriggerAuto, "")
 	if err != nil {
 		var w *withdrawnError
@@ -468,6 +466,10 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 			return Decision{Action: "none", Reason: WaitNotBuilt, Version: pl.Target.Version}, nil
 		}
 		return Decision{Action: "failed", Reason: err.Error(), Version: pl.Target.Version, RunID: run.ID}, err
+	}
+	for _, p := range passed {
+		s.Store.Audit(ctx, "", "system", "update_past_"+p, pl.Target.Version,
+			map[string]any{"run_id": run.ID, "held_since": s.copySince})
 	}
 	return Decision{Action: "started", Version: run.Version, RunID: run.ID}, nil
 }
@@ -598,6 +600,13 @@ func (e *withdrawnError) Error() string { return "release_withdrawn: " + e.reaso
 
 // ErrNoTarget: Update now with nothing to install.
 var ErrNoTarget = errors.New("no_update")
+
+// ErrHomeBehind: the machines of a run whose release the home does not run (they follow it).
+// ErrMachineRefused: what a machine answered to an order it did not take.
+var (
+	ErrHomeBehind     = errors.New("home_behind")
+	ErrMachineRefused = errors.New("machine_refused")
+)
 
 // BlockedError: a run cannot start now.
 type BlockedError struct{ Reason string }
@@ -742,16 +751,20 @@ func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error
 	if why != "" {
 		return Run{}, &BlockedError{Reason: why}
 	}
-	for _, p := range passed {
-		s.Store.Audit(ctx, actor, "admin", "update_past_"+p, target.Version, nil)
-	}
 	if target.BreaksPreviousHome() && target.ApprovedAt == nil {
 		if err := s.Store.Approve(ctx, target.Version, actor); err != nil {
 			return Run{}, err
 		}
 		s.Store.Audit(ctx, actor, "admin", "release_approved", target.Version, map[string]any{"reason": "breaks_previous_home"})
 	}
-	return s.start(ctx, *target, pol, TriggerManual, actor)
+	run, err := s.start(ctx, *target, pol, TriggerManual, actor)
+	if err != nil {
+		return run, err
+	}
+	for _, p := range passed {
+		s.Store.Audit(ctx, actor, "admin", "update_past_"+p, target.Version, map[string]any{"run_id": run.ID})
+	}
+	return run, nil
 }
 
 // Unblock is an admin's retry of a blocked release without installing it now: its block

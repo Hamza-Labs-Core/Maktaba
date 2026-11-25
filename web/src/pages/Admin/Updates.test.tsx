@@ -678,6 +678,56 @@ describe("Admin Updates", () => {
     expect(await screen.findByText(/said by the server/)).toBeInTheDocument();
   });
 
+  it.each(["en", "ar"] as const)("says why a machine's action was refused (%s)", async (locale) => {
+    const cat = (locale === "ar" ? ar : en) as Record<string, string>;
+    const over = {
+      ...runView,
+      state: "done_with_failures",
+      finished_at: finishedAt,
+      detail: {},
+      targets: [needsPerson],
+    };
+    routes(
+      overview({ last_run: { ...liveRun, state: "done_with_failures", finished_at: finishedAt } }),
+      over,
+      [over]
+    );
+    const user = userEvent.setup();
+    renderPage(locale);
+    const row = await screen.findByTestId("updates-target-n2");
+    const refuse = async (code: string, detail: string) => {
+      post.mockRejectedValueOnce(
+        new ApiError({ type: "about:blank#x", title: "conflict", status: 409, detail, code })
+      );
+      await user.click(within(row).getByRole("button", { name: cat["updates.page.target.retry"] }));
+    };
+    for (const code of ["home_behind", "release_withdrawn", "machine_offline", "nothing_held"]) {
+      await refuse(code, "the server's English");
+      expect(await screen.findByText(cat[`updates.refused.${code}`])).toBeInTheDocument();
+    }
+    // the machine's own words are its reason
+    await refuse("machine_refused", "nothing to go back to");
+    expect(
+      await screen.findByText(
+        cat["updates.refused.machine_refused"].replace("{detail}", "nothing to go back to")
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(cat["updates.refused.no_update"])).toBeNull();
+  });
+
+  it("says why Check now, and a cancel, were refused", async () => {
+    routes(overview(), null);
+    const user = userEvent.setup();
+    renderPage();
+    for (const code of ["disabled", "past_switch", "not_blocked"] as const) {
+      post.mockRejectedValueOnce(
+        new ApiError({ type: "about:blank#x", title: "conflict", status: 409, detail: "x", code })
+      );
+      await user.click(await screen.findByRole("button", { name: "Check now" }));
+      expect(await screen.findByText(en[`updates.refused.${code}`])).toBeInTheDocument();
+    }
+  });
+
   it("pauses and resumes automatic updates", async () => {
     routes(overview(), null);
     put.mockResolvedValue({ section: "updates", changed: ["auto_install"] });
