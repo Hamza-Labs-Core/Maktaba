@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -28,9 +29,12 @@ import androidx.compose.runtime.remember
 import com.hamzalabs.maktaba.desktop.ENGINE_HELP
 import com.hamzalabs.maktaba.desktop.LocalTexts
 import com.hamzalabs.maktaba.desktop.helpUrl
+import com.hamzalabs.maktaba.desktop.mpv.EngineChoice
 import com.hamzalabs.maktaba.desktop.mpv.Engines
 import com.hamzalabs.maktaba.desktop.shell.DesktopHome
 import com.hamzalabs.maktaba.desktop.shell.LocalDesktopHome
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** A window this wide puts the groups beside the page; narrower, one column. */
 val PROFILE_WIDE = 900.dp
@@ -97,14 +101,21 @@ fun ProfileContent(state: ProfileState, home: DesktopHome, nav: ProfileNav) {
 
 /**
  * The Video engine row for [home]'s Profile (story 13.21): [engines]' state with the Player's
- * own choice; **Learn more** opens the home's help page in the Player's language.
+ * own choice; **Learn more** opens the home's help page in the Player's language. libmpv, when
+ * it must be looked for, is loaded off the UI thread, the row showing the choice meanwhile.
+ * Choosing Automatic starts the decoder probe a Player started on the older engine never ran.
  */
 @Composable
 fun engineRow(home: DesktopHome, engines: Engines = home.engines): EngineRow {
     val chosen = home.prefs.engine
     val lang = home.prefs.lang
-    val state = remember(chosen, engines) { engines.row(chosen) }
-    return EngineRow(state, choose = home.prefs::chooseEngine, learnMore = { home.actions.openUrl(helpUrl(home.webUrl, lang, ENGINE_HELP)) })
+    var state by remember(chosen, engines) { mutableStateOf(engines.rowNow(chosen)) }
+    LaunchedEffect(chosen, engines) { if (state == null) state = withContext(Dispatchers.IO) { engines.row(chosen) } }
+    val choose = { c: EngineChoice ->
+        home.prefs.chooseEngine(c)
+        if (c == EngineChoice.Auto) engines.startProbe()
+    }
+    return EngineRow(state ?: Engines.Row(chosen), choose, learnMore = { home.actions.openUrl(helpUrl(home.webUrl, lang, ENGINE_HELP)) })
 }
 
 @Composable

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import java.io.File
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The video engine chosen in Profile → Playback (story 13.21), kept in the Player's own
@@ -46,6 +47,8 @@ open class Engines(
     /** libmpv's players (null: the Player's own, with what [startProbe] measured); a test gives its own. */
     private val mpv: ((MpvLoad.Loaded) -> Players)? = null,
     private val fx: Players = FxPlayers,
+    /** Runs the probe, once (null: the Player's own, [runner]); a test gives its own. */
+    private val probe: ((MpvLoad.Loaded) -> Unit)? = null,
 ) {
     /** Why a video plays with the engine it does. */
     enum class Why { Automatic, Profile, Variable, Missing }
@@ -76,7 +79,8 @@ open class Engines(
     /** The hardware decoder libmpv used for the last video ("no": software), for the problem report. */
     @Volatile var hwdec: String? = null
 
-    private val loaded: MpvLoad by lazy { load() }
+    private val looked = lazy { load() }
+    private val loaded: MpvLoad by looked
     private val mpvPlayers: Players? by lazy {
         (loaded as? MpvLoad.Loaded)?.let { l ->
             mpv?.invoke(l) ?: MpvPlayers(l.lib, captionFonts(), report = report, closed = { runner?.watchClosed() })
@@ -98,20 +102,22 @@ open class Engines(
             videosOpened = { (mpvPlayers as? MpvPlayers)?.opened ?: 0L },
         )
     }
-    @Volatile private var probing = false
+    private val probing = AtomicBoolean()
 
     /**
      * Starts the decoder probe and the audio device's measurement (story 13.19), off the UI
-     * thread, on handles of their own: nothing while videos play with JavaFX ([pick]).
+     * thread, on handles of their own: nothing while videos play with JavaFX ([pick]). Asked at
+     * the Player's start, and when Automatic is chosen in Profile (a Player started on the older
+     * engine has no report until then); the probe runs once.
      */
     fun startProbe() {
         // loading libmpv itself is off the UI thread too
         Thread({
             runCatching {
-                if (pick().mpv) {
-                    probing = true
-                    runner?.start()
-                }
+                if (!pick().mpv) return@runCatching
+                val l = loaded as? MpvLoad.Loaded ?: return@runCatching
+                if (!probing.compareAndSet(false, true)) return@runCatching
+                if (probe != null) probe.invoke(l) else runner?.start()
             }
         }, "mpv-probe-start").apply {
             isDaemon = true
@@ -129,14 +135,23 @@ open class Engines(
         }
     }
 
-    /** The row's state with [chosen] the choice in Profile: the variable first, then libmpv's state, then the choice. */
+    /**
+     * The row's state with [chosen] the choice in Profile: the variable first, then the older
+     * engine, then libmpv's state. libmpv is looked for only with Automatic chosen: the older
+     * engine plays without it, so the row needs nothing of it.
+     */
     fun row(chosen: EngineChoice = setting()): Row = when {
         variableSet(env) -> Row(chosen, Why.Variable)
+        chosen == EngineChoice.Older -> Row(chosen)
         else -> when (val l = loaded) {
             is MpvLoad.Missing -> Row(chosen, Why.Missing, l.reason)
             is MpvLoad.Loaded -> Row(chosen)
         }
     }
+
+    /** [row] at once, for the screen: null when libmpv would be looked for first (then [row], off the UI thread). */
+    fun rowNow(chosen: EngineChoice): Row? =
+        if (variableSet(env) || chosen == EngineChoice.Older || looked.isInitialized()) row(chosen) else null
 
     private val kept = ArrayDeque<Pair<Instant, String>>()
     @Volatile private var last: Pick? = null
@@ -163,9 +178,9 @@ open class Engines(
     /** A line for the problem report: the engine the last video played with (else the next one's) and why. */
     fun describe(): String {
         val p = last ?: pick()
+        if (!p.mpv) return "playback: ${p.describe()}"
         val file = (loaded as? MpvLoad.Loaded)?.path?.name
-        return if (p.mpv) "playback: ${p.describe()} ($file), hardware decoder: ${hwdec ?: "not used yet"}"
-        else "playback: ${p.describe()}"
+        return "playback: ${p.describe()} ($file), hardware decoder: ${hwdec ?: "not used yet"}"
     }
 
     /**
@@ -186,7 +201,7 @@ open class Engines(
      */
     fun logLines(now: Instant = Instant.now()): List<String> {
         val each = synchronized(kept) { kept.toList() }.map { (at, msg) -> line(at, msg) }
-        return each + line(now, describe()) + if (probing) listOf(report.logLine(now)) else emptyList()
+        return each + line(now, describe()) + if (probing.get()) listOf(report.logLine(now)) else emptyList()
     }
 
     private fun line(at: Instant, msg: String): String = buildJsonObject {

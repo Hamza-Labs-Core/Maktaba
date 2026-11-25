@@ -71,7 +71,10 @@ class ProfileScreenTest {
         runComposeUiTest {
             setContent { InPlayer(home) { Box(Modifier.size(1200.dp, 1200.dp)) { ProfileContent(ProfileState(f.client), home, nav) } } }
             onNodeWithText("Video engine").assertExists()
-            onNodeWithText("The new engine could not start: no app resources folder.").assertExists()
+            // libmpv is looked for off the UI thread: the line comes once it was
+            waitUntil(timeoutMillis = com.hamzalabs.maktaba.desktop.STALL_MS) {
+                onAllNodes(androidx.compose.ui.test.hasText("The new engine could not start: no app resources folder.")).fetchSemanticsNodes().isNotEmpty()
+            }
         }
     }
 
