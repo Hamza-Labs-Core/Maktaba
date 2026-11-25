@@ -29,5 +29,5 @@ agent: claude-code
 - Reading a cancelled run on main as a passing one.
 
 ## Open
-- The mockups' rendered PNGs date from 2026-11-11 and are not compared by CI: they can differ from
-  the HTML.
+- The help mockups' rendered PNGs date from 2026-11-11 and are not compared by CI: they can differ
+  from the HTML (#1696).
