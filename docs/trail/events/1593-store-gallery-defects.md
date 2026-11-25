@@ -73,6 +73,9 @@ The review found two majors, fixed in #1593:
 Its minors too: the NOAA emblem is out of the demo library's art, the Apple TV's sign-in keeps
 its focus and has room for its lines, and the changelog claims less. The rest is #1709.
 
+The apps became universal while this was in review (#1616): the iPad sets moved into the
+Player's and the Remote's own listings, and the iPad Remote's shot job runs the one Remote app.
+
 Two CI failures on the merged branch came from the fixes themselves:
 - Android's ask-a-parent shot was taken before Enter parent PIN appeared on the slower runner.
   The test now waits for it.
