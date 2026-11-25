@@ -22,7 +22,7 @@ agent: claude-code
 ## What we learned
 - The last step a test failed on is not always the one that broke: the recording showed the typed
   address come in, whole, as the test ended.
-- `launchd_sim`'s "xcpproxy_sim spawned" and "service state: running" give each process's start
+- `launchd_sim`'s "xpcproxy_sim spawned" and "service state: running" give each process's start
   time; list those over 1 s.
 
 ## Open
