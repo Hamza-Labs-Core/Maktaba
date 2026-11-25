@@ -40,4 +40,9 @@ agent: claude-code
   request of its own.
 - That an attachment is what blocks xcodebuild is inferred from its timings; no stack was taken.
 - Whether the rate drops is to be read from later runs.
+- #1684's own first run had no "Failed to terminate" in the 13 shards that ran, and the late-end
+  path was not taken. Its iPad 5/6 lost its runner while booting; attempt 2 (job 138914500761)
+  failed `PlayerLibrariesUITests.testLibrariesInArabic` with "does not have a process ID": its
+  launch waited 2.5 minutes for one, after a test that closed the app normally and with no
+  late-end line. Why is not traced (issue #1678).
 - `RemoteDiagnosticsUITests` and `RemoteDemoShotsUITests` still rely on `continueAfterFailure`.

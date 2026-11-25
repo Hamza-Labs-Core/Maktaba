@@ -20,4 +20,5 @@ prs: [1683, 1690]
 ## What we learned
 - State set in the same event and transition as a navigation renders with it, so it says when the
   navigation has settled, even where the URL ends up as it was.
-- Removing the line a fix turns on, and seeing a test fail, found that nothing needed `urlKey`.
+- No test needed `urlKey`: main's tests passed with it removed, though the behaviour did need it.
+  Remove the line a fix turns on and see a test fail before calling it covered.
