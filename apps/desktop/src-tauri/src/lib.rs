@@ -106,6 +106,12 @@ async fn discover_servers(timeout_ms: Option<u64>) -> Result<Vec<DiscoveredServe
     Ok(found)
 }
 
+/// The windows whose state is not kept (the window-state plugin leaves them alone): each has a
+/// size and a place of its own. The plugin restores a window inside its build, whatever the
+/// builder says: one with no state kept yet is shown with the focus, and one with a state gets
+/// its size in physical pixels back, the wrong size on a screen of another scale.
+const UNSAVED_WINDOWS: [&str; 1] = [traypanel::LABEL];
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // every panic, in any mode and any thread, is a line in app.log (applog.rs): a Windows
@@ -149,7 +155,8 @@ pub fn run() {
     // `--hidden`): the window is made hidden, and only the tray shows; the
     // saved window state keeps its size and place but does not show it.
     let hidden = keep_in_tray && std::env::args().any(|a| a == agent::HIDDEN_FLAG);
-    let mut window_state = tauri_plugin_window_state::Builder::default();
+    let mut window_state =
+        tauri_plugin_window_state::Builder::default().with_denylist(&UNSAVED_WINDOWS);
     if hidden {
         use tauri_plugin_window_state::StateFlags;
         window_state = window_state.with_state_flags(StateFlags::all() - StateFlags::VISIBLE);

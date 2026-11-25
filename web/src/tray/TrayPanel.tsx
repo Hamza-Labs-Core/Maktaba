@@ -49,7 +49,8 @@ export function TrayPanel() {
   useEffect(() => {
     let live = true;
     let stop = () => {};
-    void trayPanelState().then((s) => live && s && setState(s));
+    // (a change heard meanwhile is newer)
+    void trayPanelState().then((s) => live && s && setState((now) => now ?? s));
     void onTrayPanelState((s) => setState(s)).then((f) => {
       if (live) stop = f;
       else f();
