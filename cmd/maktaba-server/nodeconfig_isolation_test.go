@@ -60,6 +60,8 @@ func TestMain(m *testing.M) {
 	// (46 GB of a 926 GB Mac's), so a restore's set aside was skipped on a fuller disk
 	// and passed on a CI runner; every disk has room unless a test says otherwise
 	makeRoom = func(string, pgbundle.RoomPolicy) error { return nil }
+	makeRoomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return nil }
+	roomKeeping = makeRoomKeeping
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

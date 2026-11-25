@@ -260,21 +260,20 @@ updated its runtime) offers its own update for its window and tray.
 3. **Rolling back never dumps.** A release that added no migration, or whose migrations never
    ran, left a record its rollback (the watch's, or the launcher's guard) does not mark: the
    previous release starts at once, a restart. **After the migrations ran** (a check failed in
-   the watch, or the launcher's guard fired): the record is set to `restoring` (failed = the new
-   release, dump = the one above) before the previous release starts, and that release's
-   database step puts the dump back before any role runs (code every release since 38.12 has),
-   with nothing dumped first. What is lost: the writes between the dump and the rollback —
-   minutes, inside the window, with every pipeline worker of the cluster drained from the
-   home's apply until it commits — and the failed state, which is not kept (releases before
-   this rule dumped it aside first, `backups/failed-<new>-<utc>.dump`, which kept the library
-   down for as long as a whole dump takes).
+   the watch, or the launcher's guard fired): the schema is kept, or undone by its Down scripts;
+   else the record is set to `held` (failed = the new release, dump = the one above) before the
+   previous release starts, which stops on it: a person puts the dump back, or installs a release
+   that fixes the update (`docs/updates.md`, "No backup is ever put back by itself"). Until
+   2026-11-24 the record was set to `restoring` and the previous release put the dump back by
+   itself, which lost the writes since the dump and kept the library down for hours on a large
+   home; a release from before then that meets `restoring` with a dump still does.
 
    **An additive rollback keeps the schema (2026-10-28).** The outage of 2026-10-28 put the
    whole database back for one migration that added a row (0168), and that restore failed. The
    migrations are additive by rule (`shared/db/migrations/README.md` rules 9 and 10, `make
    compat-prev`): the release before runs on the schema the new one made. So the rollback (the
-   new release's watch, `updater.Machine.rollback`) puts the dump back only when a migration
-   since the release before is not rollback-safe (`updater/schemakeep.go`): its MANIFEST row says
+   new release's watch, `updater.Machine.rollback`) goes further than keeping the schema (its
+   Down scripts, else held) only when a migration since the release before is not rollback-safe (`updater/schemakeep.go`): its MANIFEST row says
    "Breaking for the previous release" or "Breaking for older nodes", or its Up section drops
    anything (a table, a column with or without the `COLUMN` keyword, a default, an index, a
    constraint, a view, a type…), renames, retypes (with or without `COLUMN`), sets NOT NULL,
@@ -283,7 +282,7 @@ updated its runtime) offers its own update for its window and tray.
    themselves: `DROP NOT NULL`, and a trigger or a function dropped and made again in the same
    file (the same trigger on the same table; the same function with exactly the same
    parameter list: another signature is another function). Anything uncertain counts as
-   destructive (review of #433: the cost is only a restore); a DROP in the Down section or in
+   destructive (review of #433); a DROP in the Down section or in
    a comment is not read. By that rule 0168 keeps the schema and 0169 (its CHECK) does not.
    Otherwise the record stays `migrated` with `kept_for` =
    the release before (`layout.MarkRecordKept`), nothing is put back and nothing is lost: that
@@ -293,7 +292,8 @@ updated its runtime) offers its own update for its window and tray.
    The release before must say it does this (its migrations' `meta/schema-keep.json`, protocol
    1, shipped from this release on, in the app payloads and the runtime copies); a rollback to a
    release without it, a plain server's layout (its migrations archive carries no `meta/`), and
-   the launcher's own guard (the new release is not up to judge) put the dump back as before.
+   the launcher's own guard (the new release is not up to judge) do not keep it: undone by its
+   Down scripts where the release's watch can run them, else held.
    Installing the newer release again finds its migrations there: a restart, no dump.
    `kept_for` follows the schema: a start with no migration keeps it; an update that migrates
    notes it on its dump (`dump_kept_for`), and a restore of that dump says it again

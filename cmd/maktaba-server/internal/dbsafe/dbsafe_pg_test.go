@@ -715,6 +715,10 @@ func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
 	if _, err := r.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('after.update', '1')`); err != nil {
 		t.Fatal(err)
 	}
+	before, schema, err := r.t.Identity(ctx)
+	if err != nil || before == "" || schema == 0 {
+		t.Fatalf("identity %q %d %v", before, schema, err)
+	}
 	// the programs, with a pg_restore that writes the tables and then hangs (until the server
 	// that runs it is gone)
 	bin := filepath.Join(t.TempDir(), "bin")
@@ -760,20 +764,16 @@ func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("a killed restore changed the database: %d %v\n%s", n, err, out.String())
 	}
-	if !r.has(t, "videos") {
-		t.Fatal("the library's tables are gone")
+	if id, _, err := r.t.Identity(ctx); err != nil || id != before {
+		t.Fatalf("identity %q, was %q (%v)", id, before, err)
 	}
+	// whole, it is another database
 	var log bytes.Buffer
-	if err := r.t.Restore(ctx, dump, &log); err != nil { // whole, it is committed
+	if err := r.t.Restore(ctx, dump, &log); err != nil {
 		t.Fatalf("%v\n%s", err, log.String())
 	}
-	db2, err := r.t.open(ctx, "") // the restore ended the other sessions
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db2.Close()
-	if err := db2.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("not restored: %d %v", n, err)
+	if id, v, err := r.t.Identity(ctx); err != nil || id == before || id == "" || v != schema {
+		t.Fatalf("identity after the restore %q %d (%v)", id, v, err)
 	}
 }
 
@@ -821,6 +821,250 @@ func TestRestoreOfRowsCutShortCommitsNothing(t *testing.T) {
 	var n int
 	if err := db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("the database changed: %d %v\n%s", n, err, log.String())
+	}
+}
+
+// scriptRig is a restore whose pg_restore writes the real script with more at its end, and
+// whose psql is followed by after (a shell's: it does not end with it).
+func scriptRig(t *testing.T, more, after string) (*pgRig, Target, string) {
+	t.Helper()
+	r := newPGRig(t)
+	if runtime.GOOS == "windows" || !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql and a shell")
+	}
+	// (a Postgres of the person's own has no pg_textsearch of the home's: #1671)
+	if _, err := r.db.Exec(`DROP EXTENSION IF EXISTS pg_textsearch CASCADE; DROP SCHEMA IF EXISTS textsearch CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(context.Background(), dump); err != nil {
+		t.Fatal(err)
+	}
+	prev := psqlLookEvery
+	t.Cleanup(func() { psqlLookEvery = prev })
+	psqlLookEvery = 100 * time.Millisecond
+	bin := t.TempDir()
+	for name, body := range map[string]string{
+		"pg_restore": "#!/bin/sh\n'" + r.t.bin("pg_restore") + "' \"$@\" || exit 1\ncase \"$*\" in *=post-data*) " + more + ";; esac\n",
+		"psql":       "#!/bin/sh\n'" + r.t.bin("psql") + "' \"$@\"\nrc=$?\n[ \"$1\" = --version ] || { " + after + "; }\nexit $rc\n",
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tg := r.t
+	tg.Bin = func(name string) string { return filepath.Join(bin, name) }
+	return r, tg, dump
+}
+
+func runScript(t *testing.T, tg Target, dump string) ([]string, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var log bytes.Buffer
+	var steps []string
+	err := tg.RestoreWith(ctx, dump, func(s string) error { steps = append(steps, s); return nil }, &log)
+	if ctx.Err() != nil {
+		t.Fatalf("still running after a minute: %v", err)
+	}
+	return steps, err
+}
+
+// A psql that failed and does not end is not waited for, wherever in its script it failed: at
+// its end, or with more of it to come than its pipe takes.
+func TestRestoreDoesNotWaitForAPsqlThatFailed(t *testing.T) {
+	const never = "while kill -0 $PPID; do sleep 1; done"
+	for name, more := range map[string]string{
+		"at the end": "echo 'SELECT nothing FROM nowhere;'",
+		"with more to come": "echo 'SELECT nothing FROM nowhere;'; i=0; while [ $i -lt 20000 ]; do echo 'SELECT 1; -- padding padding'; " +
+			"i=$((i+1)); done",
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, tg, dump := scriptRig(t, more, never)
+			steps, err := runScript(t, tg, dump)
+			if err == nil || !strings.Contains(err.Error(), "psql failed and did not end (its session: gone)") || len(steps) != 0 {
+				t.Fatalf("the restore: %v, told %v", err, steps)
+			}
+			if !r.has(t, "videos") {
+				t.Fatal("the library's tables are gone")
+			}
+		})
+	}
+}
+
+// A restore that is slow is left alone: whatever name its connection has (its URL's, a
+// pooler's), and whatever another session of its own name does.
+func TestRestoreThatIsSlowIsLeftAlone(t *testing.T) {
+	const slow = "echo 'SELECT pg_sleep(3);'" // 30 looks, 5 of them would end it
+	withName := func(u string) string {
+		if strings.Contains(u, "?") {
+			return u + "&application_name=maktaba"
+		}
+		return u + "?application_name=maktaba"
+	}
+	t.Run("a name of its own in the URL", func(t *testing.T) {
+		_, tg, dump := scriptRig(t, slow, "true")
+		tg.URL = withName(tg.URL)
+		before, _, err := tg.Identity(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if steps, err := runScript(t, tg, dump); err != nil || len(steps) != 1 {
+			t.Fatalf("%v, told %v", err, steps)
+		}
+		if id, _, err := tg.Identity(context.Background()); err != nil || id == before {
+			t.Fatalf("not restored: %q %v", id, err)
+		}
+	})
+	t.Run("another session of its name that failed", func(t *testing.T) {
+		r, tg, dump := scriptRig(t, slow, "true")
+		go func() {
+			time.Sleep(time.Second) // after the restore ended the other sessions
+			d, err := r.t.open(context.Background(), "")
+			if err != nil {
+				return
+			}
+			defer d.Close()
+			if c, err := d.Conn(context.Background()); err == nil {
+				_, _ = c.ExecContext(context.Background(), "SET application_name = '"+pgbundle.RestoreApp+"'")
+				_, _ = c.ExecContext(context.Background(), "BEGIN")
+				_, _ = c.ExecContext(context.Background(), "SELECT 1/0")
+				time.Sleep(4 * time.Second)
+			}
+		}()
+		if steps, err := runScript(t, tg, dump); err != nil || len(steps) != 1 {
+			t.Fatalf("%v, told %v", err, steps)
+		}
+	})
+}
+
+// A session a killed restore left is found under any connection name, ended, and the database
+// is then told from what it is.
+func TestIdentityEndsWhatAKilledRestoreLeft(t *testing.T) {
+	r, tg, _ := scriptRig(t, "true", "true")
+	u := tg.URL + "?application_name=maktaba"
+	if strings.Contains(tg.URL, "?") {
+		u = tg.URL + "&application_name=maktaba"
+	}
+	d, err := (Target{URL: u}).open(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	before, _, err := r.t.Identity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := d.Begin() // as the script begins
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"SET LOCAL application_name = '" + pgbundle.RestoreApp + "'", "DROP SCHEMA public CASCADE", "CREATE SCHEMA public"} {
+		if _, err := tx.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if id, _, err := r.t.Identity(context.Background()); err != nil || id != before {
+		t.Fatalf("identity %q, was %q (%v)", id, before, err)
+	}
+	if err := tx.Commit(); err == nil {
+		t.Fatal("the session a restore left committed after the identity was told")
+	}
+}
+
+// The watch says nothing of what it cannot see: no answer, another server, a session it was
+// not told of; and what it does see, only at several looks in a row.
+func TestWatchSessionSaysNothingOfWhatItCannotSee(t *testing.T) {
+	r := newPGRig(t)
+	prev := psqlLookEvery
+	t.Cleanup(func() { psqlLookEvery = prev })
+	psqlLookEvery = 20 * time.Millisecond
+	var server string
+	if err := r.db.QueryRow(`SELECT extract(epoch FROM pg_postmaster_start_time())::text`).Scan(&server); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		tg          Target
+		pid, server string
+	}{
+		"no answer":             {Target{URL: "postgres://x@127.0.0.1:1/x?sslmode=disable"}, "1", server},
+		"another server":        {r.t, "999999", "1.5"},
+		"a session not told of": {r.t, "", ""},
+	} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		c.tg.watchSession(ctx, &psqlSession{pid: c.pid, server: c.server}, func(state string) {
+			t.Errorf("%s: said %q", name, state)
+		})
+		cancel()
+	}
+	// one that is there, then is not
+	conn, err := r.db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pid string
+	if err := conn.QueryRowContext(context.Background(), `SELECT pg_backend_pid()::text`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(300*time.Millisecond, func() {
+		d, err := r.t.open(context.Background(), "")
+		if err == nil {
+			_, _ = d.Exec(`SELECT pg_terminate_backend($1::int)`, pid)
+			_ = d.Close()
+		}
+	})
+	said := ""
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	r.t.watchSession(ctx, &psqlSession{pid: pid, server: server}, func(state string) { said = state })
+	if said != "gone" {
+		t.Fatalf("a session that went: %q", said)
+	}
+}
+
+func TestPsqlSessionSaid(t *testing.T) {
+	text := "NOTICE:  x\nmaktaba-restore-1-session 4242 1700000000.5\nmaktaba-restore-1-ran\n"
+	for _, size := range []int{1, 5, 1 << 20} {
+		s := &psqlSession{word: "maktaba-restore-1-session"}
+		for rest := text; rest != ""; {
+			n := min(size, len(rest))
+			_, _ = s.Write([]byte(rest[:n]))
+			rest = rest[n:]
+		}
+		if pid, server := s.said(); pid != "4242" || server != "1700000000.5" {
+			t.Errorf("%d bytes at a time: %q %q", size, pid, server)
+		}
+	}
+}
+
+// A home killed while it closed its own database to sessions, for another to take its place,
+// left it closed to everyone: it is the same database, and takes sessions again. A person's own
+// is left as they have it.
+func TestIdentityOpensWhatAKilledRestoreClosed(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	before, schema, err := r.t.Identity(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own, err := r.t.open(ctx, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer own.Close()
+	if _, err := own.Exec(`ALTER DATABASE ` + pgbundle.AppDatabase + ` ALLOW_CONNECTIONS false`); err != nil {
+		t.Fatal(err)
+	}
+	if id, _, err := r.t.Identity(ctx); err == nil {
+		t.Fatalf("a closed database of a person's own: %q", id)
+	}
+	bundled := r.t
+	bundled.Data = t.TempDir()
+	if id, v, err := bundled.Identity(ctx); err != nil || id != before || v != schema {
+		t.Fatalf("identity %q %d, was %q %d (%v)", id, v, before, schema, err)
+	}
+	if _, _, err := r.t.Identity(ctx); err != nil {
+		t.Fatalf("still closed: %v", err)
 	}
 }
 
