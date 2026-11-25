@@ -547,7 +547,8 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
     use up the wait. A job that ended without running (``skipped_unchanged``: workers
     without the second listen, or without room for it, gave it back until it was a day
     old) was no try, and does not count; nor does a second listen that left its
-    transcript to be transcribed again (``waiting_inputs``), which nothing waits after. Returns how many."""
+    transcript to be transcribed again (``waiting_inputs``), which nothing waits after.
+    Returns how many."""
     rows = await db.fetch(
         "SELECT r.video_id, r.attempts, r.wait_s, j.stage, j.finished_at, j.outcome"
         " FROM relisten_attempts r LEFT JOIN processing_jobs j ON j.id = r.last_job_id"
