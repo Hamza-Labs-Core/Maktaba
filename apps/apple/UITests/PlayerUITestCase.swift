@@ -27,7 +27,26 @@ class PlayerUITestCase: XCTestCase {
 
     var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
-    override func setUp() async throws {
+    // Synchronous, not the async ones: with an async hook anywhere in the class, XCTest answers a
+    // failure that interrupts the test by running the tear-down from inside whatever runs, and
+    // waits on the main thread for an async tear-down that needs the main thread ("Preparing to
+    // exit process to interrupt test (… overridesAsyncSetUpOrTearDown=1)"): in a hook neither
+    // ends, until the test's 10 minutes do (PR #1561's run 45302179115, iPad 4/6, in `tearDown`;
+    // run 45495588048's iPhone 4/6, in `setUp`), and in a test's body the runner's process ends
+    // and the next test warms the simulator up again. XCUITest marks its own failures to
+    // interrupt whatever `continueAfterFailure` says. XCTest calls both on the main thread.
+    override nonisolated func setUpWithError() throws {
+        nonisolated(unsafe) let test = self
+        try MainActor.assumeIsolated { try test.begin() }
+    }
+
+    override nonisolated func tearDownWithError() throws {
+        nonisolated(unsafe) let test = self
+        MainActor.assumeIsolated { test.end() }
+    }
+
+    /// Before each test (a subclass that adds to it calls `super.begin()` first).
+    func begin() throws {
         continueAfterFailure = false
         try warmUpOnce()
         home = try MockHome()
@@ -37,13 +56,9 @@ class PlayerUITestCase: XCTestCase {
 
     // MARK: the simulator's first launches
 
-    /// A failure from now on is recorded and what runs goes on: the warm-up, whose failures are
-    /// expected, and the tear-down. Both are async, where a failure that interrupts hangs
-    /// (`tearDown`), and XCUITest's does whatever `continueAfterFailure` says
-    /// (`withoutInterrupting(_:)`). In run 45495588048's iPhone 4/6 the warm-up's launch failed
-    /// ("has not loaded accessibility", expected) and the shard's first test stood there 7
-    /// minutes, until its 10 ran out: its spindump has `setUp` → `warmUpOnce` → `record(_:)` →
-    /// `_interruptTest` → `_performTearDownSequence…`.
+    /// A failure from now on is recorded and what runs goes on, XCUITest's own too
+    /// (`withoutInterrupting(_:)`): in the warm-up, whose failures are expected and which goes on
+    /// to its end, and in the tear-down, which closes the app and the home whatever fails.
     private var goesOn = false
 
     /// Whether this test process has signed in once already (`warmUpOnce`).
@@ -87,7 +102,7 @@ class PlayerUITestCase: XCTestCase {
         defer {
             app.terminate()
             home.stop()
-            // last: a failure to end the app is the warm-up's too, and one that interrupts hangs
+            // last: a failure to end the app is the warm-up's too
             goesOn = false
             continueAfterFailure = stops
         }
@@ -156,15 +171,7 @@ class PlayerUITestCase: XCTestCase {
     /// (PlayerWatchTests plays MockHome's stream in this runner) then cannot start its sound
     /// output, and AVPlayer's time, which follows the sound output, stays put: "the time
     /// moves" timed out 14 s in, with the Player still posting progress (CI run 41521240810).
-    override func tearDown() async throws {
-        // a failure from here on is recorded, it does not interrupt the test: XCTest answers one
-        // that does, in an async tearDown, by running the tear-down sequence again from inside
-        // this one, and waits on the main thread for that inner async tearDown, which needs the
-        // main thread: neither ends (PR #1561's run 45302179115, iPad 4/6: the hung test's
-        // spindump has `close` → `terminate` → `record(_:)` → `_interruptTest` →
-        // `_performTearDownSequence…` → `XCTWaiter _synchronouslyWaitForTimeInterval`; twice on
-        // PR #1550, the shard held until the job's 60 minutes ran out). This is for the test's
-        // own failures; XCUITest's interrupt whatever it says, unless `goesOn`
+    func end() {
         continueAfterFailure = true
         goesOn = true
         Self.close(app)
@@ -217,8 +224,7 @@ class PlayerUITestCase: XCTestCase {
 
     /// `issue` as XCTest's own failures are: it interrupts the test only when
     /// `continueAfterFailure` is false. XCUITest marks its failures to interrupt anyway (a
-    /// private mark of the issue, which a new one does not have), and in an async tearDown that
-    /// hangs (`tearDown`): iPad 1/6 above hung 7 minutes with `continueAfterFailure` true.
+    /// private mark of the issue, which a new one does not have).
     nonisolated static func withoutInterrupting(_ issue: XCTIssue) -> XCTIssue {
         XCTIssue(type: issue.type, compactDescription: issue.compactDescription,
                  detailedDescription: issue.detailedDescription, sourceCodeContext: issue.sourceCodeContext,

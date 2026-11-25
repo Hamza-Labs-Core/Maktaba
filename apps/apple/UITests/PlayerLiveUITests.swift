@@ -4,8 +4,8 @@ import XCTest
 /// `MockHome` (its channels, guide, `tv/info` and remote session from `UITests/Fixtures`; the
 /// channel playlists stubbed here, their segments two seconds of ink). No real home.
 final class PlayerLiveUITests: PlayerUITestCase {
-    override func setUp() async throws {
-        try await super.setUp()
+    override func begin() throws {
+        try super.begin()
         // playing asks for a token that lasts (the pairing's is not a JWT): a refresh gives one
         home.stub("POST", "/api/auth/refresh", body: #"{"access_token":"\#(Self.jwt)","refresh_token":"ui-refresh-2"}"#)
         for ch in ["ch-1", "ch-2", "ch-3"] {

@@ -280,6 +280,25 @@ jobs:
             echo "UDID=$udid" >> "$GITHUB_ENV"
             boot "$udid"
           fi
+          # two of the simulator's own services are turned off, which no test here uses:
+          # - PosterBoard draws every wallpaper of the gallery a few minutes after a first boot
+          #   (the background task `com.apple.springboard.posterboardupdate.prewarm`; with it off
+          #   the task ends at once). On these runners, with no GPU and 7 GB, that is about two
+          #   minutes in which xcodebuild, testmanagerd and the app hardly run. Five failures of
+          #   five began in it ("Failed to terminate" in runs 45492257208, 45444285100 and
+          #   45495588048, twice; "does not have a process ID" in 45513857454).
+          # - apsd retries its push connection 8 to 17 times a second for good: it has no device
+          #   identity here. Each try writes some 80 log lines. It and diagnosticd, which reads
+          #   them, held more than one of the three cores, and kept 3 of 8 simulators from ever
+          #   settling below.
+          for service in com.apple.PosterBoard com.apple.apsd; do
+            xcrun simctl spawn "$udid" launchctl disable "user/foreground/$service" || true
+            xcrun simctl spawn "$udid" launchctl bootout "user/foreground/$service" || true
+            running=$(xcrun simctl spawn "$udid" launchctl list || true)
+            if grep -q "[[:space:]]$service\$" <<< "$running"; then
+              echo "::warning::$service still runs in the simulator: its load can fail a test (#1678)"
+            fi
+          done
           xcrun simctl ui "$udid" appearance dark
           # the simulator keeps the app's info and debug lines too (its subsystem is its bundle
           # id; a parent's config is not inherited): by default `log show` finds its errors and
