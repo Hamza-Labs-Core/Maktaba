@@ -18,10 +18,11 @@ Slots are applied in number order, and a slot below the database's version is st
 when it lands later (`Migrator.Up` allows missing versions): Epic 50's 0050 can merge after
 Epic 51's 0051.
 
-A migration that may reach a database already past its number takes a number **above the newest**:
-`/readyz` (`Migrator.AtHead`) reads goose's current version, which is the last one applied, so after
-a lower one is applied late the role, and the release before it when a deploy goes back, answers
-`migrations_behind` ([#1715](https://github.com/Hamza-Labs-Core/Maktaba/issues/1715)).
+A migration that may reach a database already past its number still does best with a number **above
+the newest**: it is applied in the order it was written in. A lower one that lands late is no fault, though
+([#1715](https://github.com/Hamza-Labs-Core/Maktaba/issues/1715)): `/readyz` (`Migrator.AtHead`) asks
+for every one of its migrations, and `Up`, `Undo` and `Down`, also when they fail half way, leave the newest
+recorded last, for the releases up to v0.3.163 that read that one alone.
 
 ## Concurrency
 
