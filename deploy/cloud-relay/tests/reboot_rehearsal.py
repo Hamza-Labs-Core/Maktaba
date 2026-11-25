@@ -38,9 +38,9 @@ PORT = 2222
 VM = Path("/var/tmp/reboot-rehearsal")
 STATE, DEPLOY, SRC = rr.STATE, rr.DEPLOY, rr.SRC
 
-NOTICE = {"boots-a-failed-first": ["a first deploy's tests fail, then a reboot", "a first deploy's tests fail, then a power cut",
-                                   "a power cut in a first deploy's tests"],
-          "first-unsaved": ["the next deploy backs it up"]}
+# the cases, and what they must say: one that fails for another reason notices nothing
+NOTICE = {"boots-a-failed-first": (["a first deploy's tests fail, then a reboot", "a first deploy's tests fail, then a power cut"], "a refused release"),
+          "first-unsaved": (["the next deploy backs it up"], "begin took no backup")}
 
 
 # --- the machine ----------------------------------------------------------------------------
@@ -157,7 +157,7 @@ def source() -> bytes:
         rr.mutate(src)
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as t:
-            t.add(src, arcname=".", filter=lambda i: i.replace(uid=0, gid=0, uname="root", gname="root"))
+            t.add(src, arcname=".")  # root's, as this is
         return buf.getvalue()
 
 
@@ -454,7 +454,7 @@ def main() -> int:
         ("a power cut after a commit", power_cut_after_a_commit),
     ]
     if MUTATE:
-        cases = cases[:4]
+        cases = cases[:3]
     rr.build_releases({"expand", "slow"})
     make_machine()
     power_on()
@@ -477,7 +477,8 @@ def main() -> int:
                 f"| {'✅' if r['ok'] else '❌'} | {r['case']} | {r['sec']} s | {r['detail'].splitlines()[0][:200] if r['detail'] else ''} |\n" for r in results))
     print(f"\n{len(results) - len(bad)} of {len(results)} cases pass" + (f"; failed: {', '.join(bad)}" if bad else ""), flush=True)
     if MUTATE:
-        noticed = set(bad) & set(NOTICE[MUTATE])
+        names, says = NOTICE[MUTATE]
+        noticed = {r["case"] for r in results if not r["ok"] and r["case"] in names and says in r["detail"]}
         print(f"{MUTATE}: {'noticed by ' + ', '.join(sorted(noticed)) if noticed else 'NOT NOTICED'}", flush=True)
         return 0 if noticed else 1
     return 1 if bad else 0

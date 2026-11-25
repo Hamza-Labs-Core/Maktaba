@@ -1422,13 +1422,14 @@ def main() -> int:
     ]
     every = first + part1 + part2 + part3
     todo = {"1": part1, "2": part2, "3": part3}.get(os.environ.get("PART", ""), part1 + part2 + part3)
+    base = ""
     if MUTATE:
         names = MUTATIONS[MUTATE][3]
         assert set(names) <= {n for n, _ in every}, names
         todo = [c for c in part1 + part2 + part3 if c[0] in names]
-        # up to the first deploy that stays, without the ones nobody asks about (a failed one is
-        # what the ones after it start from)
-        first = [c for c in first if c[0] in names or c[0] == "the first deploy" or c[0] == "a first deploy that fails" and names[0].startswith("a f")]
+        # what the named ones start from: the first deploy, or the failed one before it
+        base = "a first deploy that fails" if set(names) <= {n for n, _ in first} - {"the first deploy"} else "the first deploy"
+        first = [c for c in first if c[0] in names or c[0] == base]
     for name, fn in first + todo:
         case(name, fn)
     (OUT / "results.json").write_text(json.dumps(results, indent=2))
@@ -1439,10 +1440,8 @@ def main() -> int:
                 f"| {'✅' if r['ok'] else '❌'} | {r['case']} | {r['sec']} s | {r['detail'].splitlines()[0][:200] if r['detail'] else ''} |\n" for r in results))
     print(f"\n{len(results) - len(bad)} of {len(results)} cases pass" + (f"; failed: {', '.join(bad)}" if bad else ""), flush=True)
     if MUTATE:
-        # by a case that names it, on a node that was set up: a broken first deploy says nothing
-        noticed = set(bad) & set(MUTATIONS[MUTATE][3])
-        if "the first deploy" in bad and "the first deploy" not in MUTATIONS[MUTATE][3]:
-            noticed = set()
+        # by a case that names it, on a node that was set up: one that was not says nothing
+        noticed = set(bad) & set(MUTATIONS[MUTATE][3]) if base not in bad else set()
         print(f"{MUTATE}: {'noticed by ' + ', '.join(sorted(noticed)) if noticed else 'NOT NOTICED'}", flush=True)
         return 0 if noticed else 1
     return 1 if bad or len(results) != len(first) + len(todo) else 0
