@@ -6,7 +6,7 @@
 //   tray_panel_state           -> TrayPanelState: the tray menu's entries, as they are now
 //   tray_panel_choose { id }   -> choose one (an enabled item); the panel hides
 //   tray_panel_hide            -> Escape
-//   event "tray-panel-state"   -> the entries changed
+//   event "tray-panel-state"   -> the entries changed (nothing in it: the panel asks for them)
 //   event "tray-panel-opened"  -> the shell showed the panel again (its first action takes the focus)
 //
 // The labels are the tray's own (lang.rs), in the system's language.
@@ -73,13 +73,21 @@ export async function hideTrayPanel(): Promise<void> {
   await invoke("tray_panel_hide");
 }
 
-/** Calls `cb` with the entries each time they change; returns its stop. */
+/**
+ * Calls `cb` with the entries each time they change; returns its stop. Its own window's events,
+ * which say only that they changed: the entries come from the shell, so no page can give others.
+ */
 export async function onTrayPanelState(cb: (s: TrayPanelState) => void): Promise<() => void> {
   if (win().__MAKTABA_TRAY_PREVIEW__ || !isDesktop()) return () => {};
   try {
-    const { listen } = await import("@tauri-apps/api/event");
-    return await listen<TrayPanelState>("tray-panel-state", (e) => {
-      if (isState(e.payload)) cb(e.payload);
+    const { getCurrentWebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+    let asked = 0;
+    return await getCurrentWebviewWindow().listen("tray-panel-state", () => {
+      const n = ++asked;
+      void trayPanelState().then((s) => {
+        // an answer to an earlier change that came late is not the newest
+        if (s && n === asked) cb(s);
+      });
     });
   } catch {
     return () => {};
@@ -91,8 +99,10 @@ export function onTrayPanelOpened(cb: () => void): () => void {
   if (win().__MAKTABA_TRAY_PREVIEW__ || !isDesktop()) return () => {};
   let stop = () => {};
   let live = true;
-  void import("@tauri-apps/api/event")
-    .then(({ listen }) => listen("tray-panel-opened", () => cb()))
+  void import("@tauri-apps/api/webviewWindow")
+    .then(({ getCurrentWebviewWindow }) =>
+      getCurrentWebviewWindow().listen("tray-panel-opened", () => cb())
+    )
     .then((f) => {
       if (live) stop = f;
       else f();

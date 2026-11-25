@@ -27,7 +27,9 @@ use tauri::{
 use crate::{applog, shell, tray::Entry};
 
 pub const LABEL: &str = "tray-panel";
-/// The event the panel gets when the tray's entries change.
+/// The event the panel gets when the tray's entries change: no words in it (an event of any
+/// window reaches every page that listens for all of them), the page asks for them
+/// (tray_panel_state).
 pub const STATE_EVENT: &str = "tray-panel-state";
 /// The event the panel gets each time it is shown again (its first action takes the focus).
 pub const OPENED_EVENT: &str = "tray-panel-opened";
@@ -119,10 +121,10 @@ pub fn tray_panel_hide(app: AppHandle) {
     hide(&app);
 }
 
-/// The tray's entries changed: an open panel shows them (the panel's window only).
+/// The tray's entries changed: the panel asks for them again.
 pub fn emit_state(app: &AppHandle) {
     if app.get_webview_window(LABEL).is_some() {
-        let _ = app.emit_to(LABEL, STATE_EVENT, shell::tray_panel_state(app));
+        let _ = app.emit_to(LABEL, STATE_EVENT, ());
     }
 }
 
@@ -187,10 +189,13 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .focused(true)
         .background_color(tauri::window::Color(0x18, 0x24, 0x3a, 0xff))
         .build()?;
+    // a window is made with the app's menu bar: the panel has none
+    #[cfg(not(target_os = "macos"))]
+    let _ = window.remove_menu();
     let w = window.clone();
-    window.on_window_event(move |event| {
+    window.on_window_event(move |event| match event {
         // a click elsewhere closes it, as the system's flyouts close
-        if let WindowEvent::Focused(false) = event {
+        WindowEvent::Focused(false) => {
             if w.is_visible().unwrap_or(false) {
                 if let Some(p) = w.app_handle().try_state::<Panel>() {
                     if let Ok(mut b) = p.blurred.lock() {
@@ -200,6 +205,12 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
                 let _ = w.hide();
             }
         }
+        // Alt+F4, ⌘W: it hides, as Escape does; a window gone would leave the icon none to open
+        WindowEvent::CloseRequested { api, .. } => {
+            api.prevent_close();
+            let _ = w.hide();
+        }
+        _ => {}
     });
     Ok(window)
 }

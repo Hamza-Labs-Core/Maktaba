@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
+const { invoke, listen } = vi.hoisted(() => ({ invoke: vi.fn(), listen: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
+// its own window's events; the global `listen` would hear every window's, and be heard by all
+vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => ({ listen }) }));
 
 import { TrayPanel, partsOf } from "./TrayPanel";
 import type { TrayPanelEntry, TrayPanelState } from "../lib/trayPanel";
@@ -43,6 +44,14 @@ const RUNNING: TrayPanelEntry[] = [
 function shell(state: TrayPanelState) {
   (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
   invoke.mockImplementation(async (cmd: string) => (cmd === "tray_panel_state" ? state : null));
+}
+
+/** The shell's events, by name. */
+let heard: Record<string, (e: { payload: unknown }) => void> = {};
+/** The tray's entries changed: the shell says so, and answers with `state` from now on. */
+async function change(state: TrayPanelState) {
+  shell(state);
+  await act(async () => heard["tray-panel-state"]!({ payload: null }));
 }
 
 describe("partsOf", () => {
@@ -129,7 +138,15 @@ describe("partsOf", () => {
 });
 
 describe("TrayPanel", () => {
-  beforeEach(() => invoke.mockReset());
+  beforeEach(() => {
+    invoke.mockReset();
+    heard = {};
+    listen.mockReset();
+    listen.mockImplementation(async (name: string, cb: (e: { payload: unknown }) => void) => {
+      heard[name] = cb;
+      return () => {};
+    });
+  });
   afterEach(() => {
     delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
     document.documentElement.dir = "";
@@ -161,13 +178,6 @@ describe("TrayPanel", () => {
   });
 
   it("keeps the keys after a click on the status line, and the focus while the words change", async () => {
-    const { listen } = await import("@tauri-apps/api/event");
-    let push: (s: TrayPanelState) => void = () => {};
-    vi.mocked(listen).mockImplementation(async (name, cb) => {
-      if (name === "tray-panel-state")
-        push = (st) => (cb as (e: { payload: TrayPanelState }) => void)({ payload: st });
-      return () => {};
-    });
     shell({ lang: "en", tone: "ok", entries: RUNNING });
     render(<TrayPanel />);
     const status = await screen.findByRole("status");
@@ -178,15 +188,14 @@ describe("TrayPanel", () => {
     const logs = screen.getByRole("button", { name: "Pause server" });
     expect(logs).toHaveFocus();
     // the model's percent changes: the focus stays where the person put it
-    await act(async () =>
-      push({
-        lang: "en",
-        tone: "ok",
-        entries: RUNNING.map((e) =>
-          e.id === "model-status" ? { ...e, label: "Language model: downloading qwen (65%)" } : e
-        ),
-      })
-    );
+    await change({
+      lang: "en",
+      tone: "ok",
+      entries: RUNNING.map((e) =>
+        e.id === "model-status" ? { ...e, label: "Language model: downloading qwen (65%)" } : e
+      ),
+    });
+    expect(screen.getByText(/65%/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pause server" })).toHaveFocus();
     await userEvent.click(status);
     await userEvent.keyboard("{Escape}");
@@ -215,12 +224,6 @@ describe("TrayPanel", () => {
   });
 
   it("follows the tray when its entries change", async () => {
-    const { listen } = await import("@tauri-apps/api/event");
-    let push: (s: TrayPanelState) => void = () => {};
-    vi.mocked(listen).mockImplementationOnce(async (_name, cb) => {
-      push = (s) => (cb as (e: { payload: TrayPanelState }) => void)({ payload: s });
-      return () => {};
-    });
     shell({
       lang: "en",
       tone: "busy",
@@ -228,7 +231,19 @@ describe("TrayPanel", () => {
     });
     render(<TrayPanel />);
     expect(await screen.findByRole("status")).toHaveTextContent("starting");
-    await act(async () => push({ lang: "en", tone: "ok", entries: RUNNING }));
+    await change({ lang: "en", tone: "ok", entries: RUNNING });
+    expect(screen.getByRole("status")).toHaveTextContent("Maktaba is running");
+  });
+
+  it("takes the entries from the shell, never from an event another page could send", async () => {
+    shell({ lang: "en", tone: "ok", entries: RUNNING });
+    render(<TrayPanel />);
+    await screen.findByRole("status");
+    await act(async () =>
+      heard["tray-panel-state"]!({
+        payload: { lang: "en", tone: "error", entries: [item("status", "Forged", false)] },
+      })
+    );
     expect(screen.getByRole("status")).toHaveTextContent("Maktaba is running");
   });
 });
