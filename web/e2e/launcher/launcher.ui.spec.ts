@@ -317,7 +317,8 @@ for (const platform of ["tizen", "webos"] as const) {
         // an address gets 700 ms to answer (probe.test.ts times it): the page's clock waits here,
         // so a slow machine's mock home is not taken for one that is not there
         await page.clock.install();
-        await page.clock.pauseAt(Date.now() + 1000);
+        // a minute ahead: a time already past when the call arrives is refused
+        await page.clock.pauseAt(Date.now() + 60_000);
         await page.keyboard.press("Enter");
         const found = page.getByTestId("found-home");
         await expect(found).toContainText("Test home");

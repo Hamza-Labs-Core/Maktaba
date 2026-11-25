@@ -578,14 +578,20 @@ class BatchedTranscriber:
             self._load()
         except Exception as exc:  # noqa: BLE001 - every waiting job learns why
             _log.exception("whisper.load_failed")
-            while True:
-                try:
-                    _, fut, loop, _, _, _, _ = self._inbox.get_nowait()
-                except queue.Empty:
-                    break
+            # under the lock a new file takes (:meth:`_ensure_thread`): it is either one of
+            # these, or it finds no thread and starts one, which loads again. Told after it:
+            # a file sent on hearing is not one of these either
+            waiting: list[_Submission] = []
+            with self._lock:
+                while True:
+                    try:
+                        waiting.append(self._inbox.get_nowait())
+                    except queue.Empty:
+                        break
+                self._decode = None
+                self._thread = None
+            for _, fut, loop, _, _, _, _ in waiting:
                 loop.call_soon_threadsafe(_set_exception, fut, exc)
-            self._decode = None
-            self._thread = None
             return
         jobs = self._jobs
         idle_since = time.monotonic()
