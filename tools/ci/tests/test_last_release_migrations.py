@@ -3,7 +3,6 @@ a late lower slot breaks): each workflow that runs them fetches those first."""
 
 from __future__ import annotations
 
-import re
 import subprocess
 from pathlib import Path
 
@@ -32,24 +31,54 @@ def test_the_step_comes_before_the_clouds_integration_tests(workflow: str) -> No
     assert seen == 1
 
 
-def test_the_newest_release_tag_is_taken(tmp_path: Path) -> None:
-    def git(*args: str) -> None:
-        subprocess.run(["git", "-C", str(tmp_path / "up"), *args], check=True, capture_output=True)
+def repository(tmp: Path) -> Path:
+    """A clone, with its whole history, of a repository with a few release tags."""
 
-    (tmp_path / "up/cloud/migrations").mkdir(parents=True)
+    def git(*args: str) -> None:
+        subprocess.run(["git", "-C", str(tmp / "up"), *args], check=True, capture_output=True)
+
+    (tmp / "up/cloud/migrations").mkdir(parents=True)
     git("init", "-q")
     for tag in ("v0.9.2", "v0.10.0", "v0.10.0-rc1", "vnext"):
-        (tmp_path / "up/cloud/migrations/00000001_a.sql").write_text(tag)
+        (tmp / "up/cloud/migrations/00000001_a.sql").write_text(tag)
         git("add", "-A")
         git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", tag)
         git("tag", tag)
-    subprocess.run(["git", "clone", "-q", "--no-tags", "--depth", "1", f"file://{tmp_path}/up", str(tmp_path / "down")], check=True, capture_output=True)
-    env = tmp_path / "env"
-    p = subprocess.run(
-        ["bash", str(ROOT / "tools/ci/last_release_migrations.sh"), str(tmp_path / "out")],
-        cwd=tmp_path / "down", env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "GITHUB_ENV": str(env), "HOME": str(tmp_path)},
-        capture_output=True, text=True, check=False,
+    subprocess.run(["git", "clone", "-q", "--no-tags", f"file://{tmp}/up", str(tmp / "down")], check=True, capture_output=True)
+    return tmp / "down"
+
+
+def run(tmp: Path, clone: Path, **env: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(ROOT / "tools/ci/last_release_migrations.sh"), str(tmp / "out")],
+        cwd=clone,
+        env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "GITHUB_ENV": str(tmp / "env"), "HOME": str(tmp), **env},
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    assert p.returncode == 0 and "v0.10.0: 1" in p.stdout, p.stderr
-    assert (tmp_path / "out/cloud/migrations/00000001_a.sql").read_text() == "v0.10.0"
-    assert re.fullmatch(rf"MAKTABA_LAST_RELEASE_MIGRATIONS={re.escape(str(tmp_path))}/out/cloud/migrations\n", env.read_text())
+
+
+@pytest.mark.parametrize(
+    ("ref", "want"),
+    [
+        ({}, "v0.10.0"),
+        ({"GITHUB_REF_TYPE": "branch", "GITHUB_REF_NAME": "v0.10.0"}, "v0.10.0"),
+        # a tag's own run starts from the release before it
+        ({"GITHUB_REF_TYPE": "tag", "GITHUB_REF_NAME": "v0.10.0"}, "v0.9.2"),
+    ],
+)
+def test_the_newest_release_is_taken_and_the_clone_left_whole(tmp_path: Path, ref: dict[str, str], want: str) -> None:
+    clone = repository(tmp_path)
+    p = run(tmp_path, clone, GITHUB_ACTIONS="true", **ref)
+    assert p.returncode == 0 and f"{want}: 1" in p.stdout, p.stderr
+    assert (tmp_path / "out/cloud/migrations/00000001_a.sql").read_text() == want
+    assert (tmp_path / "env").read_text() == f"MAKTABA_LAST_RELEASE_MIGRATIONS={tmp_path}/out/cloud/migrations\n"
+    assert not (clone / ".git/shallow").exists(), "the clone was made shallow"
+
+
+def test_it_is_refused_outside_a_runner(tmp_path: Path) -> None:
+    clone = repository(tmp_path)
+    p = run(tmp_path, clone)
+    assert p.returncode != 0 and "on a CI runner only" in p.stderr
+    assert not (tmp_path / "out").exists() and not (clone / ".git/shallow").exists()

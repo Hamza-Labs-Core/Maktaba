@@ -155,6 +155,43 @@ func TestUpRecordsTheNewestLast(t *testing.T) {
 		t.Fatal(err)
 	}
 	applied(400001, 580001, 580002)
+	// an Up that fails half way: the late one it applied stays, and the newest is last all the same
+	set["00400004_late.sql"] = mig("nlate4")
+	set["00580003_bad.sql"] = &fstest.MapFile{Data: []byte("-- +goose Up\nSELECT no_such_function();\n-- +goose Down\nSELECT 1;\n")}
+	if err := m.Up(ctx); err == nil {
+		t.Fatal("a migration that fails did not")
+	}
+	if last, newest := recordedLast(t, pool); last != 580002 || newest != 580002 {
+		t.Fatalf("after an Up that failed: recorded last %d, the newest is %d", last, newest)
+	}
+	delete(set, "00580003_bad.sql")
+	// an Undo, and a Down, that fail half way: the newest goes, the late one's Down script fails
+	for _, how := range []string{"undo", "down"} {
+		set["00400005_late.sql"] = &fstest.MapFile{Data: []byte("-- +goose Up\nSELECT 1;\n-- +goose Down\nSELECT no_such_function();\n")}
+		set["00580004_new.sql"] = mig("nnew4")
+		up(how + ": a late one that can't go back, and a newer one")
+		err := error(nil)
+		if how == "undo" {
+			err = m.Undo(ctx, []int64{400005, 580004})
+		} else {
+			err = m.Down(ctx, 2)
+		}
+		if err == nil {
+			t.Fatalf("%s: a Down script that fails did not", how)
+		}
+		if last, newest := recordedLast(t, pool); last != 580002 || newest != 580002 {
+			t.Fatalf("after an %s that failed: recorded last %d, the newest is %d", how, last, newest)
+		}
+		if _, err := pool.DB.ExecContext(ctx, `DELETE FROM goose_db_version WHERE version_id = 400005`); err != nil {
+			t.Fatal(err)
+		}
+		delete(set, "00400005_late.sql")
+		delete(set, "00580004_new.sql")
+	}
+	if err := m.Undo(ctx, []int64{400002, 400003, 400004}); err != nil {
+		t.Fatal(err)
+	}
+	delete(set, "00400004_late.sql")
 	// as v0.3.163 left it: the late one recorded last, and nothing to apply
 	delete(set, "00400002_late.sql")
 	delete(set, "00400003_late.sql")

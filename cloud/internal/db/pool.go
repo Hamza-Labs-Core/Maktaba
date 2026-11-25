@@ -141,10 +141,18 @@ func (m *Migrator) Up(ctx context.Context) error {
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("migrator: dialect: %w", err)
 	}
-	if err := goose.UpContext(ctx, m.pool.DB, m.root, goose.WithAllowMissing()); err != nil {
-		return err
+	return m.settled(ctx, goose.UpContext(ctx, m.pool.DB, m.root, goose.WithAllowMissing()))
+}
+
+// settled is newestLast after a run that ended with err, also one that failed half way: what it
+// applied stays, and the release before goes on beside it.
+func (m *Migrator) settled(ctx context.Context, err error) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancel()
+	if nerr := m.newestLast(ctx); err == nil {
+		return nerr
 	}
-	return m.newestLast(ctx)
+	return err
 }
 
 // newestLast makes the newest applied migration the one recorded last. Releases up to v0.3.163
@@ -192,7 +200,9 @@ func (m *Migrator) lock(ctx context.Context) (func(), error) {
 }
 
 // Down rolls back the most recent N migrations. Mainly used in dev /
-// CI to verify migrations are reversible.
+// CI to verify migrations are reversible. The most recent is the one recorded
+// last: the newest at first, then, where a lower slot landed late, that one.
+// So `down 2` there is not `down 1` twice (each run records the newest last).
 func (m *Migrator) Down(ctx context.Context, steps int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -202,10 +212,10 @@ func (m *Migrator) Down(ctx context.Context, steps int) error {
 	}
 	for i := 0; i < steps; i++ {
 		if err := goose.DownContext(ctx, m.pool.DB, m.root); err != nil {
-			return err
+			return m.settled(ctx, err)
 		}
 	}
-	return m.newestLast(ctx)
+	return m.settled(ctx, nil)
 }
 
 // AtHead reports whether the database has every embedded migration
