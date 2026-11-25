@@ -591,7 +591,10 @@ class BatchedTranscriber:
                 self._decode = None
                 self._thread = None
             for _, fut, loop, _, _, _, _ in waiting:
-                loop.call_soon_threadsafe(_set_exception, fut, exc)
+                try:
+                    loop.call_soon_threadsafe(_set_exception, fut, exc)
+                except RuntimeError:  # its loop is closed: nobody waits; the next file's may
+                    _log.warning("whisper.load_failed.file_gone")
             return
         jobs = self._jobs
         idle_since = time.monotonic()
