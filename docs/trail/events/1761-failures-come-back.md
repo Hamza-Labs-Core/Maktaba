@@ -20,10 +20,17 @@ agent: claude-code
 - With `LIMIT`, every row a sweep selects must get an outcome (queued, or put off); a row skipped in Python stays at the head and starves the rest.
 - `asyncio.wait_for(to_thread(...))` with no free thread cancels the call before it starts: a flag the thread clears must be cleared by the caller then.
 
+- A job queued in a failed one's place must carry its payload and `force_cascade`: `payload_seasons` edges, relisten and backfill marks live there. The first version dropped both, as `requeue_failed` did; the review found it. `run_now` is the exception (it passes the quiet hours).
+- A new class of jobs counts everywhere jobs are counted: the quiet hours took a healed backlog for new work, so a new file would have waited for the night.
+- Putting a row off by a fixed hour starves the others once more rows than a day of rounds take are in that state: leave out in SQL what cannot be answered now (a root that is down).
+- `+column` steers SQLite's planner off an index; on PostgreSQL unary plus on text is an error, so it is per dialect. Read the plan in a test.
+- A new heading anchor in the help changes maktaba.tv's `dist-manifest.json`: `npm run build` in `web/packages/website`, and commit it.
+
 ## Keep doing
 - Take each guard out once and see a test fail.
 
 ## Open
 - Only videos' stages are healed; a library's or the catalog's failed stage waits for its next trigger.
+- The failures page's `retryTargets` and the queue page's bulk retry (`enqueueTargets`) drop the payload; `jobs.go`'s Retry carries it.
 - A scan's own heal (`confirm_missing`) still queues at priority 100 with no cap.
 - Failures older than `error_cause` (NULL there) are not matched; they leave with the 90 day prune.
