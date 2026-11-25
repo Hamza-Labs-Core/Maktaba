@@ -78,7 +78,9 @@ suspend fun OkHttpClient.exchange(r: Request): HttpAnswer = suspendCancellableCo
 
 /**
  * Sends [r] and hands back the answer once its headers are in, its body unread (OkHttp's own
- * thread sends it, as [exchange]'s). Cancelling the caller cancels the call.
+ * thread sends it, as [exchange]'s). An answer outside 2xx is no stream: it is read and closed
+ * here, on that thread ([Opened.refusal]), for the same reason as [exchange]'s. Cancelling the
+ * caller cancels the call.
  */
 suspend fun OkHttpClient.opened(r: Request): Opened = suspendCancellableCoroutine { cont ->
     val call = newCall(r)
@@ -89,13 +91,22 @@ suspend fun OkHttpClient.opened(r: Request): Opened = suspendCancellableCoroutin
         }
 
         override fun onResponse(call: Call, response: Response) {
-            cont.resume(Opened(call, response)) { _, o, _ -> o.close() }
+            if (response.isSuccessful) {
+                cont.resume(Opened(call, response)) { _, o, _ -> o.close() }
+                return
+            }
+            val read = runCatching { response.use { it.body.bytes() } }
+            read.onSuccess { cont.resume(Opened(call, response, String(it))) }
+            read.onFailure { cont.resumeWithException(ApiException.Transport(it.message ?: it.toString())) }
         }
     })
 }
 
-/** An answer whose body is still to be read, with its call: [cancel] stops a read on another thread. */
-class Opened(private val call: Call, val response: Response) : java.io.Closeable {
+/**
+ * An answer whose body is still to be read, with its call: [cancel] stops a read on another
+ * thread. One outside 2xx is closed, and its body is [refusal].
+ */
+class Opened(private val call: Call, val response: Response, val refusal: String = "") : java.io.Closeable {
     val code: Int get() = response.code
 
     /** Cancels the call: a read blocked on its body ends with an [IOException]. */
@@ -559,21 +570,18 @@ class ApiClient(
         val sentWith = tokens.access
         var answer = open(sentWith)
         if (answer.code == 401) {
-            answer.close()
             if (tokens.refresh == null) {
                 tokens.clear()
                 throw ApiException.SignedOut
             }
             answer = open(refreshAfter(sentWith))
             if (answer.code == 401) {
-                answer.close()
                 tokens.clear()
                 throw ApiException.SignedOut
             }
         }
         if (answer.code !in 200..299) {
-            val body = runCatching { answer.use { it.response.body.string() } }.getOrDefault("")
-            throw ApiException.Status(answer.code, body.take(BODY_KEPT), retryAfterSeconds(answer.response.header("Retry-After")))
+            throw ApiException.Status(answer.code, answer.refusal.take(BODY_KEPT), retryAfterSeconds(answer.response.header("Retry-After")))
         }
         return answer
     }
