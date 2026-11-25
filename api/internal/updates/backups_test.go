@@ -35,7 +35,7 @@ func (s *supervisorFake) server(t *testing.T) (*httptest.Server, string) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		plan := map[string]any{"backup": "pre-v0.2.0-to-v0.3.0.dump", "schema": 140, "release": "0.2.0",
-			"running": "0.3.0", "at": "2026-10-20T03:00:00Z"}
+			"running": "0.3.0", "at": "2026-10-20T03:00:00Z", "older": true}
 		if s.noCopy {
 			plan["no_copy"], plan["copy_free"], plan["copy_need"] = "no room", 10<<30, 46<<30
 		}
@@ -153,7 +153,7 @@ func TestBackupsAndRestore(t *testing.T) {
 	// to, it goes on
 	sup.noCopy = true
 	code, out = do(t, r, "GET", "/api/cluster/updates/backups/pre-v0.2.0-to-v0.3.0.dump/restore", nil, true)
-	if code != http.StatusOK || out["no_copy"] != "no room" || out["copy_need"] != float64(46<<30) {
+	if code != http.StatusOK || out["no_copy"] != "no room" || out["older"] != true || out["copy_need"] != float64(46<<30) {
 		t.Fatalf("plan with no room %d %v", code, out)
 	}
 	code, out = do(t, r, "POST", "/api/cluster/updates/backups/pre-v0.2.0-to-v0.3.0.dump/restore",

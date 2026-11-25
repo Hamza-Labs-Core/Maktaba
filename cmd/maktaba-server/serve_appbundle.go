@@ -1621,6 +1621,7 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 	if rec = now; !asked(rec) {
 		return rec, nil
 	}
+	rec.Dump, rec.Aside = pgbundle.MovedDump(g.backups(), rec.Dump), pgbundle.MovedDump(g.backups(), rec.Aside)
 	settled, serr := settleData(tctx, rec, g.probe())
 	if serr == nil {
 		rec = settled

@@ -153,6 +153,20 @@ jobs:
             -c listen_addresses=127.0.0.1 -c wal_level=logical -c max_replication_slots=40 \
             -c max_wal_senders=40 -c shared_preload_libraries=pg_textsearch" start
 
+      # the dump, the rehearsal and the restore on a Postgres the home does not bundle, on 18 with
+      # pg_textsearch in a schema of its own (the updates job runs them on 16)
+      - name: The home's dump, rehearsal and restore on PostgreSQL 18 (server)
+        working-directory: cmd/maktaba-server
+        env:
+          MAKTABA_TEST_PG_URL: ""
+        run: |
+          set -euo pipefail
+          MAKTABA_TEST_PG_BIN="$RUNNER_TEMP/pg18" go test -count=1 -v -timeout 20m ./internal/dbsafe/ | tee "$RUNNER_TEMP/dbsafe18.out"
+          ../../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/dbsafe18.out"
+          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRestoreWithMachineCopies TestRestoreLeavesWhatIsOutsidePublic; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/dbsafe18.out" || { echo "::error::$t did not run on PostgreSQL 18"; exit 1; }
+          done
+
       # Epic 49 stories 49.4 to 49.7: the search schema on PostgreSQL 18 with pg_textsearch
       # preloaded: Arabic normalisation, and video_search_docs' two BM25 indexes (exact and
       # stemmed), made and answering ranked queries through themselves (on 16, the integration
@@ -327,7 +341,7 @@ jobs:
           set -euo pipefail
           go test -count=1 -v -timeout 20m ./internal/dbsafe/ | tee "$RUNNER_TEMP/dbsafe.out"
           ../../tools/ci/no-pg-skips.sh "$RUNNER_TEMP/dbsafe.out"
-          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRehearsalSkipsAndLeftovers TestRestoreWithMachineCopies TestSpaceForTheDatabaseWork TestEndSessionsAndTheLockTimeout TestMigrationBlockersEnded TestRestoreKilledPartWayCommitsNothing; do
+          for t in TestDumpVerifiedAndRestoredInPlace TestRehearsalOnAScratchCopy TestRehearsalSkipsAndLeftovers TestRestoreWithMachineCopies TestSpaceForTheDatabaseWork TestEndSessionsAndTheLockTimeout TestMigrationBlockersEnded TestRestoreKilledPartWayCommitsNothing TestRestoreLeavesWhatIsOutsidePublic; do
             grep -q -- "--- PASS: $t " "$RUNNER_TEMP/dbsafe.out" || { echo "::error::$t did not run"; exit 1; }
           done
 

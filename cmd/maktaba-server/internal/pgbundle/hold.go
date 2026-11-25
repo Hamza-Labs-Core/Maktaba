@@ -70,6 +70,47 @@ func KeepForRestore(dir string, names ...string) error {
 	return nil
 }
 
+// KeepOnly leaves nothing kept in dir but the dumps names: the others, which an earlier asked
+// restore needed, are put back where they are gone, and hold no room any more.
+func KeepOnly(dir string, names ...string) error {
+	ents, err := os.ReadDir(filepath.Join(dir, keptDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := ReturnKept(dir); err != nil {
+		return err
+	}
+	keep := keepNames(names)
+	for _, e := range ents {
+		if !keep(e.Name()) {
+			if err := RemoveDump(KeptPath(dir, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// MovedDump is where the dump path is: there, or in its own folder (it was kept for a restore),
+// or, when the backups were moved since (MoveDumps), in dir under its name.
+func MovedDump(dir, path string) string {
+	if path == "" {
+		return path
+	}
+	for _, p := range []string{path, OriginalPath(path)} {
+		if _, err := os.Lstat(p); err == nil {
+			return p
+		}
+	}
+	if info, err := os.Lstat(filepath.Join(dir, filepath.Base(path))); err == nil && IsDump(info) {
+		return filepath.Join(dir, filepath.Base(path))
+	}
+	return path
+}
+
 // ReturnKept puts back in dir what KeepForRestore keeps and is there no more.
 func ReturnKept(dir string) error {
 	if !isFolder(filepath.Join(dir, keptDir)) {

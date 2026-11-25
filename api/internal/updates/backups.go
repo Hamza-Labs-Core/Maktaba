@@ -63,6 +63,8 @@ type RestorePlan struct {
 	Release string    `json:"release"`
 	Running string    `json:"running"`
 	At      time.Time `json:"at"`
+	// Older: Release is older than the one running, and its own rules may remove other backups.
+	Older bool `json:"older,omitempty"`
 	// NoCopy is why no copy of the library database as it is now can be kept ("": it can);
 	// CopyFree bytes are free for one, CopyNeed needed. It is then restored only with the
 	// admin's word that none is (without_copy).
