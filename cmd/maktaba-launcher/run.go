@@ -323,8 +323,9 @@ func (ln *launcher) deadline(ver string) time.Time {
 // rollback is the boot-loop guard firing: current = previous, pending
 // removed, launcher_rollback logged (design §2.2 step 5). false when there
 // is no previous to go back to (EC1: keep retrying, log no_previous). When the
-// release's migrations ran, the database record is marked for the previous
-// release to put back the dump taken before them (layout.MarkRecordRestoring).
+// release's migrations ran, the database record is marked held
+// (layout.MarkRecordHeld): nothing is put back by itself, the previous release
+// stops on it and a person decides (put the backup back, or install a fix).
 func (ln *launcher) rollback(ver, reason string) bool {
 	if ln.cfg.Bundle != "" {
 		return ln.bundleRollback(reason)
@@ -344,17 +345,21 @@ func (ln *launcher) rollback(ver, reason string) bool {
 	return true
 }
 
-// markRecord marks the database record of a release the guard gave up on.
+// markRecord marks the database record of a release the guard gave up on: held, so
+// that no start puts the dump back by itself (the launcher's rollback was the last
+// path that always put the whole dump back: three outages of hours each in
+// November 2026). Every release older than ver refuses the held database and stops;
+// a person chooses how it goes on.
 func (ln *launcher) markRecord(ver, record, reason string) {
 	if record == "" {
 		return
 	}
-	marked, err := layout.MarkRecordRestoring(record, ver, "launcher_"+reason)
+	marked, err := layout.MarkRecordHeld(record, ver, "launcher_"+reason)
 	switch {
 	case err != nil:
 		ln.log.Event("launcher_record_error", ver, map[string]any{"record": record, "err": err.Error()})
 	case marked:
-		ln.log.Event("launcher_record_restore", ver, map[string]any{"record": record})
+		ln.log.Event("launcher_record_held", ver, map[string]any{"record": record})
 	}
 }
 

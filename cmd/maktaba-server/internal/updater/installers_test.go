@@ -654,3 +654,58 @@ func TestOrderClockText(t *testing.T) {
 		t.Fatalf("none: %q", got)
 	}
 }
+
+// A layout install (deb/rpm, self-managed) undoes a release's migrations with its Down
+// scripts too: the release before's migrations are in bin/releases/<from>/. Without this
+// its rollback could only put the dump back, and since #1605 it would always stop and ask
+// (the auto-update e2e's 0.9.2).
+func TestLayoutInstallerUndoesWithDownScripts(t *testing.T) {
+	l := layout.New(t.TempDir())
+	write := func(dir, name, body string) {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a := "-- +goose Up\nCREATE TABLE IF NOT EXISTS a (id int);\n-- +goose Down\nDROP TABLE IF EXISTS a;\n"
+	b := "-- +goose Up\nCREATE TABLE IF NOT EXISTS b (id int);\n-- +goose Down\nDROP TABLE IF EXISTS b;\n"
+	from := filepath.Join(l.ReleaseDir("1.4.0"), install.MigrationsDir)
+	staged := l.ReleaseDir("1.5.0")
+	write(from, "0001_a.sql", a)
+	write(filepath.Join(staged, install.MigrationsDir), "0001_a.sql", a)
+	write(filepath.Join(staged, install.MigrationsDir), "0002_b.sql", b)
+	li := &LayoutInstaller{Layout: l}
+	j := &Journal{Job: Job{Version: "1.5.0"}, From: "1.4.0", Staged: staged}
+	schema, ok, why := li.DownTo(j, 0, false)
+	if !ok || schema != 1 {
+		t.Fatalf("DownTo = %d %v (%s), want slot 1", schema, ok, why)
+	}
+	if keep, why := li.KeepsSchema(j); keep {
+		t.Fatalf("kept without the release before saying it runs on a newer schema: %s", why)
+	}
+	// on a schema an earlier rollback kept (slot 2), only what is above it; one whose slot is
+	// not recorded, or all of it there already: nothing
+	write(filepath.Join(staged, install.MigrationsDir), "0003_c.sql", "-- +goose NO TRANSACTION\n"+a)
+	if schema, ok, why := li.DownTo(j, 2, true); !ok || schema != 2 {
+		t.Fatalf("kept: DownTo = %d %v (%s), want slot 2", schema, ok, why)
+	}
+	for _, before := range []int64{0, 3, 4} {
+		if schema, ok, _ := li.DownTo(j, before, true); ok {
+			t.Fatalf("kept at %d: Down to %d", before, schema)
+		}
+	}
+	// a NO TRANSACTION migration with no Down script, or one that loses data, is not undone
+	for _, body := range []string{"-- +goose NO TRANSACTION\n-- +goose Up\nCREATE TABLE c (id int);\n",
+		"-- +goose NO TRANSACTION\n-- +goose Up\nDELETE FROM a;\n-- +goose Down\nSELECT 1;\n"} {
+		write(filepath.Join(staged, install.MigrationsDir), "0003_c.sql", body)
+		if _, ok, _ := li.DownTo(j, 2, true); ok {
+			t.Fatalf("undone: %s", body)
+		}
+	}
+	// the release before's folder gone: not known, nothing decided on a guess
+	if _, ok, _ := li.DownTo(&Journal{Job: Job{Version: "1.5.0"}, From: "1.3.0", Staged: staged}, 0, false); ok {
+		t.Fatal("Down scripts decided without the release before's migrations")
+	}
+}

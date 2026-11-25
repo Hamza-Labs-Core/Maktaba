@@ -70,8 +70,8 @@ func recordState(t *testing.T, path string) (state, failed string) {
 }
 
 // An app update whose new server cannot stay up (Epic 35, install-kinds.md): the guard
-// runs the kept copy of the payload that ran before, and marks the database record for
-// it to put back the dump taken before the new release's migrations.
+// runs the kept copy of the payload that ran before, and marks the database record held
+// (never restoring): the kept copy stops on it and a person decides, nothing is put back.
 func TestBundleGuardRunsTheKeptPayload(t *testing.T) {
 	t.Parallel()
 	processTest(t)
@@ -99,7 +99,8 @@ func TestBundleGuardRunsTheKeptPayload(t *testing.T) {
 	if g, _ := layout.ReadGuard(root); g != nil {
 		t.Fatalf("guard left: %+v", g)
 	}
-	if st, failed := recordState(t, record); st != "restoring" || failed != "2.0.0" {
+	// held, never restoring: the kept payload stops on it and a person decides
+	if st, failed := recordState(t, record); st != "held" || failed != "2.0.0" {
 		t.Fatalf("record %s failed %s", st, failed)
 	}
 	rb := events(l, "launcher_rollback")
@@ -135,8 +136,8 @@ func TestBundleGuardWithoutMigrationsPutsNothingBack(t *testing.T) {
 	if st, failed := recordState(t, record); st != "migrated" || failed != "" {
 		t.Fatalf("record %s failed %s: marked for a dump that was never taken", st, failed)
 	}
-	if ev := events(l, "launcher_record_restore"); len(ev) != 0 {
-		t.Fatalf("launcher_record_restore = %+v", ev)
+	if ev := events(l, "launcher_record_held"); len(ev) != 0 {
+		t.Fatalf("launcher_record_held = %+v", ev)
 	}
 }
 
@@ -219,7 +220,8 @@ func TestLayoutRollbackMarksTheRecord(t *testing.T) {
 	}
 	startLauncher(t, testConfig(l.Root))
 	waitFor(t, "previous started", func() bool { return countAct(readTrace(l), "1.0.0", "run") == 1 })
-	if st, failed := recordState(t, record); st != "restoring" || failed != "2.0.0" {
+	// held, never restoring: the kept payload stops on it and a person decides
+	if st, failed := recordState(t, record); st != "held" || failed != "2.0.0" {
 		t.Fatalf("record %s failed %s", st, failed)
 	}
 }

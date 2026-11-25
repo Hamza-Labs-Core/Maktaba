@@ -341,6 +341,12 @@ func (r *restorer) mark(pl restorePlan, by string) error {
 	}
 	rec := apppayload.Database{Version: held, State: apppayload.DatabaseRestoring, From: pl.Release, Dump: p, By: by,
 		Error: "restore asked by " + by}
+	if had && old.Dump == p && old.DumpKeptFor != "" &&
+		layout.NormalizeVersion(old.DumpKeptFor) == layout.NormalizeVersion(pl.Release) {
+		// the dump of a schema kept for the release it goes back for (a held update from a
+		// kept schema): put back, it is that schema again, kept for it
+		rec.DumpKeptFor = old.DumpKeptFor
+	}
 	if err := apppayload.WriteDatabase(r.stateDir, rec); err != nil {
 		return err
 	}

@@ -253,14 +253,23 @@ describe("help links from the app", () => {
     expect([...SYSTEM_HEALTH_KINDS].sort()).toEqual([...api].sort());
   });
 
-  // a failed update is undone by its Down scripts: when the whole backup went back instead,
-  // the Updates page says why, in both languages, and links the database entry
-  it("the reasons the whole backup went back are said and explained", () => {
+  // a failed update is undone by its Down scripts; when they cannot take it back, nothing is
+  // put back by itself: the update stops and asks. The Updates page says why and the choices,
+  // in both languages, and links the database entry (the restore codes stay for a release
+  // that put the backup back before this rule)
+  it("the reasons an update stopped and asks are said, with the choices, and explained", () => {
     const enWords = en as Record<string, string>;
     const arWords = ar as Record<string, string>;
-    for (const c of ["db_down_failed", "db_restored_lossy", "db_restored_unknown"]) {
+    for (const c of ["db_down_failed", "db_held_lossy", "db_held_unknown", "db_held_unasked"]) {
       expect(UPDATE_CODE_HELP.get(c), c).toBe("code-database");
       expect(updateCodeHelp(c)).toEqual({ topic: "updates", anchor: "code-database" });
+      expect(enWords[`updates.code.${c}`], c).toMatch(/Nothing was put back by itself/);
+      expect(enWords[`updates.fix.${c}`], c).toMatch(/recovery page/);
+      expect(arWords[`updates.code.${c}`]?.trim(), c).toBeTruthy();
+      expect(arWords[`updates.fix.${c}`], c).toMatch(/صفحة الاستعادة/);
+    }
+    for (const c of ["db_restored_lossy", "db_restored_unknown"]) {
+      expect(UPDATE_CODE_HELP.get(c), c).toBe("code-database");
       expect(enWords[`updates.code.${c}`], c).toMatch(/backup/);
       expect(arWords[`updates.code.${c}`]?.trim(), c).toBeTruthy();
     }

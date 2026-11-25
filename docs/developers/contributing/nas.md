@@ -71,13 +71,14 @@ volume at the next start under the same guard. An older image never replaces a n
 
 When an update's migrations fail part way, the database step goes back the cheapest safe way
 (`updater.FailedBack`, `migrationGate.backWithoutDump`) and halts with one of three codes, each in
-every client's English and Arabic:
+every client's English and Arabic. No backup is ever put back by itself (since 2026-11-24):
 
 | Code | When | What the household sees |
 |---|---|---|
 | `db_kept` | every migration since the release before is rollback-safe and that release runs on a newer schema | nothing put back; the release before runs on the database as it is, in seconds |
 | `db_undone` | the recorded migrations are reversible and the one that failed part way left only additive work | `migrate down-to` ran their Down scripts, in seconds |
-| `db_restored` | anything else | the pre-update dump put back, hours for a large library |
+| `db_held` | anything else: the Down scripts failed, a migration that ran lost data, the way back cannot be told, or the launcher's guard gave up after the migrations ran | nothing put back; the update stops and asks. The record is `held`, every start (the release before too) stops on it, and the start page, the recovery page and the Updates page give the choices: put the pre-update backup back (**Restore** on `/recovery`), or install a newer release, which goes on from it |
+| `db_restored` | a release from before 2026-11-24 only | the pre-update dump put back, hours for a large library |
 
 The update's watch then rolls back to the release before and blocks the failed one. While
 migrations run, any session one of them has waited on for more than 10 s (a client backend or a

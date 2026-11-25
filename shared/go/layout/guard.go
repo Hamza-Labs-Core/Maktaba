@@ -5,8 +5,8 @@ package layout
 // orchestrator writes <launcher root>/updates/pending.json before it restarts onto a new
 // release; the launcher falls back to the previous release (a kept copy of the app's
 // payload, or the runtime directory that ran before) when the new one cannot stay up,
-// and marks the database record so the previous release puts back the dump taken
-// before the new one's migrations (shared with the layout's pending, Pending.Record).
+// and marks the database record held, so nothing is put back by itself and a person
+// chooses (shared with the layout's pending, Pending.Record).
 
 import (
 	"encoding/json"
@@ -37,8 +37,8 @@ type Guard struct {
 	// bundle); PreviousRuntime the runtime directory that did (runtime copy).
 	PreviousPayload string `json:"previous_payload,omitempty"`
 	PreviousRuntime string `json:"previous_runtime,omitempty"`
-	// Record is the database's record (state/database.json) the fallback marks for
-	// the dump to be put back (a home's; "" on a node).
+	// Record is the database's record (state/database.json) the fallback marks held
+	// (MarkRecordHeld; a home's, "" on a node).
 	Record string `json:"record,omitempty"`
 }
 
@@ -158,7 +158,30 @@ func trimSpace(b []byte) []byte {
 // restores the dump before any role runs. It reports whether it marked the record; one
 // that names another release, or no dump, is left alone. Fields it does not know are
 // kept.
+//
+// Nothing in Maktaba marks a record restoring by itself any more (a failed update stops
+// and asks: MarkRecordHeld); this stays for the releases before 2026-11-24 that read it,
+// and for the tests that play them.
 func MarkRecordRestoring(path, failed, reason string) (bool, error) {
+	return markRecordFailed(path, failed, reason, "restoring")
+}
+
+// MarkRecordHeld marks the database's record so that no start puts anything back by
+// itself: the update to failed stopped after its migrations ran (or were running), and a
+// person decides how the database goes on (put the backup taken before them back, or
+// install a release that fixes the update). Its state becomes "held" with failed and
+// reason; version stays failed's, so every release older than failed refuses the
+// database (db_refused_older, the releases before 2026-11-24 included) instead of
+// putting the dump back, and every release since says what happened and the choices
+// (db_held). It reports whether it marked the record; one that names another release,
+// or no dump, is left alone. Fields it does not know are kept.
+func MarkRecordHeld(path, failed, reason string) (bool, error) {
+	return markRecordFailed(path, failed, reason, "held")
+}
+
+// markRecordFailed is MarkRecordRestoring and MarkRecordHeld: state is "restoring" or
+// "held". A record marked either way already is left as it is (marked).
+func markRecordFailed(path, failed, reason, state string) (bool, error) {
 	if path == "" {
 		return false, nil
 	}
@@ -174,17 +197,31 @@ func MarkRecordRestoring(path, failed, reason string) (bool, error) {
 		return false, fmt.Errorf("%s: %w", path, err)
 	}
 	str := func(k string) string { s, _ := rec[k].(string); return s }
-	if NormalizeVersion(str("version")) != NormalizeVersion(failed) || str("dump") == "" {
+	dump := str("dump")
+	if state == "held" && dump == "" {
+		// the dump an unconfirmed update's record withholds from older code
+		// (apppayload.Database.Unconfirmed); restoring is what that older code marks
+		dump = str("dump_unconfirmed")
+	}
+	if NormalizeVersion(str("version")) != NormalizeVersion(failed) || dump == "" {
 		return false, nil
 	}
 	switch str("state") {
 	case "migrated", "migrating":
-	case "restoring":
+	case "held":
 		return true, nil // marked already
+	case "restoring":
+		if state != "held" || str("by") != "" {
+			return true, nil // marked already (a person's restore is theirs)
+		}
+		// an older launcher or release marked it, with no person asking: held instead
 	default:
 		return false, nil
 	}
-	rec["state"], rec["failed"], rec["error"] = "restoring", str("version"), reason
+	rec["state"], rec["failed"], rec["error"] = state, str("version"), reason
+	// held is left alone by older code: it names its backup where every release reads it
+	rec["dump"] = dump
+	delete(rec, "dump_unconfirmed")
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
 	out, err := json.MarshalIndent(rec, "", "  ")
 	if err != nil {
@@ -204,10 +241,43 @@ func ExtendGuard(root, runID string, until time.Time) (bool, error) {
 	return true, WriteGuard(root, *g)
 }
 
-// UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the
-// release before failed: failed (still running) keeps the database its migrations made,
-// so the record says migrated again and no start puts the dump back. It reports whether
-// it changed the record.
+// ConfirmRecord says the update to version is confirmed (its watch passed): the record
+// names its backup where every release reads it. One that is not version's, migrated, or
+// withholds no backup, is left alone.
+func ConfirmRecord(path, version string) (bool, error) {
+	if path == "" {
+		return false, nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return false, fmt.Errorf("%s: %w", path, err)
+	}
+	str := func(k string) string { s, _ := rec[k].(string); return s }
+	if NormalizeVersion(str("version")) != NormalizeVersion(version) || str("state") != "migrated" || str("dump_unconfirmed") == "" {
+		return false, nil
+	}
+	rec["dump"], rec["confirmed"] = str("dump_unconfirmed"), true
+	delete(rec, "dump_unconfirmed")
+	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
+	out, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return false, err
+	}
+	return true, WriteFileAtomic(path, append(out, '\n'), 0o644)
+}
+
+// UnmarkRecordRestoring takes back MarkRecordRestoring when the switch back to the release
+// before failed: failed (still running) keeps the database its migrations made, so the
+// record says migrated again and no start puts the dump back. A held record stays held: its
+// Down scripts may have run in part, and the failed release must not migrate and start on
+// that by itself (a person chooses). It reports whether it changed the record.
 func UnmarkRecordRestoring(path, failed string) (bool, error) {
 	if path == "" {
 		return false, nil

@@ -378,3 +378,46 @@ func TestEveryStatusGroupHasItsWords(t *testing.T) {
 		}
 	}
 }
+
+// An update that stopped and asks (its database record held: nothing was put back by
+// itself): the console's state names it, the backup to put back among the choices, and
+// the page carries the words for it in both languages.
+func TestHeldUpdateIsShownWithTheChoices(t *testing.T) {
+	k := newKey(t)
+	h, _ := newHandler(t, k)
+	h.Actions.Held = func() *Held {
+		return &Held{Failed: "0.3.158", From: "0.3.153", Backup: "pre-0.3.153-to-0.3.158.dump", Why: "db_down_failed: boom"}
+	}
+	admin := &http.Cookie{Name: CookiePass, Value: sign(t, k, pass("a1", true, AudienceRecovery, t0, t0.Add(time.Hour)))}
+	rec := do(h, http.MethodGet, "/recovery/api/state", "", admin, nil)
+	var st State
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Held == nil || st.Held.Failed != "0.3.158" || st.Held.Backup != "pre-0.3.153-to-0.3.158.dump" {
+		t.Fatalf("held: %+v", st.Held)
+	}
+	for _, lang := range []string{"en", "ar"} {
+		page := do(h, http.MethodGet, "/recovery", "", admin, map[string]string{"Accept-Language": lang}).Body.String()
+		for _, k := range []string{"recovery.held", "recovery.held.restore", "recovery.held.newer"} {
+			if !strings.Contains(page, `"`+k+`":`) || !strings.Contains(page, jsonText(T(lang, k))) {
+				t.Errorf("%s: the page lacks %s", lang, k)
+			}
+		}
+		if !strings.Contains(page, `id="held"`) {
+			t.Errorf("%s: no place for the held update", lang)
+		}
+	}
+	// none held: nothing said
+	h.Actions.Held = func() *Held { return nil }
+	rec = do(h, http.MethodGet, "/recovery/api/state", "", admin, nil)
+	if strings.Contains(rec.Body.String(), `"held":`) {
+		t.Fatalf("a state with no held update: %s", rec.Body.String())
+	}
+}
+
+// jsonText is s as the page's words carry it (JSON, < escaped).
+func jsonText(s string) string {
+	b, _ := json.Marshal(s)
+	return strings.Trim(jsonForScript(b), `"`)
+}

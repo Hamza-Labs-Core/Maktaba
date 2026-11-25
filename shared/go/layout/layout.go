@@ -219,8 +219,7 @@ type Pending struct {
 	// Deadline (the update orchestrator's): not confirmed by then, the launcher
 	// falls back; zero: its own pending timeout.
 	Deadline time.Time `json:"deadline,omitzero"`
-	// Record is the database's record the fallback marks for the dump taken
-	// before Version's migrations to be put back (MarkRecordRestoring).
+	// Record is the database's record the fallback marks held (MarkRecordHeld).
 	Record string `json:"record,omitempty"`
 }
 

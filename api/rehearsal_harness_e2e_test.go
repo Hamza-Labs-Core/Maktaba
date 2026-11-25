@@ -186,6 +186,9 @@ type payloadSpec struct {
 	variant string // prev, cur, next
 	version string
 	extra   map[string]string // more migrations (name -> SQL)
+	// launcher is the variant whose launcher it ships ("": its own): an update leaves the
+	// launcher of a layout install, a container's or the Linux app's as it was
+	launcher string
 	// pg18 puts the kit's PostgreSQL 18 in postgres-18/ (a release of Epic 49 story 49.2)
 	pg18 bool
 }
@@ -199,7 +202,11 @@ func (k *rehearsalKit) makePayload(t *testing.T, dst string, p payloadSpec) {
 		t.Fatal(err)
 	}
 	for _, b := range []string{"maktaba-server", "maktaba-api", "maktaba-streaming", "maktaba-launcher"} {
-		if err := copyFileMode(filepath.Join(src, b), filepath.Join(dst, "bin", b), 0o755); err != nil {
+		from := src
+		if b == "maktaba-launcher" && p.launcher != "" {
+			from = filepath.Join(k.dir, p.launcher)
+		}
+		if err := copyFileMode(filepath.Join(from, b), filepath.Join(dst, "bin", b), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -705,6 +712,25 @@ func (m *appMachine) stop() {
 	m.killLeftovers()
 }
 
+// restoreByHand puts the backup named back as a person does on a held update (the
+// recovery page's Restore, or the command line): `maktaba-server restore --backup NAME
+// --confirm`, from the payload that runs, asking the running server.
+func (m *appMachine) restoreByHand(backup string) {
+	t := m.r.t
+	t.Helper()
+	bin := filepath.Join(m.payload, "bin", "maktaba-server")
+	if o := strings.TrimSpace(m.readFile(filepath.Join("updates", "payload-override"))); o != "" {
+		bin = filepath.Join(o, "bin", "maktaba-server") // the kept copy of the release before
+	}
+	cmd := exec.Command(bin, "restore", "--backup", backup, "--confirm")
+	cmd.Dir, cmd.Env = m.home, m.environ()
+	out, err := cmd.CombinedOutput()
+	fmt.Fprintf(m.log, "==== rehearsal: restore --backup %s --confirm ====\n%s\n", backup, out)
+	if err != nil {
+		t.Fatalf("the restore asked by hand: %v\n%s", err, out)
+	}
+}
+
 // killLeftovers ends any process still running from this machine's folders (a server or
 // Postgres a launcher killed hard left behind).
 func (m *appMachine) killLeftovers() {
@@ -863,6 +889,23 @@ type dbRecord struct {
 	Error   string `json:"error"`
 	By      string `json:"by"`
 	KeptFor string `json:"kept_for"`
+}
+
+// recordConfirmed waits for the record of a good update to version as every release reads
+// it: its backup named (dump), nothing withheld.
+func (m *appMachine) recordConfirmed(version string) {
+	t := m.r.t
+	t.Helper()
+	var all map[string]any
+	waitFor(t, "the record of "+version+" naming its backup", 3*time.Minute, func() bool {
+		var rec dbRecord
+		rec, all = m.record()
+		_, withheld := all["dump_unconfirmed"]
+		return layoutVersion(rec.Version) == layoutVersion(version) && rec.State == "migrated" && rec.Dump != "" && !withheld
+	})
+	if all["confirmed"] != true {
+		t.Errorf("the record of %s: %v", version, all)
+	}
 }
 
 func (m *appMachine) record() (dbRecord, map[string]any) {
