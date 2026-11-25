@@ -1259,6 +1259,20 @@ mod tests {
       "fix": "a command or an action that mends it (optional)"
     }"#;
 
+    /// The installer's exit code for no room is one number in two files: its script's and this.
+    #[test]
+    fn the_installer_s_code_for_no_room_is_the_one_its_script_exits_with() {
+        let nsi = include_str!("../windows/installer.nsi");
+        let line = nsi
+            .lines()
+            .find(|l| l.starts_with("!define MK_ROOM_EXIT"))
+            .expect("MK_ROOM_EXIT in installer.nsi");
+        assert_eq!(
+            line.split_whitespace().last(),
+            Some(INSTALLER_NO_ROOM.to_string().as_str())
+        );
+    }
+
     #[test]
     fn the_spec_example_reads_and_writes_back_the_same() {
         let a: Attempt = serde_json::from_str(SPEC_EXAMPLE).unwrap();
