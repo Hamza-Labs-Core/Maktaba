@@ -15,6 +15,7 @@ prs: [1727, 1670]
 - **The rehearsal is skipped with its reason.** A scratch database made from template0 has no extension to keep, so it cannot use the same path.
 - **A release says what its restore can do** (`release.json`'s `restore_protocol`).
 - **The review's major: a whole, committed restore was recorded as failed, on every try.** A dump holds grants on an extension's own functions where someone made any (migration 0103's, made when the user was a superuser). A user who does not own them gets a warning only, so the restore committed, and the check of it, by the dump's full list, missed them: "not whole", the home stopped, giving up refused. Those items, and other users' default privileges, are left out of what is restored, and the check goes by that list.
+- **The same on the other path (the delta review's minor 1).** Where `public` is the user's to make again, the extensions are made again with it, and a trusted one's objects are then the first superuser's, whoever makes it. The dump's grants on them, changed while the user owned them, are a warning there too, and the whole restore read as "not whole". Those items are left out there too.
 
 ## What we learned
 - **GRANT on what is another's is a warning, not an error** (as long as the user has some privilege on it). A check after the commit that counts grants must count only those that could be made.
