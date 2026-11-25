@@ -107,7 +107,9 @@ runs the **real** Google Cast SDK on the iPhone and the iPad:
   while `shared/cast/app.json` is empty. The other UI tests start with `-maktaba-cast off`.
 - The test starts the app with `-maktaba-cast real` (Debug builds only) and reads the SDK's own
   state (`CastSDKState`): set up with the build's receiver, not searching before the local
-  network screen's Continue, then searching with no Bonjour error.
+  network screen's Continue, then searching with no Bonjour error. The SDK sends its first
+  Bonjour query only once it has read the network's state, which it does at background priority:
+  on a busy runner that took up to 137 s, so the test waits for the query and then for the TV.
 - It advertises a Cast device with Bonjour from the test runner, under a new id each run, and
   the SDK must find it. Nothing else shows that the search works: in a build without the two
   services the SDK says that discovery runs and the picker says no TV was found, while iOS

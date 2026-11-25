@@ -13,6 +13,12 @@ struct CastSDKState: Equatable, Sendable {
     /// Its discovery manager says it looks for Cast devices. Not enough on its own: the SDK
     /// says so too while iOS refuses every Bonjour search it makes (`errors`).
     var running = false
+    /// Its Bonjour browser sent a query: the search really began. `running` comes first, and how
+    /// long before is the SDK's own doing: it searches once it has read the network's state,
+    /// which it asks for on the background-priority queue (4.8.6,
+    /// `-[GCKNNetworkReachability startMonitoring]`). That queue gets no time on a machine with no
+    /// CPU to spare: on CI's runners the answer took from 2 s to over a minute.
+    var searching = false
     /// The codes its Bonjour browser failed to search with, in order of number.
     var errors: [Int] = []
     /// The ids of the devices it found.
@@ -30,6 +36,7 @@ struct CastSDKState: Equatable, Sendable {
         if receivers.isEmpty { out.append("the SDK is not set up") }
         else if receivers != [receiver] { out.append("the SDK is set up for \(receivers.joined(separator: ", ")), not \(receiver)") }
         if !running { out.append("discovery is not running") }
+        else if !searching { out.append("the Bonjour search has not begun: the SDK has not read the network's state yet") }
         for e in errors {
             switch e {
             case Self.undeclared: out.append("a Bonjour service is missing from NSBonjourServices (\(e))")
@@ -39,6 +46,9 @@ struct CastSDKState: Equatable, Sendable {
         }
         return out
     }
+
+    /// Whether a line the SDK logs says that its Bonjour browser sent a query.
+    static func beganSearch(function: String) -> Bool { function.contains("didSendDiscoveryQuery") }
 
     /// The code in a line the SDK logs when its Bonjour browser could not search, nil for any
     /// other line.
@@ -51,12 +61,13 @@ struct CastSDKState: Equatable, Sendable {
 
     var text: String {
         func list(_ items: [String]) -> String { items.joined(separator: ",") }
-        return "receivers=\(list(receivers));running=\(running);errors=\(list(errors.map(String.init)));devices=\(list(devices))"
+        return "receivers=\(list(receivers));running=\(running);searching=\(searching);errors=\(list(errors.map(String.init)));devices=\(list(devices))"
     }
 
-    init(receivers: [String] = [], running: Bool = false, errors: [Int] = [], devices: [String] = []) {
+    init(receivers: [String] = [], running: Bool = false, searching: Bool = false, errors: [Int] = [], devices: [String] = []) {
         self.receivers = receivers
         self.running = running
+        self.searching = searching
         self.errors = errors
         self.devices = devices
     }
@@ -69,9 +80,9 @@ struct CastSDKState: Equatable, Sendable {
             if kv.count == 2 { fields[kv[0]] = kv[1] }
         }
         guard let receivers = fields["receivers"], let running = fields["running"].flatMap(Bool.init),
-              let errors = fields["errors"], let devices = fields["devices"] else { return nil }
+              let searching = fields["searching"].flatMap(Bool.init), let errors = fields["errors"], let devices = fields["devices"] else { return nil }
         func list(_ s: String) -> [String] { s.split(separator: ",").map(String.init) }
-        self.init(receivers: list(receivers), running: running, errors: list(errors).compactMap(Int.init), devices: list(devices))
+        self.init(receivers: list(receivers), running: running, searching: searching, errors: list(errors).compactMap(Int.init), devices: list(devices))
     }
 }
 #endif

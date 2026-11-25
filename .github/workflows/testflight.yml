@@ -44,7 +44,7 @@
 # uploads nothing; a failed upload is a warning, never a failed leg (the app is in TestFlight
 # by then), and the tables are kept as the run's artifact to upload by hand.
 #
-# One-time, by the owner: the six apps' records in App Store Connect (an app record cannot be
+# One-time, by the owner: the four apps' records in App Store Connect (an app record cannot be
 # made through the API), and the owner as an internal tester. See docs/testflight.md.
 name: TestFlight
 
