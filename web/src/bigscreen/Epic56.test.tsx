@@ -164,6 +164,14 @@ function serve(extra: Table = {}) {
           poster_video_ids: [],
           source_kind: "youtube_channel",
         },
+        {
+          kind: "youtube",
+          id: "C3",
+          name: "Playlist lessons",
+          videos: 5,
+          poster_video_ids: [],
+          source_kind: "youtube_playlist",
+        },
         { kind: "topic", id: "G1", name: "Patience", videos: 4, poster_video_ids: ["v7", "v8"] },
       ],
       counts: {},
@@ -528,8 +536,11 @@ describe("collections and playlists", () => {
     const tab = await screen.findByTestId("big-library-collections");
     await within(tab).findByText("Favourites");
     // a YouTube channel's collection shows, without a source badge
-    expect(within(tab).getByText("Channel uploads")).toBeInTheDocument();
-    expect(within(tab).queryByText("YouTube channel")).toBeNull();
+    expect(el("col:youtube:C2")).toHaveTextContent("Channel uploads");
+    expect(el("col:youtube:C2").querySelector(".bs-tile__badge")).toBeNull();
+    expect(el("col:youtube:C3").querySelector(".bs-tile__badge")).toHaveTextContent(
+      E["collections.badge.youtubePlaylist"]!
+    );
     // no Play and Shuffle in the header on Collections (each card's page has them)
     expect(screen.queryByRole("button", { name: `▶ ${E["big.play"]}` })).toBeNull();
     act(() => el("col:topic:G1").focus());

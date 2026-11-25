@@ -131,8 +131,10 @@ const SOURCES = ["youtube_playlist", "youtube_channel"] as const;
 
 function readCollection(raw: unknown): LibraryCollection | null {
   const c = obj(raw);
-  if (typeof c.id !== "string" || !KINDS.includes(c.kind as CollectionKind)) return null;
-  const kind = c.kind as CollectionKind;
+  // a home up to v0.3.162 answers kind plex for a collection an older release read in
+  // from Plex: a curated one, as later homes answer it
+  const kind = (c.kind === "plex" ? "curated" : c.kind) as CollectionKind;
+  if (typeof c.id !== "string" || !KINDS.includes(kind)) return null;
   return {
     kind,
     subkind: c.subkind === "filler" || c.subkind === "standalone" ? c.subkind : undefined,
@@ -222,7 +224,7 @@ export async function fetchAutoCollection(
 
 /** Where a collection of the tab opens. */
 export function libraryCollectionPath(libraryId: string, c: LibraryCollection): string {
-  // a YouTube or Plex collection is a collection's own page (its row of collections)
+  // a YouTube collection is a collection's own page (its row of collections)
   if (c.kind === "topic" || c.kind === "clip")
     return `/library/${encodeURIComponent(libraryId)}/collections/${c.kind}/${encodeURIComponent(c.id)}`;
   return `/collections/${encodeURIComponent(c.id)}`;

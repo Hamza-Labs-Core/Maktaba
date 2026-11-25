@@ -97,6 +97,8 @@ function readCollection(raw: unknown): Collection | null {
           .filter((x): x is string => typeof x === "string")
           .slice(0, 4)
       : [],
+    // a home up to v0.3.162 answers source_kind plex for a collection an older release read
+    // in from Plex: no source, an ordinary collection, as later homes answer it
     source_kind:
       c.source_kind === "youtube_playlist" || c.source_kind === "youtube_channel"
         ? c.source_kind

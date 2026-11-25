@@ -98,6 +98,23 @@ describe("CollectionPage", () => {
     sessionStorage.clear();
   });
 
+  it("a YouTube channel's has no badge; an older home's source_kind plex is an ordinary collection", async () => {
+    serve({ "/api/collections/c1": { ...MANUAL, source_kind: "youtube_channel" } });
+    const { unmount, container } = renderOne("c1", adminUser);
+    expect(await screen.findByText(en["collections.sourced"])).toBeInTheDocument();
+    expect(container.querySelector(".mk-badge")).toBeNull();
+    expect(screen.queryByRole("button", { name: en["collections.rename"] })).toBeNull();
+    unmount();
+    // homes up to v0.3.162 answer it for a collection once read in from Plex
+    serve({ "/api/collections/c1": { ...MANUAL, source_kind: "plex" } });
+    const page = renderOne("c1", adminUser);
+    expect(
+      await screen.findByRole("button", { name: en["collections.rename"] })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(en["collections.sourced"])).toBeNull();
+    expect(page.container.querySelector(".mk-badge")).toBeNull();
+  });
+
   it("shows a list in order; a viewer can play but not curate", async () => {
     serve();
     renderOne("c1");

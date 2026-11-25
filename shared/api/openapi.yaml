@@ -15467,7 +15467,6 @@ components:
           enum:
           - youtube_playlist
           - youtube_channel
-          - plex
         source_ref:
           type: string
         name_override:
