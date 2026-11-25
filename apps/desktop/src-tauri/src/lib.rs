@@ -111,7 +111,7 @@ async fn discover_servers(timeout_ms: Option<u64>) -> Result<Vec<DiscoveredServe
 /// size and a place of its own. The plugin restores a window inside its build, whatever the
 /// builder says: one with no state kept yet is shown with the focus, and one with a state gets
 /// its size in physical pixels back, the wrong size on a screen of another scale.
-const UNSAVED_WINDOWS: [&str; 1] = [traypanel::LABEL];
+const UNSAVED_WINDOWS: [&str; 2] = [traypanel::LABEL, shelldialog::LABEL];
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

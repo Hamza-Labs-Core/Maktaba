@@ -5,10 +5,9 @@ import userEvent from "@testing-library/user-event";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
-const { listen } = vi.hoisted(() => ({
-  listen: vi.fn(async (_name: string, _cb: unknown) => () => {}),
-}));
-vi.mock("@tauri-apps/api/event", () => ({ listen }));
+const { listen } = vi.hoisted(() => ({ listen: vi.fn() }));
+// its own window's events; the global `listen` would hear every window's, and be heard by all
+vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => ({ listen }) }));
 
 import { ShellDialog } from "./ShellDialog";
 import type { DialogContent } from "../lib/shellDialog";
@@ -26,6 +25,9 @@ const PORT: DialogContent = {
   revision: 1,
 };
 
+/** The shell's events, by name. */
+let heard: Record<string, (e: { payload: unknown }) => void> = {};
+
 async function open(content: DialogContent) {
   const w = window as unknown as W;
   w.__TAURI_INTERNALS__ = {};
@@ -41,6 +43,12 @@ describe("ShellDialog", () => {
   beforeEach(() => {
     invoke.mockReset();
     invoke.mockResolvedValue(null);
+    heard = {};
+    listen.mockReset();
+    listen.mockImplementation(async (name: string, cb: (e: { payload: unknown }) => void) => {
+      heard[name] = cb;
+      return () => {};
+    });
   });
   afterEach(() => {
     for (const k of ["__TAURI_INTERNALS__", "__MAKTABA_PANEL__"])
@@ -102,19 +110,34 @@ describe("ShellDialog", () => {
     expect(screen.getByRole("heading")).toHaveTextContent("يتعذّر فتح http://192.168.1.20:8080.");
   });
 
-  it("takes a second error's words while it is open", async () => {
-    let push: (c: DialogContent) => void = () => {};
-    listen.mockImplementationOnce(async (_name: string, cb: unknown) => {
-      push = (c) => (cb as (e: { payload: DialogContent }) => void)({ payload: c });
-      return () => {};
-    });
-    open(PORT);
-    await act(async () => {});
+  it("takes a second error's words while it is open, from the shell and never from the event", async () => {
+    await open(PORT);
+    const second = {
+      ...PORT,
+      title: "The update could not be installed.",
+      errors: [],
+      revision: 2,
+    };
+    invoke.mockImplementation(async () => second);
     await act(async () =>
-      push({ ...PORT, title: "The update could not be installed.", errors: [] })
+      heard["shell-dialog"]!({ payload: { ...PORT, title: "Forged", revision: 9 } })
     );
-    expect(
-      screen.getByRole("alertdialog", { name: "The update could not be installed." })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog", { name: second.title })).toBeInTheDocument();
+  });
+
+  it("keeps the newest error's words when an older answer comes late", async () => {
+    const w = window as unknown as W;
+    w.__TAURI_INTERNALS__ = {};
+    w.__MAKTABA_PANEL__ = "dialog";
+    const second = { ...PORT, title: "The update could not be installed.", revision: 2 };
+    let first: (c: DialogContent) => void = () => {};
+    invoke.mockImplementationOnce(() => new Promise((r) => (first = r)));
+    invoke.mockImplementation(async () => second);
+    render(<ShellDialog />);
+    await act(async () => {});
+    await act(async () => heard["shell-dialog"]!({ payload: null }));
+    expect(screen.getByRole("alertdialog", { name: second.title })).toBeInTheDocument();
+    await act(async () => first(PORT));
+    expect(screen.getByRole("alertdialog", { name: second.title })).toBeInTheDocument();
   });
 });

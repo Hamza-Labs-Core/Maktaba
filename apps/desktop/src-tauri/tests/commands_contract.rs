@@ -178,7 +178,9 @@ fn the_window_state_plugin_leaves_the_shell_s_own_windows_alone() {
         .expect("UNSAVED_WINDOWS in lib.rs");
     let list = &lib[start..start + lib[start..].find("];").expect("its end")];
     let makers = window_makers();
-    assert!(makers.contains(&"traypanel.rs".to_string()), "{makers:?}");
+    for file in ["traypanel.rs", "shelldialog.rs"] {
+        assert!(makers.contains(&file.to_string()), "{makers:?}");
+    }
     for file in makers {
         let module = file.trim_end_matches(".rs");
         assert!(
@@ -215,15 +217,15 @@ fn the_shell_s_own_windows_have_no_menu_bar_and_the_panel_is_never_closed() {
 }
 
 /// An event sent to one window still reaches any page that listens for every window's: the
-/// panel's carry no words.
+/// panel's and the dialog's carry no words.
 #[test]
-fn the_tray_panel_s_events_carry_nothing() {
-    let panel = code("traypanel.rs");
+fn the_panel_s_and_the_dialog_s_events_carry_nothing() {
+    let panel = code("traypanel.rs") + &code("shelldialog.rs");
     let sent: Vec<&str> = panel
         .match_indices("emit_to(")
         .map(|(i, _)| &panel[i..])
         .collect();
-    assert!(sent.len() >= 2);
+    assert!(sent.len() >= 3);
     for s in sent {
         let call = &s[..s.find(';').expect("the call's end")];
         assert!(call.trim_end().ends_with(", ())"), "{call}");

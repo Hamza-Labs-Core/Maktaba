@@ -3871,12 +3871,6 @@ when the two differ.
   that cannot draw the frame (another Maktaba in client mode, or an older home) keeps the
   system's. In English and Arabic.
 
-- **Maktaba's own dialog for the app's errors.** When the Maktaba app reports a problem (the
-  server could not start, an update failed, a page could not open), it says so in its own
-  window instead of the system's message box: what happened, the programs' own error as it is,
-  a way to the logs when this computer runs the server, and Close (Enter or Escape). The
-  system's box stays only for a computer that cannot show it. In English and Arabic.
-
 - **New pictures on maktaba.tv.** The screenshots of every app now show a library of
   documentaries and children's animation: NASA's Curiosity rover, the Apollo 11 launch, Saturn's
   rings, Lake Nasser seen from space, the Moon's phases, a deep-sea octopus, Big Buck Bunny and
