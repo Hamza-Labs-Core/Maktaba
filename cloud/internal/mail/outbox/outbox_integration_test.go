@@ -733,6 +733,29 @@ func TestAnOlderLinkIsNeverTheLastToArrive(t *testing.T) {
 	}
 }
 
+// The newest link is the one written last, not the one asked for last: two nodes' clocks differ,
+// and two requests share a moment.
+func TestTheNewestLinkIsTheOneWrittenLast(t *testing.T) {
+	ctx := context.Background()
+	for _, ahead := range []time.Duration{10 * time.Second, 0} {
+		w := newWorld(t, DefaultLimits(100, 1000))
+		w.verified("a@example.test")
+		start := w.at
+		w.at = start.Add(ahead) // asked first, on a node whose clock is ahead
+		w.ask(mail.KindPasswordReset, "a@example.test", "en")
+		w.at = start
+		w.ask(mail.KindPasswordReset, "a@example.test", "en")
+		w.at = start.Add(time.Minute)
+		w.work()
+		if len(w.m.sent) != 1 {
+			t.Fatalf("ahead %s: %d mails, want the newest alone: %s", ahead, len(w.m.sent), w.states())
+		}
+		if _, err := w.o.tokens.Redeem(ctx, token(w.last()), stores.PurposePasswordReset); err != nil {
+			t.Errorf("ahead %s: the mail sent has a dead link", ahead)
+		}
+	}
+}
+
 // What the log driver took was not sent, and does not count once mails are.
 func TestLoggedMailsDoNotCount(t *testing.T) {
 	w := newWorld(t, Limits{Day: 3})
