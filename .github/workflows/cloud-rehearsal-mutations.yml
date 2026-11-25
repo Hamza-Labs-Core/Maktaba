@@ -1,0 +1,88 @@
+# The single node's rehearsal, rehearsed (deploy/cloud-relay/tests): the node's scripts with one
+# guarantee taken out at a time, and the cases that must notice. One nobody notices is a case that is
+# missing. Nightly, by hand, and on a pull request that changes the scripts or the rehearsal. Its own
+# workflow: a deploy waits for cloud-rehearsal.yml's newest run on its commit (cloud-guard.sh), never
+# for this one.
+name: Cloud rehearsal mutations
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'deploy/cloud-relay/ops/rollout.sh'
+      - 'deploy/cloud-relay/ops/backup.sh'
+      - 'deploy/cloud-relay/tests/*_rehearsal.py'
+      - '.github/workflows/cloud-rehearsal-mutations.yml'
+  schedule:
+    - cron: '17 4 * * *' # nightly, 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-rehearsal-mutations-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  mutation:
+    name: without ${{ matrix.mutation }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        mutation:
+          - no-backup
+          - no-lock
+          - drop-in-place
+          - web-not-atomic
+          - never-settled
+          - keeps-no-backup
+          - in-the-session
+          - no-watch
+          - boot-starts-anyway
+          - hold-by-compose
+          - first-by-what-runs
+          - truncated-dump
+          - no-reserve
+          - boots-a-failed-first
+          - first-unsaved
+          - app-not-stopped
+          - boot-before-apply
+          - commit-anyway
+          - one-pass
+          - boot-knows-no-commit
+          - id-twice
+          - commit-left-over
+          - reserve-for-nothing
+          - boot-never-waits
+          - downgrades
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - name: The cases that must notice
+        env:
+          OUT: ${{ runner.temp }}/rehearsal
+          MUTATE: ${{ matrix.mutation }}
+        run: sudo --preserve-env=CI,GITHUB_STEP_SUMMARY,GITHUB_RUN_ID,MUTATE REPO="$PWD" OUT="$OUT" python3 -I deploy/cloud-relay/tests/rollout_rehearsal.py
+
+  # on a machine that really reboots and really loses its power
+  reboot-mutation:
+    name: reboots without ${{ matrix.mutation }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        mutation: [boots-a-failed-first, first-unsaved]
+    steps:
+      - uses: actions/checkout@v6.0.2
+        with:
+          persist-credentials: false
+      - name: The cases that must notice
+        env:
+          OUT: ${{ runner.temp }}/rehearsal
+          MUTATE: ${{ matrix.mutation }}
+        run: sudo --preserve-env=CI,GITHUB_STEP_SUMMARY,GITHUB_RUN_ID,MUTATE REPO="$PWD" OUT="$OUT" python3 -I deploy/cloud-relay/tests/reboot_rehearsal.py

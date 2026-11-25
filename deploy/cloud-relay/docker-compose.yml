@@ -1,10 +1,14 @@
-# Maktaba Cloud Relay — production compose stack for a single VPS.
+# Maktaba Cloud, one node — the compose stack for a single VPS (QA, and production until
+# the Phase 1 pair exists; docs/cloud-single-node.md).
 #
 #   maktaba-cloud (relay)  the relay binary, role=relay, listens :8443
-#   postgres 16            durable state (server registry, billing meter)
+#   api                    the same image, role=api: accounts, sign-in, claims, plans
+#                          (172.30.77.10:8090, a private address: story 50.31)
+#   worker                 the same image, role=worker: bandwidth roll-ups, expiries, purges
+#   postgres 16            durable state (accounts, server registry, billing meter)
 #   redis 7                a cache only, no persistence (nothing uses it yet;
 #                          cloud/README.md "Redis is a cache", story 50.05)
-#   caddy 2                reverse proxy + one wildcard certificate (DNS-01)
+#   caddy 2                reverse proxy + certificates (Caddyfile, RELAY_TLS)
 #
 # Bring up:  docker compose --env-file .env up -d
 # (setup.sh wires this into a systemd unit on the host.)
@@ -20,9 +24,21 @@ name: maktaba-relay
 
 x-restart: &restart unless-stopped
 
+# The stack's own network, at fixed addresses: the api listens on a private address only, and
+# believes CF-Connecting-IP from Caddy's address only (cloud.toml server.trusted_proxies).
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.77.0/24
+          # Docker hands out addresses from the upper half only, so the fixed ones (api .10,
+          # Caddy .2) are never taken by a container that started first
+          ip_range: 172.30.77.128/25
+
 services:
   postgres:
-    image: postgres:16-alpine
+    # pinned: QA tests this one, and production runs the same (cloud-deploy.yml records it)
+    image: postgres:16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
     restart: *restart
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-maktaba}
@@ -39,7 +55,8 @@ services:
     # No `ports:` — reachable only on the internal compose network.
 
   redis:
-    image: redis:7-alpine
+    # pinned: QA tests this one, and production runs the same (cloud-deploy.yml records it)
+    image: redis:7-alpine@sha256:7f7d30b7fdd09467bac58198a1f166dd69789d348d4fe859cccb20e0cf287fbe
     restart: *restart
     # A cache: nothing in it may matter after a restart (story 50.05), so no
     # AOF and no snapshots.
@@ -52,13 +69,17 @@ services:
       start_period: 10s
 
   maktaba-cloud:
-    image: ghcr.io/hamza-labs-core/maktaba-cloud:${MAKTABA_CLOUD_TAG:-latest}
+    image: ${MAKTABA_CLOUD_IMAGE:-ghcr.io/hamza-labs-core/maktaba-cloud}:${MAKTABA_CLOUD_TAG:-latest}
     restart: *restart
-    command: ["serve", "--role", "relay"]
-    # SIGTERM drains the homes' tunnels for up to relay.shutdown_grace (150 s,
-    # Epic 50 story 50.03) before the relay exits; Docker's default 10 s would
-    # SIGKILL it mid-drain and drop every tunnel.
-    stop_grace_period: 160s
+    # a change of cloud.toml recreates the container (setup.sh writes the hash)
+    labels:
+      maktaba.config: "${MAKTABA_CONFIG_SHA:-}"
+    command: ["serve", "--role", "relay", "--config", "/etc/maktaba/cloud/cloud.toml"]
+    # the maktaba user (setup.sh writes its ids): the secrets mount is its own, 0700/0600
+    user: "${MAKTABA_UID:?run setup.sh}:${MAKTABA_GID:?run setup.sh}"
+    # SIGTERM closes the homes' tunnels (cloud.toml: relay.drain is off, there is one relay)
+    # and waits up to relay.shutdown_grace (20 s) for the requests under way.
+    stop_grace_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,9 +110,8 @@ services:
       # tracks MAKTABA_CLOUD_LISTEN_ADDR if that changes).
       HEALTHCHECK_URL: http://127.0.0.1:8443/healthz
     volumes:
-      # Optional: drop a cloud.toml here to supply the id/path-based
-      # settings that have no env override (oauth client ids, apns/fcm
-      # key paths, entitlement key path). Required only for --role api.
+      # setup.sh writes it from cloud.toml.template; every role reads it (--config: the
+      # binary reads no file it is not named) for what has no env override
       - ./cloud.toml:/etc/maktaba/cloud/cloud.toml:ro
       # Key material referenced by ENTITLEMENT_KEY_PATH / APNS_KEY_PATH /
       # FCM_SERVICE_ACCOUNT_PATH. setup.sh generates the entitlement key
@@ -104,24 +124,116 @@ services:
       retries: 5
       start_period: 40s
 
+  # The api role (accounts, sign-in, claims, plans): the same image and cloud.toml as the relay.
+  # Caddy is its only client (API_DOMAIN).
+  api:
+    image: ${MAKTABA_CLOUD_IMAGE:-ghcr.io/hamza-labs-core/maktaba-cloud}:${MAKTABA_CLOUD_TAG:-latest}
+    restart: *restart
+    # a change of cloud.toml recreates the container (setup.sh writes the hash)
+    labels:
+      maktaba.config: "${MAKTABA_CONFIG_SHA:-}"
+    command: ["serve", "--role", "api", "--config", "/etc/maktaba/cloud/cloud.toml"]
+    # the maktaba user (setup.sh writes its ids): the secrets mount is its own, 0700/0600
+    user: "${MAKTABA_UID:?run setup.sh}:${MAKTABA_GID:?run setup.sh}"
+    stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      maktaba-cloud:
+        condition: service_healthy
+    networks:
+      default:
+        ipv4_address: 172.30.77.10
+    environment:
+      MAKTABA_CLOUD_LISTEN_ADDR: 172.30.77.10:8090
+      MAKTABA_CLOUD_DB_URL: ${MAKTABA_CLOUD_DB_URL}
+      MAKTABA_CLOUD_REDIS_URL: ${MAKTABA_CLOUD_REDIS_URL:-redis://redis:6379/0}
+      MAKTABA_CLOUD_PUBLIC_URL: https://${API_DOMAIN}
+      MAKTABA_CLOUD_RELAY_PUBLIC_HOST: ${RELAY_DOMAIN}
+      MAKTABA_CLOUD_TOKEN_SECRET: ${MAKTABA_CLOUD_TOKEN_SECRET}
+      MAKTABA_CLOUD_STAFF_TOKEN_SECRET: ${MAKTABA_CLOUD_STAFF_TOKEN_SECRET:-}
+      MAKTABA_CLOUD_STAFF_SECRET_KEY: ${MAKTABA_CLOUD_STAFF_SECRET_KEY:-}
+      MAKTABA_LOG_KEY: /etc/maktaba/cloud/secrets/log.key
+      MAKTABA_CLOUD_BILLING_PROVIDER: ${BILLING_PROVIDER:-none}
+      MAKTABA_CLOUD_OAUTH_GOOGLE_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE: ${MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE:-}
+      HEALTHCHECK_URL: http://172.30.77.10:8090/healthz
+    volumes:
+      - ./cloud.toml:/etc/maktaba/cloud/cloud.toml:ro
+      - ./secrets:/etc/maktaba/cloud/secrets:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # The worker role: the periodic jobs (bandwidth roll-ups, expired-token cleanup,
+  # account-deletion purges), under the worker's leader lock. Its control port is its health.
+  worker:
+    image: ${MAKTABA_CLOUD_IMAGE:-ghcr.io/hamza-labs-core/maktaba-cloud}:${MAKTABA_CLOUD_TAG:-latest}
+    restart: *restart
+    # a change of cloud.toml recreates the container (setup.sh writes the hash)
+    labels:
+      maktaba.config: "${MAKTABA_CONFIG_SHA:-}"
+    command: ["serve", "--role", "worker", "--config", "/etc/maktaba/cloud/cloud.toml"]
+    # the maktaba user (setup.sh writes its ids): the secrets mount is its own, 0700/0600
+    user: "${MAKTABA_UID:?run setup.sh}:${MAKTABA_GID:?run setup.sh}"
+    stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      MAKTABA_CLOUD_DB_URL: ${MAKTABA_CLOUD_DB_URL}
+      MAKTABA_CLOUD_REDIS_URL: ${MAKTABA_CLOUD_REDIS_URL:-redis://redis:6379/0}
+      MAKTABA_CLOUD_PUBLIC_URL: https://${API_DOMAIN}
+      MAKTABA_CLOUD_RELAY_PUBLIC_HOST: ${RELAY_DOMAIN}
+      MAKTABA_CLOUD_TOKEN_SECRET: ${MAKTABA_CLOUD_TOKEN_SECRET}
+      MAKTABA_LOG_KEY: /etc/maktaba/cloud/secrets/log.key
+      HEALTHCHECK_URL: http://127.0.0.1:9090/healthz
+    volumes:
+      - ./cloud.toml:/etc/maktaba/cloud/cloud.toml:ro
+      - ./secrets:/etc/maktaba/cloud/secrets:ro
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
   caddy:
     # Caddy with the Cloudflare DNS module (deploy/caddy): the wildcard certificate
     # for RELAY_DOMAIN and *.RELAY_DOMAIN by DNS-01 (Epic 50 story 50.02)
-    image: ghcr.io/hamza-labs-core/maktaba-caddy:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
+    image: ${MAKTABA_CADDY_IMAGE:-ghcr.io/hamza-labs-core/maktaba-caddy}:${MAKTABA_CADDY_TAG:-2.11.7-cf0.2.4}
+    labels:
+      maktaba.config: "${MAKTABA_CADDYFILE_SHA:-}"
     restart: *restart
     depends_on:
       maktaba-cloud:
         condition: service_healthy
+      api:
+        condition: service_healthy
+    networks:
+      default:
+        ipv4_address: 172.30.77.2
     ports:
       - "80:80"
       - "443:443"
       - "443:443/udp"   # HTTP/3
     environment:
       RELAY_DOMAIN: ${RELAY_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN is required (the api's name, e.g. api.maktaba.tv)}
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN is required (the cloud web app's name, e.g. app.maktaba.tv)}
       ACME_EMAIL: ${ACME_EMAIL}
-      CF_API_TOKEN: ${CF_API_TOKEN:?CF_API_TOKEN is required (a Cloudflare DNS-edit token)}
+      # dns (the wildcard by DNS-01, CF_API_TOKEN), http (HTTP-01 and on-demand) or internal
+      RELAY_TLS: ${RELAY_TLS:-dns}
+      # a Cloudflare token with Zone -> DNS -> Edit only; RELAY_TLS=dns only
+      CF_API_TOKEN: ${CF_API_TOKEN:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # the cloud web app's versions (web/releases) and the one served (web/current, a symlink
+      # the deploy switches in one rename)
+      - ./web:/srv/cloud-web:ro
       - caddy_data:/data      # issued certs + ACME account (persist!)
       - caddy_config:/config
     healthcheck:

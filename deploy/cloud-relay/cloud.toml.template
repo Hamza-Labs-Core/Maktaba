@@ -1,0 +1,56 @@
+# Maktaba Cloud, one node: the cloud.toml every role reads (relay, api, worker).
+# setup.sh writes /opt/maktaba-relay/cloud.toml from this file, putting in RELAY_DOMAIN,
+# API_DOMAIN, APP_DOMAIN and RELAY_PLANS_ENFORCE from .env; edit this template, not the copy.
+# Secrets never go here: they come from .env (MAKTABA_CLOUD_*) and the read-only secrets/
+# mount.
+
+[server]
+# the api's rules for production (story 50.31): a private listener only (compose gives it
+# 172.30.77.10:8090), and CF-Connecting-IP believed from Caddy alone, which writes it
+env             = "production"
+public_url      = "https://${API_DOMAIN}"
+# the cloud web app (Caddy serves it on APP_DOMAIN, with /v1/* to this api): mail links and
+# the link-home page a home sends its user to
+web_url         = "https://${APP_DOMAIN}"
+user_hosts      = ["${API_DOMAIN}", "${APP_DOMAIN}"]
+trusted_proxies = ["172.30.77.2/32"]
+origin_mode     = "tunnel"
+# The operator console's listener (story 50.32), on the stack's private network only: no public
+# name reaches it, Caddy has no site for it. ops/cloud-ops.py (verify a sign-up, set a plan) is
+# its one client, from inside the node.
+admin_listen_addr = "172.30.77.10:8091"
+admin_host        = "admin.internal"
+
+[mail]
+# the only driver: a mail is written to the api's log, never delivered
+driver = "log"
+
+[billing]
+provider = "none"
+
+[entitlement]
+# setup.sh makes the seed; home assertions (linked-account sign-in, Epic 42) derive from it
+private_key_path = "/etc/maktaba/cloud/secrets/entitlement.key"
+
+[telemetry]
+log_format = "json"
+log_level  = "info"
+
+[relay]
+public_host    = "${RELAY_DOMAIN}"
+shutdown_grace = "20s"
+
+[relay.drain]
+# one relay: a home has nowhere to move to before the relay stops, and the new container
+# starts only once the old one is gone. The tunnels close at once and the homes dial back
+# (seconds, not the pool's two-minute drain)
+enabled = false
+
+[broadcast]
+# off (Epic 50 §14): no plan grants it, nothing is published or watched, and no broadcast edge
+# is deployed with a node. The deploy's test requires it off (tests/e2e.py, broadcast-off)
+enabled = false
+
+[relay.plans]
+# each home's plan limits, enforced by the relay (Epic 50 story 50.19)
+enforce = ${RELAY_PLANS_ENFORCE}

@@ -1,13 +1,22 @@
 # Maktaba Cloud Relay — VPS deployment
 
-> **The single-VPS setup**, for development and a first demo. Production runs the Phase 1
-> pair in [`deploy/cloud-ha/`](../cloud-ha/README.md) (two nodes that cover for each other and
-> a witness, Epic 50 story 50.07): one machine here means every reboot or deploy stops
-> remote play.
+> **The single-VPS setup**: QA and, until the Phase 1 pair exists, production
+> ([`docs/cloud-single-node.md`](../../docs/cloud-single-node.md): the machines, what runs, how
+> a release is deployed and tested). The Phase 1 pair is
+> [`deploy/cloud-ha/`](../cloud-ha/README.md) (two nodes that cover for each other and a
+> witness, Epic 50 story 50.07): one machine here means every reboot or deploy stops remote
+> play.
+>
+> **Deploy from CI, not by hand:** Actions → **Cloud deploy**
+> ([`cloud-deploy.yml`](../../.github/workflows/cloud-deploy.yml)), target `qa` or `prod`.
+> It runs `setup.sh` and `deploy.sh` below over SSH with the pinned host key, then
+> [`tests/e2e.py`](tests/e2e.py); production takes only a release QA passed.
 
-Deploy `maktaba-cloud --role relay` to a single VPS: the relay binary,
-Postgres, Redis, and Caddy (reverse proxy + automatic Let's Encrypt
-TLS), wired together with Docker Compose and managed by systemd.
+Deploy the whole cloud to a single VPS: `maktaba-cloud` as the relay, the api and the
+worker, Postgres, Redis, and Caddy (reverse proxy, certificates, and the cloud web app's
+files), wired together with Docker Compose and managed by systemd. `ops/cloud-ops.py` is the
+operator's tool on the node (confirm an account's email, set a plan) and `ops/backup.sh` the
+nightly backup.
 
 The relay is the public ingress that self-hosted Maktaba servers dial
 out to. Each registered server is reachable at
@@ -32,9 +41,12 @@ flags, the CAA records) are listed once, in [`docs/cloud-dns.md`](../../docs/clo
 ## Prerequisites
 
 - A VPS running **Ubuntu 22.04 or 24.04** with a public IPv4 address.
-- A domain you control, with **two DNS records** pointing at the VPS:
+- A domain you control, with **four DNS records** pointing at the VPS (the CI deploy writes
+  them with `CLOUDFLARE_DNS_TOKEN`, `ops/dns-records.py`):
   - apex: `relay.example.com  A  <vps-ip>`
   - wildcard: `*.relay.example.com  A  <vps-ip>`
+  - the api: `api.example.com  A  <vps-ip>` (`API_DOMAIN`)
+  - the cloud web app: `app.example.com  A  <vps-ip>` (`APP_DOMAIN`)
 - Ports **80** and **443** reachable from the internet (Let's Encrypt
   HTTP-01 + client traffic). The setup script's firewall opens exactly
   these plus SSH.
@@ -178,8 +190,8 @@ roll out the `maktaba-cloud` image on its own triggers.
 |---|---|
 | PR touching `cloud/**` or `deploy/cloud-relay/**` | `lint` + `test` + `build` |
 | Push to `main` (same paths) | the above, then `docker` build + push (`:edge`, `:sha-<short>`) |
-| Tag `v*` | the above with `:vX.Y.Z` + `:latest`, then `sign` (cosign) and `deploy` |
-| Manual `workflow_dispatch` | `deploy` only, of a chosen (or `latest`) tag |
+| Tag `v*` | the above with `:vX.Y.Z` + `:latest`, then `sign` (cosign) |
+| Manual `workflow_dispatch` | the checks, or a tag's run by hand (`tag`) |
 
 **Jobs**
 
@@ -201,51 +213,18 @@ roll out the `maktaba-cloud` image on its own triggers.
     --certificate-identity https://github.com/Hamza-Labs-Core/Maktaba/.github/workflows/relay.yml@refs/tags/vX.Y.Z \
     --certificate-oidc-issuer https://token.actions.githubusercontent.com
   ```
-- **deploy** — runs [`deploy.sh`](deploy.sh) against the VPS, as the
-  `production` GitHub Environment. Runs on a manual dispatch, or on a `v*`
-  tag when the `RELAY_DEPLOY` repo variable is `true` and the image
-  built and pushed. `production` has no protection rules by default, so a
-  deploy does not wait for anyone; to gate it, add required reviewers in
-  **Settings → Environments → production**.
+- **deploy** — the Phase 1 pair only (`deploy/cloud-ha`), once it exists; never this stack.
 
 The repo's [`release.yml`](../../.github/workflows/release.yml) *also*
 builds + signs the `cloud` binary and image as part of the full release
 matrix (single-arch image, multi-arch binaries); `relay.yml` is the
-relay-focused, multi-arch, deploy-capable leg.
+relay-focused, multi-arch leg.
 
-### Required GitHub secrets & variables
+### Deploying
 
-Set these under **Settings → Secrets and variables → Actions** (put the
-SSH secrets on the `production` environment so only the deploy job can
-read them):
-
-| Name | Kind | Purpose |
-|---|---|---|
-| `RELAY_SSH_HOST` | secret | VPS hostname or IP for the deploy SSH |
-| `RELAY_SSH_USER` | secret | SSH login user (must be in the `docker` group) |
-| `RELAY_SSH_KEY` | secret | Private key **contents** (PEM) for that user |
-| `REGISTRY_TOKEN` | secret | *Optional* — only if pushing to a non-GHCR registry; otherwise the auto-provisioned `GITHUB_TOKEN` is used |
-| `MAKTABA_REGISTRY` | variable | *Optional* — override the default `ghcr.io/hamza-labs-core` registry |
-| `RELAY_PUBLIC_URL` | variable | *Optional* — shown as the deployment URL on the environment |
-| `RELAY_DEPLOY` | variable | Set to `true` to roll out every `v*` tag automatically. Unset, tags only publish the image; a manual dispatch still deploys |
-
-### Deploying by hand
-
-`deploy.sh` is the single source of truth — CI and a laptop run the same
-script. Roll out a specific tag:
-
-```bash
-RELAY_SSH_HOST=relay.example.com \
-RELAY_SSH_USER=maktaba \
-MAKTABA_CLOUD_TAG=v1.2.3 \
-make relay-deploy
-```
-
-It SSHes in, pulls the image, runs migrations in a throwaway container,
-swaps the stack (`docker compose up -d --wait`), verifies health, and
-**rolls back to the previous tag if the health check fails**. Override the
-target dir with `DEPLOY_DIR=` and add a public probe with
-`HEALTH_URL=https://relay.example.com/readyz` if desired.
+By `.github/workflows/cloud-deploy.yml` only ([docs/cloud-single-node.md](../../docs/cloud-single-node.md)):
+Actions → **Cloud deploy**, a target (`qa` or `prod`) and a release. Production takes what QA
+passed. There is no deploy from a laptop and none from `relay.yml`.
 
 Run the PR gates locally before pushing:
 

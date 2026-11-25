@@ -1,37 +1,35 @@
 #!/usr/bin/env bash
-# Maktaba Cloud Relay — remote deploy / rollout script.
+# Maktaba Cloud, one node: a CI deploy's rollout, commit and rollback on the node
+# (.github/workflows/cloud-deploy.yml), each as a unit of the node's own.
 #
-# Rolls a new `maktaba-cloud` image onto the production VPS over SSH:
-# pulls the image, runs pending migrations in a throwaway container,
-# swaps the serving stack, verifies health, and rolls back to the
-# previous tag if the health check fails.
+#   deploy.sh apply      after `ops/rollout.sh begin` (the node's present set saved, the images
+#                        pulled) and setup.sh (the new set written): hands the node the symbol
+#                        uploaders' token, then rolls the release out there; any failure restores
+#                        the saved set. The workflow then tests the node and
+#   deploy.sh commit     keeps it, or
+#   deploy.sh rollback   goes back.
 #
-# It is the SINGLE SOURCE OF TRUTH for a rollout: `make relay-deploy`
-# and the `deploy` job in .github/workflows/relay.yml both invoke this
-# script, so a maintainer can reproduce a CI deploy from a laptop.
-#
-# Usage:
-#   RELAY_SSH_HOST=relay.example.com \
-#   RELAY_SSH_USER=maktaba \
-#   MAKTABA_CLOUD_TAG=v1.2.3 \
-#   ./deploy.sh
+# Each is started once on the node and followed from here; a cut session is picked up again, and
+# asking again after a lost answer gives the same one. Nothing on the node stops when this does.
 #
 # Required env:
-#   RELAY_SSH_HOST   VPS hostname or IP.
-#   RELAY_SSH_USER   SSH login user (must be in the `docker` group).
+#   DEPLOY_ID        the deploy's name, the one `begin` was given.
+#   RELAY_SSH_HOST   the node's hostname or IP.
+#   RELAY_SSH_USER   SSH login user (root).
 #
 # Optional env:
-#   MAKTABA_CLOUD_TAG  image tag to deploy (default: latest).
 #   RELAY_SSH_KEY      private key *contents* (PEM). When set, written to
-#                      a 0600 temp file and used as the SSH identity —
-#                      this is how CI passes secrets.RELAY_SSH_KEY. When
+#                      a 0600 temp file and used as the SSH identity. When
 #                      unset, the caller's ssh-agent / default keys apply.
 #   RELAY_SSH_PORT     SSH port (default: 22).
-#   DEPLOY_DIR         stack dir on the VPS (default: /opt/maktaba-relay,
+#   RELAY_SSH_KNOWN_HOSTS  the host's known_hosts line(s). When set (CI always sets it, from
+#                      the QA_SSH_KNOWN_HOSTS / RELAY_SSH_KNOWN_HOSTS variables), the host
+#                      key must match it (StrictHostKeyChecking=yes); unset, a laptop's own
+#                      known_hosts applies and a new host is accepted on first use.
+#   FOLLOW_SECONDS     how long to go on trying to reach the node (default: 2700)
+#   RETRY_SECONDS      between two tries (default: 5)
+#   DEPLOY_DIR         stack dir on the node (default: /opt/maktaba-relay,
 #                      matching setup.sh).
-#   HEALTH_URL         extra public health URL to curl from the VPS after
-#                      rollout (e.g. https://relay.example.com/readyz).
-#                      Optional; the in-container probe always runs.
 #   MAKTABA_SYMBOLS_TOKEN  the token release symbol tables are uploaded with
 #                      (story 53.16; the repository secret the release
 #                      workflows upload with). Written to secrets/symbols.token
@@ -43,10 +41,13 @@ set -euo pipefail
 # --- config ---------------------------------------------------------------
 : "${RELAY_SSH_HOST:?RELAY_SSH_HOST is required}"
 : "${RELAY_SSH_USER:?RELAY_SSH_USER is required}"
-NEW_TAG="${MAKTABA_CLOUD_TAG:-latest}"
+: "${DEPLOY_ID:?DEPLOY_ID is required}"
+ACTION="${1:-apply}"
+case "$ACTION" in apply | commit | rollback) ;; *) echo "usage: deploy.sh apply | commit | rollback" >&2; exit 2 ;; esac
+FOLLOW_SECONDS="${FOLLOW_SECONDS:-2700}"
+RETRY_SECONDS="${RETRY_SECONDS:-5}"
 DEPLOY_DIR="${DEPLOY_DIR:-/opt/maktaba-relay}"
 RELAY_SSH_PORT="${RELAY_SSH_PORT:-22}"
-HEALTH_URL="${HEALTH_URL:-}"
 
 log() { printf '\033[1;34m[deploy]\033[0m %s\n' "$*"; }
 err() { printf '\033[1;31m[deploy:error]\033[0m %s\n' "$*" >&2; }
@@ -55,12 +56,27 @@ err() { printf '\033[1;31m[deploy:error]\033[0m %s\n' "$*" >&2; }
 # CI hands the key in via the RELAY_SSH_KEY secret (key *contents*). Stage
 # it as a locked-down temp file and clean it up on exit. Without it, fall
 # back to the caller's ambient SSH config (agent / ~/.ssh/id_*).
-SSH_OPTS=(-o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -p "$RELAY_SSH_PORT")
+SSH_OPTS=(-o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -p "$RELAY_SSH_PORT")
 KEY_FILE=""
+KH_FILE=""
+OUT=""
+ROUND=""
 # (an if, not `[ ] && rm`: an EXIT trap's last status is the script's, so a run with no
 # key file would end 1 after a good deploy)
-cleanup() { if [ -n "$KEY_FILE" ]; then rm -f "$KEY_FILE"; fi; }
+cleanup() {
+  if [ -n "$KEY_FILE" ]; then rm -f "$KEY_FILE"; fi
+  if [ -n "$KH_FILE" ]; then rm -f "$KH_FILE"; fi
+  if [ -n "$OUT" ]; then rm -f "$OUT" "$ROUND"; fi
+}
 trap cleanup EXIT
+
+if [ -n "${RELAY_SSH_KNOWN_HOSTS:-}" ]; then
+  KH_FILE="$(mktemp)"
+  printf '%s\n' "$RELAY_SSH_KNOWN_HOSTS" > "$KH_FILE"
+  SSH_OPTS+=(-o StrictHostKeyChecking=yes -o UserKnownHostsFile="$KH_FILE")
+else
+  SSH_OPTS+=(-o StrictHostKeyChecking=accept-new)
+fi
 
 if [ -n "${RELAY_SSH_KEY:-}" ]; then
   KEY_FILE="$(mktemp)"
@@ -71,14 +87,14 @@ fi
 
 SSH_TARGET="${RELAY_SSH_USER}@${RELAY_SSH_HOST}"
 
-log "Deploying tag '${NEW_TAG}' to ${SSH_TARGET}:${DEPLOY_DIR}"
+log "${ACTION} on ${SSH_TARGET}:${DEPLOY_DIR} (deploy ${DEPLOY_ID})"
 
 # --- the symbol uploaders' token ------------------------------------------
 # As deploy/cloud-ha/deploy.sh does on the pair: over SSH's stdin (never an
 # argument, never echoed), into the read-only secrets mount, readable by its
 # owner only and owned like the log key; replaced only when it changed. The
 # api reads MAKTABA_CLOUD_SYMBOLS_TOKEN_FILE when the rollout below restarts it.
-if [ -n "${MAKTABA_SYMBOLS_TOKEN:-}" ]; then
+if [ "$ACTION" = apply ] && [ -n "${MAKTABA_SYMBOLS_TOKEN:-}" ]; then
   # the remote script is single-quoted on purpose: it expands on the VPS, with the
   # deploy dir as its one (quoted) argument
   # shellcheck disable=SC2016,SC2029
@@ -108,100 +124,38 @@ fi
   log "the symbols token is in ${DEPLOY_DIR}/secrets"
 fi
 
-# --- remote payload -------------------------------------------------------
-# Everything below runs ON THE VPS. We stream it over `bash -s` and pass
-# the deploy dir, target tag, and optional health URL as positional args
-# (never interpolated into the remote shell, so quoting is safe).
-#
-# The compose file reads ${MAKTABA_CLOUD_TAG} from .env, so the rollout is
-# "edit .env -> pull -> migrate -> up --wait -> verify", with a revert of
-# .env + `up --wait` on health failure.
-ssh "${SSH_OPTS[@]}" "$SSH_TARGET" 'bash -s' -- "$DEPLOY_DIR" "$NEW_TAG" "$HEALTH_URL" <<'REMOTE'
-set -euo pipefail
-DEPLOY_DIR="$1"
-NEW_TAG="$2"
-HEALTH_URL="$3"
-
-rlog() { printf '\033[1;36m[vps]\033[0m %s\n' "$*"; }
-rerr() { printf '\033[1;31m[vps:error]\033[0m %s\n' "$*" >&2; }
-
-cd "$DEPLOY_DIR" || { rerr "deploy dir $DEPLOY_DIR not found"; exit 1; }
-[ -f docker-compose.yml ] || { rerr "no docker-compose.yml in $DEPLOY_DIR"; exit 1; }
-[ -f .env ] || { rerr "no .env in $DEPLOY_DIR (run setup.sh first)"; exit 1; }
-
-COMPOSE="docker compose --env-file .env"
-
-# Set (or append) a KEY=VALUE in .env without disturbing other lines.
-set_env() {
-  local key="$1" val="$2"
-  if grep -q "^${key}=" .env; then
-    # Use a non-/ delimiter so tag values with slashes don't break sed.
-    sed -i "s|^${key}=.*|${key}=${val}|" .env
-  else
-    printf '%s=%s\n' "$key" "$val" >> .env
+# --- the rollout ------------------------------------------------------------
+# On the node, as a unit of its own (ops/rollout.sh job, installed by `begin` as maktaba-rollout): it
+# outlives this session, so a cut one is picked up again from the line it ended at. apply migrates,
+# brings the stack up, watches its health, switches the web app, and restores what was before on
+# any failure. Its last line is a marker: only it says apply ran to its end.
+OUT="$(mktemp)"
+ROUND="$(mktemp)"
+from=0
+end=$((SECONDS + FOLLOW_SECONDS))
+while :; do
+  rc=0
+  # shellcheck disable=SC2029  # expands here, on purpose: the quoted arguments
+  ssh "${SSH_OPTS[@]}" "$SSH_TARGET" "if [ ! -x /usr/local/sbin/maktaba-rollout ]; then echo '[rollout] no deploy has begun on this node'; exit $([ "$ACTION" = rollback ] && echo 0 || echo 1); fi; \
+DEPLOY_DIR=$(printf '%q' "$DEPLOY_DIR") /usr/local/sbin/maktaba-rollout job $(printf '%q' "$DEPLOY_ID") $ACTION $from" </dev/null | tee "$ROUND" || rc="${PIPESTATUS[0]}"
+  cat "$ROUND" >>"$OUT"
+  from=$((from + $(wc -l <"$ROUND")))
+  # 255 is ssh's own (the session was cut or not made), above 128 is an ssh that was killed: the
+  # unit goes on. Its own codes are below (rollout.sh run-job)
+  [ "$rc" -gt 128 ] || break
+  if [ "$SECONDS" -ge "$end" ]; then
+    err "the node could not be reached to its end: $ACTION goes on there, and the node comes to a known state by itself (ops/rollout.sh, \"A lost runner\")"
+    break
   fi
-}
-
-# Capture the currently-deployed tag so we can roll back. Default to
-# `latest` if the key was never pinned.
-PREV_TAG="$(grep '^MAKTABA_CLOUD_TAG=' .env | sed -n 1p | cut -d= -f2-)"
-PREV_TAG="${PREV_TAG:-latest}"
-rlog "current tag: ${PREV_TAG}  ->  new tag: ${NEW_TAG}"
-
-set_env MAKTABA_CLOUD_TAG "$NEW_TAG"
-
-rlog "pulling images..."
-$COMPOSE pull
-
-# Bring the datastores up first so migrations have a DB to talk to. The
-# relay would migrate on serve anyway, but running it as a one-shot in a
-# throwaway container surfaces a bad migration BEFORE we swap the live
-# relay (avoids a crash-loop on the serving container).
-rlog "ensuring postgres + redis are up..."
-$COMPOSE up -d --wait postgres redis
-
-rlog "running database migrations..."
-$COMPOSE run --rm maktaba-cloud migrate up
-
-# Swap the serving stack. --wait blocks until every service reports its
-# Docker healthcheck healthy (or times out non-zero).
-rlog "rolling out the stack..."
-if ! $COMPOSE up -d --wait; then
-  rerr "compose up did not reach healthy — rolling back to ${PREV_TAG}"
-  set_env MAKTABA_CLOUD_TAG "$PREV_TAG"
-  $COMPOSE up -d --wait || rerr "ROLLBACK to ${PREV_TAG} also failed — manual intervention required"
-  exit 1
+  log "the session was cut: following $ACTION again from line $from"
+  sleep "$RETRY_SECONDS"
+done
+if [ "$rc" = 0 ] && [ "$ACTION" = apply ] && ! grep -qx '__maktaba_deploy_complete__' "$OUT"; then
+  err "the remote script stopped before its end: nothing is known to be rolled out"
+  rc=1
 fi
-
-# App-level health probe. The image is distroless (no shell/curl), so we
-# run the bundled Go healthcheck binary inside the container; it hits the
-# relay's own /healthz on the loopback listener.
-rlog "verifying relay health..."
-health_ok=1
-if ! $COMPOSE exec -T maktaba-cloud /usr/local/bin/healthcheck; then
-  health_ok=0
-fi
-
-# Optional public-endpoint check (readyz reports migrations_behind etc.).
-if [ "$health_ok" = "1" ] && [ -n "$HEALTH_URL" ]; then
-  rlog "checking public endpoint ${HEALTH_URL}..."
-  if ! curl -fsS --max-time 10 "$HEALTH_URL" >/dev/null; then
-    health_ok=0
-  fi
-fi
-
-if [ "$health_ok" = "0" ]; then
-  rerr "health check failed — rolling back to ${PREV_TAG}"
-  set_env MAKTABA_CLOUD_TAG "$PREV_TAG"
-  if $COMPOSE up -d --wait; then
-    rerr "rolled back to ${PREV_TAG}"
-  else
-    rerr "ROLLBACK to ${PREV_TAG} also failed — manual intervention required"
-  fi
-  exit 1
-fi
-
-rlog "deploy of ${NEW_TAG} succeeded and is healthy."
-REMOTE
-
-log "Deploy finished successfully."
+[ "$rc" = 0 ] || exit "$rc"
+case "$ACTION" in
+  apply) log "Applied. It is the node's once its tests pass (deploy.sh commit)." ;;
+  *) log "$ACTION: done." ;;
+esac
