@@ -22,6 +22,20 @@ struct LibrariesScreen: View {
 
     @State private var tab = LibrariesTab.libraries
 
+    #if os(macOS)
+    /// The Mac builds the section's screen when it is chosen (story 13.16): its tab follows the
+    /// page kept beside it.
+    init(context: PlayerContext, model: LibrariesModel, choice: Binding<LibrariesChoice?>? = nil) {
+        self.context = context
+        self.model = model
+        self.choice = choice
+        _tab = State(initialValue: Self.tab(beside: choice?.wrappedValue))
+    }
+    #endif
+
+    /// The tab whose page shows `choice`.
+    static func tab(beside choice: LibrariesChoice?) -> LibrariesTab { choice == .series ? .series : .libraries }
+
     private var client: APIClient { context.client }
 
     var body: some View {

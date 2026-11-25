@@ -60,6 +60,26 @@ public struct SidebarArrangement: Equatable, Sendable {
     public mutating func showAll() { hidden.removeAll() }
 }
 
+/// A value made for an account's parental limit (`ParentalStore.epoch`): asked under another
+/// epoch, it is made again, so nothing read under an older limit is handed out, not even to
+/// the first body after a change that came while another section was in view.
+@MainActor public final class UnderEpoch<Value> {
+    private var held: (epoch: Int, value: Value)?
+    private let make: () -> Value
+
+    public init(make: @escaping () -> Value) {
+        self.make = make
+    }
+
+    /// The value for `epoch`.
+    public func value(_ epoch: Int) -> Value {
+        if let held, held.epoch == epoch { return held.value }
+        let value = make()
+        held = (epoch, value)
+        return value
+    }
+}
+
 /// What a section kept while the person was in another one (story 13.16): the Mac's split view
 /// builds a section's screen when it is chosen, and the screen takes its state (its model, its
 /// stack) from here, so switching away and back finds it as it was. A change of `epoch` (the

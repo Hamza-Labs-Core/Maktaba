@@ -79,8 +79,11 @@ struct MacSidebarRows: Equatable {
     let top: [PlayerSection]
     let bottom: PlayerSection?
 
+    /// The sections the person can move and hide: all but Profile, which stays at the bottom.
+    static let arrangeable = PlayerSection.allCases.filter { $0 != .profile }
+
     init(_ sections: [PlayerSection], arrangement: SidebarArrangement = SidebarArrangement(), keep: PlayerSection? = nil) {
-        let rest = sections.filter { $0 != .profile }
+        let rest = sections.filter(Self.arrangeable.contains)
         if rest.isEmpty {
             top = sections
             bottom = nil

@@ -39,18 +39,23 @@ struct LibraryBrowser: View {
 
     private var context: PlayerContext { PlayerContext(session: session, user: user, client: client) }
 
+    /// The account's parental limit the lists and the pages are drawn under.
+    private var epoch: Int { session.parental.epoch }
+
+    /// The section's lists, read under the limit in force.
+    private var lists: LibrariesModel { state.lists(epoch: epoch) }
+
     var body: some View {
         layout
             .environment(playback)
             .focusedSceneValue(\.playback, playback)
             .onChange(of: playback.video != nil) { playing = $1 }
             .onDisappear { playback.stop(); playing = false }
-            // Epic 57: the limit changed (`ParentalStore.epoch`). The lists and the pages are
-            // read again, so nothing hidden stays on them; what plays keeps playing (the home
-            // stops it if it must) and the stack stays where it is
-            // (also when it changed while another section was in view, on the Mac)
-            .onChange(of: session.parental.epoch, initial: true) { state.follow(epoch: session.parental.epoch) }
-            .onChange(of: state.model.libraries.map(\.id)) { _, ids in
+            // Epic 57: when the limit changes (`epoch`), the lists (`lists`) and the pages
+            // (`FreshOnLimit`) are read again in the body that follows, so nothing hidden is
+            // drawn; what plays keeps playing (the home stops it if it must) and the stack
+            // stays where it is
+            .onChange(of: lists.libraries.map(\.id)) { _, ids in
                 // wide: the library beside the list is no longer one the home gives
                 if case let .library(id)? = state.choice, !ids.isEmpty, !ids.contains(id) { state.choice = ids.first.map { .library($0) } }
             }
@@ -60,8 +65,8 @@ struct LibraryBrowser: View {
         @Bindable var state = state
         if width == .compact {
             NavigationStack(path: $state.path) {
-                LibrariesScreen(context: context, model: state.model)
-                    .id(state.fresh)
+                LibrariesScreen(context: context, model: lists)
+                    .id(epoch)
                     .toolbar { LibrariesAccountMenu(context: context) }
                     .librariesDestinations(context)
             }
@@ -70,7 +75,7 @@ struct LibraryBrowser: View {
         } else {
             wide
             .onChange(of: state.choice) { old, _ in if old != nil { state.path = [] } }
-            .onChange(of: state.model.libraries.first?.id, initial: true) { _, first in
+            .onChange(of: lists.libraries.first?.id, initial: true) { _, first in
                 // a wide window shows a page, not an empty column
                 if state.choice == nil, let first { state.choice = .library(first) }
             }
@@ -87,8 +92,8 @@ struct LibraryBrowser: View {
     /// window).
     @ViewBuilder private var wide: some View {
         @Bindable var state = state
-        let list = LibrariesScreen(context: context, model: state.model, choice: $state.choice)
-            .id(state.fresh)
+        let list = LibrariesScreen(context: context, model: lists, choice: $state.choice)
+            .id(epoch)
             .toolbar { LibrariesAccountMenu(context: context) }
         let pages = NavigationStack(path: $state.path) {
             FreshOnLimit(session: session) { page }.librariesDestinations(context)
@@ -114,7 +119,7 @@ struct LibraryBrowser: View {
     @ViewBuilder private var page: some View {
         switch state.choice {
         case let .library(id): LibraryScreen(context: context, id: id).id(id)
-        case .series: SeriesPage(context: context, model: state.model)
+        case .series: SeriesPage(context: context, model: lists)
         case nil:
             ContentUnavailableView {
                 Label { Text("Choose a library", tableName: "Libraries", comment: "A wide window's page before a library is chosen") } icon: {
@@ -125,37 +130,27 @@ struct LibraryBrowser: View {
     }
 }
 
-/// The Libraries section's state (story 13.16): its lists (`model`), the library chosen beside
+/// The Libraries section's state (story 13.16): its lists (`lists`), the library chosen beside
 /// them, and its stack. The Mac's shell keeps one while another section is in view, so coming
 /// back finds the same library and the same pages, without reading the lists again.
 @MainActor @Observable
 final class LibrariesState {
     var path: [PlayerRoute]
     var choice: LibrariesChoice?
-    private(set) var model: LibrariesModel
-    /// Moves when the account's parental limit changes: the lists are read again.
-    private(set) var fresh = 0
-    /// The parental epoch the lists were read under (nil: not yet followed).
-    @ObservationIgnored private var epoch: Int?
-    @ObservationIgnored private let remake: () -> LibrariesModel
+    @ObservationIgnored private let read: UnderEpoch<LibrariesModel>
 
     init(session: AppSession, client: APIClient) {
-        let remake = { LibrariesModel(client: client, signedOut: { session.signedOut() }) }
-        self.remake = remake
-        model = remake()
+        read = UnderEpoch { LibrariesModel(client: client, signedOut: { session.signedOut() }) }
         // a Debug build's `-maktaba-open library/lib-docs` (the UI tests): opened at launch
         let start = ShellLaunch.section()
         path = (start == nil || start == .libraries) ? ShellLaunch.route().map { [$0] } ?? [] : []
     }
 
-    /// Epic 57: the limit changed (`ParentalStore.epoch`). The lists and the pages are read
-    /// again, so nothing hidden stays on them; the stack stays where it is.
-    func follow(epoch now: Int) {
-        defer { epoch = now }
-        guard let epoch, epoch != now else { return }
-        model = remake()
-        fresh += 1
-    }
+    /// Epic 57: the lists read under the limit in force (`ParentalStore.epoch`). A body asks for
+    /// them with the epoch it draws under, so none ever draws lists read under an older one,
+    /// the first after a change made while another section was in view included; the stack
+    /// stays where it is.
+    func lists(epoch: Int) -> LibrariesModel { read.value(epoch) }
 }
 
 private extension View {

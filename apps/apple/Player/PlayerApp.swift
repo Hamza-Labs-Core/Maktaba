@@ -25,6 +25,8 @@ struct PlayerApp: App {
         // to left for a Player starting in Arabic, left to right otherwise, however the
         // language was chosen (Profile's Language, or the system's per-app language), story 13.16
         LanguageChoice.applyLayout(to: .standard)
+        // once: the sidebar as the person arranged it in a Player from before story 13.16
+        SidebarArrangement.carryOver(in: .standard, known: MacSidebarRows.arrangeable.map(\.rawValue))
         #endif
         #if DEBUG && os(iOS)
         // the UI tests' app writes nothing to standard error (`ConsoleHook`; only when launched

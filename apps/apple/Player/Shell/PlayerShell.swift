@@ -43,11 +43,14 @@ struct PlayerShell: View {
     /// The player over the whole window, sidebar and all (`WindowPlayer`).
     @State private var windowPlayer = WindowPlayer()
     /// What each section kept while another was in view (story 13.16): the Mac builds the
-    /// chosen section's screen, and the screen takes its models and stack from here. Libraries
-    /// and Profile read the home again themselves when the parental limit changes.
-    @State private var keeper = SectionKeeper<PlayerSection>(lasting: [.libraries, .profile])
+    /// chosen section's screen, and the screen takes its models and stack from here.
+    @State private var keeper = SectionKeeper<PlayerSection>(lasting: Self.lasting)
+    /// The sections whose state outlasts a change of the parental limit: Libraries, whose lists
+    /// are read again under the new one (`LibrariesState`). The others' is dropped (Profile's
+    /// history and favorites name videos too).
+    static let lasting: Set<PlayerSection> = [.libraries]
     /// The sidebar as the person arranged it: its order and hidden sections (`SidebarArrangement`).
-    @AppStorage("player.mac.sidebar") private var arranged = ""
+    @AppStorage(SidebarArrangement.key) private var arranged = ""
     #endif
 
     /// A link into Live TV while it is off for this viewer (story 51.11): Home, and a short
