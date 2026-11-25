@@ -94,6 +94,7 @@ import com.hamzalabs.maktaba.player.shell.PlayerNavigator
 import com.hamzalabs.maktaba.player.shell.Route
 import com.hamzalabs.maktaba.player.shell.features
 import com.hamzalabs.maktaba.core.R as CoreR
+import com.hamzalabs.maktaba.core.ui.isolated
 import com.hamzalabs.maktaba.player.ui.components.HomePicture
 import com.hamzalabs.maktaba.player.ui.components.MissingPosterMark
 import com.hamzalabs.maktaba.player.ui.components.POSTER_ASPECT
@@ -559,7 +560,7 @@ private fun PassageRow(p: Passage, modifier: Modifier = Modifier, onClick: () ->
             // a time reads left to right in Arabic too
             Text(time, style = MaterialTheme.typography.labelMedium.copy(textDirection = TextDirection.Ltr), color = MaterialTheme.colorScheme.primary)
         }
-        Text(marked(p.snippet), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+        Text(marked(isolated(p.snippet)), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
 }
 

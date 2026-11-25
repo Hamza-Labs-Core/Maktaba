@@ -36,7 +36,7 @@ export class Channel {
     c.started = Date.now();
     c.proc = spawn("python3", args, {
       cwd: join(ROKU, "build"),
-      env: { ...process.env, HOME: dataDir, XDG_DATA_HOME: join(dataDir, "data"), XDG_CONFIG_HOME: join(dataDir, "config"), FORCE_COLOR: "0", MAKTABA_VIDEO_FRAME: videoFrame ?? "", NODE_OPTIONS: `--dns-result-order=ipv4first --require ${join(ROKU, "tests", "roku_text.cjs")} --require ${join(ROKU, "tests", "video_frame.cjs")}` },
+      env: { ...process.env, HOME: dataDir, XDG_DATA_HOME: join(dataDir, "data"), XDG_CONFIG_HOME: join(dataDir, "config"), FORCE_COLOR: "0", MAKTABA_VIDEO_FRAME: videoFrame ?? "", NODE_OPTIONS: `--dns-result-order=ipv4first --require ${join(ROKU, "tests", "roku_text.cjs")} --require ${join(ROKU, "tests", "row_list.cjs")} --require ${join(ROKU, "tests", "video_frame.cjs")}` },
       stdio: ["pipe", "pipe", "pipe"],
     });
     const take = (d) => {

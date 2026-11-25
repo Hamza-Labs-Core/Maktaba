@@ -21,6 +21,10 @@ describe("cueLines", () => {
     expect(cueLines("one\ntwo", WIDE, 1)).toBe(2);
     expect(cueLines("<v Reader><i>one</i>", WIDE, 1)).toBe(1);
     expect(cueLines("word ".repeat(40), WIDE, 1)).toBe(3);
+    // a narrow cue, capitals and whole-em letters wrap sooner
+    expect(cueLines("one two three four", WIDE, 1, 20)).toBe(2);
+    expect(cueLines("WORDS ".repeat(10), WIDE, 1)).toBe(2);
+    expect(cueLines("字".repeat(40), WIDE, 1)).toBe(2);
     // a larger subtitle wraps sooner
     expect(cueLines("word ".repeat(10), WIDE, 1)).toBe(1);
     expect(cueLines("word ".repeat(10), WIDE, 2)).toBe(2);

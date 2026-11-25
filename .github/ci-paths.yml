@@ -975,8 +975,12 @@ tv_web:
   # the device caps vectors the Samsung and LG readers are tested against (58.02)
   - 'shared/playback/caps-vectors.json'
   # the store shots' capture of it (60.14), run here as well as in the website's job: its
-  # script, the subtitle lines it plays
+  # scripts, the packages it runs with, the demo library and the subtitle lines it plays
   - 'web/packages/website/scripts/capture-tvweb.mjs'
+  - 'web/packages/website/scripts/capture-web.mjs'
+  - 'web/packages/website/package.json'
+  - 'web/packages/website/package-lock.json'
+  - 'tests/fixtures/demo-library/**'
   - 'apps/apple/UITests/Fixtures/Stream/demo-subs-*.vtt'
 
 # The Roku channel (Epic 58 stories 58.12, 58.13, 58.15): its BrightScript on brs-engine, the

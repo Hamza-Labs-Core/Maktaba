@@ -437,8 +437,7 @@ test("the player's subtitles: clear of the bottom edge, a placed cue where it sa
         })
       : route.fallback()
   );
-  // a person's own subtitle file, as a home serves it: a line at the bottom, one placed at the
-  // top, one of two lines
+  // a person's own subtitle file, as a home serves it: a line at the bottom, one placed at the top
   await page.route("**/cues/ar.vtt", (route) =>
     route.fulfill({
       status: 200,
@@ -483,6 +482,27 @@ test("the player's subtitles: clear of the bottom edge, a placed cue where it sa
   // the player's own: whole, at least 3% of the height above the bottom edge, and not mid-screen
   expect(bottom[1], what).toBeLessThan(1080 * 0.97);
   expect(bottom[0], what).toBeGreaterThan(1080 * 0.8);
+
+  // the subtitles turned on with the cue on screen (the Subtitles panel): raised at once, and
+  // two lines both clear of the edge
+  for (const text of ["سطرٌ جديد", "تأكّد الهبوط.\nكيوريوسيتي بأمان على المريخ"]) {
+    const line = await video.evaluate(async (v: HTMLVideoElement, words) => {
+      v.pause();
+      const track = v.textTracks[0]!;
+      track.mode = "hidden";
+      while (track.cues!.length) track.removeCue(track.cues![0]!);
+      await new Promise((r) => setTimeout(r, 300));
+      const cue = new VTTCue(0, 30, words);
+      track.addCue(cue);
+      track.mode = "showing";
+      await new Promise((r) => setTimeout(r, 700));
+      return cue.line;
+    }, text);
+    expect(line).toBe(-(text.split("\n").length + 1));
+    const on = await whiteBands(page);
+    expect(on.at(-1)![1], `${text}: ${JSON.stringify(on)}`).toBeLessThan(1080 * 0.97);
+    expect(on[0]![0], `${text}: ${JSON.stringify(on)}`).toBeGreaterThan(1080 * 0.75);
+  }
   await log.attach(info, home);
   expect(log.consoleLines.filter((l) => l.startsWith("[pageerror]"))).toEqual([]);
 });

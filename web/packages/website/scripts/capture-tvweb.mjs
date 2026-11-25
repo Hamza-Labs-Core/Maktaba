@@ -11,7 +11,7 @@
 // release's, as the release session computes its tag (tools/release/next_tag.py's next_patch:
 // the highest vX.Y.Z tag, here and on the remote, plus one patch), or --version X.Y.Z.
 //
-//   node scripts/capture-tvweb.mjs [--out DIR] [--only home,player] [--version X.Y.Z]
+//   node scripts/capture-tvweb.mjs [--out DIR] [--only home,player-lg] [--version X.Y.Z]
 //
 // Writes DIR/<store>-<screen>-<lang>.png, the names the store gallery's compose.mjs reads
 // (design/store-gallery/beats.json: Samsung and LG show English screens with the Arabic home
@@ -25,6 +25,9 @@
 // with Playwright's own ffmpeg, and its subtitles are the lines Apple's demo player shows
 // (apps/apple/UITests/Fixtures/Stream/demo-subs-*.vtt), Arabic first; the launcher's cloud
 // code is answered as Maktaba Cloud answers it. No home, no database, no account.
+// Samsung's AVPlay draws the film in a plane under the web page, which a browser has not: its
+// calls are answered here and the same still stands where the plane would be, under the page the
+// launcher makes transparent. Everything over it, the subtitle line included, is the launcher's.
 // Needs `pnpm -C web install` (Vite) and this package's `npm ci` (Playwright and Chromium).
 
 import { spawn, spawnSync } from "node:child_process";
@@ -41,7 +44,7 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "@playwright/test";
 import {
   buildRoutes,
@@ -78,12 +81,19 @@ export const SCREENS = [
     ready: "img",
     out: { en: ["lg-series-en"] },
   },
+  // on a TV the player is the launcher's: it plays the film (Samsung's AVPlay, LG's <video>) under
+  // the iframe and draws the subtitle itself (apps/tv/web/src/subtitles), so each is taken there
   {
-    name: "player",
-    path: `/tv/big/watch/${FILM}`,
-    ready: "video",
-    player: true,
-    out: { en: ["samsung-player-en", "lg-subtitles-en"] },
+    name: "player-samsung",
+    launcher: "samsung",
+    ready: '[data-testid="tv-frame"]',
+    out: { en: ["samsung-player-en"] },
+  },
+  {
+    name: "player-lg",
+    launcher: "lg",
+    ready: '[data-testid="tv-frame"]',
+    out: { en: ["lg-subtitles-en"] },
   },
   {
     name: "guide",
@@ -93,7 +103,7 @@ export const SCREENS = [
   },
   {
     name: "code",
-    launcher: true,
+    launcher: "code",
     ready: '[data-testid="cloud-code"]',
     out: { en: ["lg-code-en"] },
   },
@@ -265,6 +275,112 @@ function webosShim() {
   };
 }
 
+/** A Samsung TV: its APIs, with an AVPlay that plays nothing but its clock. */
+function samsungShim(position) {
+  const w = window;
+  let state = "NONE";
+  let listener = null;
+  w.tizen = {
+    tvinputdevice: { registerKeyBatch: () => {} },
+    application: { getCurrentApplication: () => ({ exit: () => {} }) },
+    tvaudiocontrol: { getOutputMode: () => "PCM" },
+  };
+  w.webapis = {
+    network: { getIp: () => "10.0.0.5" },
+    productinfo: {
+      getRealModel: () => "QN90B",
+      isUdPanelSupported: () => true,
+      is8KPanelSupported: () => false,
+    },
+    avinfo: { isHdrTvSupport: () => true },
+    avplay: {
+      open: () => (state = "IDLE"),
+      close: () => (state = "NONE"),
+      setListener: (l) => (listener = l),
+      setDisplayRect: () => {},
+      setDisplayMethod: () => {},
+      setStreamingProperty: () => {},
+      prepareAsync: (ok) => {
+        state = "READY";
+        setTimeout(ok, 10);
+      },
+      play: () => {
+        state = "PLAYING";
+        setInterval(() => listener?.oncurrentplaytime?.(position * 1000), 250);
+      },
+      pause: () => {},
+      stop: () => (state = "IDLE"),
+      seekTo: (_ms, ok) => ok && setTimeout(ok, 0),
+      getState: () => state,
+      getDuration: () => 680_000,
+      getCurrentTime: () => position * 1000,
+      getTotalTrackInfo: () => [
+        { index: 0, type: "VIDEO" },
+        { index: 1, type: "AUDIO" },
+      ],
+      setSelectTrack: () => {},
+      setSilentSubtitle: () => {},
+      suspend: () => {},
+      restore: () => {},
+    },
+  };
+}
+
+/** The launcher with the demo home saved and signed in, as its next start finds it. */
+function savedHome({ home }) {
+  if (location.protocol === "file:")
+    localStorage.setItem(
+      "maktaba.launcher.homes",
+      JSON.stringify([{ id: "h-demo", name: "Living room", base: home, plain: true, lastUsed: 1 }])
+    );
+  else if (location.origin === home)
+    localStorage.setItem(
+      "mkt:tv:session",
+      JSON.stringify({ access: "demo", accessUntil: Date.now() + 3_600_000, refresh: "demo" })
+    );
+}
+
+/**
+ * The film playing through the launcher, its Arabic line drawn by it, the controls gone: the
+ * home's page opened in its iframe, the film's player in that page (as a card's Play does).
+ */
+async function playInLauncher(page, { kind, home, still }) {
+  const frame = () => page.frames().find((f) => f.url().startsWith(`${home}/tv/`));
+  const until = async (what, check) => {
+    const end = Date.now() + 40_000;
+    while (Date.now() < end) {
+      if (await check().catch(() => false)) return;
+      await page.waitForTimeout(200);
+    }
+    throw new Error(`${kind}: ${what} never came`);
+  };
+  await until(
+    "the home's page",
+    async () => (await frame()?.locator("[data-bs-focus]").count()) > 0
+  );
+  if (kind === "samsung")
+    // the plane AVPlay draws in, under the page (object-fit: contain, its letterbox)
+    await page.addStyleTag({
+      content: `html{background:#000 url("data:image/jpeg;base64,${still}") center/contain no-repeat!important}object[type="application/avplayer"]{visibility:hidden}`,
+    });
+  await frame().evaluate((film) => {
+    history.pushState({ bs: 1 }, "", `/tv/big/watch/${film}`);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: { bs: 1 } }));
+  }, FILM);
+  await until("the launcher's subtitle", async () => {
+    const line = page.locator('[data-testid="subtitles"] .ml-cue');
+    return (await line.count()) === 1 && (await line.getAttribute("dir")) === "rtl";
+  });
+  if (kind === "lg")
+    await until("the picture", () =>
+      page.evaluate(() => [...document.querySelectorAll("video")].some((v) => v.readyState >= 2))
+    );
+  await until(
+    "the watching screen",
+    async () => (await frame().locator(".bs-watch--watching").count()) === 1
+  );
+}
+
 export async function capture({ out, only, log, version }) {
   const lib = loadLibrary();
   const film = lib.videos.find((v) => v.id === FILM);
@@ -280,7 +396,8 @@ export async function capture({ out, only, log, version }) {
       film.duration_sec,
       join(scratch, "film.webm")
     );
-    const launcher = !only || only.includes("code");
+    const still = readFileSync(join(FIXTURE, "art", `${film.art}-backdrop.jpg`)).toString("base64");
+    const launcher = !only || SCREENS.some((s) => s.launcher && only.includes(s.name));
     if (launcher) buildLauncher(version, log);
     procs.push(vite([], port, log, "vite"));
     if (launcher)
@@ -346,6 +463,7 @@ export async function capture({ out, only, log, version }) {
             return route.fulfill({
               status: 200,
               contentType: "text/vtt",
+              headers: { "Access-Control-Allow-Origin": "*" },
               body: readFileSync(join(SUBS, `demo-subs-${sub[1]}.vtt`), "utf8").replace(
                 /^X-TIMESTAMP-MAP=.*\n/m,
                 ""
@@ -360,7 +478,24 @@ export async function capture({ out, only, log, version }) {
           const req = route.request();
           const path = new URL(req.url()).pathname;
           const json = (status, body) =>
-            route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+            route.fulfill({
+              status,
+              contentType: "application/json",
+              headers: { "Access-Control-Allow-Origin": "*" },
+              body: JSON.stringify(body),
+            });
+          // what the launcher asks the saved home first
+          if (path === "/api/discovery/home")
+            return json(200, {
+              id: "h-demo",
+              name: "Living room",
+              version,
+              urls: [base],
+              sign_in: { password: true, code: true },
+              api_level: 1,
+              api_level_oldest: 1,
+              client_floor: null,
+            });
           // the stream session (direct play of the still), its heartbeat and its end
           if (path === "/api/stream/sessions" && req.method() === "POST")
             return json(201, {
@@ -446,16 +581,19 @@ export async function capture({ out, only, log, version }) {
           appendFileSync(log, `[${lang} ${screen.name}] page error: ${e.message}\n`)
         );
         if (screen.launcher) {
-          await page.addInitScript(webosShim);
-          await page.goto(`${launcherBase}/`, { waitUntil: "networkidle" });
+          if (screen.launcher === "samsung") await page.addInitScript(samsungShim, 380);
+          else await page.addInitScript(webosShim);
+          if (screen.launcher !== "code") await page.addInitScript(savedHome, { home: base });
+          // the film's launcher is opened from its file, as the packaged app is: /tv/ talks to no
+          // other (bridge.ts, launcherOrigin); the home's page in it keeps the network busy
+          await (screen.launcher === "code"
+            ? page.goto(`${launcherBase}/`, { waitUntil: "networkidle" })
+            : page.goto(pathToFileURL(join(WEB, "dist-launcher", "index.html")).href));
         } else {
-          // a playing stream never leaves the network idle
-          await page.goto(base + screen.path, {
-            waitUntil: screen.player ? "load" : "networkidle",
-          });
+          await page.goto(base + screen.path, { waitUntil: "networkidle" });
         }
         await page.waitForSelector(screen.ready, { timeout: 30_000 });
-        if (screen.launcher) {
+        if (screen.launcher === "code") {
           // the version the release stamps, never the unstamped build's "dev"
           const shown = await page.textContent(".ml-version");
           if (!shown?.includes(version))
@@ -466,26 +604,8 @@ export async function capture({ out, only, log, version }) {
           throw new Error(
             `${screen.name} (${lang}): images never loaded: ${late.slice(0, 5).join(", ")}`
           );
-        if (screen.player) {
-          // the picture is in, the Arabic line is showing, and the controls have gone
-          await page.waitForFunction(
-            () => {
-              const v = document.querySelector("video");
-              const t = v?.textTracks?.[0];
-              return (
-                v &&
-                v.readyState >= 2 &&
-                t?.language === "ar" &&
-                t.mode === "showing" &&
-                (t.activeCues?.length ?? 0) > 0
-              );
-            },
-            null,
-            { timeout: 30_000 }
-          );
-          // the controls hide while watching (the picture is a still, so it plays on unchanged)
-          await page.waitForSelector(".bs-watch--watching", { timeout: 30_000 });
-        }
+        if (screen.launcher && screen.launcher !== "code")
+          await playInLauncher(page, { kind: screen.launcher, home: base, still });
         await page.addStyleTag({
           content:
             "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}",

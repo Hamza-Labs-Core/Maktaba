@@ -1,10 +1,12 @@
 ### Fixed
 
-- **Text that was cut or backwards on TVs and tablets.** On Samsung and LG TVs the subtitle's
-  last line sits clear of the screen's edge, and the hints name the remote's OK and Back instead
-  of a keyboard's keys; a subtitle that says where it goes stays there. On Apple TV the sign-in
-  page's buttons show their whole words and its QR code is whole. On Android TV and Fire TV the cards of Live TV's On now no longer cut an Arabic line. In Arabic, the
-  Android apps' "Code ABCD-1234" reads from the right. On a tablet on its side, a series' picture
+- **Text that was cut or backwards on TVs and tablets.** On the big screen in a browser or on the
+  desktop, a subtitle left to the player sits one line above the screen's edge; one that says
+  where it goes stays there. On Samsung and LG TVs the hints name the remote's OK and Back instead
+  of a keyboard's keys. On Apple TV the sign-in page's buttons show their whole words and its QR
+  code is whole. On Android TV and Fire TV the cards of Live TV's On now no longer cut an Arabic
+  line. In Arabic, the Android apps' "Code ABCD-1234" reads from the right, and an English line in
+  search and AI answers keeps its full stop at its end. On a tablet on its side, a series' picture
   is smaller, so its seasons and episodes show without scrolling.
 
 - **Maktaba Remote on iPhone and iPad says the queue's stages, steps and causes in Arabic.** In

@@ -384,7 +384,7 @@ private fun TranscriptsRow(api: TvApi, search: SearchModel, answer: SearchAnswer
                 if (i >= transcripts.size - 4 && answer.moreTranscripts && !search.paging) LaunchedEffect(transcripts.size) { scope.launch { search.moreTranscripts() } }
                 val p = h.passages.firstOrNull()
                 val at = p?.startSec ?: 0.0
-                val line = p?.let { stringResource(R.string.search_play_from, clock(it.startSec)) + " · " + it.snippet.replace("<mark>", "").replace("</mark>", "") }
+                val line = p?.let { stringResource(R.string.search_play_from, clock(it.startSec)) + " · " + com.hamzalabs.maktaba.core.ui.isolated(it.snippet.replace("<mark>", "").replace("</mark>", "")) }
                 MediaCard(
                     client = api.client,
                     video = h.videoId,
