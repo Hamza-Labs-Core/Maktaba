@@ -731,7 +731,8 @@ func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
 		}
 	}
 	mark := filepath.Join(bin, "wrote")
-	script := "#!/bin/sh\n[ \"$1\" = -l ] && exec '" + r.t.bin("pg_restore") + "' \"$@\"\n'" + r.t.bin("pg_restore") + "' --no-owner --no-publications --section=pre-data --file=- \"$DBSAFE_DUMP\"\n" +
+	script := "#!/bin/sh\n[ \"$1\" = -l ] && exec '" + r.t.bin("pg_restore") + "' \"$@\"\n" +
+		"for a; do shift; [ \"$a\" = --section=data ] || set -- \"$@\" \"$a\"; done\n'" + r.t.bin("pg_restore") + "' \"$@\"\n" +
 		"echo \"SELECT pg_notify('x', 'y');\"\n: > '" + mark + "'\nwhile kill -0 $PPID; do sleep 1; done\n"
 	if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -1349,6 +1350,9 @@ func TestRestoreLeavesWhatIsOutsidePublic(t *testing.T) {
 	if err != nil || !strings.Contains(list, " SCHEMA - outside ") || !strings.Contains(list, " COMMENT - EXTENSION pageinspect") {
 		t.Fatalf("the dump makes no extension of its own schema, so this shows nothing: %v\n%s", err, list)
 	}
+	lists := t.TempDir()
+	t.Setenv("TMPDIR", lists)
+	t.Setenv("TMP", lists) // Windows
 	for name, psql := range map[string]bool{"with psql": true, "without psql": false} {
 		if psql && !havePSQL(r.t.bin("psql")) {
 			continue
@@ -1389,7 +1393,7 @@ func TestRestoreLeavesWhatIsOutsidePublic(t *testing.T) {
 			t.Errorf("%s: %d rows, the extension there %v, public's use %v", name, rows, there, uses)
 		}
 	}
-	if left, _ := filepath.Glob(filepath.Join(os.TempDir(), "maktaba-restore-list-*")); len(left) != 0 {
+	if left, _ := filepath.Glob(filepath.Join(lists, "maktaba-restore-list-*")); len(left) != 0 {
 		t.Errorf("left %v", left)
 	}
 }
