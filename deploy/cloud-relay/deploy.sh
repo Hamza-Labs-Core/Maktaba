@@ -23,7 +23,7 @@
 #                      unset, the caller's ssh-agent / default keys apply.
 #   RELAY_SSH_PORT     SSH port (default: 22).
 #   RELAY_SSH_KNOWN_HOSTS  the host's known_hosts line(s). When set (CI always sets it, from
-#                      the QA_SSH_KNOWN_HOSTS / RELAY_SSH_KNOWN_HOSTS variables), the host
+#                      the target environment's NODE_KNOWN_HOSTS secret), the host
 #                      key must match it (StrictHostKeyChecking=yes); unset, a laptop's own
 #                      known_hosts applies and a new host is accepted on first use.
 #   FOLLOW_SECONDS     how long to go on trying to reach the node (default: 2700)

@@ -14,6 +14,7 @@ whatever it had not written to its disk. The node must come back to a known stat
 """
 from __future__ import annotations
 
+import difflib
 import io
 import json
 import os
@@ -31,8 +32,10 @@ sys.dont_write_bytecode = True
 import rollout_rehearsal as rr  # noqa: E402
 
 REPO, OUT, MUTATE = rr.REPO, rr.OUT, rr.MUTATE
-IMAGE_AT = "https://cloud-images.ubuntu.com/releases/26.04/release"
+# one image, by its hash (a dated folder of Ubuntu's releases, which keeps it)
+IMAGE_AT = "https://cloud-images.ubuntu.com/releases/26.04/release-20261108"
 IMAGE = "ubuntu-26.04-server-cloudimg-amd64.img"
+IMAGE_SHA256 = "7b90593f5532b49b7e3fe3d2743f0d1f0d822e5b07cebcd8e00c0df8069ecab9"
 GUEST_REGISTRY = "10.0.2.2:5000/maktaba-cloud"  # the runner, as the machine's network names it
 PORT = 2222
 VM = Path("/var/tmp/reboot-rehearsal")
@@ -40,7 +43,10 @@ STATE, DEPLOY, SRC = rr.STATE, rr.DEPLOY, rr.SRC
 
 # the cases, and what they must say: one that fails for another reason notices nothing
 NOTICE = {"boots-a-failed-first": (["a first deploy's tests fail, then a reboot", "a first deploy's tests fail, then a power cut"], "a refused release"),
-          "first-unsaved": (["the next deploy backs it up"], "begin took no backup")}
+          "first-unsaved": (["the next deploy backs it up"], "begin took no backup"),
+          "half-removed": (["a power cut with a container half removed"], "")}
+# the cases a mutation's are run after (the ones that start from nothing run from the first)
+AFTER = {"half-removed": ["the first deploy, then a power cut"]}
 
 
 # --- the machine ----------------------------------------------------------------------------
@@ -53,8 +59,7 @@ def make_machine() -> None:
     rr.sh("apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends qemu-system-x86 qemu-utils cloud-image-utils", timeout=600)
     assert Path("/dev/kvm").exists(), "no KVM on this runner"
     VM.mkdir(mode=0o700, parents=True, exist_ok=True)
-    rr.sh(f"cd {VM} && curl -fsSL --retry 5 -o SHA256SUMS {IMAGE_AT}/SHA256SUMS && curl -fsSL --retry 5 -o {IMAGE} {IMAGE_AT}/{IMAGE} && "
-          f"grep -E '[ *]{IMAGE}$' SHA256SUMS | sha256sum -c -", timeout=900)
+    rr.sh(f"cd {VM} && curl -fsSL --retry 5 --retry-all-errors -o {IMAGE} {IMAGE_AT}/{IMAGE} && echo '{IMAGE_SHA256}  {IMAGE}' | sha256sum -c -", timeout=900)
     rr.sh(f"cd {VM} && rm -f id id.pub host host.pub disk.qcow2 && ssh-keygen -q -t ed25519 -N '' -f id && ssh-keygen -q -t ed25519 -N '' -f host && "
           f"qemu-img create -q -f qcow2 -F qcow2 -b {IMAGE} disk.qcow2 24G")
     host_key = "".join("    " + line + "\n" for line in (VM / "host").read_text().splitlines())
@@ -249,8 +254,8 @@ def snapshot() -> str:
 
 def same(before: str) -> None:
     after = snapshot()
-    assert before == after, "the node is not what it was:\n" + "\n".join(
-        f"- {a}\n+ {b}" for a, b in zip(before.splitlines(), after.splitlines()) if a != b)
+    diff = [line[:240] for line in difflib.unified_diff(before.splitlines(), after.splitlines(), lineterm="", n=0)][2:]
+    assert before == after, "the node is not what it was:\n" + "\n".join(diff)[:3000]
 
 
 def status() -> str:
@@ -275,6 +280,29 @@ def psql(sql: str) -> str:
 
 
 # --- the cases ------------------------------------------------------------------------------
+
+def power_cut_while_the_database_is_made() -> str:
+    """The very first start of Postgres on the node, cut: wherever it was, the next deploy begins."""
+    begin("a")
+    set_up("a")
+    was = boot_id()
+    # from inside, for its first second is all there is: the machine resets itself, nothing written out
+    on("""nohup sh -c 'while [ ! -e /var/lib/docker/volumes/maktaba-relay_pg_data/_data/PG_VERSION ]; do sleep 0.01; done
+sleep 0.2; echo b > /proc/sysrq-trigger' >/dev/null 2>&1 &""")
+    p = subprocess.Popen(deploy_sh("apply"), env=deploy_env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    up(was)
+    p.kill()
+    settled()
+    nothing_serves()
+    out = begin("a")
+    assert "a first deploy" in out, out[-2000:]
+    how = "made afresh" if "made afresh" in out else "it had been made" if "the database is empty" in out else "nothing was there"
+    set_up("a")
+    must("apply")
+    assert "first deploy failed" in must("rollback")
+    settled()
+    return how
+
 
 def failed_first_then_a_reboot() -> str:
     out = begin("a")
@@ -338,6 +366,26 @@ def reboot_of_a_node_that_serves() -> str:
     reboot()
     same(before)
     return "it serves"
+
+
+def half_removed_container() -> str:
+    """The power goes while a container is removed: its layer is gone, its folder is back. Docker lists it
+    and knows nothing of it; compose can do nothing while it does."""
+    before = snapshot()
+    half = ("[ ${#c} = 64 ] && cp -a /var/lib/docker/containers/$c /root/half && docker rm -f $c >/dev/null && "
+            "mv /root/half /var/lib/docker/containers/$c && sync && docker ps -aq --no-trunc")
+    one_off = "docker compose --env-file .env run -d -T --no-deps maktaba-cloud migrate --config /etc/maktaba/cloud/cloud.toml up </dev/null 2>/dev/null"
+    for deployed, which in ((False, "docker compose --env-file .env ps -q --no-trunc worker"),  # a role, on a node that serves
+                            (True, f"docker inspect --format '{{{{.Id}}}}' $({one_off})")):  # the migrations' container, in a deploy
+        if deployed:
+            live("expand")
+        on(f"cd {DEPLOY} && c=$({which}) && {half}")
+        power_cut()
+        settled()
+        same(before)
+        code, out = on("docker ps -aq --no-trunc | while read -r c; do docker inspect $c >/dev/null || echo half $c; done", check=False)
+        assert "half" not in out, out
+    return "taken out, and the node serves"
 
 
 def reboot_in_the_tests() -> str:
@@ -438,12 +486,14 @@ def main() -> int:
     if os.geteuid() != 0 or not os.environ.get("CI"):
         sys.exit("only as root, on a CI runner")
     cases: list[tuple[str, Callable[[], str | None]]] = [
+        ("a power cut while the database is made", power_cut_while_the_database_is_made),
         ("a first deploy's tests fail, then a reboot", failed_first_then_a_reboot),
         ("a first deploy's tests fail, then a power cut", failed_first_then_a_power_cut),
         ("the next deploy backs it up", next_deploy_backs_it_up),
         ("a power cut in a first deploy's tests", power_cut_in_a_first_deploys_tests),
         ("the first deploy, then a power cut", first_deploy_then_a_power_cut),
         ("a reboot of a node that serves", reboot_of_a_node_that_serves),
+        ("a power cut with a container half removed", half_removed_container),
         ("a reboot in the tests", reboot_in_the_tests),
         ("a power cut in the tests", power_cut_in_the_tests),
         ("a power cut before apply", power_cut_before_apply),
@@ -454,7 +504,8 @@ def main() -> int:
         ("a power cut after a commit", power_cut_after_a_commit),
     ]
     if MUTATE:
-        cases = cases[:3]
+        keep = [*AFTER.get(MUTATE, ["a first deploy's tests fail, then a reboot", "a first deploy's tests fail, then a power cut"]), *NOTICE[MUTATE][0]]
+        cases = [c for c in cases if c[0] in keep]
     rr.build_releases({"expand", "slow"})
     make_machine()
     power_on()
@@ -479,6 +530,8 @@ def main() -> int:
     if MUTATE:
         names, says = NOTICE[MUTATE]
         noticed = {r["case"] for r in results if not r["ok"] and r["case"] in names and says in r["detail"]}
+        if not set(AFTER.get(MUTATE, [])).isdisjoint(bad):
+            noticed = set()  # not on a node that was not set up
         print(f"{MUTATE}: {'noticed by ' + ', '.join(sorted(noticed)) if noticed else 'NOT NOTICED'}", flush=True)
         return 0 if noticed else 1
     return 1 if bad else 0

@@ -293,7 +293,7 @@ def test_every_mutation_is_run_and_names_cases_that_exist() -> None:
     names = re.findall(r'^    "([\w-]+)": \("ops/', table, re.M)
     cases = set(re.findall(r'^        \("([^"]+)", ', text, re.M))
     noticed = {c for group in re.findall(r"\[((?:\"[^\"]+\"(?:, )?)+)\]\)", table) for c in re.findall(r'"([^"]+)"', group)}
-    assert len(names) >= 25 and noticed <= cases, noticed - cases
+    assert len(names) >= 45 and noticed <= cases, noticed - cases
     run = yaml.safe_load((ROOT / ".github/workflows/cloud-rehearsal.yml").read_text())["jobs"]
     assert run["single-node"]["strategy"]["matrix"]["part"] == ["1", "2", "3"]
     assert {"single-node", "single-node-reboots"} <= set(run["cloud-rehearsal"]["needs"])
@@ -301,14 +301,85 @@ def test_every_mutation_is_run_and_names_cases_that_exist() -> None:
     # the mutations are no part of the workflow a deploy waits for
     assert "MUTATE" not in (ROOT / ".github/workflows/cloud-rehearsal.yml").read_text()
     mutations = yaml.safe_load((ROOT / ".github/workflows/cloud-rehearsal-mutations.yml").read_text())["jobs"]
-    assert mutations["mutation"]["strategy"]["matrix"]["mutation"] == names
-    assert set(mutations["reboot-mutation"]["strategy"]["matrix"]["mutation"]) <= set(names)
+    # (a mutation that names no case here is the machine's: reboot_rehearsal.py)
+    machine = re.findall(r'^    "([\w-]+)": \("ops/.*, \[\]\),$', table, re.M)
+    assert mutations["mutation"]["strategy"]["matrix"]["mutation"] == [n for n in names if n not in machine]
+    run_there = mutations["reboot-mutation"]["strategy"]["matrix"]["mutation"]
+    assert set(machine) <= set(run_there) <= set(names)
+    notice = (NODE / "tests/reboot_rehearsal.py").read_text()
+    assert all(f'"{n}": ([' in notice for n in run_there)
 
 
-def test_the_nodes_address_is_in_no_run_log() -> None:
-    run = named("deploy", "The target")["run"]
-    assert 'echo "::add-mask::$host"' in run and run.index("::add-mask::") < run.index("NODE_IP=")
-    assert "echo \"node $host" not in run
+ADDRESS, ADDRESS_KEY = "192.0.2.77", "AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+
+
+def run_step(step: dict[str, Any], tmp: Path, **env: str) -> tuple[int, str, str]:
+    """A step's script as the runner runs it: (exit, output, what it wrote to GITHUB_ENV)."""
+    (tmp / "github_env").write_text("")
+    home = tmp / "home"
+    home.mkdir(exist_ok=True)
+    p = subprocess.run(["bash", "-e", "-c", step["run"]], cwd=ROOT, capture_output=True, text=True,
+                       env={"PATH": os.environ["PATH"], "HOME": str(home), "GITHUB_ENV": str(tmp / "github_env"), "RUNNER_TEMP": str(tmp), **env})
+    return p.returncode, p.stdout + p.stderr, (tmp / "github_env").read_text()
+
+
+def test_the_target_step_needs_both_secrets_and_prints_neither(tmp_path: Path) -> None:
+    # a step's env: is printed before the step runs, so a mask of its own comes too late: the address and
+    # the host key's line are the target environment's secrets, masked everywhere
+    step = named("deploy", "The target")
+    assert step["env"]["NODE_HOST"] == "${{ secrets.NODE_HOST }}"
+    assert step["env"]["NODE_KNOWN_HOSTS"] == "${{ secrets.NODE_KNOWN_HOSTS }}"
+    both = {"NODE_HOST": ADDRESS, "NODE_KNOWN_HOSTS": f"{ADDRESS} ssh-ed25519 {ADDRESS_KEY}"}
+    rest = {"TARGET": "qa", "HAS_DNS_TOKEN": "true", "CLOUD_TLS": ""}
+    code, out, env = run_step(step, tmp_path, **both, **rest)
+    assert code == 0 and out == "node: qa, certificates: dns\n", out
+    assert f"NODE_IP={ADDRESS}\n" in env and (tmp_path / "home/.ssh/known_hosts_node").read_text().strip() == both["NODE_KNOWN_HOSTS"]
+    for missing in ("NODE_HOST", "NODE_KNOWN_HOSTS"):
+        code, out, env = run_step(step, tmp_path, **{**both, missing: ""}, **rest)
+        assert code != 0 and "the qa environment's" in out and "NODE_IP" not in env, (missing, out)
+
+
+def test_the_address_is_read_in_one_place() -> None:
+    text = (ROOT / ".github/workflows/cloud-deploy.yml").read_text()
+    assert text.count("secrets.NODE_HOST ") == 1 and text.count("secrets.NODE_KNOWN_HOSTS ") == 1
+    assert set(re.findall(r"secrets\.(NODE_\w+)", text)) == {"NODE_HOST", "NODE_KNOWN_HOSTS"}
+    # no repository variable but the one that says how certificates are got: a variable is printed
+    assert set(re.findall(r"vars\.(\w+)", text)) == {"CLOUD_TLS"} and "vars[" not in text and "toJSON(" not in text
+    for name, job in wf()["jobs"].items():
+        assert not any("NODE_" in k or "NODE_" in str(v) for k, v in (job.get("env") or {}).items()), name
+    uses = {s.get("name") for s in steps("deploy") if "NODE_IP" in str(s)}
+    assert uses == {"The target", "SSH to the node (the pinned host key)", "The node's DNS records (with the DNS token)",
+                    "Deploy (deploy.sh)", "Commit (the node's set is this one)", "Roll back (what was before this deploy)",
+                    "The node's address out of what is uploaded"}
+    assert "set -x" not in text
+
+
+def test_no_uploaded_file_names_the_node(tmp_path: Path) -> None:
+    step = named("deploy", "The node's address out of what is uploaded")
+    order = [s.get("name") or s.get("uses", "").split("@")[0] for s in steps("deploy")]
+    upload = next(s for s in steps("deploy") if s.get("with", {}).get("path") == "${{ runner.temp }}/e2e")
+    assert order.index(step["name"]) + 1 == steps("deploy").index(upload)
+    assert step["if"] == "always()" and step["id"] == "cleaned"
+    assert upload["if"] == "always() && steps.cleaned.outcome == 'success'"
+    ssh = tmp_path / "home/.ssh"
+    ssh.mkdir(parents=True)
+    (ssh / "known_hosts_node").write_text(f"{ADDRESS} ssh-ed25519 {ADDRESS_KEY}\n")
+    finger = subprocess.run(["ssh-keygen", "-l", "-f", str(ssh / "known_hosts_node")], capture_output=True, text=True, check=True).stdout.split()[1]
+    e2e = tmp_path / "e2e"
+    (e2e / "deep").mkdir(parents=True)
+    said = f"ssh: connect to host {ADDRESS} port 22: refused\nthe fingerprint is {finger}.\nkey {ADDRESS_KEY}\nkept 198.51.100.4\n"
+    (e2e / "node-compose.log").write_text(said)
+    (e2e / "deep/results.json").write_bytes(said.encode() + b"\x00\xff")
+    code, out, _ = run_step(step, tmp_path, NODE_IP=ADDRESS)
+    assert code == 0, out
+    for f in ("node-compose.log", "deep/results.json"):
+        got = (e2e / f).read_bytes()
+        assert not any(w.encode() in got for w in (ADDRESS, ADDRESS_KEY, finger)) and b"kept 198.51.100.4" in got, got
+    assert (e2e / "deep/results.json").read_bytes().endswith(b"\x00\xff")
+    # nothing to take out: the run ended before it knew the node
+    (ssh / "known_hosts_node").unlink()
+    code, out, _ = run_step(step, tmp_path)
+    assert code == 0 and b"kept" in (e2e / "node-compose.log").read_bytes(), out
 
 
 def test_every_mutation_still_finds_what_it_takes_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -70,35 +70,99 @@ saved() {
 	(cd "$DEPLOY_DIR" && env -i PATH="$PATH" HOME="${HOME:-/root}" ${vars[@]+"${vars[@]}"} docker compose \
 		-f "$STATE/pending/set/docker-compose.yml" --project-directory "$DEPLOY_DIR" --env-file "$STATE/pending/set/.env" "$@")
 }
+# the stack as the new release's compose file has it, before it is the node's (begin)
+BEGIN_WITH="" BEGIN_ENV=""
+begun() {
+	(cd "$DEPLOY_DIR" && env -i PATH="$PATH" HOME="${HOME:-/root}" docker compose \
+		-f "$BEGIN_WITH" --project-directory "$DEPLOY_DIR" --env-file "$BEGIN_ENV" "$@")
+}
 env_of() { grep -E "^$1=" "$DEPLOY_DIR/.env" 2>/dev/null | sed -n 1p | cut -d= -f2- || true; }
 
-# a service's running containers by their labels, whatever the compose file says by now
-containers() { docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1"; }
-running() { [ -n "$(containers "$1")" ]; }
-# stop_all SERVICE...: stopped, and seen to be (docker keeps a stopped container stopped at boot)
+# a service's containers by their labels, whatever the compose file says by now; -a: the ones that do
+# not run too. It fails when docker does not answer.
+containers() { # containers [-a] SERVICE
+	local all=()
+	if [ "$1" = -a ]; then all=(-a); shift; fi
+	docker ps -q ${all[@]+"${all[@]}"} --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1"
+}
+running() { local ids; ids="$(containers "$1" 2>/dev/null)" && [ -n "$ids" ]; }
+# stop_all SERVICE...: stopped and gone, and seen to be. Gone: docker starts at boot what it had not
+# been told to stop (a container that had failed at that moment). Their last lines are kept.
 stop_all() {
-	local s c try left
+	local s c ids try left keep
 	# a container that is restarting at that moment (it failed, and docker starts it again) can be
 	# missed once
 	for try in 1 2 3 4 5 6 7 8 9 10; do
 		for s in "$@"; do
-			for c in $(containers "$s"); do docker stop -t 30 "$c" >/dev/null 2>&1 || true; done
+			ids="$(containers -a "$s" 2>/dev/null)" || ids=""
+			for c in $ids; do
+				docker stop -t 30 "$c" >/dev/null 2>&1 || true
+				keep="$STATE/last-logs/$s.log" # the first is the refused release's: the next, beside it
+				[ ! -e "$keep" ] || keep="$STATE/last-logs/$s.$(date +%s).log"
+				(umask 077; mkdir -p "$STATE/last-logs" && docker logs --tail 500 "$c" > "$keep" 2>&1) 2>/dev/null || true
+				docker rm -f "$c" >/dev/null 2>&1 || true
+			done
 		done
 		left=""
 		for s in "$@"; do
-			if running "$s"; then left="$left $s"; fi
+			# no answer is not "nothing runs"
+			if ! ids="$(containers -a "$s" 2>/dev/null)"; then left="$left $s (docker does not answer)"
+			elif [ -n "$ids" ]; then left="$left $s"
+			fi
 		done
-		[ -n "$left" ] || return 0
+		if [ -z "$left" ]; then
+			sync # a removal half on the disk when the power goes is what heal_docker is for
+			return 0
+		fi
 		sleep "$try"
 	done
 	err "still running:$left"
 	return 1
 }
 
-psql_as() { # psql_as COMPOSE(dc|saved) ENVFILE SQL
+# docker answers again (it was restarted under us): the daemon, and what it starts by itself
+docker_ready() {
+	local end=$((SECONDS + 120))
+	while [ "$SECONDS" -lt "$end" ]; do
+		if docker info >/dev/null 2>&1; then sleep 5; return 0; fi
+		sleep 2
+	done
+	return 1
+}
+
+# The power went while a container was being removed: docker lists it and knows nothing of it ("No such
+# container"), compose can do nothing for the stack while it is listed, and only its folder's removal
+# and another start of the daemon end that. (Not `systemctl restart`, which stops the stack's
+# unit with ExecStop. Docker's unit starts again by itself, and systemd may start the stack's again
+# with it, this included: it can be run twice.)
+heal_docker() {
+	local root id pid said half=() end
+	root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 0
+	for id in $(docker ps -aq --no-trunc --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null); do
+		if said="$(docker inspect --type container "$id" 2>&1 >/dev/null)"; then continue; fi
+		# its own words alone: any other failure says nothing about the container
+		case "$said" in *"No such container"* | *"no such container"* | *"no such object"*) ;; *) continue ;; esac
+		if [ -n "$(docker ps -aq --no-trunc --filter "id=$id" 2>/dev/null)" ]; then half+=("$id"); fi
+	done
+	[ "${#half[@]}" -gt 0 ] || return 0
+	log "docker lists ${#half[@]} container(s) that were half removed when the power went: out of its way, and docker starts again"
+	for id in "${half[@]}"; do
+		if [[ "$id" =~ ^[0-9a-f]{64}$ ]]; then rm -rf "${root:?}/containers/$id"; fi
+	done
+	sync
+	pid="$(systemctl show -p MainPID --value docker)"
+	if [ "${pid:-0}" -gt 1 ]; then kill -TERM "$pid" || true; fi
+	end=$((SECONDS + 90))
+	while [ "$SECONDS" -lt "$end" ] && [ "$(systemctl show -p MainPID --value docker)" = "$pid" ]; do sleep 1; done
+	sleep 3 # its unit starts it again by itself
+	systemctl is-active --quiet docker || systemctl start docker || true
+	docker_ready
+}
+
+psql_as() { # psql_as COMPOSE(dc|begun|saved) ENVFILE SQL [DATABASE]
 	local u d
 	u="$(grep -E '^POSTGRES_USER=' "$2" | sed -n 1p | cut -d= -f2-)"; d="$(grep -E '^POSTGRES_DB=' "$2" | sed -n 1p | cut -d= -f2-)"
-	"$1" exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "${u:-maktaba}" -d "${d:-maktaba}" -c "$3" </dev/null
+	"$1" exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "${u:-maktaba}" -d "${4:-${d:-maktaba}}" -c "$3" </dev/null
 }
 
 # the migrations the database records, one a line, in the order they were applied
@@ -108,13 +172,27 @@ applied() { # applied COMPOSE(dc|saved) ENVFILE
 		sed '/^$/d'
 }
 
-has_database() { docker volume inspect "${PROJECT}_pg_data" >/dev/null 2>&1; }
+VOLUME="${PROJECT}_pg_data"
+has_database() { # no answer is not "no"
+	local volumes
+	volumes="$(docker volume ls -q 2>/dev/null)" || die "docker does not say which volumes there are: nothing was changed"
+	case $'\n'"$volumes"$'\n' in *$'\n'"$VOLUME"$'\n'*) return 0 ;; esac
+	return 1
+}
+# nothing_runs SERVICE...: docker says so
+nothing_runs() {
+	local s ids
+	for s in "$@"; do
+		ids="$(containers "$s" 2>/dev/null)" || die "docker does not say what runs: nothing was changed"
+		[ -z "$ids" ] || return 1
+	done
+}
 # a first deploy has nothing to go back to: no database was ever made here, or the only deploys
 # there were failed as first ones and nothing serves. Anything else (a node set up by hand, one a
 # person unheld or started) has a set worth saving, whether or not it serves at this moment.
 first_deploy() {
 	[ ! -f "$STATE/committed" ] || return 1
-	if [ -f "$STATE/no-release" ] && ! running maktaba-cloud && ! running api; then return 0; fi
+	if [ -f "$STATE/no-release" ] && nothing_runs maktaba-cloud api; then return 0; fi
 	! has_database
 }
 
@@ -167,8 +245,77 @@ UNIT
 	systemctl restart maktaba-rollout-watch.timer
 }
 
+USER_TABLES="pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')"
+
+# A failed first deploy's database that was never made: postgres makes it at its first start in an empty
+# folder only, and that one was cut, or failed. It is made again, from nothing, when it is shown that
+# nothing of anybody's is in it: no release was ever committed here (first_deploy) and no backup was ever
+# taken (each begin takes one of a database with a table in it), and either postgres itself says that it has no
+# database but its own three, with no table in them, or, when it can't start, its folder is what a new
+# cluster's is and nothing else: no other database's folder, no file of a table of anybody's (those are
+# numbered from 16384), no tablespace, nothing postgres does not make.
+afresh() { # afresh COMPOSE WHY
+	local db="$1" why="$2" not="" n="" t="" files="" keep
+	if compgen -G "/var/backups/maktaba-cloud/db-*.dump" >/dev/null; then
+		not="a backup of a database of this node is in /var/backups/maktaba-cloud"
+	elif n="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM pg_database WHERE datname NOT IN ('postgres', 'template0', 'template1')" postgres 2>/dev/null)"; then
+		t="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM $USER_TABLES" postgres 2>/dev/null)" || t="?"
+		[ "$n" = 0 ] && [ "$t" = 0 ] || not="postgres has $n database(s) of its users, and $t table(s) beside them"
+	else
+		n="" # whatever it had printed: it did not end well, and the folder is looked at instead
+	fi
+	if [ -z "$not" ]; then
+		stop_all postgres || not="postgres does not stop"
+	fi
+	if [ -z "$not" ] && [ -z "$n" ]; then
+		# shellcheck disable=SC2016  # expands in the container
+		files="$(begun run --rm -T --no-deps --entrypoint sh postgres -c '
+			cd /var/lib/postgresql/data || exit 1
+			for f in $(ls -A); do
+				case "$f" in
+					PG_VERSION | base | global | pg_commit_ts | pg_dynshmem | pg_hba.conf | pg_ident.conf | pg_logical | pg_multixact | pg_notify) ;;
+					pg_replslot | pg_serial | pg_snapshots | pg_stat | pg_stat_tmp | pg_subtrans | pg_tblspc | pg_twophase | pg_wal | pg_xact) ;;
+					postgresql.conf | postgresql.auto.conf | postmaster.opts | postmaster.pid) ;;
+					*) echo "what postgres does not make ($f)"; exit 0 ;;
+				esac
+			done
+			[ -z "$(ls -A pg_tblspc 2>/dev/null)" ] || { echo "a tablespace"; exit 0; }
+			for d in base/*; do
+				case "${d#base/}" in
+					"*" | 1 | 4 | 5 | pgsql_tmp) ;;
+					*) echo "database ${d#base/}"; exit 0 ;;
+				esac
+			done
+			for f in base/*/* global/*; do
+				n="${f##*/}"; n="${n%%[._]*}"
+				case "$n" in "" | *[!0-9]*) continue ;; esac
+				[ "$n" -lt 16384 ] || { echo "a table of somebody ($f)"; exit 0; }
+			done
+			echo nothing' </dev/null 2>/dev/null)" || files="an unreadable folder"
+		[ "$files" = nothing ] || not="its folder has $files"
+	fi
+	if [ -z "$not" ]; then
+		# a copy all the same: it is small
+		keep="/var/backups/maktaba-cloud/unfinished-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+		if ! (umask 077; mkdir -p "${keep%/*}" && begun run --rm -T --no-deps --entrypoint tar postgres -C /var/lib/postgresql/data -czf - . </dev/null > "$keep" 2>/dev/null) ||
+			! docker volume rm "$VOLUME" >/dev/null; then
+			not="its volume can't be copied or removed"
+			rm -f "$keep"
+		fi
+	fi
+	if [ -n "$not" ]; then
+		err "the database of this node's failed first deploy $why, and it can't be shown that nothing is in it: $not"
+		err "nothing was removed. When nobody needs what is in it, on the node:"
+		err "  docker ps -aq --filter volume=$VOLUME | xargs -r docker rm -f; docker volume rm $VOLUME"
+		err "and deploy again; otherwise docs/cloud-single-node.md, \"A database that does not come up\""
+		die "begin: the database $why: nothing was changed"
+	fi
+	sync
+	log "the database $why: its first start never ended and nothing is in it, so it is made afresh (a copy: $keep)"
+}
+
 cmd_begin() {
-	local src tmp refs ref room p try was now tables=""
+	local src tmp refs ref room p try was now tables="" db=dc first=no broken=""
 	src="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 	valid_id "${DEPLOY_ID:-}" || die "begin: name the deploy (DEPLOY_ID)"
 	if [ -z "${MAKTABA_CLOUD_TAG:-}" ] || [ -z "${MAKTABA_CADDY_TAG:-}" ]; then die "begin: MAKTABA_CLOUD_TAG and MAKTABA_CADDY_TAG are required"; fi
@@ -178,6 +325,8 @@ cmd_begin() {
 	esac
 	[ ! -f "$STATE/held" ] || { cat "$STATE/held" >&2; die "the node is held: a person decides first (maktaba-rollout unhold)"; }
 	[ ! -d "$STATE/pending" ] || die "begin: a deploy is under way ($(pending_id)): nothing was changed"
+	docker info >/dev/null 2>&1 || die "begin: docker does not answer: nothing was changed"
+	heal_docker || die "begin: docker does not answer: nothing was changed"
 	finish_commit
 	# a name used before would be answered with that deploy's output
 	if compgen -G "$STATE/jobs/$DEPLOY_ID.*" >/dev/null; then die "begin: deploy $DEPLOY_ID was here before: nothing was changed"; fi
@@ -202,12 +351,12 @@ cmd_begin() {
 	trap "rm -rf '$tmp'" EXIT
 	(
 		umask 077
+		# what compose only needs to read the file (setup.sh makes the real ones, which win)
+		printf 'MAKTABA_UID=%s\nMAKTABA_GID=%s\nPOSTGRES_PASSWORD=%s\n' 0 0 unused
 		if [ -f "$DEPLOY_DIR/.env" ]; then cat "$DEPLOY_DIR/.env"; else cat "$src/.env.example"; fi
 		for kv in "${!MAKTABA_@}" RELAY_DOMAIN API_DOMAIN APP_DOMAIN ACME_EMAIL RELAY_TLS; do
 			[ -z "${!kv:-}" ] || printf '\n%s=%s\n' "$kv" "${!kv}"
 		done
-		# what compose only needs to read the file (setup.sh makes the real ones)
-		printf '\nMAKTABA_UID=%s\nMAKTABA_GID=%s\nPOSTGRES_PASSWORD=%s\n' 0 0 unused
 	) > "$tmp/env"
 	refs="$(docker compose -f "$src/docker-compose.yml" --env-file "$tmp/env" config --images | sort -u)"
 	[ -n "$refs" ] || die "begin: the new compose file names no image"
@@ -221,21 +370,43 @@ cmd_begin() {
 		log "image $ref"
 	done
 
-	rm -rf "$STATE/pending.new"
+	rm -rf "$STATE/pending.new" "$STATE/last-logs.old"
+	[ ! -d "$STATE/last-logs" ] || mv "$STATE/last-logs" "$STATE/last-logs.old" # the last deploy's words
 	(umask 077; mkdir -p "$STATE/pending.new/set")
 	cat /proc/sys/kernel/random/boot_id > "$STATE/pending.new/boot_id"
 	printf '%s\n' "$DEPLOY_ID" > "$STATE/pending.new/id"
 	# whatever there is in the database, before any deploy, a first one again included
+	if first_deploy; then first=yes; fi
 	if has_database; then
-		dc up -d --wait postgres </dev/null >/dev/null 2>&1 || die "begin: the database does not come up: nothing was changed"
-		tables="$(psql_as dc "$DEPLOY_DIR/.env" "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')")" || die "begin: the database can't be read: nothing was changed"
+		if ! dc up -d --wait --wait-timeout 180 postgres </dev/null >/dev/null 2>&1; then
+			# a failed first deploy's own compose file may be what breaks it: the new release's then
+			[ "$first" = yes ] || die "begin: the database does not come up: nothing was changed (docs/cloud-single-node.md, \"A database that does not come up\")"
+			db=begun
+			log "the database does not come up with the failed deploy's compose file: with this one's"
+		fi
+		if [ "$first" = yes ]; then BEGIN_WITH="$src/docker-compose.yml" BEGIN_ENV="$tmp/env"; fi
+		if [ "$db" = begun ] && ! begun up -d --wait --wait-timeout 180 postgres </dev/null >/dev/null 2>&1; then
+			broken="does not come up"
+		else
+			for try in 1 2 3; do
+				tables="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM $USER_TABLES" 2>/dev/null)" && break
+				sleep "$try"
+			done
+			[ -n "$tables" ] || broken="can't be read"
+		fi
+		if [ -n "$broken" ]; then
+			[ "$first" = yes ] || die "begin: the database $broken: nothing was changed (docs/cloud-single-node.md, \"A database that does not come up\")"
+			afresh "$db" "$broken"
+			db=dc BEGIN_WITH="" BEGIN_ENV=""
+		fi
 	fi
-	if [ "$tables" = 0 ] && first_deploy; then
+	[ "$db" = begun ] || BEGIN_WITH="" BEGIN_ENV=""
+	if [ "$tables" = 0 ] && [ "$first" = yes ]; then
 		log "the database is empty: nothing to back up" # a first deploy cut off before its migrations
 	elif [ -n "$tables" ]; then
-		DEPLOY_DIR="$DEPLOY_DIR" ROLLOUT_LOCKED=1 bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
+		DEPLOY_DIR="$DEPLOY_DIR" ROLLOUT_LOCKED=1 BACKUP_COMPOSE="$BEGIN_WITH" BACKUP_COMPOSE_ENV="$BEGIN_ENV" bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
 	fi
-	if first_deploy; then
+	if [ "$first" = yes ]; then
 		touch "$STATE/pending.new/first"
 		log "a first deploy: nothing to go back to"
 	else
@@ -298,17 +469,22 @@ web_to() {
 
 # the relay's and the api's health and readiness, then that they hold (a release can come up and
 # then stop being ready)
-probe() { # probe SERVICE ADDR
-	dc exec -T -e "HEALTHCHECK_URL=http://$2/healthz" "$1" /usr/local/bin/healthcheck </dev/null >/dev/null 2>&1 &&
-		dc exec -T -e "HEALTHCHECK_URL=http://$2/readyz" "$1" /usr/local/bin/healthcheck </dev/null >/dev/null 2>&1
-}
+probe_one() { dc exec -T -e "HEALTHCHECK_URL=http://$2" "$1" /usr/local/bin/healthcheck </dev/null >/dev/null 2>&1; } # probe_one SERVICE ADDR/PATH
+probe() { probe_one "$1" "$2/healthz" && probe_one "$1" "$2/readyz"; } # probe SERVICE ADDR
 verify() {
 	local end=$((SECONDS + WATCH_SECONDS)) ok=0 tries=0
 	while :; do
 		if probe maktaba-cloud 127.0.0.1:8443 && probe api 172.30.77.10:8090 && running worker && running caddy; then
 			ok=1
 		elif [ "$ok" = 1 ] || [ "$tries" -ge 12 ]; then
-			return 1 # it was ready and is not any more, or never was
+			# it was ready and is not any more, or never was: which, for whoever reads the log
+			probe_one maktaba-cloud 127.0.0.1:8443/healthz || err "the relay's /healthz does not answer 200"
+			probe_one maktaba-cloud 127.0.0.1:8443/readyz || err "the relay's /readyz does not answer 200"
+			probe_one api 172.30.77.10:8090/healthz || err "the api's /healthz does not answer 200"
+			probe_one api 172.30.77.10:8090/readyz || err "the api's /readyz does not answer 200"
+			running worker || err "the worker does not run"
+			running caddy || err "caddy does not run"
+			return 1
 		fi
 		tries=$((tries + 1))
 		[ "$ok" = 0 ] || [ "$SECONDS" -lt "$end" ] || return 0
@@ -331,6 +507,7 @@ cmd_apply() {
 	# </dev/null everywhere: this script can reach bash on stdin, and a command that read it would
 	# end the deploy at exit 0 with nothing rolled out
 	dc run --rm -T --no-deps maktaba-cloud migrate --config /etc/maktaba/cloud/cloud.toml up </dev/null || fail "a migration failed"
+	sync # its container's removal (heal_docker)
 	log "the stack"
 	dc up -d --wait --remove-orphans </dev/null || fail "the stack does not come up healthy"
 	log "its health, for ${WATCH_SECONDS} s"
@@ -345,9 +522,25 @@ cmd_apply() {
 	echo "__maktaba_deploy_complete__"
 }
 
+STOPPED="The relay, api and worker are stopped."
+NOT_STOPPED="NOT ALL of the relay, api and worker could be stopped yet (the node goes on trying): see docker ps."
+# a held node whose app could not be stopped when it was held
+stop_held() {
+	local what
+	[ -f "$STATE/not-stopped" ] || return 0
+	mapfile -t what < "$STATE/not-stopped"
+	stop_all "${what[@]}" || return 1
+	sed -i "s/^NOT ALL of the relay.*see docker ps\.\( The database.*\)/$STOPPED\1/" "$STATE/held"
+	rm -f "$STATE/not-stopped"
+}
 hold() { # hold WHY: stop the app, say why, leave the rest to a person
-	local stopped="The relay, api and worker are stopped."
-	stop_all "${APP[@]}" || stopped="NOT ALL of the relay, api and worker could be stopped: see docker ps."
+	local stopped="$STOPPED" what=("${APP[@]}")
+	[ ! -f "$STATE/pending/first" ] || what+=(caddy)
+	if ! stop_all "${what[@]}"; then
+		# the watch, and a boot, go on trying
+		stopped="$NOT_STOPPED"
+		printf '%s\n' "${what[@]}" > "$STATE/not-stopped" || true
+	fi
 	{
 		echo "HELD $(date -u +%FT%TZ): $1"
 		echo "$stopped The database is as the migrations and any Down"
@@ -392,16 +585,6 @@ drop_pending() {
 	mv -T "$STATE/pending" "$STATE/dropped/$(date +%s).$$" || return 1
 	sync
 	rm -rf "$STATE/dropped" "$STATE/reserve" "$DEPLOY_DIR/.reserve" 2>/dev/null || true
-}
-
-# docker answers again (it was restarted under us): the daemon, and what it starts by itself
-docker_ready() {
-	local end=$((SECONDS + 120))
-	while [ "$SECONDS" -lt "$end" ]; do
-		if docker info >/dev/null 2>&1; then sleep 5; return 0; fi
-		sleep 2
-	done
-	return 1
 }
 
 WHY_NOT=""
@@ -451,8 +634,13 @@ restore() { # restore WHY: back to the saved set; 0 restored (or nothing to), 1 
 	touch "$STATE/pending/restoring" || { hold "the state folder can't be written ($why)"; return 1; }
 	# a commit of it that was cut off before the saved set went is undone with it
 	if [ "$(cat "$STATE/committed-id" 2>/dev/null)" = "$(pending_id)" ]; then rm -f "$STATE/committed.new" "$STATE/committed-id"; fi
+	heal_docker || true
 	if [ -f "$STATE/pending/first" ]; then
-		stop_all "${APP[@]}" caddy || { hold "a failed first deploy does not stop ($why)"; return 1; }
+		if ! stop_all "${APP[@]}" caddy; then
+			log "once more, when docker answers"
+			docker_ready || true
+			stop_all "${APP[@]}" caddy || { hold "a failed first deploy does not stop ($why)"; return 1; }
+		fi
 		touch "$STATE/no-release" || { hold "the state folder can't be written ($why)"; return 1; }
 		drop_pending || { hold "the saved set can't be dropped ($why)"; return 1; }
 		err "a first deploy failed: there is no earlier release to go back to, so the stack is stopped, and stays so at the next boot"
@@ -463,6 +651,7 @@ restore() { # restore WHY: back to the saved set; 0 restored (or nothing to), 1 
 	if [ "$rc" = 1 ]; then
 		log "once more, when docker answers"
 		docker_ready || true
+		heal_docker || true
 		rc=0
 		restore_once || rc=$?
 	fi
@@ -577,8 +766,11 @@ cmd_run_job() {
 }
 
 cmd_watch() {
-	[ -d "$STATE/pending" ] || exit 0
-	[ ! -f "$STATE/held" ] || exit 0
+	if [ ! -d "$STATE/pending" ] && [ ! -f "$STATE/held" ]; then exit 0; fi
+	if [ -f "$STATE/held" ]; then
+		stop_held || true
+		exit 0
+	fi
 	if [ -f "$STATE/pending/applying" ] || [ -f "$STATE/pending/restoring" ]; then
 		restore "a command of the deploy was stopped part way" || true
 	elif lease_over; then
@@ -588,12 +780,14 @@ cmd_watch() {
 
 cmd_boot() {
 	if [ -f "$STATE/held" ]; then
+		stop_held || true
 		cat "$STATE/held" >&2
 		exit 1
 	fi
 	if [ ! -d "$STATE/pending" ]; then
 		finish_commit # the power went before a commit's last line reached the disk
 		nothing_to_start
+		heal_docker || true
 		exit 0
 	fi
 	if [ "$(cat "$STATE/pending/boot_id")" = "$(cat /proc/sys/kernel/random/boot_id)" ] && [ ! -f "$STATE/pending/restoring" ]; then
@@ -617,13 +811,24 @@ nothing_to_start() {
 }
 
 cmd_unhold() {
+	local runs=no
 	[ -f "$STATE/held" ] || die "the node is not held"
+	# what the hold could not stop is not what a person started
+	stop_held || die "unhold: not all of the relay, api and worker could be stopped yet"
+	nothing_runs "${APP[@]}" || runs=yes
+	# a first release that was refused starts for nobody: unless a person started it by now
+	if [ "$runs" = yes ]; then rm -f "$STATE/no-release"
+	elif [ -f "$STATE/pending/first" ]; then touch "$STATE/no-release"
+	fi
 	if [ -d "$STATE/pending" ]; then
 		rm -rf "$STATE/held-set"
 		mv -T "$STATE/pending" "$STATE/held-set"
 	fi
-	rm -f "$STATE/held" "$STATE/reserve" "$DEPLOY_DIR/.reserve"
+	rm -f "$STATE/held" "$STATE/not-stopped" "$STATE/reserve" "$DEPLOY_DIR/.reserve"
 	log "not held any more; the set from before the failed deploy is in $STATE/held-set"
+	if [ ! -f "$STATE/committed" ] && [ -f "$STATE/no-release" ]; then
+		log "no release was ever committed here: nothing starts, also at boot, until a deploy is (or a person starts the stack: docker compose --env-file .env up -d in $DEPLOY_DIR)"
+	fi
 }
 
 cmd_status() {
@@ -671,7 +876,8 @@ main() {
 			# a command at work starts the stack itself, the one it is at; the unit's start would
 			# start another. The watch's look takes a moment: it is waited for.
 			exec 9>"$STATE/lock"
-			flock -w "${BOOT_WAIT:-30}" 9 || exit 1
+			# 255: systemd tries again (Restart=on-failure); any other code would skip the unit for good
+			flock -w "${BOOT_WAIT:-30}" 9 || exit 255
 			;;
 	esac
 	shift || true

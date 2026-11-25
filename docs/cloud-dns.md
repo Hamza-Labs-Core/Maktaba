@@ -46,8 +46,8 @@ IPv4, all **DNS only**, TTL 300, and the CI deploy writes them (`cloud-deploy.ym
 
 | Names | Points at |
 |---|---|
-| `relay.maktaba.tv`, `*.relay.maktaba.tv`, `api.maktaba.tv`, `app.maktaba.tv` | the production node (`RELAY_HOST`) |
-| `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev`, `staging-app.maktaba.dev` | the QA node (`QA_HOST`) |
+| `relay.maktaba.tv`, `*.relay.maktaba.tv`, `api.maktaba.tv`, `app.maktaba.tv` | the production node |
+| `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev`, `staging-app.maktaba.dev` | the QA node |
 
 `api` and `app` are DNS only here, not the Tunnel's proxied names: Caddy on the node serves
 them (the api on a private address, `CF-Connecting-IP` written by Caddy). They move to the

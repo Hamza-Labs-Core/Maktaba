@@ -29,7 +29,10 @@ env_in() { grep -E "^$2=" "$1" | sed -n 1p | cut -d= -f2- || true; }
 PGU="$(env_in .env POSTGRES_USER)"; PGU="${PGU:-maktaba}"
 PGD="$(env_in .env POSTGRES_DB)"; PGD="${PGD:-maktaba}"
 # the stack as its own .env has it, whatever is in this environment
-dc() { env -i PATH="$PATH" HOME="${HOME:-/root}" docker compose --env-file .env "$@"; }
+# (a deploy's begin may name another compose file: rollout.sh)
+COMPOSE=(--env-file .env)
+[ -z "${BACKUP_COMPOSE:-}" ] || COMPOSE=(-f "$BACKUP_COMPOSE" --project-directory "$DEPLOY_DIR" --env-file "$BACKUP_COMPOSE_ENV")
+dc() { env -i PATH="$PATH" HOME="${HOME:-/root}" docker compose "${COMPOSE[@]}" "$@"; }
 pg() { dc exec -T postgres "$@"; }
 die() { echo "backup: $*" >&2; exit 1; }
 
@@ -94,7 +97,7 @@ take() {
 	ts="$(date -u +%Y%m%dT%H%M%SZ)"
 	tmp="$OUT/.part-$ts"
 	# shellcheck disable=SC2064
-	trap "rm -rf '$tmp'; docker compose --env-file .env exec -T postgres rm -f /tmp/backup-$ts.dump </dev/null >/dev/null 2>&1 || true" EXIT
+	trap "rm -rf '$tmp'; dc exec -T postgres rm -f /tmp/backup-$ts.dump </dev/null >/dev/null 2>&1 || true" EXIT
 	mkdir "$tmp"
 	# the counts and the dump in one snapshot: psql exports its own, and pg_dump (psql's \!, in the
 	# container) reads it while psql's transaction holds it open
