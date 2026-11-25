@@ -466,6 +466,7 @@ func TestTheRecordSaysWhatTheRestoreDid(t *testing.T) {
 		{"dropped", []string{pgbundle.StepGone}, false, apppayload.DataGone, "db_restore_backup_gone"},
 		{"dropped, then in part", []string{pgbundle.StepGone, pgbundle.StepReplaced}, false, apppayload.DataReplaced, "db_restore_backup_part"},
 		{"committed, then found not whole", []string{pgbundle.StepReplaced}, false, apppayload.DataReplaced, "db_restore_backup_part"},
+		{"a commit inside public that did not happen", []string{pgbundle.StepInside}, true, apppayload.DataUntouched, "db_restore_backup_failed"},
 		{"a commit that did not happen", []string{pgbundle.StepReplaced}, true, apppayload.DataUntouched, "db_restore_backup_failed"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -474,7 +475,7 @@ func TestTheRecordSaysWhatTheRestoreDid(t *testing.T) {
 			e.f.steps = c.steps
 			e.f.onRestore = func(context.Context) error {
 				rec := e.rec()
-				if n := len(c.steps); n > 0 && rec.Data != c.steps[n-1] {
+				if n := len(c.steps); n > 0 && rec.Data != replacing(apppayload.Database{}, c.steps[n-1]).Data {
 					t.Errorf("the record says %q while the restore is past %v", rec.Data, c.steps)
 				}
 				e.f.mu.Lock()
@@ -1373,16 +1374,35 @@ func TestTheTableTellsTheDataApart(t *testing.T) {
 		id        string
 		data, tbl string
 	}{
-		"the same":                  {apppayload.Database{DataID: "1/2/3", DataTable: "77"}, "1/2/3#77", apppayload.DataUntouched, "77"},
-		"put back inside public":    {apppayload.Database{DataID: "1/2/3", DataTable: "77", Data: apppayload.DataUntouched}, "1/2/3#99", apppayload.DataReplaced, "77"},
-		"another schema":            {apppayload.Database{DataID: "1/2/3", DataTable: "77"}, "1/2/4#77", apppayload.DataReplaced, "77"},
-		"a record with no table":    {apppayload.Database{DataID: "1/2/3"}, "1/2/3#77", apppayload.DataUntouched, "77"},
-		"asked with no database up": {apppayload.Database{Data: apppayload.DataUntouched}, "1/2/3#77", apppayload.DataUntouched, "77"},
+		"the same":                           {apppayload.Database{DataID: "1/2/3", DataTable: "77"}, "1/2/3#77", apppayload.DataUntouched, "77"},
+		"put back inside public":             {apppayload.Database{DataID: "1/2/3", DataTable: "77", Data: apppayload.DataUntouched}, "1/2/3#99", apppayload.DataReplaced, "77"},
+		"another schema":                     {apppayload.Database{DataID: "1/2/3", DataTable: "77"}, "1/2/4#77", apppayload.DataReplaced, "77"},
+		"a record with no table":             {apppayload.Database{DataID: "1/2/3"}, "1/2/3#77", apppayload.DataUntouched, "77"},
+		"may be put back inside, and is not": {apppayload.Database{DataID: "1/2/3/inside", DataTable: "77"}, "1/2/3#77", apppayload.DataUntouched, "77"},
+		"asked with no database up":          {apppayload.Database{Data: apppayload.DataUntouched}, "1/2/3#77", apppayload.DataUntouched, "77"},
 	} {
 		rec, err := settleData(ctx, c.rec, at(c.id))
 		if err != nil || rec.Data != c.data || rec.DataTable != c.tbl || rec.DataID != "1/2/3" {
 			t.Errorf("%s: %+v %v", name, rec, err)
 		}
+	}
+	// put back inside public, the process gone before it could say so: a release that goes by
+	// DataID alone, and drops the table, reads another database, and so does this one after it
+	rec := replacing(apppayload.Database{DataID: "1/2/3", DataTable: "77", Data: apppayload.DataUntouched}, pgbundle.StepInside)
+	if rec.DataID == "1/2/3" || rec.Data != apppayload.DataReplaced {
+		t.Fatalf("%+v", rec)
+	}
+	for _, table := range []string{"77", ""} {
+		rec.DataTable = table
+		rec, err := settleData(ctx, rec, at("1/2/3#99"))
+		if err != nil || rec.Data != apppayload.DataReplaced {
+			t.Errorf("table %q: %+v %v", table, rec, err)
+		}
+	}
+	// the table dropped, it cannot be told even where nothing was committed
+	rec.DataTable = ""
+	if rec, err := settleData(ctx, rec, at("1/2/3#77")); err != nil || rec.Data != apppayload.DataReplaced {
+		t.Errorf("%+v %v", rec, err)
 	}
 	// and the record keeps it
 	e := newExitsRig(t)

@@ -56,6 +56,9 @@ const (
 	StepGone = "gone"
 	// StepReplaced: the dump's data is put in its place, not known to be whole yet.
 	StepReplaced = "replaced"
+	// StepInside: the same, with the public schema where it was (a Postgres the home does not
+	// bundle; internal/dbsafe/inside.go).
+	StepInside = "inside"
 )
 
 // before calls fn (nil: nothing) with step.

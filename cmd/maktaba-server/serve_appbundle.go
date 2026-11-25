@@ -1660,7 +1660,7 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 	fmt.Fprintf(g.log, "[serve] restore asked by %s: putting %s back for %s\n", rec.By, rec.Dump, orUnknown(rec.From))
 	if err = g.save(rec); err == nil && tctx.Err() == nil {
 		err = g.putBack(tctx, rec.Dump, func(step string) error {
-			rec.Data = step
+			rec = replacing(rec, step)
 			return g.save(rec)
 		})
 	}

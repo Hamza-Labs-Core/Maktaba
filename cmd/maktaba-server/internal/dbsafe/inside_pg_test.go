@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -177,8 +178,12 @@ func TestRestoreInsidePublic(t *testing.T) {
 			t.Fatal(err)
 		}
 		var log bytes.Buffer
-		if err := r.tg.Restore(ctx, dump, &log); err != nil {
+		var steps []string
+		if err := r.tg.RestoreWith(ctx, dump, func(step string) error { steps = append(steps, step); return nil }, &log); err != nil {
 			t.Fatalf("%s: %v\n%s", when, err, log.String())
+		}
+		if !slices.Equal(steps, []string{pgbundle.StepInside}) {
+			t.Fatalf("%s: told %v", when, steps)
 		}
 		_ = tx.Rollback()
 		_, _ = own.Close(), super.Close()
@@ -319,7 +324,12 @@ func TestRestoreInsidePublicIsRefusedUpFront(t *testing.T) {
 		}
 		r.exec(t, r.t, c.undo)
 	}
-	if err := noPSQL.Restore(ctx, dump, nil); !CannotRestore(err) || !strings.Contains(err.Error(), "no psql beside") {
+	// for its chunks where it has some (pgvector there), for the one transaction where it has none
+	why := "which takes psql, and there is none beside pg_restore"
+	if len(pgbundle.Chunks(dump)) > 0 {
+		why = "chunks that psql loads, and there is no psql beside pg_restore"
+	}
+	if err := noPSQL.Restore(ctx, dump, nil); !CannotRestore(err) || !strings.Contains(err.Error(), why) {
 		t.Errorf("without psql: %v", err)
 	}
 	var one int

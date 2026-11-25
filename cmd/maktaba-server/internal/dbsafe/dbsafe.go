@@ -731,6 +731,15 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 	if err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
 	}
+	if how.inside {
+		outer := tell
+		tell = func(step string) error {
+			if step == pgbundle.StepReplaced {
+				step = pgbundle.StepInside
+			}
+			return outer(step)
+		}
+	}
 	only, err := listFile(how.list, list)
 	if err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)

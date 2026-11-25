@@ -440,7 +440,8 @@ it cannot work: no `psql`, something in `public` or a default privilege there th
 table. The same is looked at when the restore is asked (`restore_database_user`), and a release from before
 this (no `restore_protocol` in its `release.json`, nor in its migrations' `meta/restore.json`) is not asked
 to do it. The migrations' own table tells such a database from the one before (`data_table`), since the
-schema stays. The rehearsal on a copy is skipped for a user who may not make the extensions in a scratch
+schema stays; and before the commit the record's `data_id` gets a mark, so a release that goes by that
+alone takes it for another database and never offers to give the restore up. The rehearsal on a copy is skipped for a user who may not make the extensions in a scratch
 database, and says so: it does not fail the update.
 
 **Backups moved to another folder** while a restore is not done: it goes on from there at the next start.

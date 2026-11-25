@@ -165,9 +165,10 @@ func settleData(ctx context.Context, rec apppayload.Database, p dataProbe) (appp
 		return rec, err
 	}
 	id, table, _ := strings.Cut(id, "#")
+	was, inside := strings.CutSuffix(rec.DataID, insideMark)
 	switch {
-	case id != "" && rec.DataID == id && (rec.DataTable == "" || rec.DataTable == table):
-		rec.Data, rec.DataTable = apppayload.DataUntouched, table
+	case id != "" && was == id && (rec.DataTable == table || rec.DataTable == "" && !inside):
+		rec.Data, rec.DataID, rec.DataTable = apppayload.DataUntouched, id, table
 	case schema < 0:
 		return rec, errors.New("its schema cannot be read")
 	case id == "" || schema == 0:
@@ -192,6 +193,20 @@ func settleData(ctx context.Context, rec apppayload.Database, p dataProbe) (appp
 		rec.MaybeSchemas = nil
 	}
 	return rec, nil
+}
+
+// insideMark at the end of a record's DataID says that a restore inside public may have been
+// committed since. The schema stays then, and with it what DataID names; a release that goes by
+// that alone (from before DataTable, which it also drops from the record) reads the mark as
+// another database, never as the one from before.
+const insideMark = "/inside"
+
+// replacing is rec as it is written before step of its restore.
+func replacing(rec apppayload.Database, step string) apppayload.Database {
+	if rec.Data = step; step == pgbundle.StepInside {
+		rec.Data, rec.DataID = apppayload.DataReplaced, strings.TrimSuffix(rec.DataID, insideMark)+insideMark
+	}
+	return rec
 }
 
 // probe is the gate's dataProbe.
