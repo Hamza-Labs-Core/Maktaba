@@ -17,7 +17,7 @@ modules = [
 # The functions that run in the worker, never in the runner: the second listen's sweep, which
 # the stage's refresh runs before each stage selection (its statements use the worker's own
 # connection)
-worker = ["relisten", "_settle_tries", "_stop_relistens", "_reset_relistens"]
+worker = ["relisten", "_settle_tries", "_stop_relistens", "_reset_relistens", "_retranscribe_wordless"]
 
 # Scope checks set by hand where the parse tree cannot bind a write (README §15.12)
 [scope."transcribe.forget_gone"]

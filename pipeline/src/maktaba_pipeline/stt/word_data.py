@@ -31,7 +31,19 @@ from typing import Any
 
 from .settings import NO_PROB, QURAN, Word
 
-__all__ = ["VERSION", "Packed", "Slot", "decode", "edit", "encode", "pack", "shift_after", "unpack"]
+__all__ = [
+    "VERSION",
+    "Packed",
+    "Slot",
+    "covers",
+    "decode",
+    "edit",
+    "encode",
+    "pack",
+    "shift_after",
+    "spoken",
+    "unpack",
+]
 
 VERSION = 1
 _HEAD = struct.Struct("<BH")
@@ -225,15 +237,31 @@ def edit(
     return new_text, encode(out)
 
 
+def spoken(text: str) -> bool:
+    """The text has a letter or a digit: not punctuation alone."""
+    return any(c.isalnum() for c in text)
+
+
+def covers(text: str, words: Sequence[Word] | None) -> bool:
+    """``words`` are all of ``text``, in order (whatever the spaces), and say something.
+    Words stored up to issue #1756's fix can be another sentence's, or lack some of it: such
+    a sentence is never rebuilt from its words."""
+    if not words or not spoken(text):
+        return False
+    return "".join("".join(w.text for w in words).split()) == "".join(text.split())
+
+
 def stored_words(row: Any, meta: Any) -> list[Word] | None:
     """A stored sentence's words: its ``word_data`` (Epic 52, story 52.1), else the
     ``metadata.words`` of a transcript stored before it, else None."""
     data = row["word_data"]
     if data:
         try:
-            return unpack(str(row["text"] or ""), bytes(data), float(row["start_sec"])) or None
+            found = unpack(str(row["text"] or ""), bytes(data), float(row["start_sec"]))
         except ValueError:
-            return None
+            found = []
+        if found:
+            return found
     words = meta.get("words") if isinstance(meta, dict) else None
     if not words:
         return None

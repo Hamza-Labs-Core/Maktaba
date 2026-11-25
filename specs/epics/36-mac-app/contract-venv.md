@@ -402,7 +402,10 @@ the machine (a hash of Windows' MachineGuid, macOS' IOPlatformUUID or Linux's ma
 of the host name), its engine and processor, on Apple Silicon its memory, on an NVIDIA GPU that
 GPU (name, memory, compute capability, driver major), and the versions of mlx, mlx-audio,
 torch and transformers. A model or capability seen before resets nothing, so machines that
-name the model differently, or differ, do not reset each other. The operator's next
+name the model differently, or differ, do not reset each other. A third kind, `fix`, is a release's own,
+once a home: `sentences_without_words` gives the videos an earlier second listen left out for a
+sentence without its words (issue #1756) their tries again, as `transcribe` jobs, once no live
+worker that serves the two stages is from before the fix (`capabilities.words_by_sentence`). The operator's next
 `relisten_round` resets every video tried in an earlier round. A relisten job whose worker
 has no room for the second listen on its GPU (`cohere.NoRoom`) gives itself back, and a
 relisten job that ended without running (given back until a day old) is no try. The stop

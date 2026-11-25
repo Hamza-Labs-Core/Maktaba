@@ -16,7 +16,7 @@ from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.sql import loads
 from maktaba_pipeline.runtime import Database
 from maktaba_pipeline.stt import engine, model_share
-from maktaba_pipeline.stt.settings import Transcript
+from maktaba_pipeline.stt.settings import Transcript, Word
 from tests.conftest import NO_TEST_GPU
 from tests.stages.test_transcribe import FakeTranscriber, _one_video
 from tests.stages.world import core_runtime, drain_core
@@ -30,6 +30,8 @@ class CT2Fake(FakeTranscriber):
     async def transcribe(self, audio: np.ndarray, **kw: Any) -> Transcript:
         t = await super().transcribe(audio, **kw)
         t.backend, t.backend_version = "ct2-batched", VERSION
+        for s in t.sentences:
+            s.words = [Word(s.start, s.end, s.text)]
         return t
 
 

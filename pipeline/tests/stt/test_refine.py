@@ -135,9 +135,11 @@ def test_merge_respells_what_cohere_heard() -> None:
 
 def test_chunks_group_whole_sentences_up_to_the_limit() -> None:
     ss = [sentence("ا ب", 0), sentence("ج د", 10), sentence("ه و", 25), sentence("ز", 40)]
-    ss.insert(2, Sentence(20, 21, "…", -1, 0.9, None))  # no words: splits the stretch
+    ss.insert(2, Sentence(20, 21, "بلا كلمات", -1, 0.9, None))  # no words: splits the stretch
     assert rf.chunks(ss, limit=28) == [[0, 1], [3, 4]]
     assert rf.chunks(ss, limit=10) == [[0], [1], [3], [4]]
+    ss[2].text = "…"  # nothing said there: it ends no stretch
+    assert rf.chunks(ss, limit=28) == [[0, 1, 3], [4]]
 
 
 def transcript(*ss: Sentence) -> Transcript:
@@ -201,6 +203,83 @@ def test_refine_hears_the_stretch_of_audio_it_corrects() -> None:
 
     rf.refine(t, list(range(10 * SAMPLE_RATE)), hear, None, "cohere")
     assert seen == [3 * SAMPLE_RATE + SAMPLE_RATE // 4]
+
+
+# ------------------------------------------------- what its words do not cover (issue #1756)
+
+
+def test_a_sentence_its_words_do_not_cover_is_left_out() -> None:
+    ss = [sentence("ا ب", 0), sentence("ج د", 1), sentence("ه و", 2), sentence("ز ح", 3)]
+    ss[1].words = ss[1].words[1:]  # type: ignore[index]  # «ج» has no slot
+    assert rf.chunks(ss) == [[0], [2, 3]]
+    t = transcript(*ss)
+    stats = rf.refine(t, silence(), lambda xs: ["ا ب", "ه و ز ط"][: len(xs)], None, "c")
+    assert [s.text for s in t.sentences] == ["ا ب", "ج د", "ه و", "ز ط"] and stats.stretches == 2
+
+
+def test_no_stretch_hears_a_sentence_left_out() -> None:
+    ss = [sentence("ا ب", 0), sentence("ج د", 1), sentence("ه و", 2), sentence("ز ح", 3)]
+    ss[1].words = None
+    ss[1].end = 2.5  # runs into the next one, which is left out too
+    seen: list[tuple[float, float]] = []
+
+    def hear(stretches: list[Any]) -> list[str]:
+        seen.extend((a[0] / SAMPLE_RATE, (a[-1] + 1) / SAMPLE_RATE) for a in stretches)
+        return [""] * len(stretches)
+
+    rf.refine(transcript(*ss), range(10 * SAMPLE_RATE), hear, None, "c")
+    # no quarter second more before the one left out
+    assert seen == [(0.0, 1.0), (3.0, 4.25)]
+
+
+def test_punctuation_alone_left_out_takes_no_audio_from_the_others() -> None:
+    ss = [sentence("ا ب", 0), Sentence(1.0, 1.1, "؟", -0.1, 0.0, [Word(1.0, 1.1, "؟", 0.9)])]
+    seen: list[int] = []
+
+    def hear(stretches: list[Any]) -> list[str]:
+        seen.extend(len(a) for a in stretches)
+        return [""] * len(stretches)
+
+    rf.refine(transcript(*ss), silence(), hear, None, "c")
+    assert seen == [SAMPLE_RATE + SAMPLE_RATE // 4]
+
+
+def test_a_verse_after_a_worded_full_stop_in_its_stretch_keeps_every_word_locked() -> None:
+    dot = Sentence(1.0, 1.2, ".", -0.1, 0.0, [Word(1.0, 1.2, ".", 0.9)])
+    verse = "والسماء ذات البروج واليوم الموعود"
+    t = transcript(sentence("قال الشيخ", 0), dot, sentence(verse, 1.5), sentence("ثم سكت", 5))
+    assert rf.chunks(t.sentences) == [[0, 2, 3]]
+    stats = rf.refine(
+        t, silence(), lambda _a: ["قال الشيخ والسماء ذات البروج واليوم الموعوج ثم سكن"], None, "c"
+    )
+    assert [s.text for s in t.sentences] == ["قال الشيخ", ".", verse, "ثم سكن"]
+    flags = [[bool(w.flags & QURAN) for w in s.words or []] for s in t.sentences]
+    assert flags == [[False] * 2, [False], [True] * 5, [False] * 2]
+    assert stats.quran_words == 5 and stats.changed == 1
+
+
+def test_a_kept_word_stays_in_its_sentence_whatever_its_time() -> None:
+    a, b = sentence("ا ب", 0), sentence("ج د", 1)
+    a.words = [Word(0.0, 1.2, "ا", 0.9), Word(1.2, 1.4, "ب", 0.9)]  # past the next one's start
+    t = transcript(a, b)
+    rf.refine(t, silence(), lambda _a: ["ا ب ج ط"], None, "c")
+    assert [s.text for s in t.sentences] == ["ا ب", "ج ط"]
+
+
+def test_fewer_words_at_a_stretch_s_edge_are_no_correction() -> None:
+    w = timed("قال الشيخ كلاما طويلا")
+    merged, changed = rf.merge_words(w, "قال الشيخ كلام", [False] * 4, no_speller())
+    assert merged == w and changed == 0
+    merged, _ = rf.merge_words(w, "قال الشيخ كلام طويل", [False] * 4, no_speller())
+    assert [x.text for x in merged] == ["قال", "الشيخ", "كلام", "طويل"]
+
+
+def test_punctuation_beside_a_replaced_word_stays() -> None:
+    w = timed('قال " لأي خليفة')
+    places: list[tuple[int, int]] = []
+    merged, _ = rf.merge_words(w, "قال لأبي خليفة", [False] * 4, no_speller(), None, places)
+    assert [x.text for x in merged] == ["قال", '"', "لأبي", "خليفة"]
+    assert places == [(0, 0), (1, 1), (2, 2), (3, 3)]
 
 
 # ------------------------------------------------------------------ the stage

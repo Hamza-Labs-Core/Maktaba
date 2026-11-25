@@ -110,3 +110,48 @@ def test_the_checkpoint_keeps_each_word_s_probability() -> None:
     a = wd.pack(direct[0].text, direct[0].words, direct[0].start).data
     b = wd.pack(resumed[0].text, resumed[0].words or [], resumed[0].start).data
     assert a == b
+
+
+# ------------------------------------------------------------------ issue #1756
+
+
+@pytest.mark.parametrize(
+    ("text", "words", "want"),
+    [
+        ("هل جاء؟", [" هل", " جاء؟"], True),
+        ("10% more", [" 10", "%", " more"], True),  # whatever the spaces
+        ("هل جاء", [" هل"], False),  # one without a slot
+        ("هل جاء", [" هل", " جاء؟"], False),  # some of the next sentence
+        ("هل جاء", [" جاء", " هل"], False),
+        ("؟", ["؟"], False),  # punctuation alone says nothing
+        ("هل", [], False),
+    ],
+)
+def test_words_cover_a_text_when_they_are_all_of_it(
+    text: str, words: list[str], want: bool
+) -> None:
+    assert wd.covers(text, [Word(0.0, 1.0, w) for w in words]) is want
+
+
+def test_no_words_cover_nothing() -> None:
+    assert not wd.covers("هل", None)
+
+
+def test_a_word_of_another_sentence_is_counted_and_no_longer_covers() -> None:
+    packed = wd.pack("ج د", [Word(0, 1, "ب"), Word(1, 2, "د")], 0.0)
+    assert packed.misses == 1 and packed.data is not None
+    assert not wd.covers("ج د", wd.unpack("ج د", packed.data, 0.0))
+
+
+def test_stored_words_are_read_from_either_place() -> None:
+    row = {"text": "ا ب", "start_sec": 1.0, "word_data": None}
+    old = {"words": [[1.0, 1.5, "ا"], [1.5, 2.0, "ب"]]}
+    want = [Word(1.0, 1.5, "ا"), Word(1.5, 2.0, "ب")]
+    assert wd.stored_words(row, old) == want
+    # none in word_data, or not readable: those of metadata, where it has any
+    for data in (b"", wd.encode([]), b"\x09\x00\x00"):
+        assert wd.stored_words({**row, "word_data": data}, old) == want
+        assert wd.stored_words({**row, "word_data": data}, {}) is None
+    packed = wd.pack("ا ب", want, 1.0)
+    got = wd.stored_words({**row, "word_data": packed.data}, {})
+    assert got is not None and [w.text for w in got] == ["ا", "ب"]

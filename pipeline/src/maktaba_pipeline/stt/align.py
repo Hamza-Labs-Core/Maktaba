@@ -6,10 +6,10 @@ time warping per window. Run per window it costs a model call each, which is mos
 what batching the decode saved. Here every window of a GPU pass is aligned in one
 forward pass (token sequences padded with end-of-text: the decoder is causal, so the
 padding changes no real position), and the per-window work after it (DTW, punctuation,
-the word / sentence bookkeeping) is MLX-Whisper's, unchanged (MIT licence). The audio
-is not encoded again: the decode's encoder output is reused (encoding is the costly half
-of a forward pass, and the decoder alone takes ~0.2 s for a 24-window pass), its rows
-taken by index.
+the word / sentence bookkeeping) is MLX-Whisper's (MIT licence; :func:`place` differs in
+one thing). The audio is not encoded again: the decode's encoder output is reused (encoding
+is the costly half of a forward pass, and the decoder alone takes ~0.2 s for a 24-window
+pass), its rows taken by index.
 
 The CTranslate2 engine (:mod:`.ct2`) gets its alignment from CTranslate2 (the same
 cross-attention heads and DTW, in C++) and places the words with :func:`place`, with
@@ -19,7 +19,7 @@ cross-attention heads and DTW, in C++) and places the words with :func:`place`, 
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -141,9 +141,49 @@ def align_batch(model: Any, tokenizer: Any, items: list[AlignItem], features: An
             s.setdefault("words", [])
 
 
+def _letters(text: str) -> str:
+    return "".join(text.split())
+
+
+def _by_sentence(
+    segments: list[dict[str, Any]], per_seg: list[list[int]], alignment: list[Any]
+) -> list[list[Any]]:
+    """The window's words, each with the sentence whose text it is in. A word over two
+    sentences (one begins without a space, or is a "؟" alone: the tokenizer joins it to the
+    word before) is split between them, its time by their letters; one too short to split
+    stays with the first. Where the words and the texts differ, by tokens."""
+    texts = [_letters(str(s.get("text") or "")) for s in segments]
+    by_text = "".join(texts) == "".join(_letters(t.word) for t in alignment)
+    ends = list(itertools.accumulate(map(len, texts if by_text else per_seg)))
+    out: list[list[Any]] = [[] for _ in segments]
+    k = pos = 0
+    for t in alignment:
+        size = len(_letters(t.word)) if by_text else len(t.tokens)
+        while True:
+            while k + 1 < len(ends) and pos >= ends[k]:
+                k += 1
+            room = ends[k] - pos
+            if not by_text or size <= room or k + 1 == len(ends) or t.end - t.start < 0.02:
+                break
+            seen = list(itertools.accumulate(int(not c.isspace()) for c in t.word))
+            cut = seen.index(room) + 1
+            at = t.start + (t.end - t.start) * room / size
+            at = min(max(at, t.start + 0.01), t.end - 0.01)
+            out[k].append(replace(t, word=t.word[:cut], end=at))
+            t = replace(t, word=t.word[cut:], tokens=[], start=at)
+            pos, size = pos + room, size - room
+        out[k].append(t)
+        pos += size
+    return out
+
+
 def place(it: AlignItem, per_seg: list[list[int]], alignment: list[Any], merge: Any) -> None:
-    """``add_word_timestamps`` after ``find_alignment``, unchanged: the window's words
-    (``alignment``, its text's words with their times in the window) on its sentences."""
+    """``add_word_timestamps`` after ``find_alignment``: the window's words (``alignment``,
+    its text's words with their times in the window) on its sentences. One thing differs: each
+    sentence gets its own words (:func:`_by_sentence`), and punctuation joins words of its
+    own sentence only. Whisper counts each sentence's tokens from its first word, so a word
+    that reaches into the next sentence (a "." decoded as a sentence of its own) moves every
+    later sentence's words along, and leaves the window's last sentence with none."""
     durations = np.array([t.end - t.start for t in alignment])
     durations = durations[durations.nonzero()]
     median = min(0.7, float(np.median(durations)) if len(durations) > 0 else 0.0)
@@ -156,27 +196,23 @@ def place(it: AlignItem, per_seg: list[list[int]], alignment: list[Any], merge: 
                     alignment[i].end = alignment[i].start + max_d
                 elif alignment[i - 1].word in marks:
                     alignment[i].start = alignment[i].end - max_d
-    merge(alignment, PREPEND, APPEND)
+    per = _by_sentence(it.segments, per_seg, alignment)
+    for group in per:
+        merge(group, PREPEND, APPEND)
 
     offset = it.segments[0]["seek"] * HOP_LENGTH / SAMPLE_RATE
     last_speech = it.last_speech
-    wi = 0
-    for seg, text_tokens in zip(it.segments, per_seg, strict=True):
-        saved = 0
-        words: list[dict[str, Any]] = []
-        while wi < len(alignment) and saved < len(text_tokens):
-            t = alignment[wi]
-            if t.word:
-                words.append(
-                    {
-                        "word": t.word,
-                        "start": round(offset + t.start, 2),
-                        "end": round(offset + t.end, 2),
-                        "probability": float(t.probability),
-                    }
-                )
-            saved += len(t.tokens)
-            wi += 1
+    for seg, group in zip(it.segments, per, strict=True):
+        words: list[dict[str, Any]] = [
+            {
+                "word": t.word,
+                "start": round(offset + t.start, 2),
+                "end": round(offset + t.end, 2),
+                "probability": float(t.probability),
+            }
+            for t in group
+            if t.word
+        ]
         if words:
             if words[0]["end"] - last_speech > median * 4 and (
                 words[0]["end"] - words[0]["start"] > max_d

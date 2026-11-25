@@ -295,6 +295,13 @@ RELISTEN_DEFER_S = 900.0
 RELISTEN_WAIT_S = 86_400.0
 #: the payload key of a relisten job
 RELISTEN = "relisten"
+#: why the second listen left out a transcript with no words (``metadata.refine.skipped``)
+NO_WORDS = "no sentence of the transcript has its word timings stored"
+#: ...and before issue #1756's fix, one with a sentence without them: such videos are
+#: transcribed again, once (:func:`_retranscribe_wordless`)
+NO_WORDS_BEFORE = (
+    "the transcript has no word timings stored (made before the second listen's stage)"
+)
 
 
 def still_current(job: Job, prev: str, fingerprint: str) -> bool:
@@ -399,7 +406,7 @@ async def relisten(db: Any) -> int:
     (``metadata.refine.source = skipped``), and for those whose second listen ran but failed
     to store (:func:`_stranded_sql`), as relisten jobs (a worker without the second
     listen gives them back): ``second_listen`` for a transcript with its words stored
-    (``metadata.words``), else ``transcribe``, which stores them (its second listen
+    (:func:`_words_sql`), else ``transcribe``, which stores them (its second listen
     follows). Once per ``RELISTEN_EVERY_S``, and only once this
     worker has the model (loaded, or on its disk: a machine without it would make the same
     transcript again). The videos tried least come first, the oldest among them; one
@@ -517,10 +524,11 @@ def _stranded_sql(db: Any) -> str:
 
 
 def _words_sql(db: Any) -> str:
-    """The transcript ``t`` has its words stored (``metadata.words``), as a boolean."""
+    """Transcribing again gives the transcript ``t`` no words it lacks: it has them stored
+    (``metadata.words`` true), or Whisper gave none that match (false). As a boolean."""
     if is_pg(db):
-        return "COALESCE((t.metadata ->> 'words') = 'true', false)"
-    return "COALESCE(json_extract(t.metadata, '$.words') = 1, 0)"
+        return "(t.metadata ->> 'words' IS NOT NULL)"
+    return "(json_extract(t.metadata, '$.words') IS NOT NULL)"
 
 
 async def _forget_gone(db: Any) -> int:
@@ -538,9 +546,11 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
     ``finished_at``; now when the job is gone), so a job that waited in the queue does not
     use up the wait. A job that ended without running (``skipped_unchanged``: workers
     without the second listen, or without room for it, gave it back until it was a day
-    old) was no try, and does not count. Returns how many."""
+    old) was no try, and does not count; nor does a second listen that left its
+    transcript to be transcribed again (``waiting_inputs``), which nothing waits after.
+    Returns how many."""
     rows = await db.fetch(
-        "SELECT r.video_id, r.attempts, r.wait_s, j.finished_at, j.outcome"
+        "SELECT r.video_id, r.attempts, r.wait_s, j.stage, j.finished_at, j.outcome"
         " FROM relisten_attempts r LEFT JOIN processing_jobs j ON j.id = r.last_job_id"
         f" WHERE r.ended_at IS NULL AND NOT {_open_job('r.video_id')}"
     )
@@ -548,7 +558,9 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
 
     for r in rows:
         ended = parse_ts(r["finished_at"]) or now()
-        wait = r["wait_s"]
+        # (transcribe's own waiting_inputs, for extract's WAV, is a try: extract queues it)
+        left = r["stage"] == "second_listen" and r["outcome"] == "waiting_inputs"
+        wait = 0.0 if left else r["wait_s"]
         if wait is None:  # a try queued before slot 0146
             wait = compute_backoff(
                 max(1, int(r["attempts"])),
@@ -564,7 +576,7 @@ async def _settle_tries(db: Any, rules: TranscriptionConfig) -> int:
             uid(r["video_id"]),
             to_ts(db, ended),
             to_ts(db, ended + timedelta(seconds=float(wait))),
-            1 if r["outcome"] == "skipped_unchanged" else 0,
+            1 if left or r["outcome"] == "skipped_unchanged" else 0,
         )
     return len(rows)
 
@@ -574,8 +586,10 @@ async def _reset_relistens(db: Any, model: str, round_: int) -> int:
     this worker's second-listen model, or its capability (:func:`second_listen_capability`:
     a new machine, GPU, driver or packages), is one the home has not seen before
     (``relisten_seen``), once, whoever sees it first; a model or capability seen before
-    changes nothing, so machines that differ do not reset each other. For every video tried
-    in a round before the operator's ``relisten_round``: once a round. Returns how many."""
+    changes nothing, so machines that differ do not reset each other. For the videos left
+    out for a sentence without words: once a home (:func:`_retranscribe_wordless`). For
+    every video tried in a round before the operator's ``relisten_round``: once a round.
+    Returns how many."""
     capability, detail = second_listen_capability()
     at = to_ts(db, now())
     n = 0
@@ -598,6 +612,7 @@ async def _reset_relistens(db: Any, model: str, round_: int) -> int:
         n += len(rows)
         if rows:
             _log.info("transcribe.relisten_reset", why=f"new {kind}", videos=len(rows), **what)
+    n += await _retranscribe_wordless(db)
     rows = await db.fetch(
         "UPDATE relisten_attempts SET attempts = 0, stopped_at = NULL, next_at = $1,"
         " relisten_round = $2 WHERE relisten_round < $2 RETURNING video_id",
@@ -607,6 +622,61 @@ async def _reset_relistens(db: Any, model: str, round_: int) -> int:
     if rows:
         _log.info("transcribe.relisten_reset", why="round", videos=len(rows), round=round_)
     return n + len(rows)
+
+
+async def _retranscribe_wordless(db: Any) -> int:
+    """Once a home, when no live worker from before the fix could take the jobs (it would
+    spend their tries; ``capabilities.words_by_sentence``): the videos
+    left out for a sentence without words (:data:`NO_WORDS_BEFORE`) get their tries again,
+    their transcripts without the mark that their words are stored: the sweep transcribes
+    them again. Their words were given to the sentences wrongly (issue #1756), so the second
+    listen cannot correct them all from what is stored. Returns how many."""
+    from maktaba_pipeline.engine.workers import LIVE_WINDOW_SEC
+
+    if await db.fetchval(
+        "SELECT 1 FROM relisten_seen WHERE kind = 'fix' AND key = 'sentences_without_words'"
+    ):
+        return 0
+    for w in await db.fetch(
+        "SELECT id, stages, capabilities FROM workers WHERE last_seen_at >= $1",
+        to_ts(db, now() - timedelta(seconds=LIVE_WINDOW_SEC)),
+    ):
+        stages = loads(w["stages"]) if isinstance(w["stages"], str) else w["stages"]
+        able = (loads(w["capabilities"]) or {}).get("words_by_sentence")
+        if not able and {"transcribe", "second_listen"} & set(stages or []):
+            _log.info("transcribe.relisten_waits", worker=str(w["id"]))
+            return 0
+    if is_pg(db):
+        reason, unmarked = "metadata -> 'refine' ->> 'skipped'", "metadata - 'words'"
+    else:
+        reason = "json_extract(metadata, '$.refine.skipped')"
+        unmarked = "json_remove(metadata, '$.words')"
+    at = to_ts(db, now())
+    async with db.transaction():  # the mark and its reset together: it is made once
+        seen = await db.fetchrow(
+            "INSERT INTO relisten_seen (kind, key, detail, first_seen)"
+            " VALUES ('fix', 'sentences_without_words', '{}', $1)"
+            " ON CONFLICT (kind, key) DO NOTHING RETURNING key",
+            at,
+        )
+        if seen is None:
+            return 0
+        # transcripts first, as both stages' stores take them
+        rows = await db.fetch(
+            f"UPDATE transcripts SET metadata = {unmarked}"
+            f" WHERE is_active AND {reason} = $1 RETURNING video_id",
+            NO_WORDS_BEFORE,
+        )
+        await db.execute(
+            "UPDATE relisten_attempts SET attempts = 0, stopped_at = NULL, next_at = $1"
+            f" WHERE video_id IN (SELECT video_id FROM transcripts WHERE is_active"
+            f" AND {reason} = $2)",
+            at,
+            NO_WORDS_BEFORE,
+        )
+    if rows:
+        _log.info("transcribe.relisten_reset", why="sentences without words", videos=len(rows))
+    return len(rows)
 
 
 def second_listen_capability() -> tuple[str, dict[str, Any]]:
@@ -1269,11 +1339,12 @@ async def _store(
     job that again went without the second listen. ``audio_track_id``: the track the
     audio came from (extract's WAV, or the chosen stream off the share), else the first
     audio stream, recorded as track 0. Each sentence keeps its words, packed in
-    ``word_data`` (Epic 52, story 52.1; ``metadata.words`` says the transcript has them:
-    the second listen needs them). Edits a reviewer made to the old transcript are
-    carried over (story 52.9) in the same transaction."""
+    ``word_data`` (Epic 52, story 52.1; ``metadata.words`` says the transcript has them,
+    or, false, that no sentence has its own: the second listen needs them). Edits a reviewer made
+    to the old transcript are carried over (story 52.9) in the same transaction."""
     rows, any_words = segment_rows(result.sentences)
-    store_words = any_words or bool(refine_model() and settings.word_timestamps)
+    asked = any_words or bool(refine_model() and settings.word_timestamps)
+    unmatched = not any_words and any(s.words for s in result.sentences)
     async with db.transaction():
         if audio_track_id is None:
             audio_track_id = await _first_audio_track(db, video_id)
@@ -1295,7 +1366,9 @@ async def _store(
                     "audio_sec": round(result.audio_sec, 1),
                     "plan": "03-10",
                     **({"refine": refined} if refined else {}),
-                    **({"words": True} if store_words else {}),
+                    **({"words": any_words} if asked else {}),
+                    # Whisper gave words, but no sentence got its own
+                    **({"words_unmatched": True} if unmatched else {}),
                 }
             ),
             audio_track_id,
@@ -1334,8 +1407,8 @@ def segment_rows(sentences: list[Any]) -> tuple[list[SegmentRow], bool]:
     """``transcript_segments`` rows for ``sentences`` (without the transcript id): each
     sentence's words packed in ``word_data`` (Epic 52, story 52.1), what the second listen
     replaced in ``metadata.alt``, words not found in the text in ``metadata.word_misses``.
-    And whether any sentence kept its words."""
-    from maktaba_pipeline.stt.word_data import pack
+    And whether any sentence kept its words (:func:`~.word_data.covers`)."""
+    from maktaba_pipeline.stt.word_data import covers, pack, unpack
 
     rows: list[SegmentRow] = []
     any_words = False
@@ -1345,7 +1418,8 @@ def segment_rows(sentences: list[Any]) -> tuple[list[SegmentRow], bool]:
         if s.words:
             packed = pack(s.text, s.words, s.start)
             data = packed.data
-            any_words = any_words or data is not None
+            if data and not any_words:
+                any_words = covers(s.text, unpack(s.text, data, s.start))
             if packed.misses:
                 meta["word_misses"] = packed.misses
         if s.alt:

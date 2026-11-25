@@ -11,12 +11,14 @@ word by word on folded spelling:
 - where they disagree, Cohere's words replace Whisper's, respelt the way Whisper spells
   the same word elsewhere in the file or, failing that, the way the Arabic dictionary
   (CAMeL Tools' MSA analyser) spells it; they share the replaced words' time;
-- where Cohere heard nothing, Whisper's words stay: Cohere drops words at the edges of a
-  stretch, so a gap in its text is no evidence that nothing was said;
+- where Cohere heard nothing (or, at a stretch's edges, fewer words), Whisper's words stay:
+  Cohere drops words at the edges, so a gap in its text is no evidence that nothing was said;
 - words Whisper heard as a run of the Quran (:func:`~maktaba_pipeline.classify.quran.verse_runs`)
   are never replaced;
 - a stretch where the two barely agree (below :data:`MIN_AGREEMENT`) keeps Whisper's text:
-  one of them went astray, and Whisper is the one with timings.
+  one of them went astray, and Whisper is the one with timings;
+- a sentence without words, or whose words are not all of its text, keeps Whisper's, and no
+  stretch runs over it: what is heard is only what is merged.
 
 The module is pure Python: the recogniser and the dictionary are passed in, so the
 stage owns the models and the tests need neither.
@@ -24,16 +26,18 @@ stage owns the models and the tests need neither.
 
 from __future__ import annotations
 
+import bisect
 import difflib
 import re
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from ..classify.quran import verse_runs
 from ..text.arabic import fold
 from .settings import HEARD_DIFFERENTLY, INSERTED, QURAN, SAMPLE_RATE, Sentence, Transcript, Word
+from .word_data import covers, spoken
 
 __all__ = [
     "Alt",
@@ -159,30 +163,52 @@ def merge_words(
     locked: Sequence[bool],
     speller: Speller,
     alts: list[Alt] | None = None,
+    places: list[tuple[int, int]] | None = None,
 ) -> tuple[list[TimedWord], int]:
     """Whisper's words with Cohere's where they disagree, and how many words changed.
 
     ``locked[i]`` keeps Whisper's word ``i`` whatever Cohere heard (a verse; marked
     :data:`QURAN`). A replaced word keeps the probability of the Whisper word it replaced
     and is marked :data:`HEARD_DIFFERENTLY`; a word Whisper missed is :data:`INSERTED`,
-    with no probability. ``alts`` collects each replaced span (Epic 52, story 52.1)."""
+    with no probability. ``alts`` collects each replaced span (Epic 52, story 52.1),
+    ``places`` the first and last of the Whisper words each word stands for: its own where
+    it is kept, those it lies between where it is inserted."""
     heard = cohere_text.split()
     a = [_key(w[2]) for w in whisper]
     b = [_key(w) for w in heard]
     out: list[TimedWord] = []
+    at: list[tuple[int, int]] = []
     changed = 0
     sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
     for op, i1, i2, j1, j2 in sm.get_opcodes():
         if any(locked[i1:i2]):
             out.extend(_mark(whisper[i1:i2], locked[i1:i2]))
+            at.extend((i, i) for i in range(i1, i2))
             continue
         if op == "equal":
             out.extend(whisper[i1:i2])
+            at.extend((i, i) for i in range(i1, i2))
             continue
         new = [speller.spell(w) for w in heard[j1:j2] if _key(w)]
         if not new:  # Cohere heard nothing here (or only punctuation differs)
             out.extend(whisper[i1:i2])
+            at.extend((i, i) for i in range(i1, i2))
             continue
+        if (i1 == 0 or i2 == len(a)) and len(new) < sum(map(bool, a[i1:i2])):
+            # Cohere drops words at the edges of a stretch: fewer there are not a correction
+            out.extend(whisper[i1:i2])
+            at.extend((i, i) for i in range(i1, i2))
+            continue
+        # punctuation of Whisper's own at either end is no word that was replaced
+        lead, trail = i1, i2
+        while i1 < i2 and not a[i1]:
+            i1 += 1
+        while i1 < i2 and not a[i2 - 1]:
+            i2 -= 1
+        if i1 == i2:
+            i1 = i2 = trail  # only punctuation: the words go after it
+        out.extend(whisper[lead:i1])
+        at.extend((i, i) for i in range(lead, i1))
         if i2 > i1:
             start, end = whisper[i1][0], whisper[i2 - 1][1]
             probs = [_prob(w) for w in whisper[i1:i2]]
@@ -201,7 +227,17 @@ def merge_words(
                 )
             )
         out.extend(_spread(start, end, new, probs, bits))
+        lo, hi = (i1, i2 - 1) if i2 > i1 else (max(0, i1 - 1), min(i1, len(whisper) - 1))
+        own = [i for i in range(i1, i2) if a[i]]
+        if len(own) == len(new):  # one for one
+            at.extend((i, i) for i in own)
+        else:
+            at.extend((lo, hi) for _ in new)
         changed += max(i2 - i1, len(new))
+        out.extend(whisper[i2:trail])
+        at.extend((i, i) for i in range(i2, trail))
+    if places is not None:
+        places.extend(at)
     return out, changed
 
 
@@ -219,17 +255,30 @@ def _mark(words: Sequence[Any], locked: Sequence[bool]) -> list[TimedWord]:
 
 
 def chunks(sentences: Sequence[Sentence], limit: float = CHUNK_SEC) -> list[list[int]]:
-    """Consecutive sentences grouped into stretches of at most ``limit`` seconds (a
-    longer sentence is a stretch on its own). Sentences without words are left out:
-    there is nothing to align them on."""
+    """The sentences, in order, grouped into stretches of at most ``limit`` seconds (a
+    longer sentence is a stretch on its own). A sentence whose words do not cover it
+    (:func:`~.word_data.covers`) is left out: there is nothing to align it on. No stretch
+    runs over one: what it says would be merged into its neighbours. One of punctuation
+    alone says nothing: it is left out, and ends no stretch."""
     out: list[list[int]] = []
     cur: list[int] = []
+    usable = [covers(s.text, s.words) for s in sentences]
+    unheard = _merged(
+        (s.start, s.end)
+        for s, ok in zip(sentences, usable, strict=True)
+        if not ok and spoken(s.text)
+    )
     for i, s in enumerate(sentences):
-        if not s.words:
+        if not spoken(s.text):  # punctuation alone: nothing to hear, so it ends no stretch
+            continue
+        if not usable[i] or _hits(unheard, *_span(s)):
             if cur:
                 out.append(cur)
                 cur = []
             continue
+        if cur and _hits(unheard, _span(sentences[cur[0]])[0], _span(s)[1]):
+            out.append(cur)
+            cur = []
         if cur and s.end - sentences[cur[0]].start > limit:
             out.append(cur)
             cur = []
@@ -237,6 +286,28 @@ def chunks(sentences: Sequence[Sentence], limit: float = CHUNK_SEC) -> list[list
     if cur:
         out.append(cur)
     return out
+
+
+def _span(s: Sentence) -> tuple[float, float]:
+    """Where the sentence's own words are: its bounds can take in a word it lost."""
+    words = s.words or []
+    return (words[0][0], words[-1][1]) if words else (s.start, s.end)
+
+
+def _merged(spans: Iterable[tuple[float, float]]) -> list[tuple[float, float]]:
+    out: list[tuple[float, float]] = []
+    for a, b in sorted(spans):
+        if out and a <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def _hits(spans: Sequence[tuple[float, float]], a: float, b: float) -> bool:
+    """One of ``spans`` (apart, in order) overlaps ``a``..``b`` (not only touches it)."""
+    k = bisect.bisect_left(spans, b, key=lambda x: x[0])
+    return k > 0 and spans[k - 1][1] > a
 
 
 @dataclass(slots=True)
@@ -315,15 +386,25 @@ def refine(
         first[i] = n
         n += len(s.words or [])
     todo: list[_Stretch] = []
-    for group in chunks(sentences):
+    groups = chunks(sentences)
+    grouped = {i for group in groups for i in group}
+    said = [spoken(s.text) for s in sentences]
+    for group in groups:
         stats.stretches += 1
         whisper = [w for i in group for w in (sentences[i].words or [])]
-        lo = first[group[0]]
-        locked = locked_all[lo : lo + len(whisper)]
+        # by sentence: a stretch passes over one of punctuation alone, which can have words
+        locked = [
+            lock
+            for i in group
+            for lock in locked_all[first[i] : first[i] + len(sentences[i].words or [])]
+        ]
         stats.words += len(whisper)
         stats.quran_words += sum(locked)
-        a = max(0, int(sentences[group[0]].start * SAMPLE_RATE))
-        b = min(len(audio), int(sentences[group[-1]].end * SAMPLE_RATE) + SAMPLE_RATE // 4)
+        # a quarter second more, for the last word's end, but none of a sentence left out
+        after = next((i for i in range(group[-1] + 1, len(sentences)) if said[i]), None)
+        tail = 0 if after is not None and after not in grouped else SAMPLE_RATE // 4
+        a = max(0, int(_span(sentences[group[0]])[0] * SAMPLE_RATE))
+        b = min(len(audio), int(_span(sentences[group[-1]])[1] * SAMPLE_RATE) + tail)
         if b - a >= SAMPLE_RATE // 2:
             todo.append(_Stretch(group, whisper, locked, audio[a:b]))
     for k in range(0, len(todo), BATCH):
@@ -339,10 +420,11 @@ def refine(
                 stats.kept += 1
                 continue
             alts: list[Alt] = []
-            merged, changed = merge_words(st.whisper, text, st.locked, speller, alts)
+            places: list[tuple[int, int]] = []
+            merged, changed = merge_words(st.whisper, text, st.locked, speller, alts, places)
             if changed:
                 stats.changed += changed
-                _redistribute(sentences, st.group, merged, alts)
+                _redistribute(sentences, st.group, merged, alts, places)
 
     # no word is ever dropped, but a replacement's time can move a short sentence's only
     # word into its neighbour: the emptied sentence goes
@@ -354,17 +436,22 @@ def _redistribute(
     sentences: list[Sentence],
     group: list[int],
     merged: list[TimedWord],
-    alts: Sequence[Alt] = (),
+    alts: Sequence[Alt],
+    places: Sequence[tuple[int, int]],
 ) -> None:
-    """Give each sentence of the stretch back its words (by time), its text and where
-    the second listen replaced words (:attr:`Sentence.alt`, index in the sentence)."""
+    """Give each sentence of the stretch back its words, its text and where the second
+    listen replaced words (:attr:`Sentence.alt`, index in the sentence). A kept word stays
+    in its sentence, whatever its time; a replacement goes by time among the sentences of
+    the words it stands for (``places``, :func:`merge_words`)."""
+    owner = [g for g, i in enumerate(group) for _ in sentences[i].words or []]
     bounds = [(sentences[i].start, sentences[i].end) for i in group]
     per: list[list[TimedWord]] = [[] for _ in group]
     where: list[tuple[int, int]] = []  # merged index -> (sentence of the group, index in it)
     k = 0
-    for w in merged:
+    for w, (lo, hi) in zip(merged, places, strict=True):
         mid = (w[0] + w[1]) / 2
-        while k + 1 < len(group) and mid >= bounds[k + 1][0]:
+        k = max(k, owner[lo])
+        while k < owner[hi] and mid >= bounds[k + 1][0]:
             k += 1
         where.append((k, len(per[k])))
         per[k].append(w)
@@ -375,6 +462,8 @@ def _redistribute(
             found[g].append({"i": i, "n": a.n, "whisper": a.whisper, "cohere": a.cohere})
     for g, (idx, words) in enumerate(zip(group, per, strict=True)):
         s = sentences[idx]
+        if words == s.words:
+            continue
         s.words = words
         s.text = _sentence_text(words)
         s.alt = found[g] or None
