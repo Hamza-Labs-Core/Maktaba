@@ -153,7 +153,10 @@ siblings are never applied to a Postgres connection.
 3. Mirror the schema in `NNNN_<topic>.sqlite.sql`.
 4. Wrap each statement in `+goose StatementBegin` / `+goose StatementEnd`.
 5. Use `IF [NOT] EXISTS` everywhere; use `CREATE INDEX CONCURRENTLY`
-   when the index is non-trivial.
+   when the index is non-trivial. An update's database step runs the migrations with the
+   library stopped and drops that `CONCURRENTLY` at run time (`MAKTABA_MIGRATE_OFFLINE`,
+   `api/migrate_offline.go`: top-level `CREATE`/`DROP INDEX` statements of the Up section
+   only, never a function's body), so write a migration that is right both ways.
 6. Run `make lint-migrations` locally before pushing.
 
 ## Pitfall: never write the literal `+goose` in prose comments

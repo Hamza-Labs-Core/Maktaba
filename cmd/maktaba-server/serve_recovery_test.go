@@ -3,10 +3,12 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/recovery"
 )
 
@@ -66,5 +68,29 @@ func TestRecoveryAdminRoutesTheLink(t *testing.T) {
 		if rec.Code != want {
 			t.Errorf("%s: %d, want %d", p, rec.Code, want)
 		}
+	}
+}
+
+// The recovery page's held update is the database record's, when it is held.
+func TestHeldOfTheRecord(t *testing.T) {
+	dir := t.TempDir()
+	if h := heldOf(dir); h != nil {
+		t.Fatalf("no record: %+v", h)
+	}
+	if err := apppayload.WriteDatabase(dir, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseHeld,
+		From: "v0.2.0", Failed: "v0.3.0", Error: "boom", Held: "db_down_failed",
+		Dump: filepath.Join(dir, "backups", "pre-v0.2.0-to-v0.3.0.dump")}); err != nil {
+		t.Fatal(err)
+	}
+	h := heldOf(dir)
+	if h == nil || h.Failed != "v0.3.0" || h.From != "v0.2.0" || h.Backup != "pre-v0.2.0-to-v0.3.0.dump" ||
+		h.Why != "db_down_failed: boom" {
+		t.Fatalf("held: %+v", h)
+	}
+	if err := apppayload.WriteDatabase(dir, apppayload.Database{Version: "v0.2.0", State: apppayload.DatabaseMigrated}); err != nil {
+		t.Fatal(err)
+	}
+	if h := heldOf(dir); h != nil {
+		t.Fatalf("a migrated record: %+v", h)
 	}
 }

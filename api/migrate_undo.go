@@ -51,7 +51,7 @@ func runUndoFailed(ctx context.Context, db *sql.DB, dir string) error {
 	}
 	if next == nil {
 		fmt.Fprintf(os.Stderr, "migrate: no migration above %d: nothing failed part way\n", current)
-		return repairInvalidIndexes(ctx, db, stage)
+		return repairInvalidIndexes(ctx, db, stage, migrateOffline())
 	}
 	raw, err := os.ReadFile(next.Source)
 	if err != nil {
@@ -60,7 +60,7 @@ func runUndoFailed(ctx context.Context, db *sql.DB, dir string) error {
 	name := filepath.Base(next.Source)
 	if !noTransactionMigration.Match(raw) {
 		fmt.Fprintf(os.Stderr, "migrate: %s runs in a transaction: a failure left nothing of it\n", name)
-		return repairInvalidIndexes(ctx, db, stage)
+		return repairInvalidIndexes(ctx, db, stage, migrateOffline())
 	}
 	p, err := goose.NewProvider(goose.DialectPostgres, db, os.DirFS(stage), goose.WithDisableVersioning(true))
 	if err != nil {
@@ -73,5 +73,5 @@ func runUndoFailed(ctx context.Context, db *sql.DB, dir string) error {
 	}
 	// the Down script dropped what it made; a build cut short on a table it did not make
 	// (an index on videos, say) is left INVALID: dropped here
-	return repairInvalidIndexes(ctx, db, stage)
+	return repairInvalidIndexes(ctx, db, stage, migrateOffline())
 }

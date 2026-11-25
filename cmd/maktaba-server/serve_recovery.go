@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/recovery"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -161,6 +162,7 @@ func startRecovery(d recoveryDeps) http.Handler {
 			_, err := u.r.restore(context.Background(), name, by, true, false)
 			return err
 		},
+		Held: func() *recovery.Held { return heldOf(state) },
 	}
 	serveRecovery.Store(h)
 	return recovery.LinkHandler(codes, "http://"+supervisor.LocalAddr(d.cfg.Server.WebListen, "8088"), record)
@@ -238,4 +240,22 @@ func recoveryAdmin(base, link http.Handler) http.Handler {
 		}
 		base.ServeHTTP(w, r)
 	})
+}
+
+// heldOf is the update the database record holds (held: it stopped with nothing put
+// back by itself, and waits for a person), nil when none.
+func heldOf(stateDir string) *recovery.Held {
+	rec, ok, err := apppayload.ReadDatabase(stateDir)
+	if err != nil || !ok || rec.State != apppayload.DatabaseHeld {
+		return nil
+	}
+	why := rec.Error
+	if rec.Held != "" {
+		why = rec.Held + ": " + why
+	}
+	h := &recovery.Held{Failed: rec.Failed, From: rec.From, Why: why}
+	if rec.Dump != "" {
+		h.Backup = filepath.Base(rec.Dump)
+	}
+	return h
 }

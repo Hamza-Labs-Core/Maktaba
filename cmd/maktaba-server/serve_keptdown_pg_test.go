@@ -68,7 +68,7 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 			"-- +goose Down\nALTER TABLE a_t DROP CONSTRAINT c_check;\nALTER TABLE nowhere DROP COLUMN x;\n"
 	)
 	// the releases' trees: <releases>/<version>/migrations
-	releases := filepath.Join(root, "releases")
+	releases := filepath.Join(root, "bin", "releases")
 	release := func(version string, files ...string) string {
 		dir := filepath.Join(releases, version, "migrations")
 		if err := os.MkdirAll(filepath.Join(dir, "meta"), 0o755); err != nil {
@@ -180,12 +180,18 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 
 	// C's migrations work, and its watch fails: each install kind's rollback
 	app := &updater.AppInstaller{Payload: filepath.Join(releases, "v0.3.1"), LauncherRoot: filepath.Join(root, "launcher")}
+	// the side-by-side layout names its releases without the v
+	if err := os.Symlink("v0.1.0", filepath.Join(releases, "0.1.0")); err != nil {
+		t.Fatal(err)
+	}
+	side := &updater.LayoutInstaller{Layout: layout.New(root)}
 	rt := &updater.RuntimeInstaller{Runtime: appruntime.Runtime{Root: releases}}
 	for name, c := range map[string]struct {
 		inst updater.SchemaReverter
 		j    updater.Journal
 	}{
 		"app":     {app, updater.Journal{From: "v0.1.0", FromRef: filepath.Join(releases, "v0.1.0")}},
+		"layout":  {side, updater.Journal{From: "v0.1.0", Staged: filepath.Join(releases, "v0.3.1")}},
 		"runtime": {rt, updater.Journal{From: "v0.1.0", FromRef: "v0.1.0", Staged: "v0.3.1"}},
 	} {
 		must(start("v0.3.1"))
@@ -199,7 +205,7 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 			t.Fatalf("%s: Down to %d, %v (%s), want 3", name, slot, ok, why)
 		}
 		u := &updates{api: apiCmd("v0.3.1")}
-		must(u.migrateDown(ctx, &c.j, slot))
+		must(u.migrateDown(ctx, &c.j, slot, gate("v0.3.1")))
 		if ok, err := recordFile(apppayload.DatabasePath(stateDir)).MarkDown("v0.3.1", "v0.1.0", "watch_timeout"); !ok || err != nil {
 			t.Fatalf("%s: MarkDown %v %v", name, ok, err)
 		}
@@ -211,7 +217,7 @@ func TestAFailedUpdateNeverUndoesAKeptSchema(t *testing.T) {
 	// same, and the record still names C
 	must(start("v0.3.2"))
 	u := &updates{api: apiCmd("v0.3.2")}
-	if err := u.migrateDown(ctx, nil, 3); err == nil {
+	if err := u.migrateDown(ctx, nil, 3, gate("v0.3.2")); err == nil {
 		t.Fatal("a Down script that failed is said to have worked")
 	}
 	if n := one(`SELECT (SELECT count(*) FROM b_t) + (SELECT count(*) FROM a_t WHERE b_c = 7)`); n != 3 {

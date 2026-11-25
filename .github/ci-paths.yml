@@ -1085,7 +1085,7 @@ apple_player_ui:
 
 # maktaba.dev: the portal, and every file its allow-list publishes (the wiki app, its
 # English and Arabic database and the diagrams it shows, the developer guides in
-# docs/developers, the changelog, the OpenAPI description, the disclosure policy
+# docs/developers, the changelog and its fragments, the OpenAPI description, the disclosure policy
 # security.txt is built from, the icons). devportal-deploy.yml deploys on the same paths.
 devportal:
   - *ci
@@ -1095,6 +1095,7 @@ devportal:
   - 'docs/developers/**'
   - 'CHANGELOG.md'
   - 'CHANGELOG.ar.md'
+  - 'changelog.d/**'
   - 'shared/api/openapi.json'
   - 'shared/api/openapi.ar.json'
   - 'shared/plugins/**'

@@ -103,14 +103,51 @@ drift, so a change to what it publishes lands in both languages in the same pull
 
 - **A guide** in `docs/developers/` has its Arabic twin beside it (`name.md` and
   `name.ar.md`). Change both, or add both for a new guide.
-- **A changelog entry** goes in `CHANGELOG.md` and, in Arabic, in `CHANGELOG.ar.md`: the
-  same release, the same section, the same place in the list.
+- **A changelog entry** is two new files in `changelog.d/`, `YYYY-MM-DD-slug.md` and, in
+  Arabic, `YYYY-MM-DD-slug.ar.md`: the same sections with the same entries
+  ([the changelog](#the-changelog)).
 - **The API description:** a new or changed summary or description in
   `shared/api/openapi.json` gets its Arabic in `shared/api/openapi.ar.json` (keyed by its
   JSON pointer, with the English it translates).
 
 Write natural Modern Standard Arabic. Code, commands, file names and identifiers stay as
 written.
+
+## The changelog
+
+A change a user or a developer sees gets a changelog entry, in two new files of its own, so two
+pull requests never conflict on it. The name is the day and a short slug:
+`changelog.d/2026-11-25-short-slug.md` holds
+
+```markdown
+### Fixed
+
+- **What changed, in a few words.** What a user sees, in a sentence or two, each further
+  line indented by two spaces.
+```
+
+The Arabic file, `changelog.d/2026-11-25-short-slug.ar.md`, has the same sections, named in
+Arabic, with the same number of entries. The files hold sections and entries only. The sections, English
+and Arabic:
+
+| English      | Arabic   |
+| ------------ | -------- |
+| `Added`      | `أُضيف`  |
+| `Changed`    | `تغيّر`  |
+| `Deprecated` | `أُهمل`  |
+| `Removed`    | `أُزيل`  |
+| `Fixed`      | `أُصلح`  |
+| `Security`   | `الأمان` |
+
+`python3 tools/dev/changelog_fragment.py check` checks the pair, as the lint job does on every
+pull request; it also refuses a new line under `[Unreleased]` in `CHANGELOG.md`, whose entries
+are from before these files. A pull request that began before them may still have lines there;
+`python3 tools/dev/changelog_fragment.py convert` moves them to a pair, and
+`tools/dev/merge-main.sh` does it when they conflict with `main`. A branch that does not have that
+tool yet brings `main` in first, with its own `merge-main.sh`, which keeps the lines where they are.
+
+The [changelog](https://maktaba.dev/changelog/) page puts each entry in the release that brought
+it: the first version tag that contains its file. Nothing is edited when a release is made.
 
 ## Security fixes
 

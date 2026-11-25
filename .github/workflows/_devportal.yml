@@ -48,6 +48,20 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The changelog page puts each fragment (changelog.d/) in the release whose tag first has
+      # it: the release tags' commits and trees, no history and no file contents (2 MB for 162
+      # releases). A failed fetch fails the job: a deploy must not call a released entry
+      # unreleased.
+      - name: The release tags
+        run: |
+          for i in 1 2 3; do
+            git fetch -q --depth=1 --filter=blob:none origin '+refs/tags/v*:refs/tags/v*' && exit 0
+            echo "the tags' fetch failed ($i of 3)"
+            sleep $((i * 10))
+          done
+          echo "::error::the release tags could not be fetched"
+          exit 1
+
       # the allow-list assembly; it fails on any public-safety finding
       - name: Build
         run: npm run build

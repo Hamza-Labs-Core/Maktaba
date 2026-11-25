@@ -422,3 +422,22 @@ func TestRestoreOfflineRefusedWhileAServerRuns(t *testing.T) {
 		t.Fatalf("with no server: ran %v, said %q", rig.inst.ran, out.String())
 	}
 }
+
+// A held update from a schema kept for the release before (#1605): putting its backup back
+// for that release carries whom the dump's schema was kept for, so that release starts on
+// it (the database step's restore records it kept, not db_ahead).
+func TestRestoreOfAHeldUpdateCarriesTheKeptSchema(t *testing.T) {
+	rig := newRestoreRig(t, map[string]int64{"pre-v0.2.0-to-v0.3.0.dump": 140})
+	dump := filepath.Join(rig.backups, "pre-v0.2.0-to-v0.3.0.dump")
+	if err := apppayload.WriteDatabase(rig.r.stateDir, apppayload.Database{Version: "0.3.0",
+		State: apppayload.DatabaseHeld, From: "0.2.0", Failed: "0.3.0", Dump: dump, DumpKeptFor: "0.2.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rig.r.restore(context.Background(), "pre-v0.2.0-to-v0.3.0.dump", "root", true, false); err != nil {
+		t.Fatal(err)
+	}
+	rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir)
+	if rec.State != apppayload.DatabaseRestoring || rec.By != "root" || rec.DumpKeptFor != "0.2.0" {
+		t.Fatalf("record %+v", rec)
+	}
+}
