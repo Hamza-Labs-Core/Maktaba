@@ -11,14 +11,14 @@ agent: claude-code
 ## What happened
 - #1653 took a topic out of the help index. The mockups drawn from it (`help.en.html`,
   `help.ar.html`) were not made again, and main's `unit / unit` failed on `mockups.test.mjs`, as
-  did each pull request that brought that main in. #1675 runs
+  did #1615's and #1628's with that main brought in. #1675 runs
   `node web/packages/website/design/mockups/make.mjs` and commits the two files.
 - A second pull request made the same two files (#1672, closed, with its trail pull request #1674).
 
 ## What we learned
 - The website's mockups are generated from the help index: a topic's change needs `make.mjs` run.
-- #1653's own checks were green: the check that the mockups are current ran only for changes under
-  the design folder (#1694 changes that).
+- #1653's own checks were green: the check that the mockups are current did not run for a change
+  of the help index (#1694 changes that).
 - A re-run of a failed job keeps the run's old merge commit, so a fix on main reaches an open pull
   request only with a new push.
 
@@ -29,4 +29,5 @@ agent: claude-code
 - Reading a cancelled run on main as a passing one.
 
 ## Open
-- The rendered PNGs of the two mockups still show the old number of topics; CI does not compare them.
+- The mockups' rendered PNGs date from 2026-11-11 and are not compared by CI: they can differ from
+  the HTML.
