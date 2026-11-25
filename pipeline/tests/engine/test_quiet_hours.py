@@ -9,11 +9,13 @@ import pytest
 
 from maktaba_pipeline.engine import quiet
 from maktaba_pipeline.engine.enqueue import enqueue_job
+from maktaba_pipeline.engine.graph import StageDef
 from maktaba_pipeline.engine.quiet import QuietHours, parse_window
+from maktaba_pipeline.engine.requeue import HEAL_PRIORITY
 from maktaba_pipeline.engine.sql import dumps, is_pg
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
-from tests.engine.toy import Recorder, drain, rows, setup
+from tests.engine.toy import Recorder, drain, rows, setup, toy_graph
 
 
 def test_window_parsing_and_math() -> None:
@@ -120,6 +122,7 @@ async def test_no_window_nothing_waits(db: Database, monkeypatch: pytest.MonkeyP
 class _Job:
     def __init__(self, stage: str, library_id: object = None, payload: object = None) -> None:
         self.stage, self.library_id, self.payload = stage, library_id, payload
+        self.priority = 100
 
 
 class _DB:
@@ -174,6 +177,35 @@ async def test_what_is_heavy() -> None:
         )
         == 0
     )
+
+
+# The healer's jobs (priority 950) are no backlog of new work: a new file does not wait for
+# the night behind them, and they wait themselves.
+@pytest.mark.asyncio
+async def test_a_healed_backlog_holds_no_new_file(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(quiet, "SPRITES_BACKLOG", 3)
+    graph = (StageDef("thumbnail", "T", ("video",), "cpu", "episodes", 1, 1), *toy_graph()[1:])
+    await setup(db, Recorder(), graph)
+    lib = await make_library(db)
+
+    async def queue(n: int, priority: int) -> None:
+        for _ in range(n):
+            v = await make_video(db, lib)
+            await enqueue_job(
+                db, subject_kind="video", subject_id=v, stage="thumbnail", priority=priority
+            )
+
+    q = QuietHours(60, 360)
+    new, healed = J("thumbnail"), J("thumbnail")
+    healed.priority = HEAL_PRIORITY
+    await queue(4, HEAL_PRIORITY)
+    await queue(1, 100)
+    assert not await quiet.is_heavy(db, new, q)
+    assert await quiet.is_heavy(db, healed, q)
+    await queue(3, 900)  # another backlog counts as before
+    assert await quiet.is_heavy(db, new, q)
 
 
 # Story 59.06: on the Light tier (MAKTABA_QUIET_SPEECH) speech runs in quiet hours only, a

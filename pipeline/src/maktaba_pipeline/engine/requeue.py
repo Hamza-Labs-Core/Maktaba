@@ -13,7 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from .enqueue import EnqueueResult, enqueue_job
-from .sql import uid
+from .sql import loads, uid
 
 __all__ = ["HEAL_PRIORITY", "requeue_failed", "requeue_stage"]
 
@@ -22,7 +22,8 @@ __all__ = ["HEAL_PRIORITY", "requeue_failed", "requeue_stage"]
 HEAL_PRIORITY = 950
 
 _LATEST_FAILED = """
-SELECT j.stage AS stage FROM processing_jobs j
+SELECT j.stage AS stage, j.payload AS payload, j.force_cascade AS force_cascade
+  FROM processing_jobs j
  WHERE j.subject_kind = 'video' AND j.subject_id = $1 AND j.state = 'failed'
    AND j.stage <> 'access_check'
    AND NOT EXISTS (SELECT 1 FROM processing_jobs n
@@ -33,15 +34,25 @@ SELECT j.stage AS stage FROM processing_jobs j
 
 
 async def requeue_failed(db: Any, video_id: UUID, why: str) -> list[str]:
-    """Queue again (forced) every stage whose latest job for the video failed."""
+    """Queue again (forced) every stage whose latest job for the video failed, each asked
+    what the failed job was asked."""
     relay = getattr(db, "engine_relay", None)
     if relay is not None:
         got = await relay.ask("requeue_failed", video_id=str(video_id), why=why)
         return [str(s) for s in got or []]
-    stages = [str(r["stage"]) for r in await db.fetch(_LATEST_FAILED, uid(video_id))]
-    for stage in stages:
-        await requeue_stage(db, video_id, stage, why)
-    return stages
+    rows = await db.fetch(_LATEST_FAILED, uid(video_id))
+    for r in rows:
+        await requeue_stage(db, video_id, str(r["stage"]), why, failed=r)
+    return [str(r["stage"]) for r in rows]
+
+
+def _asked(payload: Any) -> dict[str, Any] | None:
+    """A failed job's payload for the job that takes its place. ``run_now`` was an admin's
+    word about that job (it passes the quiet hours), not about this one."""
+    p = loads(payload)
+    if not isinstance(p, dict):
+        return None
+    return {k: v for k, v in p.items() if k != "run_now"} or None
 
 
 async def requeue_stage(
@@ -50,10 +61,12 @@ async def requeue_stage(
     stage: str,
     why: str,
     *,
+    failed: Any,
     force: bool = True,
     priority: int | None = None,
 ) -> EnqueueResult:
-    """Queue one stage of a video again."""
+    """Queue one stage of a video again, with the ``payload`` and ``force_cascade`` of the
+    job that ``failed`` (the API's Retry of a job carries its payload too)."""
     return await enqueue_job(
         db,
         subject_kind="video",
@@ -61,5 +74,7 @@ async def requeue_stage(
         stage=stage,
         priority=priority,
         force=force,
+        force_cascade=bool(failed["force_cascade"]),
+        payload=_asked(failed["payload"]),
         reason={"why": why, "by": "system"},
     )

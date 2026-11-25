@@ -15,18 +15,28 @@ import pytest
 
 from maktaba_pipeline.db.jobs import Job
 from maktaba_pipeline.engine import healer
+from maktaba_pipeline.engine.dispatch import EngineRuntime
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import Edge, Request, StageDef, StageResult
 from maktaba_pipeline.engine.healer import BATCH, HEAL_WHY, heal_due, heal_once
 from maktaba_pipeline.engine.paths import PathMap, set_active_path_map
-from maktaba_pipeline.engine.requeue import HEAL_PRIORITY
+from maktaba_pipeline.engine.requeue import HEAL_PRIORITY, requeue_failed, requeue_stage
 from maktaba_pipeline.engine.sql import is_pg, loads, now, parse_ts, to_ts
 from maktaba_pipeline.engine.watchers import watch_once
 from maktaba_pipeline.runtime import Database
 from tests.engine.factory import make_library, make_video
-from tests.engine.toy import Recorder, drain, rows, setup, toy_graph
+from tests.engine.toy import Recorder, drain, rows, toy_graph
+from tests.engine.toy import setup as toy_setup
 
 UP: dict[str, tuple[bool, str]] = {}
+
+
+async def setup(
+    db: Database, rec: Recorder, graph: tuple[StageDef, ...] | None = None
+) -> EngineRuntime:
+    """The toy graph and a second video stage, ``t_d``."""
+    more = StageDef("t_d", "D", ("video",), "cpu", "episodes", 2, 1)
+    return await toy_setup(db, rec, graph or (*toy_graph(), more))
 
 
 async def _library(db: Database, root: Path) -> UUID:
@@ -174,9 +184,190 @@ async def test_a_root_that_does_not_answer_says_nothing(
     root = f"dependency:share:{tmp_path.as_posix()}"
     assert await heal_once(db, {root: (False, "offline")}) == 0
     assert asked == []
-    assert _about(await _next_look(db, job), healer.AGAIN)
+    assert await _next_look(db, job) is None  # not touched: due as soon as the root answers
     monkeypatch.undo()
-    assert await heal_once(db, {root: (True, "answers")}, now() + timedelta(hours=2)) == 1
+    assert await heal_once(db, {root: (True, "answers")}) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_down_root_takes_no_place_of_the_others(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(healer, "BATCH", 3)
+    await setup(db, Recorder())
+    away = tmp_path / "Away"
+    lost = await _library(db, away)
+    for i in range(10):
+        await _fail(db, await make_video(db, lost, path=f"{away.as_posix()}/{i}.mp4"))
+    await _fail(
+        db,
+        await make_video(db, lost, path=f"{away.as_posix()}/db.mp4"),
+        "plugin_database:driver: bad connection",
+        "unknown",
+        stage="t_d",
+    )
+    here = tmp_path / "Away2"  # the down root's name is not a prefix of it
+    here.mkdir()
+    (here / "a.mp4").write_bytes(b"x")
+    v = await make_video(db, await _library(db, here), path=(here / "a.mp4").as_posix())
+    await _fail(db, v)
+    down = {f"dependency:share:{away.as_posix()}": (False, "offline")}
+    # the one that is there, and the one whose cause says nothing of the file
+    assert await heal_once(db, down) == 2
+    assert [str(r["subject_id"]) for r in await _pending(db)] == [str(v)]
+    assert len(await _pending(db, "t_d")) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_file_no_root_holds_is_not_said_to_be_gone(db: Database, tmp_path: Path) -> None:
+    """Roots and paths stored in two forms (smb:// and /Volumes): an unmounted share cannot
+    be told from a missing file."""
+    await setup(db, Recorder())
+    lib = await _library(db, tmp_path)
+    await db.execute(
+        "UPDATE libraries SET roots = $1 WHERE id = $2",
+        ["smb://nas/Media"] if is_pg(db) else json.dumps(["smb://nas/Media"]),
+        str(lib),
+    )
+    f = tmp_path / "a.mp4"
+    job = await _fail(db, await make_video(db, lib, path=f.as_posix()), ago=timedelta(days=60))
+    assert await heal_once(db, UP) == 0
+    assert _about(await _next_look(db, job), healer.UNSAID_MAX)
+    f.write_bytes(b"x")
+    assert await heal_once(db, UP, now() + timedelta(days=2)) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cascade", [True, False])
+async def test_the_job_is_asked_what_the_failed_one_was(
+    db: Database, tmp_path: Path, cascade: bool
+) -> None:
+    await setup(db, Recorder())
+    lib = await _library(db, tmp_path)
+    (tmp_path / "a.mp4").write_bytes(b"x")
+
+    async def ask(stage: str) -> UUID:
+        v = await make_video(db, lib, path=(tmp_path / f"{stage}.mp4").as_posix())
+        (tmp_path / f"{stage}.mp4").write_bytes(b"x")
+        res = await enqueue_job(
+            db,
+            subject_kind="video",
+            subject_id=v,
+            stage=stage,
+            force_cascade=cascade,
+            payload={"seasons": ["s1"], "run_now": True},
+        )
+        assert res.job_id is not None
+        await _end(db, res.job_id)
+        return v
+
+    await ask("t_a")
+    assert await heal_once(db, UP) == 1
+    (job,) = await _pending(db)
+    # run_now passes the quiet hours: an admin said it of that job
+    assert loads(job["payload"]) == {"seasons": ["s1"]}
+    assert bool(job["force_cascade"]) is cascade
+    # a scan's and an access check's requeue too
+    assert await requeue_failed(db, await ask("t_d"), "why") == ["t_d"]
+    (job,) = await _pending(db, "t_d")
+    assert loads(job["payload"]) == {"seasons": ["s1"]}
+    assert bool(job["force_cascade"]) is cascade
+
+
+@pytest.mark.asyncio
+async def test_one_row_that_cannot_be_queued_does_not_stop_the_others(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await setup(db, Recorder())
+    lib = await _library(db, tmp_path)
+    jobs: dict[str, int] = {}
+    for n in ("a", "b", "c"):
+        (tmp_path / f"{n}.mp4").write_bytes(b"x")
+        v = await make_video(db, lib, path=(tmp_path / f"{n}.mp4").as_posix())
+        jobs[str(v)] = await _fail(db, v)
+    bad = list(jobs)[1]
+    real = requeue_stage
+
+    async def refuses(db_: Any, vid: UUID, *a: Any, **kw: Any) -> Any:
+        if str(vid) == bad:
+            raise RuntimeError("no")
+        return await real(db_, vid, *a, **kw)
+
+    monkeypatch.setattr(healer, "requeue_stage", refuses)
+    assert await heal_once(db, UP) == 2
+    assert _about(await _next_look(db, jobs[bad]), healer.UNSAID_MAX)
+
+
+@pytest.mark.asyncio
+async def test_a_retired_stage_stays_as_it_is(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await setup(db, Recorder())
+    v = await make_video(db, await _library(db, tmp_path), path=(tmp_path / "a.mp4").as_posix())
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    await _fail(db, v)
+    with monkeypatch.context() as m:
+        m.setattr(healer, "RETIRED_STAGES", frozenset({"t_a"}))
+        assert await heal_once(db, UP) == 0
+    assert await heal_once(db, UP) == 1
+
+
+@pytest.mark.asyncio
+async def test_one_slow_folder_puts_off_no_other(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await setup(db, Recorder())
+    lib = await _library(db, tmp_path)
+    job: dict[str, int] = {}
+    for n in ("slow/1", "slow/2", "well/1"):
+        path = f"{tmp_path.as_posix()}/{n}.mp4"
+        job[n] = await _fail(db, await make_video(db, lib, path=path))
+    lost = await make_video(db, lib)
+    cause = "plugin_database:driver: bad connection"
+    answer = threading.Event()
+
+    def look(path: str) -> bool:
+        if "/slow/" in path:
+            answer.wait(10)
+        return True
+
+    monkeypatch.setattr(healer, "_exists", look)
+    monkeypatch.setattr(healer, "LOOK_S", 0.05)
+    assert await heal_once(db, UP) == 0
+    for n in ("slow/1", "slow/2"):
+        assert _about(await _next_look(db, job[n]), healer.AGAIN)
+    assert await _next_look(db, job["well/1"]) is None
+    # while the look hangs the database's causes go on, the files wait
+    await _fail(db, lost, cause, "unknown")
+    assert await heal_once(db, UP) == 1
+    assert [str(r["subject_id"]) for r in await _pending(db)] == [str(lost)]
+    answer.set()
+    for _ in range(100):
+        if not healer._looking.is_set():  # noqa: SLF001
+            break
+        await asyncio.sleep(0.02)
+    assert await heal_once(db, UP) == 1
+
+
+@pytest.mark.asyncio
+async def test_sqlite_reads_the_failed_jobs_only(
+    db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if is_pg(db):
+        pytest.skip("SQLite's planner")
+    asked: list[tuple[str, tuple[Any, ...]]] = []
+    real = db.fetch
+
+    async def fetch(sql: str, *args: Any) -> Any:
+        asked.append((sql, args))
+        return await real(sql, *args)
+
+    monkeypatch.setattr(db, "fetch", fetch)
+    await heal_once(db, UP)
+    sql, args = next(a for a in asked if "by_database" in a[0])
+    plan = [str(r["detail"]) for r in await real("EXPLAIN QUERY PLAN " + sql, *args)]
+    (first,) = [d for d in plan if d.startswith(("SEARCH j ", "SCAN j"))]
+    assert "(state=?)" in first, plan
 
 
 @pytest.mark.asyncio

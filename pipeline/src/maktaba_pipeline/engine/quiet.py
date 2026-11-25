@@ -27,6 +27,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ..db.jobs import Job
+from .requeue import HEAL_PRIORITY
 from .sql import is_pg, loads
 
 __all__ = [
@@ -125,11 +126,17 @@ def _now() -> datetime:
     return datetime.now().astimezone()
 
 
-async def _count_waiting(db: Any, stage: str) -> int:
+async def _count_waiting(db: Any, job: Job) -> int:
+    """The stage's jobs still to run. The healer's (engine/healer.py) are no backlog of new
+    work: they are counted for one of their own only, so a new file does not wait for the
+    night behind them, and they do."""
     row = await db.fetchrow(
         "SELECT count(*) AS n FROM processing_jobs WHERE stage = $1"
-        " AND state IN ('pending', 'paused', 'claimed', 'running')",
-        stage,
+        " AND state IN ('pending', 'paused', 'claimed', 'running')"
+        " AND (priority < $2 OR $2 <= $3)",
+        str(job.stage),
+        HEAL_PRIORITY,
+        job.priority,
     )
     return int(row["n"]) if row is not None else 0
 
@@ -159,9 +166,9 @@ async def is_heavy(db: Any, job: Job, quiet: QuietHours) -> bool:
     if stage == "scan":
         return await _first_scan(db, job)
     if stage == "transcribe":
-        return quiet.speech or await _count_waiting(db, stage) > TRANSCRIBE_BACKLOG
+        return quiet.speech or await _count_waiting(db, job) > TRANSCRIBE_BACKLOG
     if stage == "thumbnail":
-        return quiet.sprites or await _count_waiting(db, stage) > SPRITES_BACKLOG
+        return quiet.sprites or await _count_waiting(db, job) > SPRITES_BACKLOG
     return False
 
 
