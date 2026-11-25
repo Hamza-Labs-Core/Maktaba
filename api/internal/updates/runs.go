@@ -107,11 +107,15 @@ type RunDetail struct {
 	PriorDrain  map[string]bool `json:"prior_drain,omitempty"`
 	HomeDrained bool            `json:"home_drained,omitempty"`
 	DrainSince  *time.Time      `json:"drain_since,omitempty"`
-	// Waiting is the gate the run waits at (outside_window, tv_busy, tv_swapping).
+	// Waiting is the gate the run waits at (outside_window, tv_busy, tv_swapping,
+	// machine_copying).
 	Waiting string `json:"waiting,omitempty"`
 	// TVSwapSince is when the restart began to wait for a TV change that swaps
 	// (Driver.tvSwapWait: at most TVSwapWait).
 	TVSwapSince *time.Time `json:"tv_swap_since,omitempty"`
+	// CopySince is when the restart first saw a machine's copy (Driver.copyWait: CopyWait
+	// from then at most).
+	CopySince *time.Time `json:"copy_since,omitempty"`
 	// Home is the home supervisor's last report.
 	Home *MachineStatus `json:"home,omitempty"`
 	// Targets restricts a run to these machines (catch_up, retry); empty: every one.

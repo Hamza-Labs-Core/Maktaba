@@ -57,15 +57,6 @@ func TestPausedCopiesInHBA(t *testing.T) {
 	}
 }
 
-// Only table syncs that stream now are counted: a slot left behind is permanent.
-func TestTableSyncsSQL(t *testing.T) {
-	for _, want := range []string{`'^pg_[0-9]+_sync_[0-9]+_[0-9]+$'`, "'" + AppDatabase + "'", " active "} {
-		if !strings.Contains(TableSyncsSQL, want) {
-			t.Errorf("table syncs lack %q: %s", want, TableSyncsSQL)
-		}
-	}
-}
-
 // pg_hba.conf has several writers at once (the machines' reach, a switch's freeze, the copies'
 // pause): none renames, or reads, what another is writing.
 func TestHBAWritersOneAtATime(t *testing.T) {

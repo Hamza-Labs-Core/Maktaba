@@ -136,8 +136,17 @@ function useWords() {
     const words = code(c);
     return words === t("updates.page.failedCheck", { code: c }) ? c.replace(/_/g, " ") : words;
   };
+  /** Why an action was refused: its code's words (a blocker's as a scheduled run's that
+   * waits), else what the server said. */
+  const refusal = (e: unknown) => {
+    if (!(e instanceof ApiError)) return t("common.error");
+    const c = e.problem.code ?? "";
+    if (has(`updates.blocker.${c}`)) return t("update.blocked", { reason: word("blocker", c) });
+    return has(`updates.refused.${c}`) ? t(`updates.refused.${c}`) : e.message;
+  };
   return {
     t,
+    refusal,
     state,
     step,
     code,
@@ -317,7 +326,7 @@ export function AdminUpdates() {
       toast.show({ tone: "success", message: done });
       await load();
     } catch (e) {
-      toast.show({ tone: "error", message: e instanceof ApiError ? e.message : t("common.error") });
+      toast.show({ tone: "error", message: w.refusal(e) });
     } finally {
       setBusy(false);
     }

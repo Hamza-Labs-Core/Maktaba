@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,13 +17,9 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/testport"
 )
 
-// The pause of the machines' copies on a real server: only the machines' own replication
-// roles (maktaba_rep_*) are kept out, never the app role (a member of the group too: the
-// auto-update e2e's migrations could not log in when it was paused); their sessions are
-// ended, and they may not log in until resumed whatever their roles are given meanwhile.
-//
-// Opt-in: MAKTABA_TEST_PG_BIN, a Postgres 16 install.
-func TestCopiesPauseOnARealServer(t *testing.T) {
+// pauseServer is a home's bundled Postgres, running (MAKTABA_TEST_PG_BIN).
+func pauseServer(t *testing.T) (Bundle, Querier) {
+	t.Helper()
 	home := os.Getenv("MAKTABA_TEST_PG_BIN")
 	if home == "" {
 		t.Skip("MAKTABA_TEST_PG_BIN unset (a Postgres 16 install)")
@@ -60,6 +58,19 @@ func TestCopiesPauseOnARealServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return b, q
+}
+
+// The pause of the machines' copies on a real server: only the machines' own replication
+// roles (maktaba_rep_*) are kept out, never the app role (a member of the group too: the
+// auto-update e2e's migrations could not log in when it was paused); their sessions are
+// ended, and they may not log in until resumed whatever their roles are given meanwhile.
+//
+// Opt-in: MAKTABA_TEST_PG_BIN, a Postgres 16 install.
+func TestCopiesPauseOnARealServer(t *testing.T) {
+	ctx := context.Background()
+	b, q := pauseServer(t)
+	port := b.Port
 	const rep, other, pw = "maktaba_rep_0123456789abcdef0123456789abcdef", "maktaba_rep_ffffffffffffffffffffffffffffffff", "pause-test-pw"
 	for _, s := range []string{
 		`DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '` + ReplicaGroup + `') THEN
@@ -158,48 +169,147 @@ func TestCopiesPauseOnARealServer(t *testing.T) {
 	if _, err := b.PauseCopies(gone); err == nil {
 		t.Fatal("a pause of no server")
 	}
-	// table syncs: an active slot counts, one left behind does not
-	const sync = "pg_16999_sync_16384_7300000000000000003"
-	if n, err := b.TableSyncs(ctx); err != nil || n != 0 {
-		t.Fatalf("table syncs %d %v", n, err)
-	}
-	if err := q.Exec(ctx, AppDatabase, `SELECT pg_create_logical_replication_slot('`+sync+`', 'pgoutput')`); err != nil {
+}
+
+// apiSQL is a query of the API's own (a raw string constant of its source).
+func apiSQL(t *testing.T, file, name string) string {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "api", filepath.FromSlash(file)))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if n, err := b.TableSyncs(ctx); err != nil || n != 0 {
-		t.Fatalf("a slot left behind: %d %v", n, err)
+	m := regexp.MustCompile("(?s)const " + name + " = `([^`]+)`").FindSubmatch(src)
+	if m == nil {
+		t.Fatalf("%s has no %s", file, name)
 	}
-	_ = q.Exec(ctx, AppDatabase, `SELECT pg_drop_replication_slot('`+sync+`')`)
-	// a slot being made (it waits for the transactions under way) is active
+	return string(m[1])
+}
+
+// What the home's updates look for before a restart (api/internal/updates, runningCopies) is a
+// machine's copy of a table as logical replication makes it: a subscription's table sync in its
+// COPY, whose slot is not active meanwhile. Seen by the app role and by a role with no rights on
+// others' sessions; a sync of a machine that went away in the middle leaves its slot and is none.
+//
+// The machine is another database of the same server.
+func TestAMachinesCopyIsSeenWhileItCopies(t *testing.T) {
+	ctx := context.Background()
+	b, q := pauseServer(t)
+	running := apiSQL(t, "internal/updates/scheduler.go", "runningCopies")
+	const rep, plain, pw, machine = "maktaba_rep_0123456789abcdef0123456789abcdef", "plain_app", "copy-test-pw", "machine"
+	do := func(db, s string) {
+		t.Helper()
+		if err := q.Exec(ctx, db, s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	one := func(db, s string) string {
+		t.Helper()
+		rows, err := q.Query(ctx, db, s)
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("%s: %v %v", s, rows, err)
+		}
+		return strings.TrimSpace(rows[0])
+	}
+	open := func(dsn string) *sql.DB {
+		t.Helper()
+		db, err := sql.Open("postgres", dsn)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		return db
+	}
+	login := func(role, db string) string {
+		return fmt.Sprintf("host=127.0.0.1 port=%d user=%s password=%s dbname=%s sslmode=disable connect_timeout=5", b.Port, role, pw, db)
+	}
+	do("postgres", `CREATE DATABASE `+machine)
+	do(AppDatabase, `CREATE ROLE `+rep+` LOGIN REPLICATION PASSWORD '`+pw+`'`)
+	do(AppDatabase, `CREATE ROLE `+plain+` LOGIN PASSWORD '`+pw+`'`)
+	do(AppDatabase, `GRANT CONNECT ON DATABASE `+AppDatabase+` TO `+rep+`, `+plain)
+	appURL, err := b.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	asApp, asPlain := open(appURL), open(login(plain, AppDatabase))
+	seen := func() int {
+		t.Helper()
+		var n, m int
+		if err := asApp.QueryRow(running).Scan(&n); err != nil {
+			t.Fatalf("the app role: %v", err)
+		}
+		if err := asPlain.QueryRow(running).Scan(&m); err != nil {
+			t.Fatalf("a role with no rights: %v", err)
+		}
+		return min(n, m)
+	}
+	// tables too large for the sockets' buffers, which the machine stops taking in
+	for _, tbl := range []string{"one", "two"} {
+		do(AppDatabase, `CREATE TABLE public.`+tbl+` (id int PRIMARY KEY, v text)`)
+		do(AppDatabase, `INSERT INTO public.`+tbl+` SELECT i, repeat(md5(i::text), 40) FROM generate_series(1, 40000) i`)
+		do(AppDatabase, `GRANT SELECT ON public.`+tbl+` TO `+rep)
+		do(machine, `CREATE TABLE public.`+tbl+` (id int PRIMARY KEY, v text)`)
+	}
+	do(machine, `CREATE FUNCTION public.hold() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(7); RETURN NEW; END $$`)
+	for _, tbl := range []string{"one", "two"} {
+		do(machine, `CREATE TRIGGER hold BEFORE INSERT ON public.`+tbl+` FOR EACH ROW EXECUTE FUNCTION public.hold()`)
+		do(machine, `ALTER TABLE public.`+tbl+` ENABLE ALWAYS TRIGGER hold`)
+	}
 	super, err := b.SuperURL()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sdb, err := sql.Open("postgres", super)
+	machineURL, err := url.Parse(super)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sdb.Close()
-	tx, err := sdb.Begin()
-	if err != nil {
-		t.Fatal(err)
+	machineURL.Path = "/" + machine
+	gate := open(machineURL.String())
+	gate.SetMaxOpenConns(1)
+	stop := func(on string) {
+		t.Helper()
+		if _, err := gate.Exec(`SELECT pg_advisory_` + on + `(7)`); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := tx.Exec(`SELECT pg_current_xact_id()`); err != nil {
-		t.Fatal(err)
+	wait := func(what string, ok func() bool) {
+		t.Helper()
+		if err := until(ctx, 60*time.Second, func() (bool, error) { return ok(), nil }); err != nil {
+			t.Fatalf("%s: %v (slots %s)", what, err,
+				one("postgres", `SELECT coalesce(string_agg(slot_name || ' ' || active, ', '), '') FROM pg_replication_slots`))
+		}
 	}
-	made := make(chan error, 1)
-	go func() {
-		made <- q.Exec(ctx, AppDatabase, `SELECT pg_create_logical_replication_slot('`+sync+`', 'pgoutput')`)
-	}()
-	if err := until(ctx, 20*time.Second, func() (bool, error) {
-		n, err := b.TableSyncs(ctx)
-		return n == 1, err
-	}); err != nil {
-		t.Fatalf("an active table sync is not counted: %v", err)
+	const syncSlots = `SELECT count(*) || ' ' || count(*) FILTER (WHERE active) FROM pg_replication_slots WHERE slot_name ~ '^pg_[0-9]+_sync_'`
+	if n := seen(); n != 0 {
+		t.Fatalf("%d copies before there is one", n)
 	}
-	_ = tx.Rollback()
-	if err := <-made; err != nil {
-		t.Fatal(err)
+	stop("lock")
+	do(AppDatabase, `CREATE PUBLICATION p FOR TABLE public.one`)
+	do(AppDatabase, `SELECT pg_create_logical_replication_slot('m', 'pgoutput')`)
+	do(machine, `CREATE SUBSCRIPTION m CONNECTION '`+login(rep, AppDatabase)+`' PUBLICATION p WITH (create_slot = false, slot_name = 'm')`)
+	wait("a machine's copy is not seen", func() bool { return seen() == 1 })
+	// what the slots say of it: nothing
+	wait("the table sync's slot", func() bool { return one("postgres", syncSlots) == "1 0" })
+	if n := seen(); n != 1 {
+		t.Fatalf("%d copies while one runs", n)
 	}
-	_ = q.Exec(ctx, AppDatabase, `SELECT pg_drop_replication_slot('`+sync+`')`)
+	stop("unlock")
+	wait("the copy's end", func() bool {
+		return seen() == 0 && one(machine, `SELECT count(*) FROM public.one`) == "40000" && one("postgres", syncSlots) == "0 0"
+	})
+	// following, its walsender streams: no copy
+	if n := one("postgres", `SELECT count(*) FROM pg_stat_replication WHERE usename = '`+rep+`'`); n != "1" {
+		t.Fatalf("%s walsenders follow, want 1", n)
+	}
+	// a machine gone in the middle of the next table
+	stop("lock")
+	do(AppDatabase, `ALTER PUBLICATION p ADD TABLE public.two`)
+	do(machine, `ALTER SUBSCRIPTION m REFRESH PUBLICATION`)
+	wait("the second table's copy is not seen", func() bool { return seen() == 1 })
+	do(machine, `ALTER SUBSCRIPTION m DISABLE`)
+	// (the disabled subscription's worker under way in its COPY goes on: end it, as a machine's end does)
+	do(machine, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '`+machine+`' AND backend_type LIKE 'logical replication%'`)
+	wait("a machine that went away", func() bool { return seen() == 0 })
+	if s := one("postgres", syncSlots); s != "1 0" {
+		t.Fatalf("the table sync's slots (all, active): %s, want the one left behind", s)
+	}
 }

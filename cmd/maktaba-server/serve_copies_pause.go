@@ -16,11 +16,14 @@ import (
 )
 
 // The machines' copies during an update's migrations (pgbundle/copies_pause.go): the
-// database step waits for their table syncs to end, then keeps them out (pg_hba.conf, their
-// sessions ended) until the schema is settled. Research item 5 (E4, E8): on 2026-11-23 the
-// migrations ended 25 to 28 sessions a try, and the machines reconnected at once; a table
-// sync's walsender ended mid-COPY makes its machine copy that table again, and its snapshot
-// was what the index builds waited on.
+// database step keeps them out (pg_hba.conf, their sessions ended) until the schema is
+// settled. Research item 5 (E4, E8): on 2026-11-23 the migrations ended 25 to 28 sessions a
+// try, and the machines reconnected at once; a table sync's walsender holds one snapshot for
+// its whole COPY, which was what the index builds waited on.
+//
+// It waits for no COPY: the restart that began this release ended them all, and what runs by
+// now began again with the server, seconds ago. The wait is where it can spare a machine its
+// copy: before the restart, in the home that updates (api/internal/updates, Driver.copyWait).
 //
 // The copies come back when the database's record says the schema is settled (schemaSettled):
 // the migrations ran, or failed and were kept or undone, or a restore a person asked for is
@@ -31,22 +34,12 @@ import (
 
 // The bundled Postgres's side (tests replace them).
 var (
-	tableSyncsBundled   = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.TableSyncs(ctx) }
 	pauseCopiesBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.PauseCopies(ctx) }
 	resumeCopiesBundled = func(ctx context.Context, b pgbundle.Bundle) error { return b.ResumeCopies(ctx) }
 	copiesPausedBundled = func(b pgbundle.Bundle) bool { return b.CopiesPaused() }
 )
 
-// copySyncWait is how long the migrations wait for the machines' table syncs to end
-// before they pause the copies all the same (that machine copies its table again), and
-// copySyncEvery how often they look.
-var (
-	copySyncWait  = 10 * time.Minute
-	copySyncEvery = 5 * time.Second
-)
-
-// pauseCopies waits (wait at most, whatever the server does) for the machines' table syncs
-// to end, then keeps their copies out. Only the bundled Postgres's copies (an operator's
+// pauseCopies keeps the machines' copies out. Only the bundled Postgres's copies (an operator's
 // keeps none unless allowed, and its pg_hba.conf is the operator's).
 //
 // When they cannot be kept out, that is said at level=error and the migrations run all the
@@ -55,18 +48,11 @@ var (
 // on no snapshot), and the lock timeout bounds the rest. An update that could not start for
 // want of the pause would keep a home off its security fixes over a machine's copy, which
 // is made anew at worst.
-func (g *migrationGate) pauseCopies(ctx context.Context, wait time.Duration) {
-	if g.pg == nil {
+func (g *migrationGate) pauseCopies(ctx context.Context) {
+	if g.pg == nil || ctx.Err() != nil {
 		return
 	}
-	b := *g.pg
-	if wait > 0 {
-		g.waitTableSyncs(ctx, b, wait)
-	}
-	if ctx.Err() != nil {
-		return
-	}
-	ended, err := pauseCopiesBundled(ctx, b)
+	ended, err := pauseCopiesBundled(ctx, *g.pg)
 	if err != nil {
 		if ctx.Err() == nil {
 			fmt.Fprintf(g.log, "[serve] level=error the machines' copies could not be paused: they may come back while "+
@@ -76,40 +62,6 @@ func (g *migrationGate) pauseCopies(ctx context.Context, wait time.Duration) {
 	}
 	fmt.Fprintf(g.log, "[serve] the machines' copies are paused until the schema is settled (%d of their sessions "+
 		"ended): they go on from where they stopped\n", ended)
-}
-
-func (g *migrationGate) waitTableSyncs(ctx context.Context, b pgbundle.Bundle, wait time.Duration) {
-	wctx, cancel := context.WithTimeout(ctx, wait)
-	defer cancel()
-	start, told := time.Now(), 0
-	for {
-		n, err := tableSyncsBundled(wctx, b)
-		switch {
-		case ctx.Err() != nil:
-			return
-		case wctx.Err() != nil:
-			fmt.Fprintf(g.log, "[serve] level=warn %d of the machines' table syncs still run (%s waited): the copies are "+
-				"paused all the same, and those machines copy those tables again\n", told, wait)
-			return
-		case err != nil:
-			fmt.Fprintf(g.log, "[serve] level=warn the machines' table syncs cannot be counted before the migrations: %v\n", err)
-			return
-		case n == 0:
-			if told > 0 {
-				fmt.Fprintf(g.log, "[serve] the machines' table syncs ended (%s): the migrations go on\n",
-					time.Since(start).Round(time.Second))
-			}
-			return
-		case told == 0:
-			fmt.Fprintf(g.log, "[serve] %d of the machines' table syncs run (a machine copying the database): the "+
-				"migrations wait for them to end (at most %s)\n", n, wait)
-		}
-		told = n
-		select {
-		case <-wctx.Done():
-		case <-time.After(copySyncEvery):
-		}
-	}
 }
 
 // downFailedPath says a rollback's Down script failed on the database: its schema is part way,

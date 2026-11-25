@@ -1104,7 +1104,7 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	case apppayload.DatabaseMigrating, apppayload.DatabaseRestoring, apppayload.DatabaseHeld:
 		// a schema part way (migrations cut short, a restore not done, a held update): the
 		// machines' copies wait until it is settled
-		g.pauseCopies(ctx, 0)
+		g.pauseCopies(ctx)
 	}
 	// a start of another release that never finished (stopped during its dump, or the
 	// launcher went back from it) ends failed: this start is cur's
@@ -1255,10 +1255,9 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	}
 	migStart := time.Now()
 	if migrating {
-		// the machines' copies wait out their table syncs, then pause until the schema is
-		// settled: the migrations done, or undone (their Down scripts, backWithoutDump, wait
+		// the machines' copies pause until the schema is settled: the migrations done, or undone (their Down scripts, backWithoutDump, wait
 		// on the same locks), or a person's choice on a held update carried out (run)
-		g.pauseCopies(ctx, copySyncWait)
+		g.pauseCopies(ctx)
 	}
 	err = g.migrate(ctx, cur, migrating, report)
 	if err == nil && migrating {
