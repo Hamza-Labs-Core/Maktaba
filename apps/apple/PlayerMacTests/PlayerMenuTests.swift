@@ -71,6 +71,47 @@ import Testing
         #expect(!MacFullScreen.canFullScreen(panel))
     }
 
+    /// What View's full-screen item says and does follows its window (FR-43): Exit while it is full
+    /// screen, and choosing it asks the window to leave or enter. The UI test reads the item itself
+    /// and uses its key: in full screen macOS hides the menu bar.
+    @Test func fullScreenFollowsItsWindowAndTogglesIt() {
+        let full = MacFullScreen.shared
+        let was = full.window
+        let window = FullScreenWindow(contentRect: .init(x: 0, y: 0, width: 400, height: 300),
+                                      styleMask: [.titled, .resizable], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        defer {
+            full.window = was
+            full.refresh()
+        }
+        full.window = { window }
+        full.refresh()
+        #expect(!full.isFullScreen)
+        full.toggle()
+        #expect(window.toggles == 1, "asked to enter")
+
+        window.isFull = true
+        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: window)
+        #expect(full.isFullScreen, "Exit, once the window is full screen")
+        full.toggle()
+        #expect(window.toggles == 2, "asked to leave")
+
+        window.isFull = false
+        NotificationCenter.default.post(name: NSWindow.didExitFullScreenNotification, object: window)
+        #expect(!full.isFullScreen, "Enter again, once it has left")
+    }
+
+    /// A window that says it is full screen when told to, and counts what it is asked.
+    private final class FullScreenWindow: NSWindow {
+        var isFull = false
+        private(set) var toggles = 0
+        override var styleMask: NSWindow.StyleMask {
+            get { isFull ? super.styleMask.union(.fullScreen) : super.styleMask }
+            set { super.styleMask = newValue }
+        }
+        override func toggleFullScreen(_ sender: Any?) { toggles += 1 }
+    }
+
     static func menu(_ title: String) throws -> NSMenu {
         let menu = try #require(NSApp.mainMenu?.item(withTitle: title)?.submenu, "the \(title) menu")
         menu.update()
