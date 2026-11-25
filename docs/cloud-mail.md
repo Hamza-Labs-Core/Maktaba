@@ -72,7 +72,8 @@ driver to `resend` when there is a key **and** the target's `MAIL_ALLOW` says wh
 write to (`everyone`, or a list). Without either the driver stays `log`, and the deploy says so. A
 deploy after the secret is removed takes the key off the node.
 
-- **Production**: `MAIL_ALLOW=everyone`.
+- **Production**: `MAIL_ALLOW=everyone`. Like every deployment that sends, it never mails a name
+  nobody has (`example.com`, `.test`, `.invalid`…): its smoke test's accounts are such.
 - **QA** writes only to `@maktaba.tv` and Resend's own test inboxes, with `[QA]` in the subject. Its
   tests' accounts (`ci-e2e-*@example.com`) are not on the list: the tests confirm them with
   `cloud-ops.py verify-email`, and fail if QA sends with no list.
@@ -126,7 +127,7 @@ an address on its list. Then look at the received mail's headers: `dkim=pass` fo
 | `429 daily_quota_exceeded`, `monthly_quota_exceeded` | the plan is spent (above) |
 | `422 …` (`mail_failed`) | that one mail is refused; it is not tried again |
 | state `limited` | too many of one kind to one address |
-| state `suppressed` | the recipient is not on this node's list (QA) |
+| state `suppressed` | the recipient is not on this node's list (QA), or its domain can belong to nobody (`example.com`) |
 | state `failed`, `unreadable` | the token secret changed while the mail waited |
 
 Not built: Resend's bounce and complaint webhook

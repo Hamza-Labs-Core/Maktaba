@@ -40,8 +40,8 @@ type Mailer interface {
 	Send(ctx context.Context, m Message) error
 }
 
-// ErrSuppressed: this deployment may not mail the recipient (Guard).
-var ErrSuppressed = errors.New("mail: the recipient is not on this deployment's list")
+// ErrSuppressed: this deployment does not mail the recipient (Guard).
+var ErrSuppressed = errors.New("mail: this deployment does not mail the recipient")
 
 // LogMailer writes each message to the logger. Development and test
 // deployments use it; the link in the body is what a user would click.

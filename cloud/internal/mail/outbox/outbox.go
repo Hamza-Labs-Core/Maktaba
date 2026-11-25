@@ -577,7 +577,7 @@ func (o *Outbox) SendOne(ctx context.Context) (bool, error) {
 		log.Info("mail: sent", "event", "mail_sent")
 		return true, finish(keepCtx, o.DB, c.id, StateSent, "", now)
 	case errors.Is(err, mail.ErrSuppressed):
-		log.Info("mail: not sent, the recipient is not on this deployment's list", "event", "mail_suppressed")
+		log.Info("mail: not sent, this deployment does not mail the recipient", "event", "mail_suppressed")
 		return true, finish(keepCtx, o.DB, c.id, StateSuppressed, "", now)
 	case ctx.Err() != nil:
 		// stopping: the next process sends it, with the same idempotency key

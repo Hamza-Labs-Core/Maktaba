@@ -22,7 +22,7 @@ func mailDriver(cfg config.Config, logger *slog.Logger, fake mailpkg.Mailer) mai
 	case cfg.Mail.Delivers():
 		m = mailpkg.NewResend(cfg.Mail.ResendKey, cfg.Mail.From, cfg.Mail.ReplyTo, 0)
 	}
-	return mailpkg.Guard{Next: m, Allow: cfg.Mail.AllowRecipients, Prefix: cfg.Mail.SubjectPrefix}
+	return mailpkg.Guard{Next: m, Allow: cfg.Mail.AllowRecipients, NoReserved: cfg.Mail.Delivers(), Prefix: cfg.Mail.SubjectPrefix}
 }
 
 // mailOutbox is the outbox over the configured driver. The limits are a sending deployment's;

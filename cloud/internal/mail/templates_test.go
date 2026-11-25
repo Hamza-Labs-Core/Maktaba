@@ -123,6 +123,16 @@ func TestGuard(t *testing.T) {
 	if rec.Sent[3].Subject != "S" {
 		t.Errorf("%+v", rec.Sent[3])
 	}
+	// a name nobody has is never mailed, on a list or not
+	for to, ok := range map[string]bool{"ci-e2e-1@example.com": false, "a@EXAMPLE.org": false, "a@sub.example.net": false, "a@x.test": false,
+		"a@x.invalid": false, "a@localhost": false, "a@example.com.": false, "a@myexample.com": true, "a@example.company": true, "a@maktaba.tv": true} {
+		if (Guard{Next: rec, NoReserved: true}).Allows(to) != ok {
+			t.Errorf("reserved: %s", to)
+		}
+	}
+	if (Guard{Allow: []string{"@example.com"}, NoReserved: true}).Allows("a@example.com") {
+		t.Error("a list gives a name to nobody")
+	}
 	for e, ok := range map[string]bool{"a@example.test": true, "@example.test": true, "example.test": false, "@": false, "": false, "X <a@b.test>": false} {
 		if (ParseAllow(e) == nil) != ok {
 			t.Errorf("ParseAllow(%q)", e)
