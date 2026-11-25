@@ -22,7 +22,8 @@
 #   renew ID      the deploy is still being worked on (below)
 #   watch         a timer, each minute: a deploy nobody is working on any more goes back
 #   boot          the stack's unit asks before it starts: a node that rebooted during a deploy
-#                 restores first; a held node, or one a command is at work on, is not started
+#                 restores first; a held node, one whose only deploys failed, or one a command is at
+#                 work on, is not started
 #   unhold        a person decided: the node is as it is now, deploys may go on
 #   status        prints what is pending or held
 #
@@ -94,22 +95,27 @@ stop_all() {
 	return 1
 }
 
-# the migrations the database records, one a line, in the order they were applied
-applied() { # applied COMPOSE(dc|saved) ENVFILE
+psql_as() { # psql_as COMPOSE(dc|saved) ENVFILE SQL
 	local u d
 	u="$(grep -E '^POSTGRES_USER=' "$2" | sed -n 1p | cut -d= -f2-)"; d="$(grep -E '^POSTGRES_DB=' "$2" | sed -n 1p | cut -d= -f2-)"
-	"$1" exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "${u:-maktaba}" -d "${d:-maktaba}" -c \
-		"SELECT CASE WHEN to_regclass('goose_db_version') IS NULL THEN '' ELSE (SELECT coalesce(string_agg(version_id::text, E'\n' ORDER BY id), '') FROM goose_db_version WHERE is_applied AND version_id > 0) END" \
-		</dev/null | sed '/^$/d'
+	"$1" exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "${u:-maktaba}" -d "${d:-maktaba}" -c "$3" </dev/null
 }
 
+# the migrations the database records, one a line, in the order they were applied
+applied() { # applied COMPOSE(dc|saved) ENVFILE
+	psql_as "$1" "$2" \
+		"SELECT CASE WHEN to_regclass('goose_db_version') IS NULL THEN '' ELSE (SELECT coalesce(string_agg(version_id::text, E'\n' ORDER BY id), '') FROM goose_db_version WHERE is_applied AND version_id > 0) END" |
+		sed '/^$/d'
+}
+
+has_database() { docker volume inspect "${PROJECT}_pg_data" >/dev/null 2>&1; }
 # a first deploy has nothing to go back to: no database was ever made here, or the only deploys
-# there were failed as first ones. Anything else (a node set up by hand, one a person unheld) has a
-# set worth saving, whether or not it serves at this moment.
+# there were failed as first ones and nothing serves. Anything else (a node set up by hand, one a
+# person unheld or started) has a set worth saving, whether or not it serves at this moment.
 first_deploy() {
 	[ ! -f "$STATE/committed" ] || return 1
-	[ ! -f "$STATE/no-release" ] || return 0
-	! docker volume inspect "${PROJECT}_pg_data" >/dev/null 2>&1
+	if [ -f "$STATE/no-release" ] && ! running maktaba-cloud && ! running api; then return 0; fi
+	! has_database
 }
 
 # --- the deploy under way ---------------------------------------------------------------------
@@ -162,7 +168,7 @@ UNIT
 }
 
 cmd_begin() {
-	local src tmp refs ref room p try was now
+	local src tmp refs ref room p try was now tables=""
 	src="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 	valid_id "${DEPLOY_ID:-}" || die "begin: name the deploy (DEPLOY_ID)"
 	if [ -z "${MAKTABA_CLOUD_TAG:-}" ] || [ -z "${MAKTABA_CADDY_TAG:-}" ]; then die "begin: MAKTABA_CLOUD_TAG and MAKTABA_CADDY_TAG are required"; fi
@@ -173,6 +179,8 @@ cmd_begin() {
 	[ ! -f "$STATE/held" ] || { cat "$STATE/held" >&2; die "the node is held: a person decides first (maktaba-rollout unhold)"; }
 	[ ! -d "$STATE/pending" ] || die "begin: a deploy is under way ($(pending_id)): nothing was changed"
 	finish_commit
+	# a name used before would be answered with that deploy's output
+	if compgen -G "$STATE/jobs/$DEPLOY_ID.*" >/dev/null; then die "begin: deploy $DEPLOY_ID was here before: nothing was changed"; fi
 
 	# a release older than the node's is never deployed (an old run started again, say): its code
 	# may not know the schema, and a database never goes back by itself
@@ -217,12 +225,21 @@ cmd_begin() {
 	(umask 077; mkdir -p "$STATE/pending.new/set")
 	cat /proc/sys/kernel/random/boot_id > "$STATE/pending.new/boot_id"
 	printf '%s\n' "$DEPLOY_ID" > "$STATE/pending.new/id"
+	# whatever there is in the database, before any deploy, a first one again included
+	if has_database; then
+		dc up -d --wait postgres </dev/null >/dev/null 2>&1 || die "begin: the database does not come up: nothing was changed"
+		tables="$(psql_as dc "$DEPLOY_DIR/.env" "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')")" || die "begin: the database can't be read: nothing was changed"
+	fi
+	if [ "$tables" = 0 ] && first_deploy; then
+		log "the database is empty: nothing to back up" # a first deploy cut off before its migrations
+	elif [ -n "$tables" ]; then
+		DEPLOY_DIR="$DEPLOY_DIR" ROLLOUT_LOCKED=1 bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
+	fi
 	if first_deploy; then
 		touch "$STATE/pending.new/first"
 		log "a first deploy: nothing to go back to"
 	else
 		dc up -d --wait postgres </dev/null >/dev/null 2>&1 || die "begin: the database does not come up: nothing was changed"
-		DEPLOY_DIR="$DEPLOY_DIR" ROLLOUT_LOCKED=1 bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
 		applied dc "$DEPLOY_DIR/.env" > "$STATE/pending.new/applied"
 		for p in "${SET[@]}"; do
 			[ ! -e "$DEPLOY_DIR/$p" ] || cp -a "$DEPLOY_DIR/$p" "$STATE/pending.new/set/"
@@ -240,6 +257,7 @@ cmd_begin() {
 	install_watch
 	sync
 	mv "$STATE/pending.new" "$STATE/pending"
+	sync
 	log "the present set is saved (deploy $DEPLOY_ID)"
 }
 
@@ -370,35 +388,37 @@ put_back() { # the saved files and the web app's version, each copied whole befo
 # can't be removed afterwards is nobody's, and is tried again next time.
 drop_pending() {
 	mkdir -p "$STATE/dropped"
+	sync # what was put back is on the disk before what it was put back from goes
 	mv -T "$STATE/pending" "$STATE/dropped/$(date +%s).$$" || return 1
 	sync
 	rm -rf "$STATE/dropped" "$STATE/reserve" "$DEPLOY_DIR/.reserve" 2>/dev/null || true
 }
 
-restore() { # restore WHY: back to the saved set; 0 restored (or nothing to), 1 held
-	# every step checks itself: this runs where errexit does not (restore ... || ...). Each can be
-	# done again: a crash part way is followed by another restore (the watch, a boot)
-	local why="$1" added rc release=()
-	[ -d "$STATE/pending" ] || { log "nothing to restore"; return 0; }
-	log "restoring the set from before the deploy ($why)"
-	rm -f "$STATE/reserve" "$DEPLOY_DIR/.reserve"
-	touch "$STATE/pending/restoring" || { hold "the state folder can't be written ($why)"; return 1; }
-	if [ -f "$STATE/pending/first" ]; then
-		stop_all "${APP[@]}" caddy || { hold "a failed first deploy does not stop ($why)"; return 1; }
-		touch "$STATE/no-release" || { hold "the state folder can't be written ($why)"; return 1; }
-		drop_pending || { hold "the saved set can't be dropped ($why)"; return 1; }
-		err "a first deploy failed: there is no earlier release to go back to, so the stack is stopped"
-		return 0
-	fi
+# docker answers again (it was restarted under us): the daemon, and what it starts by itself
+docker_ready() {
+	local end=$((SECONDS + 120))
+	while [ "$SECONDS" -lt "$end" ]; do
+		if docker info >/dev/null 2>&1; then sleep 5; return 0; fi
+		sleep 2
+	done
+	return 1
+}
 
+WHY_NOT=""
+# not_now WHY: this pass can't; another may (docker was restarted meanwhile)
+not_now() { WHY_NOT="$1"; err "$1"; return 1; }
+
+# one pass at going back: 0 done, 1 not now (WHY_NOT), 2 never (WHY_NOT)
+restore_once() {
+	local added rc release=()
 	# the migrations this deploy applied (by apply, or by a role that started on its own), newest
 	# first; once, not again after a crash further on
 	if [ ! -f "$STATE/pending/settled" ]; then
-		saved up -d --wait postgres </dev/null >/dev/null 2>&1 || { hold "the database does not come up ($why)"; return 1; }
-		# nothing may apply one again meanwhile: a starting role migrates
-		stop_all "${APP[@]}" || { hold "the app does not stop ($why)"; return 1; }
-		applied saved "$STATE/pending/set/.env" > "$STATE/pending/applied.now" || { hold "the applied migrations can't be read ($why)"; return 1; }
-		added="$(comm -13 <(sort "$STATE/pending/applied") <(sort "$STATE/pending/applied.now") | tr '\n' ' ')" || { hold "the migrations can't be compared ($why)"; return 1; }
+		saved up -d --wait postgres </dev/null >/dev/null 2>&1 || { not_now "the database does not come up"; return 1; }
+		# nothing may apply one again, or write to what goes: a starting role migrates
+		stop_all "${APP[@]}" || { not_now "the app does not stop"; return 1; }
+		applied saved "$STATE/pending/set/.env" > "$STATE/pending/applied.now" || { not_now "the applied migrations can't be read"; return 1; }
+		added="$(comm -13 <(sort "$STATE/pending/applied") <(sort "$STATE/pending/applied.now") | tr '\n' ' ')" || { not_now "the migrations can't be compared"; return 1; }
 		if [ -n "${added// /}" ]; then
 			log "undoing the migrations it applied: $added"
 			mapfile -t release < "$STATE/pending/release"
@@ -408,18 +428,45 @@ restore() { # restore WHY: back to the saved set; 0 restored (or nothing to), 1 
 			case "$rc" in
 				0) log "undone by their Down scripts" ;;
 				3) err "a Down script would delete rows written since: the schema is KEPT, and the previous release runs on it" ;;
-				4) hold "a migration it applied can't be undone, and the previous release may not run on what it left ($why)"; return 1 ;;
-				*) hold "a Down script failed (exit $rc) ($why)"; return 1 ;;
+				4) WHY_NOT="a migration it applied can't be undone, and the previous release may not run on what it left"; return 2 ;;
+				*) not_now "a Down script failed (exit $rc)"; return 1 ;;
 			esac
 		fi
-		touch "$STATE/pending/settled" || { hold "the state folder can't be written ($why)"; return 1; }
+		touch "$STATE/pending/settled" || { not_now "the state folder can't be written"; return 1; }
 		sync
 	fi
+	put_back || { not_now "the saved files can't be put back"; return 1; }
+	dc up -d --wait --remove-orphans postgres redis </dev/null || { not_now "the previous database or cache does not come up"; return 1; }
+	dc up -d --wait --force-recreate "${APP[@]}" caddy </dev/null || { not_now "the previous release does not come up"; return 1; }
+	WATCH_SECONDS=10 verify || { not_now "the previous release is not healthy"; return 1; }
+}
 
-	put_back || { hold "the saved files can't be put back ($why)"; return 1; }
-	dc up -d --wait --remove-orphans postgres redis </dev/null || { hold "the previous database or cache does not come up ($why)"; return 1; }
-	dc up -d --wait --force-recreate "${APP[@]}" caddy </dev/null || { hold "the previous release does not come up ($why)"; return 1; }
-	WATCH_SECONDS=10 verify || { hold "the previous release is not healthy ($why)"; return 1; }
+restore() { # restore WHY: back to the saved set; 0 restored (or nothing to), 1 held
+	# every step checks itself: this runs where errexit does not (restore ... || ...). Each can be
+	# done again: a crash part way is followed by another restore (the watch, a boot)
+	local why="$1" rc
+	[ -d "$STATE/pending" ] || { log "nothing to restore"; return 0; }
+	log "restoring the set from before the deploy ($why)"
+	rm -f "$STATE/reserve" "$DEPLOY_DIR/.reserve"
+	touch "$STATE/pending/restoring" || { hold "the state folder can't be written ($why)"; return 1; }
+	# a commit of it that was cut off before the saved set went is undone with it
+	if [ "$(cat "$STATE/committed-id" 2>/dev/null)" = "$(pending_id)" ]; then rm -f "$STATE/committed.new" "$STATE/committed-id"; fi
+	if [ -f "$STATE/pending/first" ]; then
+		stop_all "${APP[@]}" caddy || { hold "a failed first deploy does not stop ($why)"; return 1; }
+		touch "$STATE/no-release" || { hold "the state folder can't be written ($why)"; return 1; }
+		drop_pending || { hold "the saved set can't be dropped ($why)"; return 1; }
+		err "a first deploy failed: there is no earlier release to go back to, so the stack is stopped, and stays so at the next boot"
+		return 0
+	fi
+	rc=0
+	restore_once || rc=$?
+	if [ "$rc" = 1 ]; then
+		log "once more, when docker answers"
+		docker_ready || true
+		rc=0
+		restore_once || rc=$?
+	fi
+	[ "$rc" = 0 ] || { hold "$WHY_NOT ($why)"; return 1; }
 	drop_pending || { hold "the saved set can't be dropped ($why)"; return 1; }
 	log "restored: $(env_of MAKTABA_CLOUD_TAG) serves again"
 	return 0
@@ -438,7 +485,7 @@ cmd_rollback() {
 
 # the last line of a commit, also after a crash just before it (the saved set is gone by then)
 finish_commit() {
-	if [ ! -f "$STATE/committed.new" ] || [ -d "$STATE/pending" ]; then return 0; fi
+	if [ ! -s "$STATE/committed.new" ] || [ -d "$STATE/pending" ]; then return 0; fi
 	mv "$STATE/committed.new" "$STATE/committed"
 	rm -f "$STATE/no-release"
 }
@@ -455,8 +502,11 @@ cmd_commit() {
 	need_this commit "$1"
 	[ -f "$STATE/pending/live" ] || die "commit: the deploy was not applied"
 	if [ -f "$STATE/pending/applying" ] || [ -f "$STATE/pending/restoring" ]; then die "commit: the deploy is being restored"; fi
-	env_of MAKTABA_CLOUD_TAG > "$STATE/committed.new"
 	printf '%s\n' "$1" > "$STATE/committed-id"
+	# the power may go at any moment from here: the saved set is there until both names are
+	env_of MAKTABA_CLOUD_TAG > "$STATE/committed.new"
+	if [ ! -s "$STATE/committed.new" ] || [ "$(cat "$STATE/committed-id")" != "$1" ]; then die "commit: the state folder can't be written"; fi
+	sync
 	drop_pending
 	finish_commit
 	# the web app's other versions, and the layout before versions (files right in web/)
@@ -485,18 +535,20 @@ cmd_job() {
 	valid_id "$id" || die "job: name the deploy"
 	case "$cmd" in apply | rollback | commit) ;; *) die "job: apply, rollback or commit" ;; esac
 	[[ "$from" =~ ^[0-9]+$ ]] || die "job: from which line?"
-	(umask 077; mkdir -p "$STATE/jobs")
 	dir="$STATE/jobs/$id.$cmd"
 	unit="maktaba-rollout-$cmd-$id"
+	# going back must start on a full disk too: the room begin kept is for it
+	if [ "$cmd" = rollback ] && [ "$(pending_id)" = "$id" ]; then rm -f "$STATE/reserve" "$DEPLOY_DIR/.reserve"; fi
+	(umask 077; mkdir -p "$STATE/jobs") || die "job: the state folder can't be written"
 	if mkdir "$dir" 2>/dev/null; then
-		: > "$dir/log"
-		if ! systemd-run --quiet --collect --unit="$unit" --property=RuntimeMaxSec=3000 --property=KillMode=mixed \
+		if ! : > "$dir/log" || ! systemd-run --quiet --collect --unit="$unit" --property=RuntimeMaxSec=3000 --property=KillMode=mixed \
 			--setenv=DEPLOY_DIR="$DEPLOY_DIR" --setenv=WATCH_SECONDS="$WATCH_SECONDS" --setenv=LEASE_SECONDS="$LEASE_SECONDS" \
 			--setenv=HOME="${HOME:-/root}" "$SELF" run-job "$dir" "$cmd" "$id"; then
-			rmdir "$dir" 2>/dev/null || rm -rf "$dir"
+			rm -rf "$dir"
 			die "job: $cmd could not be started"
 		fi
 	fi
+	[ -f "$dir/log" ] || die "job: $cmd could not be started"
 	while :; do
 		# the code first: lines written before it are all there once it is
 		rc="$(cat "$dir/rc" 2>/dev/null || true)"
@@ -539,7 +591,11 @@ cmd_boot() {
 		cat "$STATE/held" >&2
 		exit 1
 	fi
-	[ -d "$STATE/pending" ] || exit 0
+	if [ ! -d "$STATE/pending" ]; then
+		finish_commit # the power went before a commit's last line reached the disk
+		nothing_to_start
+		exit 0
+	fi
 	if [ "$(cat "$STATE/pending/boot_id")" = "$(cat /proc/sys/kernel/random/boot_id)" ] && [ ! -f "$STATE/pending/restoring" ]; then
 		# started again in the same boot (docker restarted): what was applied goes on; what was not
 		# yet, apply starts
@@ -548,7 +604,16 @@ cmd_boot() {
 	fi
 	log "the node rebooted during a deploy"
 	restore "the node rebooted during the deploy" || exit 1
+	nothing_to_start
 	exit 0
+}
+
+# a node whose only deploys failed: the release on it was refused, and starts for nobody
+nothing_to_start() {
+	if [ -f "$STATE/no-release" ] && [ ! -f "$STATE/committed" ]; then
+		log "no release was ever committed here, and the last deploy failed: nothing is started"
+		exit 1
+	fi
 }
 
 cmd_unhold() {
@@ -604,9 +669,9 @@ main() {
 			;;
 		boot)
 			# a command at work starts the stack itself, the one it is at; the unit's start would
-			# start another
+			# start another. The watch's look takes a moment: it is waited for.
 			exec 9>"$STATE/lock"
-			flock -n 9 || exit 1
+			flock -w "${BOOT_WAIT:-30}" 9 || exit 1
 			;;
 	esac
 	shift || true

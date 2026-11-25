@@ -127,19 +127,23 @@ A rollback, on the node:
    - A migration whose Up lost data (or is a contract), or a Down script that fails: the node is
      **held**.
 2. The saved compose file, Caddyfile, `cloud.toml`, `.env`, secrets, scripts and web app come back,
-   and the previous images with them, recreated and watched.
+   and the previous images with them, recreated and watched. A pass that could not (Docker was
+   restarted under it) is done once more when Docker answers, before the node is held.
 
 A **held** node has its relay, api and worker stopped, refuses deploys and does not start at boot;
 `maktaba-rollout status` says why and where the saved set and the backups are. A dump is never put
 back by itself. A person sets the node right, then `maktaba-rollout unhold`. A node that reboots
 during a deploy restores first (the stack's unit asks before it starts, and never starts anything
 while a command is at work), and a deploy that finds an earlier one cut off undoes it before it
-begins. A failed first deploy has nothing to go back to: the stack stops.
+begins. A failed first deploy has nothing to go back to: the stack stops, stays stopped at every boot
+until a release is committed, and what its database holds is backed up before the next deploy.
 
 What does not go back: the DNS records, the firewall, Docker's settings and the systemd units.
 Each failure is rehearsed in CI (`cloud-rehearsal.yml`, the `single-node` jobs:
-`deploy/cloud-relay/tests/rollout_rehearsal.py`), and nightly the rehearsal itself is: the node's
-scripts with one guarantee taken out at a time, which a case must notice.
+`deploy/cloud-relay/tests/rollout_rehearsal.py`; `reboot_rehearsal.py` on a virtual machine that is
+really rebooted and whose power is really cut), and nightly the rehearsal itself is
+(`cloud-rehearsal-mutations.yml`, which no deploy waits for): the node's scripts with one guarantee
+taken out at a time, which the case that names it must notice.
 
 One deploy per node at a time; one under way is never cancelled by another (of the ones waiting,
 GitHub keeps the newest). The GitHub environments `qa` and `prod` hold the deploy jobs.
@@ -192,7 +196,7 @@ container mounts.
 
 ## Backups
 
-`maktaba-cloud-backup.timer`, nightly at 03:17 UTC, and before each deploy: `pg_dump` (its copy equal
+`maktaba-cloud-backup.timer`, nightly at 03:17 UTC, and before each deploy to a node that has a database: `pg_dump` (its copy equal
 to the last byte and read to its end with `pg_restore` before it is kept) with every table's rows counted in the same
 snapshot, and the node's keys (`.env`, `secrets/`) with each file's SHA-256, into
 `/var/backups/maktaba-cloud`, 14 days kept. `ops/backup.sh --check` restores the newest one and

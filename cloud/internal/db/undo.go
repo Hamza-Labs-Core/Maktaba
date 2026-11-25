@@ -233,7 +233,7 @@ var (
 	dropTable  = regexp.MustCompile(`(?is)\bDROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?([^;]+)`)
 	alterTable = regexp.MustCompile(`(?is)\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?([A-Za-z_"][A-Za-z0-9_."]*)\s+([^;]+)`)
 	dropColumn = regexp.MustCompile(`(?is)\bDROP\s+(COLUMN\s+)?(?:IF\s+EXISTS\s+)?("[^"]+"|[A-Za-z_][A-Za-z0-9_]*)`)
-	otherDrop  = regexp.MustCompile(`(?is)\bDROP\s+(SCHEMA|SEQUENCE|MATERIALIZED|DATABASE)\b`)
+	otherDrop  = regexp.MustCompile(`(?is)\bDROP\s+(SCHEMA|SEQUENCE|MATERIALIZED|DATABASE|TYPE|DOMAIN)\b`)
 )
 
 // keptByDrop are the words after DROP, inside an ALTER TABLE, that lose no rows.

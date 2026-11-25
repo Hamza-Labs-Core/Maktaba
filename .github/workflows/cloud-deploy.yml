@@ -315,6 +315,8 @@ jobs:
           elif [ "$TARGET" = qa ]; then tls=internal
           else echo "::error::production needs public certificates: the CLOUDFLARE_DNS_TOKEN secret (or CLOUD_TLS=http with the records made by hand)"; exit 1
           fi
+          # every run's log is public; the node's address is nobody's business there
+          echo "::add-mask::$host"
           {
             echo "NODE_IP=$host"
             echo "NODE_USER=$user"
@@ -322,7 +324,7 @@ jobs:
           } >> "$GITHUB_ENV"
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$kh" > ~/.ssh/known_hosts_node
-          echo "node $host ($TARGET), certificates: $tls"
+          echo "node: $TARGET, certificates: $tls"
 
       - name: SSH to the node (the pinned host key)
         env:

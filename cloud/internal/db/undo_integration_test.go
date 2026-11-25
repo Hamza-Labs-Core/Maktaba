@@ -108,6 +108,11 @@ func TestUndoKeepsWhatWasWrittenSince(t *testing.T) {
 			}
 		})
 	}
+	// a type dropped takes the columns of its type with it
+	_, m0 := undoWorld(t, map[string]string{"00000010_t.sql": "-- +goose Up\nCREATE TYPE ut AS ENUM ('a');\nALTER TABLE ua ADD COLUMN t ut;\n-- +goose Down\nDROP TYPE ut CASCADE;\n"})
+	if err := m0.Undo(ctx, []int64{10}); !errors.Is(err, db.ErrUndoKeeps) {
+		t.Fatalf("%v, want ErrUndoKeeps", err)
+	}
 	// its own statement changes rows
 	_, m := undoWorld(t, map[string]string{"00000010_d.sql": "-- +goose Up\nCREATE TABLE uc (id INT);\n-- +goose Down\nDELETE FROM ua;\nDROP TABLE uc;\n"})
 	if err := m.Undo(ctx, []int64{10}); !errors.Is(err, db.ErrUndoKeeps) {
@@ -128,6 +133,7 @@ func TestUndoRefusesWhatCannotBeUndone(t *testing.T) {
 		"a column gone":  "-- +goose Up\nALTER TABLE ua DROP COLUMN kept;\n-- +goose Down\nALTER TABLE ua ADD COLUMN kept TEXT;\n",
 		"a bare drop":    "-- +goose Up\nALTER TABLE ua DROP kept;\n-- +goose Down\nALTER TABLE ua ADD COLUMN kept TEXT;\n",
 		"a table gone":   "-- +goose Up\nDROP TABLE ua;\n-- +goose Down\nCREATE TABLE ua (id INT);\n",
+		"a type dropped": "-- +goose Up\nCREATE TYPE ut AS ENUM ('a');\nDROP TYPE ut CASCADE;\n-- +goose Down\nSELECT 1;\n",
 		"a type recast":  "-- +goose Up\nALTER TABLE ua ALTER COLUMN kept TYPE VARCHAR(9);\n-- +goose Down\nALTER TABLE ua ALTER COLUMN kept TYPE TEXT;\n",
 		"no Down script": "-- +goose Up\nCREATE TABLE ud (id INT);\n",
 	} {

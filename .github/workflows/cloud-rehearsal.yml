@@ -263,7 +263,9 @@ jobs:
 
   # The single node's deploy (deploy/cloud-relay, docs/cloud-single-node.md), on the runner itself:
   # setup.sh, ops/rollout.sh and the compose stack as a node runs them, each way a deploy can
-  # fail made to happen, and the node back as it was (or held, saying why)
+  # fail made to happen, and the node back as it was (or held, saying why). single-node-reboots: the
+  # same on a virtual machine that is really rebooted and really loses its power. That each guarantee
+  # is missed when it is taken out: cloud-rehearsal-mutations.yml.
   single-node:
     name: single-node (${{ matrix.part }})
     runs-on: ubuntu-24.04
@@ -271,7 +273,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: ['1', '2']
+        part: ['1', '2', '3']
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -299,44 +301,34 @@ jobs:
             ${{ runner.temp }}/scenario.log
           retention-days: 14
 
-  # The rehearsal rehearsed: the node's scripts with one guarantee taken out at a time, and the
-  # cases that must notice. Nightly and by hand; a mutation nobody notices is a case that is missing.
-  single-node-mutations:
-    name: single-node without ${{ matrix.mutation }}
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  single-node-reboots:
+    name: single-node-reboots
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        mutation:
-          - no-backup
-          - no-lock
-          - drop-in-place
-          - web-not-atomic
-          - never-settled
-          - keeps-no-backup
-          - in-the-session
-          - no-watch
-          - boot-starts-anyway
-          - hold-by-compose
-          - first-by-what-runs
-          - truncated-dump
-          - no-reserve
-          - downgrades
+    timeout-minutes: 80
     steps:
       - uses: actions/checkout@v6.0.2
         with:
           persist-credentials: false
-      - name: The cases that must notice
+      - name: Reboots and power cuts
         env:
           OUT: ${{ runner.temp }}/rehearsal
-          MUTATE: ${{ matrix.mutation }}
-        run: sudo --preserve-env=CI,GITHUB_STEP_SUMMARY,GITHUB_RUN_ID,MUTATE REPO="$PWD" OUT="$OUT" python3 -I deploy/cloud-relay/tests/rollout_rehearsal.py
+        run: |
+          sudo --preserve-env=CI,GITHUB_STEP_SUMMARY,GITHUB_RUN_ID REPO="$PWD" OUT="$OUT" python3 -I deploy/cloud-relay/tests/reboot_rehearsal.py 2>&1 | tee "${RUNNER_TEMP}/scenario.log"
+          exit "${PIPESTATUS[0]}"
+      - uses: actions/upload-artifact@v7.0.1
+        if: always()
+        with:
+          name: rehearsal-single-node-reboots
+          path: |
+            ${{ runner.temp }}/rehearsal/*.log
+            ${{ runner.temp }}/rehearsal/*.json
+            ${{ runner.temp }}/scenario.log
+          retention-days: 14
+          if-no-files-found: ignore
 
   cloud-rehearsal:
     name: cloud-rehearsal
-    needs: [image, scenario, single-node]
+    needs: [image, scenario, single-node, single-node-reboots]
     if: always()
     runs-on: ubuntu-24.04
     steps:
@@ -351,7 +343,7 @@ jobs:
             echo "Not built yet (not counted): ${NOT_BUILT}" >> "$GITHUB_STEP_SUMMARY"
           fi
           fail=0
-          for j in image scenario single-node; do
+          for j in image scenario single-node single-node-reboots; do
             r="$(echo "$RESULTS" | jq -r ".\"$j\".result")"
             [ "$r" = success ] || { echo "::error::$j: $r"; fail=1; }
           done

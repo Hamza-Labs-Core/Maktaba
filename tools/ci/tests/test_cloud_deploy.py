@@ -293,11 +293,22 @@ def test_every_mutation_is_run_and_names_cases_that_exist() -> None:
     names = re.findall(r'^    "([\w-]+)": \("ops/', table, re.M)
     cases = set(re.findall(r'^        \("([^"]+)", ', text, re.M))
     noticed = {c for group in re.findall(r"\[((?:\"[^\"]+\"(?:, )?)+)\]\)", table) for c in re.findall(r'"([^"]+)"', group)}
-    assert len(names) >= 14 and noticed <= cases, noticed - cases
+    assert len(names) >= 25 and noticed <= cases, noticed - cases
     run = yaml.safe_load((ROOT / ".github/workflows/cloud-rehearsal.yml").read_text())["jobs"]
-    assert run["single-node-mutations"]["strategy"]["matrix"]["mutation"] == names
-    assert run["single-node"]["strategy"]["matrix"]["part"] == ["1", "2"]
-    assert "single-node" in run["cloud-rehearsal"]["needs"]
+    assert run["single-node"]["strategy"]["matrix"]["part"] == ["1", "2", "3"]
+    assert {"single-node", "single-node-reboots"} <= set(run["cloud-rehearsal"]["needs"])
+    assert 'for j in image scenario single-node single-node-reboots; do' in run["cloud-rehearsal"]["steps"][0]["run"]
+    # the mutations are no part of the workflow a deploy waits for
+    assert "MUTATE" not in (ROOT / ".github/workflows/cloud-rehearsal.yml").read_text()
+    mutations = yaml.safe_load((ROOT / ".github/workflows/cloud-rehearsal-mutations.yml").read_text())["jobs"]
+    assert mutations["mutation"]["strategy"]["matrix"]["mutation"] == names
+    assert set(mutations["reboot-mutation"]["strategy"]["matrix"]["mutation"]) <= set(names)
+
+
+def test_the_nodes_address_is_in_no_run_log() -> None:
+    run = named("deploy", "The target")["run"]
+    assert 'echo "::add-mask::$host"' in run and run.index("::add-mask::") < run.index("NODE_IP=")
+    assert "echo \"node $host" not in run
 
 
 def test_every_mutation_still_finds_what_it_takes_out(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
