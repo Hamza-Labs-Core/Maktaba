@@ -533,7 +533,19 @@ jobs:
           # (no `simctl ui appearance` here: the tvOS runtime does not support it)
           xcrun simctl bootstatus "$udid" -b > /dev/null
           xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.tv --mode "level:debug,persist:debug"
+          # the keyboard's daemon, which a new simulator starts when a keyboard first opens: in two
+          # jobs' first test the simulator's new processes were all held for 15 and 27 s then, and
+          # the address typed meanwhile came in after the test had failed (jobs 138956933820 and
+          # 139001674314; a new process takes 25 ms, and kbd, once there, stays). So it runs before
+          # the first test. Each call has a time limit (macOS has no `timeout`).
+          kbd=system/com.apple.TextInput.kbd
+          limit() { perl -e 'alarm shift; exec @ARGV or exit 127' "$@"; }
+          limit 60 xcrun simctl spawn "$udid" launchctl kickstart "$kbd" || true
           python3 tools/apple/sim-settle.py "$udid" "$RESULTS/tv-settle.log" --max 480
+          state=$(limit 30 xcrun simctl spawn "$udid" launchctl print "$kbd" || true)
+          if ! grep -q '^[[:space:]]state = running$' <<< "$state"; then
+            echo "::warning::the simulator's keyboard daemon does not run: the first text typed may come late (#1678)"
+          fi
 
       - name: Run the TV UI tests
         working-directory: apps/apple
