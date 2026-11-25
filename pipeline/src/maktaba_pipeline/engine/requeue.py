@@ -12,10 +12,14 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from .enqueue import enqueue_job
+from .enqueue import EnqueueResult, enqueue_job
 from .sql import uid
 
-__all__ = ["requeue_failed"]
+__all__ = ["HEAL_PRIORITY", "requeue_failed", "requeue_stage"]
+
+#: what the healer (:mod:`.healer`) queues, and what follows it: behind every other work
+#: (normal is 100, the sweeps 500, the backfills 900)
+HEAL_PRIORITY = 950
 
 _LATEST_FAILED = """
 SELECT j.stage AS stage FROM processing_jobs j
@@ -36,12 +40,26 @@ async def requeue_failed(db: Any, video_id: UUID, why: str) -> list[str]:
         return [str(s) for s in got or []]
     stages = [str(r["stage"]) for r in await db.fetch(_LATEST_FAILED, uid(video_id))]
     for stage in stages:
-        await enqueue_job(
-            db,
-            subject_kind="video",
-            subject_id=video_id,
-            stage=stage,
-            force=True,
-            reason={"why": why, "by": "system"},
-        )
+        await requeue_stage(db, video_id, stage, why)
     return stages
+
+
+async def requeue_stage(
+    db: Any,
+    video_id: UUID,
+    stage: str,
+    why: str,
+    *,
+    force: bool = True,
+    priority: int | None = None,
+) -> EnqueueResult:
+    """Queue one stage of a video again."""
+    return await enqueue_job(
+        db,
+        subject_kind="video",
+        subject_id=video_id,
+        stage=stage,
+        priority=priority,
+        force=force,
+        reason={"why": why, "by": "system"},
+    )

@@ -101,3 +101,6 @@ def test_the_worker_fails_the_job_as_retryable() -> None:
     with pytest.raises(StageFailure) as refused:
         raise_failure({"status": "refused", "code": "plugin_database", "message": "23505: dup"})
     assert refused.value.retryable is False
+    with pytest.raises(StageFailure) as lost:
+        raise_failure({"status": "refused", "code": "plugin_tx", "message": "no open transaction"})
+    assert lost.value.retryable is True

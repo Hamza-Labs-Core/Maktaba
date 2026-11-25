@@ -19,6 +19,9 @@ Each result is upserted into ``dependency_health``; for every healthy one the jo
 on it are released (``parked_on = NULL, not_before = now``), in batches. A job parked on a
 name nobody probes any more (a deleted library's root) waits for the ``park_max_hours``
 backstop.
+
+Last, the round queues again the failures whose cause has passed (:mod:`.healer`), on the
+share probes it just made.
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ from .backfill import backfill_once
 from .failure_classes import MODEL, SHARE, YT_RATE_LIMIT, QueueHealthConfig
 from .failure_policy import _roots, read_config, root_answers
 from .graph import StageDef
+from .healer import heal_due
 from .leader import leader
 from .sql import is_pg, now, parse_ts, to_ts
 
@@ -74,6 +78,8 @@ class WatchReport:
     released: dict[str, int] = field(default_factory=dict)
     #: rows moved from before Epic 40 this round (story 40.6)
     backfilled: int = 0
+    #: failures queued again because their cause has passed (:mod:`.healer`)
+    healed: int = 0
 
 
 def _fetch(url: str, timeout: float) -> bytes:
@@ -316,7 +322,8 @@ async def _round(
                 released[name] = n
     if released:
         _log.info("parked_jobs_released", released=released)
-    return WatchReport(True, health, released, backfilled)
+    healed = await heal_due(db, health, t)
+    return WatchReport(True, health, released, backfilled, healed)
 
 
 async def run_watchers(db: Any, graph: Mapping[str, StageDef], stop: asyncio.Event) -> None:

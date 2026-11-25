@@ -12,7 +12,8 @@ again:
   scan", and offers a re-download for a YouTube video).
 
 A library with a root that does not answer is skipped: a missing share says nothing about
-its files.
+its files. A library nobody scans is not left to this: the healer (:mod:`.healer`) looks at
+open failures without a scan.
 """
 
 from __future__ import annotations
@@ -28,7 +29,7 @@ from .paths import find_existing, to_local
 from .requeue import requeue_failed
 from .sql import now, to_ts, uid
 
-__all__ = ["MissingReport", "confirm_missing"]
+__all__ = ["MissingReport", "confirm_missing", "file_found"]
 
 _OPEN_MISSING = """
 SELECT DISTINCT v.id AS id, v.path AS path
@@ -53,6 +54,11 @@ def _exists(path: str) -> bool:
     return os.path.exists(find_existing(to_local(path)))
 
 
+async def file_found(db: Any, video_id: UUID) -> None:
+    """The video's file is there: it is not missing any more."""
+    await db.execute("UPDATE videos SET missing_confirmed_at = NULL WHERE id = $1", uid(video_id))
+
+
 async def confirm_missing(db: Any, library_id: UUID) -> MissingReport:
     cfg = await read_config(db)
     row = await db.fetchrow("SELECT roots FROM libraries WHERE id = $1", uid(library_id))
@@ -73,9 +79,7 @@ async def confirm_missing(db: Any, library_id: UUID) -> MissingReport:
 
             found = await promote_copy(db, vid) is not None
         if found:
-            await db.execute(
-                "UPDATE videos SET missing_confirmed_at = NULL WHERE id = $1", uid(vid)
-            )
+            await file_found(db, vid)
             await requeue_failed(db, vid, "the scan found the file again")
             healed += 1
         else:

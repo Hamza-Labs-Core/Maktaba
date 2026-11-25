@@ -615,9 +615,10 @@ def raise_failure(d: dict[str, Any]) -> None:
     if st == "sandbox_refused":
         raise SandboxRefused(str(d.get("message") or ""))
     if st == "refused":
-        raise StageFailure(
-            str(d.get("code") or "plugin_capability"), str(d.get("message") or ""), retryable=False
-        )
+        code = str(d.get("code") or "plugin_capability")
+        # plugin_tx: the transaction went with the API or the database that held it (it is
+        # rolled back): another try begins its own. Any other refusal would happen again
+        raise StageFailure(code, str(d.get("message") or ""), retryable=code == "plugin_tx")
     # any other exception: one of the same class name and message, so the failure's kind
     # and cause are the in-process handler's (run.py names a failure by its class)
     name = str(d.get("error_type") or "Exception")

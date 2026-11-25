@@ -437,11 +437,15 @@ async def test_a_bundled_model_with_the_language_model_off_reads_off_not_down(
         ("plugin_quota", "item_permanent"),
         ("plugin_failed", "item_permanent"),
         ("plugin_held", "dependency:plugin"),
+        # the database went away under a plugin's job
+        ("DatabaseUnavailable:the database did not answer: driver: bad connection", "transient"),
+        ("plugin_tx:no open transaction <hex>", "transient"),
+        ("plugin_database:<n>: duplicate key", "unknown"),
     ],
 )
 def test_plugin_causes_classes(cause: str, cls: str) -> None:
     """Epic 54 (54.06 §3, 54.06 T07): a trap or a deadline is retried once, a refusal is not,
-    a held plugin's jobs wait."""
+    a held plugin's jobs wait, a lost database is a passing problem."""
     from maktaba_pipeline.engine.failure_classes import class_for
 
     assert class_for(cause) == cls
