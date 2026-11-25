@@ -269,6 +269,7 @@ targets:
       - path: Player/Shell/TextSizeHook.swift
       - path: Player/Shell/TouchHook.swift
       - path: Player/Shell/ConsoleHook.swift
+      - path: Player/Cast/CastSDKState.swift
       - path: Player/Components/ImageCache.swift
       - path: Player/Components/PlaceholderTiming.swift
       - path: Player/Watch/WatchLogic.swift

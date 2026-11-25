@@ -9,7 +9,8 @@ entry, never line by line: a hunk-wise merge splits two new entries that share a
 blank line, a "maktaba.dev: ..." tail) around it and interleaves them.
 
 An entry is a list item at column 0 ("- ...") with every line after it up to the next blank
-line, heading or item. The text between entries (headings, intros) is kept as main has it.
+line, heading or item, and each indented paragraph that follows it. The text between entries
+(headings, intros) is kept as main has it.
 
 - An entry this branch added goes at the end of its section on main (after main's entries
   there; a section is the "### " heading it sits under, inside its "## " release).
@@ -23,6 +24,7 @@ an entry, or this branch's new entry sits in a section where main has no entry l
 
 from __future__ import annotations
 
+import difflib
 import pathlib
 import re
 import sys
@@ -62,6 +64,7 @@ def parse(text: str) -> Doc:
     doc = Doc()
     h2 = h3 = ""
     cur: list[str] | None = None  # the open entry's lines
+    blank: list[str] = []  # the blank lines after it: its own when an indented line follows
     prose: list[str] = []
 
     def close_entry() -> None:
@@ -69,6 +72,8 @@ def parse(text: str) -> Doc:
         if cur is not None:
             doc.parts.append(Entry((h2, h3), "".join(cur)))
             cur = None
+        prose.extend(blank)
+        blank.clear()
 
     def close_prose() -> None:
         if prose:
@@ -83,8 +88,12 @@ def parse(text: str) -> Doc:
             close_prose()
             cur = [line]
             continue
-        if cur is not None and line.strip() and not HEADING.match(line):
-            cur.append(line)  # an entry's continuation line
+        if cur is not None and not line.strip():
+            blank.append(line)
+            continue
+        if cur is not None and (line.startswith("  ") or (not blank and not HEADING.match(line))):
+            cur += [*blank, line]  # an entry's continuation line, or its next paragraph
+            blank.clear()
             continue
         close_entry()
         if line.startswith("## "):
@@ -95,6 +104,39 @@ def parse(text: str) -> Doc:
     close_entry()
     close_prose()
     return doc
+
+
+# how alike (0 to 1, by words) an entry and its edit are; less, it is another entry
+SAME_ENTRY = 0.5
+
+
+def _alike(a: str, b: str) -> float:
+    return difflib.SequenceMatcher(None, a.split(), b.split(), autojunk=False).ratio()
+
+
+def replacements(base: Doc, ours: Doc) -> dict[str, str]:
+    """Each entry of the base this branch changed, and what it changed it to."""
+    base_set = {e.text for e in base.entries()}
+    ours_set = {e.text for e in ours.entries()}
+    # pair each removed base entry with the added entry that takes its place: the one most
+    # like it among the added entries that follow its predecessor in ours's order (a new entry
+    # put above an edited one is not its edit)
+    replaced: dict[str, str] = {}
+    ours_texts = [e.text for e in ours.entries()]
+    base_texts = [e.text for e in base.entries()]
+    for i, t in enumerate(base_texts):
+        if t in ours_set:
+            continue
+        kept = (base_texts[j] for j in range(i - 1, -1, -1) if base_texts[j] in ours_set)
+        prev = next(kept, None)
+        start = ours_texts.index(prev) + 1 if prev is not None else 0
+        best = SAME_ENTRY
+        for new in ours_texts[start:]:
+            if new in base_set:
+                break
+            if new not in replaced.values() and (like := _alike(t, new)) >= best:
+                best, replaced[t] = like, new
+    return replaced
 
 
 def merge(base_text: str, ours_text: str, theirs_text: str) -> str:
@@ -111,19 +153,7 @@ def merge(base_text: str, ours_text: str, theirs_text: str) -> str:
     removed_ours = base_set - ours_set  # changed or removed on this branch
     added_ours = [e for e in ours.entries() if e.text not in base_set]
 
-    # an entry this branch changed: pair each removed base entry with the added entry that
-    # takes its place (the next added entry after its predecessor in ours's order)
-    replaced: dict[str, str] = {}
-    ours_texts = [e.text for e in ours.entries()]
-    base_texts = [e.text for e in base.entries()]
-    for i, t in enumerate(base_texts):
-        if t not in removed_ours:
-            continue
-        kept = (base_texts[j] for j in range(i - 1, -1, -1) if base_texts[j] in ours_set)
-        prev = next(kept, None)
-        start = ours_texts.index(prev) + 1 if prev is not None else 0
-        if start < len(ours_texts) and ours_texts[start] not in base_set:
-            replaced[t] = ours_texts[start]
+    replaced = replacements(base, ours)
 
     out: list[Entry | str] = []
     for p in theirs.parts:
