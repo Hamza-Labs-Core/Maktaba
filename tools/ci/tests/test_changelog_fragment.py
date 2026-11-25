@@ -478,6 +478,7 @@ def test_a_branch_whose_every_entry_is_in_a_fragment_only_loses_its_lines(repo: 
     lines(repo)
     day = datetime.date.today().isoformat()
     repo.write(**{f"{cf.DIR}/{day}-x.md": "### Fixed\n" + LINE["en"], f"{cf.DIR}/{day}-x.ar.md": "### أُصلح\n" + LINE["ar"]})
+    repo.git("add", cf.DIR)
     code, out = repo.tool("convert", "--base", "main")
     assert code == 0 and "no entry to move" in out, out
     assert repo.read("CHANGELOG.md") == changelog("en")
@@ -709,6 +710,41 @@ def test_a_changelog_resolved_but_not_staged_stops_everything(repo: Repo) -> Non
     repo.git("add", "CHANGELOG.md")
     assert merge_main(repo).returncode == 0
     assert repo.read("CHANGELOG.md") == changelog("en", "\n- by hand\n")
+
+
+@pytest.mark.parametrize("merging", [False, True])
+@pytest.mark.parametrize("disk", ["untracked", "half added", "edited since"])
+def test_a_fragment_only_on_disk_is_no_home_for_an_entry(repo: Repo, disk: str, merging: bool) -> None:
+    """The commit after convert, or merge-main.sh's merge, holds every entry once."""
+    lines(repo)
+    repo.land()
+    if merging:
+        repo.write(**{f: changelog(lang, ("\n- main\n", "\n- الرئيسي\n")[lang == "ar"]) for lang, f in cf.FILES.items()})
+        repo.commit("main's")
+    repo.git("checkout", "-q", "topic/One")
+    here = {f"{cf.DIR}/2026-11-20-x.md": "### Fixed\n" + LINE["en"], f"{cf.DIR}/2026-11-20-x.ar.md": "### أُصلح\n" + LINE["ar"]}
+    if disk == "edited since":
+        repo.write(**{f: t.split("\n")[0] + "\n\n- " + ("other", "آخر")[".ar." in f] + "\n" for f, t in here.items()})
+        repo.commit("a fragment")
+    repo.write(**here)
+    if disk == "half added":
+        repo.git("add", f"{cf.DIR}/2026-11-20-x.md")
+    if merging:
+        # a merge refuses to start with something staged: staged once it has
+        repo.git("reset", "-q")
+        repo.git("merge", "main", check=False)
+        if disk == "half added":
+            repo.git("add", f"{cf.DIR}/2026-11-20-x.md")
+        out = merge_main(repo)
+        assert out.returncode == 0 and "moved 1 entry" in out.stdout, out.stdout + out.stderr
+    else:
+        code, text = repo.tool("convert", "--base", "main")
+        assert code == 0 and "moved 1 entry" in text, text
+        repo.git("commit", "-qm", "what is staged")
+    assert NEW not in repo.git("show", "HEAD:CHANGELOG.md")
+    assert repo.git("show", f"HEAD:{cf.DIR}/{datetime.date.today().isoformat()}-topic-one.md").endswith(NEW)
+    assert repo.git("show", f"HEAD:{cf.DIR}/{datetime.date.today().isoformat()}-topic-one.ar.md").endswith(LINE["ar"].strip("\n"))
+    assert {f: repo.read(f) for f in here} == here  # the files on disk are as they were
 
 
 def test_a_branch_out_of_date_with_a_cleaned_up_main_is_not_asked(repo: Repo) -> None:

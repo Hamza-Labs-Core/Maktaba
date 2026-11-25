@@ -294,7 +294,12 @@ def fragments_here() -> dict[str, str]:
 
 
 def fragments_at(rev: str) -> dict[str, str]:
-    names = git("ls-tree", "--name-only", f"{rev}:{DIR}", ok=False).splitlines()
+    """The fragments of a commit, or ("") of the index: what the next commit holds."""
+    if rev:
+        names = git("ls-tree", "--name-only", f"{rev}:{DIR}", ok=False).splitlines()
+    else:
+        rows = (row.split("\t") for row in git("ls-files", "--stage", "--", DIR).splitlines())
+        names = [f[len(DIR) + 1 :] for how, f in rows if how.endswith(" 0")]  # not one in conflict
     names = [n for n in names if n.endswith(".md") and n != "README.md"]
     # one process for all of them: "<sha> blob <bytes>" and the content, each
     raw = git_bytes("cat-file", "--batch", stdin="".join(f"{rev}:{DIR}/{n}\n" for n in names))
@@ -446,8 +451,9 @@ def convert(base: str, slug: str | None, merging: bool) -> int:
         fmt = lambda d: ", ".join(f"{s}: {n}" for s, n in d.items() if n) or "none"  # noqa: E731
         raise Bad(f"this branch adds [{fmt(count['en'])}] to CHANGELOG.md and [{fmt(count['ar'])}] to "
                   "CHANGELOG.ar.md: add the missing entries, then run it again")  # fmt: skip
-    # an entry a fragment in the tree already has (a branch merged into this one moved it) stays there
-    there = pairs_of(fragments_here())
+    # an entry a fragment already has (a branch merged into this one moved it) stays there: one the
+    # commit will hold, never a file only on disk (not added, or edited since)
+    there = pairs_of(fragments_at(""))
     by = {lang: [(s, t) for s in SECTIONS for sec, t in got[lang] if sec == s] for lang in FILES}
     new = [(s, a, b) for (s, a), (_, b) in zip(by["en"], by["ar"]) if (s, a.strip("\n"), b.strip("\n")) not in there]
     if not new:
