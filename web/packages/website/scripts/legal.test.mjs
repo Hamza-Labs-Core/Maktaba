@@ -130,7 +130,11 @@ test("the account's emails: who delivers them, where they are stored and for how
     const doc = legalDoc("privacy", lang, { sources: sources() });
     const html = doc.sections.find((s) => s.id === "account").html;
     // the bot check, worded for when it is on
-    assert.ok(html.includes("https://www.cloudflare.com/turnstile-privacy-policy/"), lang);
+    assert.match(
+      html,
+      /<a href="https:\/\/www\.cloudflare\.com\/turnstile-privacy-policy\/"/,
+      lang
+    );
     assert.ok(html.includes({ en: "When it is on", ar: "حين يكون مفعّلًا" }[lang]), lang);
     for (const w of ["Resend", "https://resend.com/security/gdpr", ...say[lang]])
       assert.ok(html.includes(w), `${lang}: ${w}`);
