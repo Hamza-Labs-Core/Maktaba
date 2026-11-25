@@ -39,7 +39,7 @@ prs: [1627, 1628]
 - **A released home trusts only licences signed with the key its release embeds**
   (`MAKTABA_LICENSE_PUBKEY`). Each new node generated its own key. Without a licence it trusts,
   the home turns off relayed access (403) and its link reporter, so the cloud never sees the
-  link. Decision `cloud-license-key` is open; the deploy installs the key from `MAKTABA_LICENSE_SIGNING_KEY` once the secret exists.
+  link. Decision `cloud-license-key` is open.
 - **Everything behind that blocker was then rehearsed on QA with a stand-in home**: the release's
   `maktaba-server` image with its embedded public key replaced, byte for byte, by QA's own (a PEM
   of the same length), and `files.sha256` and `payload.json` updated to match. From a scratch
