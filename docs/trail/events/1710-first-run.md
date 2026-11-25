@@ -18,7 +18,7 @@ agent: claude-code
 
 ## What we learned
 - A step whose commands all end in `|| true` looks the same when it did nothing. #1713 makes this
-  one warn when the simulator lists no services, and limits each call to 30 s.
+  one say when a service is not seen to go.
 
 ## Open
 - One green run is weak proof for failures this rare: what shows the fix is their absence over the

@@ -21,6 +21,11 @@ agent: claude-code
 - The first head's Mac job was red (run 45551124155): its UI test passed and its new unit test
   failed. That waited 5 s for SwiftUI to redraw the menu in the test host, which did not happen;
   in the app, on the same run, it did.
+- The pull request also carries #1710's follow-ups, one of which was a mistake of its own: head
+  964ee1d5f gave each `simctl spawn` of the services step 30 s. Just after a boot these calls take
+  longer. The limit cut calls on all 14 shards (run 45553400654), 13 warned, and apsd went on in 5;
+  with no limit it had gone in 14 of 14. `tools/apple/sim-services.py` now asks, acts and asks
+  again in one budget.
 
 ## What we learned
 - The result bundle has the screen's recording: the frames settled in a minute whether the bar was
@@ -29,6 +34,9 @@ agent: claude-code
   here.
 - A hosted unit test cannot count on SwiftUI redrawing the main menu. Test what the item reads and
   calls; leave its title to the UI test.
+- A time limit needs the measured time of what it limits, and a limit that cuts a setup step undoes
+  the step. The shards' green results did not show it; the warnings did: read them on the first
+  run of a change to the setup.
 
 ## Open
 - Why macOS does not slide the bar down is not known: passing runs keep no such logs.
