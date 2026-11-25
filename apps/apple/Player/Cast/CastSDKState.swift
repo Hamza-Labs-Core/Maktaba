@@ -3,10 +3,12 @@ import Foundation
 
 /// What the real Google Cast SDK says of itself, in a Debug build launched with
 /// `-maktaba-cast real`: the app writes it as `cast.sdk`'s accessibility value and the UI tests
-/// read it back (this file is in both). Every field is the SDK's own answer or its own log,
-/// none is worked out from what the app asked of it.
+/// read it back (this file is in both). Every field but `receivers` is the SDK's own answer or
+/// its own log, not worked out from what the app asked of it.
 struct CastSDKState: Equatable, Sendable {
-    /// The receiver ids of the criteria the SDK was set up with (none: it is not set up).
+    /// The receiver ids of the criteria the app gave the SDK, once the SDK says it is set up
+    /// (none: it is not). The app's word, not the SDK's: its headers give no criteria back.
+    /// That the SDK searches for this receiver is shown by the TV it finds.
     var receivers: [String] = []
     /// Its discovery manager says it looks for Cast devices. Not enough on its own: the SDK
     /// says so too while iOS refuses every Bonjour search it makes (`errors`).

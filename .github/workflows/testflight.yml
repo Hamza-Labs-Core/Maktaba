@@ -176,6 +176,13 @@ jobs:
       - name: The archive was built with the 27 SDK
         run: python3 tools/apple/xcode.py check-sdk --min 27 "$RUNNER_TEMP/app.xcarchive"
 
+      # The iPhone and iPad Player's Cast receiver and Bonjour services in the archive are
+      # shared/cast/app.json's: with none there, no Cast service. CI's UI-test build alone names
+      # Google's test receiver (_apple-apps.yml), and it must not reach an upload.
+      - name: The archive's Cast receiver is shared/cast/app.json's
+        if: matrix.scheme == 'Maktaba Player'
+        run: python3 tools/apple/cast-app-id.py --built "$RUNNER_TEMP/app.xcarchive/Products/Applications/$SCHEME.app"
+
       # The Mac app's sandbox and keychain group: signed into the archived app ad hoc, for the
       # export to keep (an unsigned app has none). $(AppIdentifierPrefix) is the team's.
       - name: Entitlements into the archive

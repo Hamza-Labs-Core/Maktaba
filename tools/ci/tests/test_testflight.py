@@ -328,6 +328,20 @@ def test_the_upload_checks_the_archives_sdk_before_uploading() -> None:
     assert "continue-on-error" not in STEPS["The archive was built with the 27 SDK"]
 
 
+def test_the_upload_checks_the_players_cast_receiver_before_uploading() -> None:
+    names = [s.get("name") for s in UPLOAD["steps"]]
+    step = "The archive's Cast receiver is shared/cast/app.json's"
+    assert names.index(step) < names.index("Sign and upload to TestFlight")
+    # the one app with Google Cast: iPhone and iPad's Player, one app
+    assert STEPS[step]["if"] == "matrix.scheme == 'Maktaba Player'"
+    casts = [leg["scheme"] for leg in LEGS if any(d.get("package") == "GoogleCast" for d in _target(leg).get("dependencies", []))]
+    assert casts == ["Maktaba Player"]
+    run = STEPS[step]["run"]
+    assert run == 'python3 tools/apple/cast-app-id.py --built "$RUNNER_TEMP/app.xcarchive/Products/Applications/$SCHEME.app"'
+    # no archive names a receiver of its own
+    assert "MAKTABA_CAST" not in (ROOT / ".github/workflows/testflight.yml").read_text(encoding="utf-8")
+
+
 def test_the_xcode_helpers_self_test_runs_in_ci() -> None:
     runs = [s.get("run", "") for s in APPLE_CI["apple-apps"]["steps"]]
     assert "python3 tools/apple/xcode.py --self-test" in runs
