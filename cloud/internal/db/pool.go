@@ -141,7 +141,27 @@ func (m *Migrator) Up(ctx context.Context) error {
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("migrator: dialect: %w", err)
 	}
-	return goose.UpContext(ctx, m.pool.DB, m.root, goose.WithAllowMissing())
+	if err := goose.UpContext(ctx, m.pool.DB, m.root, goose.WithAllowMissing()); err != nil {
+		return err
+	}
+	return m.newestLast(ctx)
+}
+
+// newestLast makes the newest applied migration the one recorded last. Releases up to v0.3.163
+// take the one recorded last for the schema's version (goose's "current version"), so a lower slot
+// applied late makes them answer 503 for as long as it stays: one that goes back on a schema that
+// was kept (undo.go, ErrUndoKeeps) would never be ready, nor would one still serving beside a newer
+// one that migrated. Nothing reads when a row was recorded but that; its time goes with it.
+func (m *Migrator) newestLast(ctx context.Context) error {
+	if _, err := m.pool.DB.ExecContext(ctx, `
+		WITH newest AS (SELECT id FROM goose_db_version WHERE is_applied ORDER BY version_id DESC, id DESC LIMIT 1),
+		moved AS (DELETE FROM goose_db_version g USING newest
+			WHERE g.id = newest.id AND g.id < (SELECT max(id) FROM goose_db_version)
+			RETURNING g.version_id, g.is_applied, g.tstamp)
+		INSERT INTO goose_db_version (version_id, is_applied, tstamp) SELECT version_id, is_applied, tstamp FROM moved`); err != nil {
+		return fmt.Errorf("migrator: the newest version last: %w", err)
+	}
+	return nil
 }
 
 // MigrateLockID is the migrator's advisory lock (cloud/migrations/README.md).
@@ -185,7 +205,7 @@ func (m *Migrator) Down(ctx context.Context, steps int) error {
 			return err
 		}
 	}
-	return nil
+	return m.newestLast(ctx)
 }
 
 // AtHead reports whether the database has every embedded migration

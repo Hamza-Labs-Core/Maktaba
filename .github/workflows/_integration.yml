@@ -153,6 +153,9 @@ jobs:
       # relay/api stores + migrations are the integration surface; this
       # gate compiles the `integration` build tag and runs any such
       # tests (a no-op until they land) so the wiring is in place.
+      - name: The last release's cloud migrations
+        if: matrix.shard == 'rest'
+        run: tools/ci/last_release_migrations.sh "$RUNNER_TEMP/last-release"
       - name: Run cloud integration tests
         if: matrix.shard == 'rest'
         working-directory: cloud

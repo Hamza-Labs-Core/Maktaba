@@ -66,6 +66,25 @@ func sessionURL(dbURL, sessionBase string) (string, error) {
 // own (a second pool, a listener or a Cut; SessionEnv's server when set).
 func MigratedURL(t *testing.T) (*db.Pool, string) {
 	t.Helper()
+	pool, url := empty(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := db.NewMigrator(pool, migrations.FS, ".").Up(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return pool, url
+}
+
+// Empty returns a pool on a fresh database nothing has migrated, dropped when the test ends. It skips
+// the test without MAKTABA_CLOUD_DB_URL.
+func Empty(t *testing.T) *db.Pool {
+	t.Helper()
+	pool, _ := empty(t)
+	return pool
+}
+
+func empty(t *testing.T) (*db.Pool, string) {
+	t.Helper()
 	url := os.Getenv("MAKTABA_CLOUD_DB_URL")
 	if url == "" {
 		t.Skip("MAKTABA_CLOUD_DB_URL not set")
@@ -94,8 +113,5 @@ func MigratedURL(t *testing.T) (*db.Pool, string) {
 		_ = pool.Close()
 		_, _ = admin.DB.ExecContext(context.Background(), `DROP DATABASE IF EXISTS `+name+` WITH (FORCE)`)
 	})
-	if err := db.NewMigrator(pool, migrations.FS, ".").Up(ctx); err != nil {
-		t.Fatal(err)
-	}
 	return pool, SessionURL(t, u.String())
 }

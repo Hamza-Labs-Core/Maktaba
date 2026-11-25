@@ -16,7 +16,8 @@ runner at the same DSN.
 
 Slots are applied in number order, and a slot below the database's version is still applied
 when it lands later (`Migrator.Up` allows missing versions): Epic 50's 0050 can merge after
-Epic 51's 0051.
+Epic 51's 0051. `Up` then records the newest version last again: releases up to v0.3.163 take the
+version recorded last for the schema's, and are not ready on one that says less.
 
 ## Concurrency
 

@@ -222,6 +222,8 @@ jobs:
       # The relay/api stores + embedded migrations are the integration
       # surface; the binary applies migrations on connect, so the tagged
       # tests run against the live service container.
+      - name: The last release's migrations
+        run: tools/ci/last_release_migrations.sh "$RUNNER_TEMP/last-release"
       - name: Integration tests (cloud)
         working-directory: cloud
         run: go test -tags=integration -count=1 ./...

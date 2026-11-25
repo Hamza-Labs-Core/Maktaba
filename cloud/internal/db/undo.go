@@ -118,7 +118,7 @@ func (m *Migrator) Undo(ctx context.Context, versions []int64) error {
 			return fmt.Errorf("migrate undo: version %d: %w", v, err)
 		}
 	}
-	return nil
+	return m.newestLast(ctx) // for the release before, which goes on from here
 }
 
 // Verdict is whether a migration's Down script may run: Why not ("" it may), and the refusal it is.
