@@ -41,6 +41,8 @@ The sixth build story of the approved desktop design (mockups `setup-welcome`, `
 - **The scratchpad is shared between sessions:** another session overwrote `prbody.md` there. Use a file named for the PR.
 - **The design system's parts fall back to the system's face in the web app**: they read `--type-body-family`, which `tokens.css` does not set. The reference images showed it on the setup's footer buttons; the setup and status windows now set it, the rest of the app is #1651.
 - **A reference within the tolerance can still be stale**: after the face changed, two of the four setup images still passed. Removing all four made CI write them all again.
+- **Without a tray, any second window keeps an app alive that no one can open again**: the main window's close quits it, not the last window's.
+- **A sentence made of codes is English in every language**: what keeps stopping is named as its tile is, and a contract test holds the page's names to the shell's list.
 
 ## Keep doing
 - Rendering the Playwright specs headless locally to compare them with the mockups, then deleting the PNGs so only CI's are committed.
