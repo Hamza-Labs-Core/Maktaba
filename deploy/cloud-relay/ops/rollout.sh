@@ -134,11 +134,12 @@ docker_ready() {
 # unit with ExecStop. Docker's unit starts again by itself, and systemd may start the stack's again
 # with it, this included: it can be run twice.)
 heal_docker() {
-	local root id pid half=() end
+	local root id pid said half=() end
 	root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 0
 	for id in $(docker ps -aq --no-trunc --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null); do
-		if docker inspect --type container "$id" >/dev/null 2>&1; then continue; fi
-		docker info >/dev/null 2>&1 || return 0 # no answer is not "no such container"
+		if said="$(docker inspect --type container "$id" 2>&1 >/dev/null)"; then continue; fi
+		# its own words alone: any other failure says nothing about the container
+		case "$said" in *"No such container"* | *"no such container"* | *"no such object"*) ;; *) continue ;; esac
 		if [ -n "$(docker ps -aq --no-trunc --filter "id=$id" 2>/dev/null)" ]; then half+=("$id"); fi
 	done
 	[ "${#half[@]}" -gt 0 ] || return 0
@@ -156,10 +157,10 @@ heal_docker() {
 	docker_ready
 }
 
-psql_as() { # psql_as COMPOSE(dc|saved) ENVFILE SQL
+psql_as() { # psql_as COMPOSE(dc|begun|saved) ENVFILE SQL [DATABASE]
 	local u d
 	u="$(grep -E '^POSTGRES_USER=' "$2" | sed -n 1p | cut -d= -f2-)"; d="$(grep -E '^POSTGRES_DB=' "$2" | sed -n 1p | cut -d= -f2-)"
-	"$1" exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "${u:-maktaba}" -d "${d:-maktaba}" -c "$3" </dev/null
+	"$1" exec -T postgres psql -X -q -A -t -v ON_ERROR_STOP=1 -U "${u:-maktaba}" -d "${4:-${d:-maktaba}}" -c "$3" </dev/null
 }
 
 # the migrations the database records, one a line, in the order they were applied
@@ -169,13 +170,27 @@ applied() { # applied COMPOSE(dc|saved) ENVFILE
 		sed '/^$/d'
 }
 
-has_database() { docker volume inspect "${PROJECT}_pg_data" >/dev/null 2>&1; }
+VOLUME="${PROJECT}_pg_data"
+has_database() { # no answer is not "no"
+	local volumes
+	volumes="$(docker volume ls -q 2>/dev/null)" || die "docker does not say which volumes there are: nothing was changed"
+	case $'\n'"$volumes"$'\n' in *$'\n'"$VOLUME"$'\n'*) return 0 ;; esac
+	return 1
+}
+# nothing_runs SERVICE...: docker says so
+nothing_runs() {
+	local s ids
+	for s in "$@"; do
+		ids="$(containers "$s" 2>/dev/null)" || die "docker does not say what runs: nothing was changed"
+		[ -z "$ids" ] || return 1
+	done
+}
 # a first deploy has nothing to go back to: no database was ever made here, or the only deploys
 # there were failed as first ones and nothing serves. Anything else (a node set up by hand, one a
 # person unheld or started) has a set worth saving, whether or not it serves at this moment.
 first_deploy() {
 	[ ! -f "$STATE/committed" ] || return 1
-	if [ -f "$STATE/no-release" ] && ! running maktaba-cloud && ! running api; then return 0; fi
+	if [ -f "$STATE/no-release" ] && nothing_runs maktaba-cloud api; then return 0; fi
 	! has_database
 }
 
@@ -228,8 +243,57 @@ UNIT
 	systemctl restart maktaba-rollout-watch.timer
 }
 
+USER_TABLES="pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')"
+
+# A failed first deploy's database that was never made: postgres makes it at its first start in an empty
+# folder only, and that one was cut, or failed. It is made again, from nothing, when it is shown that
+# nothing of anybody's is in it: no release was ever committed here (first_deploy) and no backup was ever
+# taken (each begin takes one of a database with a table in it), and either postgres itself says that it has no
+# database but its own three, with no table in them, or, when it can't start, no folder of another database
+# is there (they are numbered from 16384; a database that exists has its folder).
+afresh() { # afresh COMPOSE WHY
+	local db="$1" why="$2" not="" n="" t="" files="" keep
+	if compgen -G "/var/backups/maktaba-cloud/db-*.dump" >/dev/null; then
+		not="a backup of a database of this node is in /var/backups/maktaba-cloud"
+	elif n="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM pg_database WHERE datname NOT IN ('postgres', 'template0', 'template1')" postgres 2>/dev/null)"; then
+		t="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM $USER_TABLES" postgres 2>/dev/null)" || t="?"
+		[ "$n" = 0 ] && [ "$t" = 0 ] || not="postgres has $n database(s) of its users, and $t table(s) beside them"
+	fi
+	if [ -z "$not" ]; then
+		stop_all postgres || not="postgres does not stop"
+	fi
+	if [ -z "$not" ] && [ -z "$n" ]; then
+		# shellcheck disable=SC2016  # expands in the container
+		files="$(begun run --rm -T --no-deps --entrypoint sh postgres -c '
+			cd /var/lib/postgresql/data || exit 1
+			for d in base/*; do
+				n="${d#base/}"
+				case "$n" in "*" | *[!0-9]*) continue ;; esac
+				[ "$n" -lt 16384 ] || { echo "database $n"; exit 0; }
+			done
+			[ -z "$(ls -A pg_tblspc 2>/dev/null)" ] || { echo "a tablespace"; exit 0; }
+			echo nothing' </dev/null 2>/dev/null)" || files="an unreadable folder"
+		[ "$files" = nothing ] || not="its folder has $files"
+	fi
+	if [ -z "$not" ]; then
+		# a copy all the same: it is small
+		keep="/var/backups/maktaba-cloud/unfinished-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+		if ! (umask 077; mkdir -p "${keep%/*}" && begun run --rm -T --no-deps --entrypoint tar postgres -C /var/lib/postgresql/data -czf - . </dev/null > "$keep" 2>/dev/null) ||
+			! docker volume rm "$VOLUME" >/dev/null; then not="its volume can't be copied or removed"; fi
+	fi
+	if [ -n "$not" ]; then
+		err "the database of this node's failed first deploy $why, and it can't be shown that nothing is in it: $not"
+		err "nothing was removed. When nobody needs what is in it, on the node:"
+		err "  docker ps -aq --filter volume=$VOLUME | xargs -r docker rm -f; docker volume rm $VOLUME"
+		err "and deploy again; otherwise docs/cloud-single-node.md, \"A database that does not come up\""
+		die "begin: the database $why: nothing was changed"
+	fi
+	sync
+	log "the database $why: its first start never ended and nothing is in it, so it is made afresh (a copy: $keep)"
+}
+
 cmd_begin() {
-	local src tmp refs ref room p try was now tables="" db=dc
+	local src tmp refs ref room p try was now tables="" db=dc first=no broken=""
 	src="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 	valid_id "${DEPLOY_ID:-}" || die "begin: name the deploy (DEPLOY_ID)"
 	if [ -z "${MAKTABA_CLOUD_TAG:-}" ] || [ -z "${MAKTABA_CADDY_TAG:-}" ]; then die "begin: MAKTABA_CLOUD_TAG and MAKTABA_CADDY_TAG are required"; fi
@@ -289,22 +353,37 @@ cmd_begin() {
 	cat /proc/sys/kernel/random/boot_id > "$STATE/pending.new/boot_id"
 	printf '%s\n' "$DEPLOY_ID" > "$STATE/pending.new/id"
 	# whatever there is in the database, before any deploy, a first one again included
+	if first_deploy; then first=yes; fi
 	if has_database; then
 		if ! dc up -d --wait --wait-timeout 180 postgres </dev/null >/dev/null 2>&1; then
 			# a failed first deploy's own compose file may be what breaks it: the new release's then
-			first_deploy || die "begin: the database does not come up: nothing was changed"
-			BEGIN_WITH="$src/docker-compose.yml" BEGIN_ENV="$tmp/env" db=begun
+			[ "$first" = yes ] || die "begin: the database does not come up: nothing was changed (docs/cloud-single-node.md, \"A database that does not come up\")"
+			db=begun
 			log "the database does not come up with the failed deploy's compose file: with this one's"
-			begun up -d --wait --wait-timeout 180 postgres </dev/null >/dev/null 2>&1 || die "begin: the database does not come up: no file was changed"
 		fi
-		tables="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM pg_tables WHERE schemaname NOT IN ('pg_catalog', 'information_schema')")" || die "begin: the database can't be read: nothing was changed"
+		if [ "$first" = yes ]; then BEGIN_WITH="$src/docker-compose.yml" BEGIN_ENV="$tmp/env"; fi
+		if [ "$db" = begun ] && ! begun up -d --wait --wait-timeout 180 postgres </dev/null >/dev/null 2>&1; then
+			broken="does not come up"
+		else
+			for try in 1 2 3; do
+				tables="$(psql_as "$db" "$DEPLOY_DIR/.env" "SELECT count(*) FROM $USER_TABLES" 2>/dev/null)" && break
+				sleep "$try"
+			done
+			[ -n "$tables" ] || broken="can't be read"
+		fi
+		if [ -n "$broken" ]; then
+			[ "$first" = yes ] || die "begin: the database $broken: nothing was changed (docs/cloud-single-node.md, \"A database that does not come up\")"
+			afresh "$db" "$broken"
+			db=dc BEGIN_WITH="" BEGIN_ENV=""
+		fi
 	fi
-	if [ "$tables" = 0 ] && first_deploy; then
+	[ "$db" = begun ] || BEGIN_WITH="" BEGIN_ENV=""
+	if [ "$tables" = 0 ] && [ "$first" = yes ]; then
 		log "the database is empty: nothing to back up" # a first deploy cut off before its migrations
 	elif [ -n "$tables" ]; then
 		DEPLOY_DIR="$DEPLOY_DIR" ROLLOUT_LOCKED=1 BACKUP_COMPOSE="$BEGIN_WITH" BACKUP_COMPOSE_ENV="$BEGIN_ENV" bash "$src/ops/backup.sh" || die "begin: the backup before the deploy failed: nothing was changed"
 	fi
-	if first_deploy; then
+	if [ "$first" = yes ]; then
 		touch "$STATE/pending.new/first"
 		log "a first deploy: nothing to go back to"
 	else
@@ -704,14 +783,24 @@ nothing_to_start() {
 }
 
 cmd_unhold() {
+	local runs=no
 	[ -f "$STATE/held" ] || die "the node is not held"
+	# what the hold could not stop is not what a person started
+	stop_held || die "unhold: not all of the relay, api and worker could be stopped yet"
+	nothing_runs "${APP[@]}" || runs=yes
+	# a first release that was refused starts for nobody: unless a person started it by now
+	if [ "$runs" = yes ]; then rm -f "$STATE/no-release"
+	elif [ -f "$STATE/pending/first" ]; then touch "$STATE/no-release"
+	fi
 	if [ -d "$STATE/pending" ]; then
 		rm -rf "$STATE/held-set"
 		mv -T "$STATE/pending" "$STATE/held-set"
 	fi
-	# the node is as it is now, whether or not a first deploy failed there before
-	rm -f "$STATE/held" "$STATE/not-stopped" "$STATE/no-release" "$STATE/reserve" "$DEPLOY_DIR/.reserve"
+	rm -f "$STATE/held" "$STATE/not-stopped" "$STATE/reserve" "$DEPLOY_DIR/.reserve"
 	log "not held any more; the set from before the failed deploy is in $STATE/held-set"
+	if [ ! -f "$STATE/committed" ] && [ -f "$STATE/no-release" ]; then
+		log "no release was ever committed here: nothing starts, also at boot, until a deploy is (or a person starts the stack: docker compose --env-file .env up -d in $DEPLOY_DIR)"
+	fi
 }
 
 cmd_status() {

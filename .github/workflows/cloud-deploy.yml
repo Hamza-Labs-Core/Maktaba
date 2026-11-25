@@ -489,8 +489,34 @@ jobs:
         if: always()
         run: rm -f ~/.ssh/node_key
 
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      # a log is masked, a file that is uploaded is not: ssh and a dial that fails name the address
+      - name: The node's address out of what is uploaded
+        id: cleaned
         if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/e2e"
+          known="$HOME/.ssh/known_hosts_node"
+          { printf '%s\n' "${NODE_IP:-}"
+            if [ -s "$known" ]; then
+              cut -d' ' -f3 "$known"
+              ssh-keygen -l -E sha256 -f "$known" | cut -d' ' -f2
+              ssh-keygen -l -E md5 -f "$known" | cut -d' ' -f2
+            fi
+          } | python3 -I -c '
+          import pathlib, sys
+          out = [w.encode() for w in sys.stdin.read().split()]
+          for f in pathlib.Path(sys.argv[1]).rglob("*"):
+              if f.is_file() and not f.is_symlink():
+                  data = new = f.read_bytes()
+                  for w in out:
+                      new = new.replace(w, b"***")
+                  if new != data:
+                      f.write_bytes(new)
+          ' "$RUNNER_TEMP/e2e"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && steps.cleaned.outcome == 'success'
         with:
           name: e2e-${{ inputs.target || 'qa' }}
           path: ${{ runner.temp }}/e2e

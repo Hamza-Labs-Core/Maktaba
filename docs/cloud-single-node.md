@@ -17,7 +17,7 @@
 
 Both run Ubuntu 26.04 and the same files (`deploy/cloud-relay`), with each target's names in
 `deploy/cloud-relay/targets/<target>.env`. SSH is root with the `RELAY_SSH_KEY` secret, and the
-host key is pinned (`QA_SSH_KNOWN_HOSTS`, `RELAY_SSH_KNOWN_HOSTS`). Nothing reaches a node by
+host key is pinned (each environment's secret `NODE_KNOWN_HOSTS`). Nothing reaches a node by
 hand; every change goes through the workflow below.
 
 ## What runs on a node
@@ -135,13 +135,28 @@ A **held** node has its relay, api and worker stopped, refuses deploys and does 
 answer, it says that not all of them could be stopped, and the node goes on trying each minute and at
 boot. The stopped containers are removed (their last lines are in
 `/var/lib/maktaba-cloud-deploy/last-logs`), so that Docker can't start one again. A dump is never put
-back by itself. A person sets the node right, then `maktaba-rollout unhold`. A node that reboots
+back by itself. A person sets the node right, then `maktaba-rollout unhold`; a first release that was refused still starts
+for nobody after it, unless a person has started it. A node that reboots
 during a deploy restores first (the stack's unit asks before it starts, and never starts anything
 while a command is at work), and a deploy that finds an earlier one cut off undoes it before it
 begins. A failed first deploy has nothing to go back to: the stack stops, stays stopped at every boot
 until a release is committed, and what its database holds is backed up before the next deploy.
 A power cut can leave a container half removed, which Docker lists and compose then fails on: boot, a
 restore and the next deploy take it out first.
+
+**A database that does not come up.** `begin` starts the database to back it up, and refuses when it can't,
+with nothing changed. On a node that never committed a release, a first start of Postgres that was cut or
+failed leaves a folder Postgres does not finish by itself: `begin` makes it afresh when it can show that
+nothing is in it (no backup was ever taken, and no database but Postgres's own exists), and keeps a copy in
+`/var/backups/maktaba-cloud`. When it can't show that, it says why and refuses. Then, on the node:
+
+- nobody needs what is in it: `docker ps -aq --filter volume=maktaba-relay_pg_data | xargs -r docker rm -f`,
+  then `docker volume rm maktaba-relay_pg_data`, and deploy again;
+- otherwise look first at `docker logs` of the Postgres container, and keep a copy of the volume before
+  anything else. The newest backup (`/var/backups/maktaba-cloud`) is what a new volume is filled from:
+  start Postgres alone (`docker compose --env-file .env up -d --wait postgres` in `/opt/maktaba-relay`) on it
+  and read the dump in (`docker compose --env-file .env exec -T postgres pg_restore -U maktaba -d maktaba
+  --no-owner < db-….dump`).
 
 What does not go back: the DNS records, the firewall, Docker's settings and the systemd units.
 Each failure is rehearsed in CI (`cloud-rehearsal.yml`, the `single-node` jobs:

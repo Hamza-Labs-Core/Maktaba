@@ -281,6 +281,29 @@ def psql(sql: str) -> str:
 
 # --- the cases ------------------------------------------------------------------------------
 
+def power_cut_while_the_database_is_made() -> str:
+    """The very first start of Postgres on the node, cut: wherever it was, the next deploy begins."""
+    begin("a")
+    set_up("a")
+    was = boot_id()
+    p = subprocess.Popen(deploy_sh("apply"), env=deploy_env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    end = time.monotonic() + 300
+    while on("test -e /var/lib/docker/volumes/maktaba-relay_pg_data/_data/PG_VERSION", check=False)[0] != 0:
+        assert time.monotonic() < end and p.poll() is None, "the database's folder was never made"
+    p.kill()
+    power_cut(was)
+    settled()
+    nothing_serves()
+    out = begin("a")
+    assert "a first deploy" in out, out[-2000:]
+    how = "made afresh" if "made afresh" in out else "it had been made" if "the database is empty" in out else "nothing was there"
+    set_up("a")
+    must("apply")
+    assert "first deploy failed" in must("rollback")
+    settled()
+    return how
+
+
 def failed_first_then_a_reboot() -> str:
     out = begin("a")
     assert "a first deploy" in out, out[-1500:]
@@ -463,6 +486,7 @@ def main() -> int:
     if os.geteuid() != 0 or not os.environ.get("CI"):
         sys.exit("only as root, on a CI runner")
     cases: list[tuple[str, Callable[[], str | None]]] = [
+        ("a power cut while the database is made", power_cut_while_the_database_is_made),
         ("a first deploy's tests fail, then a reboot", failed_first_then_a_reboot),
         ("a first deploy's tests fail, then a power cut", failed_first_then_a_power_cut),
         ("the next deploy backs it up", next_deploy_backs_it_up),

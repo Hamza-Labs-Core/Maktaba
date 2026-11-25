@@ -54,6 +54,11 @@ jobs:
           - boots-only-committed
           - first-while-it-serves
           - unhold-keeps-no-release
+          - unhold-serves-it
+          - never-afresh
+          - afresh-anyway
+          - no-volume-is-no-database
+          - any-failed-inspect
           - boots-a-failed-first
           - first-unsaved
           - app-not-stopped
