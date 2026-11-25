@@ -92,6 +92,9 @@ func PruneBackups(dir, keepPath string, keep int) error {
 			}
 		}
 	}
+	if BackupsHeld(dir) {
+		return firstErr // a restore is not done: every dump stays
+	}
 	for prefix, dumps := range kinds {
 		sort.SliceStable(dumps, func(i, j int) bool {
 			if dumps[i].path == keepPath || dumps[j].path == keepPath {

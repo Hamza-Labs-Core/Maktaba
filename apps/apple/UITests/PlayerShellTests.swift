@@ -195,6 +195,8 @@ final class PlayerShellTests: XCTestCase {
         XCTAssertEqual(again.type, first.type)
         XCTAssertEqual(again.compactDescription, first.compactDescription)
         XCTAssertEqual(again.detailedDescription, first.detailedDescription)
+        let warning = XCTIssue(type: .system, compactDescription: "slow", severity: .warning)
+        XCTAssertEqual(PlayerUITestCase.withoutInterrupting(warning).severity, .warning, "a warning stays one")
     }
 
     /// A tap that should open a page is tapped again only when the page is not open and the

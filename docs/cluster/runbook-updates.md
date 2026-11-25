@@ -81,8 +81,25 @@ or a release you rolled back by hand that refuses the newer schema.
   `maktaba-server restore --backup <name>` (what it would do), `... --confirm` (do it).
 - **What happens**: the home restarts on the kept release whose schema is the backup's, and that
   release puts the backup back before anything else runs. The database it replaces is set aside
-  as `backups/replaced-<version>-<time>.dump` (restore that one to undo). The machines copy the
-  restored database anew.
+  first, as `backups/replaced-<version>-<time>.dump` (restore that one to undo). Older backups are
+  removed to make room for it when they must be: never the one put back, the one a stopped update
+  names, or the newest of each kind.
+- **No room for that copy** (`restore_no_copy` when you ask, `db_restore_no_copy` at the start): it
+  stops before it touches anything, and says how much is free and how much is needed. Free some space
+  on the backups' disk, or delete backups you no longer need (`maktaba-server backups delete <name>`, on
+  a stopped home too), and try again. Or agree to go on without a copy (the Updates page, the recovery
+  page, `--without-copy`): the library as it is now is then lost for good. No backup is removed then.
+- **On an older release** (the backup runs on one older than the one running): that release always takes a
+  copy, by its own rules, and is never asked to go without one.
+  - `restore_older_no_room`: there is no room for it. Nothing was changed. Free what it says (delete backups
+    you no longer need: `maktaba-server backups delete <name>`, on a stopped home too), or put back a
+    backup that the running release puts back itself.
+  - `restore_unprotected`: it may remove the backup first, and the backups' disk has no hard links to keep
+    it. Put back the newest `pre-<from>-to-<to>` backup, or move the backups to another disk (Settings >
+    Backups) and try again.
+  - It may still remove other, older backups by its own normal rules (docs/updates.md): copy elsewhere any
+    that must stay.
+- The machines copy the restored database anew.
 - **What it loses**: every change made since the backup was taken — added videos, watch history,
   settings, jobs done. A `pre-<from>-to-<to>.dump` is from right before that update's switch.
 - **Refusals**: `restore_not_confirmed` (no confirmation), `restore_update_under_way` (cancel the
@@ -92,6 +109,20 @@ or a release you rolled back by hand that refuses the newer schema.
   database is not one this restore handles), `restore_not_home` (a machine of a home has no
   backups: restore on the home), `restore_under_way` (one is already being put back),
   `restore_switch_failed` (the release could not be made current: the detail says why).
+- **It cannot finish** (the backup lost or damaged, a full disk, a try that hangs): the home stops
+  and says it, and every backup is kept until it is done. What can be done depends on what the
+  database is, which the start page and the recovery page (`/recovery`) say:
+  - *Nothing was changed*: try it again (a restart does), put another backup back, or give it up
+    (**Give this restore up**, or `maktaba-server restore --abandon --confirm`): the release that
+    ran before it runs again on the database as it was, or the update that had stopped waits for
+    you again. A newer release installed meanwhile goes on from that database. A try that hangs is
+    stopped the same way (**Stop it and give this restore up**).
+  - *The database may hold the backup in part*, or *is gone*: only a backup puts it right. Try it
+    again, or put another back. The database it replaced is in `replaced-<version>-<time>.dump`.
+  - Refusals: `restore_none` (no restore waits), `restore_data_changed` (the database is not the one
+    from before it any more: put a backup back), `restore_database_unanswered` (Postgres does not
+    answer, so that cannot be told), `restore_before_unknown` (asked on a release from before this:
+    put a backup back, or give it up under a newer release).
 
 ## Recovering a corrupt launcher
 

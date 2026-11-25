@@ -24,10 +24,9 @@ source, so the set can be checked against it and remade at each release.
 
 | Listing | Store | App, bundle | Built by |
 |---|---|---|---|
-| `apple-player-iphone` | App Store | Maktaba Player, `com.hamzalabs.maktaba.player` | `testflight.yml` |
-| `apple-player-ipad` | App Store | Maktaba Player for iPad, `….player.tablet` | `testflight.yml` |
+| `apple-player` | App Store | Maktaba Player, `com.hamzalabs.maktaba.player`: one app for iPhone and iPad, with both screenshot sets | `testflight.yml` |
 | `apple-player-mac` | Mac App Store | Maktaba Player for Mac, `….player.mac` | `testflight.yml` |
-| `apple-remote-iphone`, `apple-remote-ipad` | App Store | Maktaba Remote, `….remote`, `….remote.tablet` | `testflight.yml` |
+| `apple-remote` | App Store | Maktaba Remote, `….remote`: one app for iPhone and iPad, with both screenshot sets | `testflight.yml` |
 | `apple-tv` | App Store (tvOS) | Maktaba TV, `com.hamzalabs.maktaba.tv` | `testflight.yml` |
 | `google-player`, `google-remote`, `google-tv` | Google Play | the three Android packages, one listing each for every screen | `play-bundles.yml` |
 | `amazon-firetv` | Amazon Appstore | the TV app's `amazon` flavor (the same images serve Vega OS) | `tv-release.yml` |

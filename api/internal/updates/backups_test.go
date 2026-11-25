@@ -21,6 +21,7 @@ import (
 type supervisorFake struct {
 	mu       sync.Mutex
 	restored []map[string]any
+	noCopy   bool // there is no room for a copy of the library as it is now
 }
 
 func (s *supervisorFake) server(t *testing.T) (*httptest.Server, string) {
@@ -34,7 +35,10 @@ func (s *supervisorFake) server(t *testing.T) (*httptest.Server, string) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		plan := map[string]any{"backup": "pre-v0.2.0-to-v0.3.0.dump", "schema": 140, "release": "0.2.0",
-			"running": "0.3.0", "at": "2026-10-20T03:00:00Z"}
+			"running": "0.3.0", "at": "2026-10-20T03:00:00Z", "older": true}
+		if s.noCopy {
+			plan["no_copy"], plan["copy_free"], plan["copy_need"] = "no room", 10<<30, 46<<30
+		}
 		switch {
 		case r.URL.Path == "/update/backups":
 			_ = json.NewEncoder(w).Encode(map[string]any{"backups": map[string]any{"running": "0.3.0",
@@ -50,6 +54,11 @@ func (s *supervisorFake) server(t *testing.T) (*httptest.Server, string) {
 			var body map[string]any
 			b, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(b, &body)
+			if s.noCopy && body["without_copy"] != true {
+				w.WriteHeader(http.StatusConflict)
+				_ = json.NewEncoder(w).Encode(map[string]any{"code": "restore_no_copy", "error": "no room", "plan": plan})
+				return
+			}
 			s.mu.Lock()
 			s.restored = append(s.restored, body)
 			s.mu.Unlock()
@@ -133,18 +142,35 @@ func TestBackupsAndRestore(t *testing.T) {
 		t.Fatalf("restore %d %v", code, out)
 	}
 	if len(sup.restored) != 1 || sup.restored[0]["backup"] != "pre-v0.2.0-to-v0.3.0.dump" || sup.restored[0]["confirm"] != true ||
-		sup.restored[0]["page"] != true ||
+		sup.restored[0]["page"] != true || sup.restored[0]["without_copy"] != nil ||
 		sup.restored[0]["by"] == "" {
 		t.Fatalf("asked %v", sup.restored)
 	}
 	if a := auditActions(t, f); len(a) != 1 || a[0] != "update.restore" {
 		t.Fatalf("audit %v", a)
 	}
+	// with no room for a copy of the library as it is now: refused, with what is needed; agreed
+	// to, it goes on
+	sup.noCopy = true
+	code, out = do(t, r, "GET", "/api/cluster/updates/backups/pre-v0.2.0-to-v0.3.0.dump/restore", nil, true)
+	if code != http.StatusOK || out["no_copy"] != "no room" || out["older"] != true || out["copy_need"] != float64(46<<30) {
+		t.Fatalf("plan with no room %d %v", code, out)
+	}
+	code, out = do(t, r, "POST", "/api/cluster/updates/backups/pre-v0.2.0-to-v0.3.0.dump/restore",
+		map[string]any{"confirm": "pre-v0.2.0-to-v0.3.0.dump"}, true)
+	if code != http.StatusConflict || out["code"] != "restore_no_copy" {
+		t.Fatalf("with no room %d %v", code, out)
+	}
+	code, out = do(t, r, "POST", "/api/cluster/updates/backups/pre-v0.2.0-to-v0.3.0.dump/restore",
+		map[string]any{"confirm": "pre-v0.2.0-to-v0.3.0.dump", "without_copy": true}, true)
+	if n := len(sup.restored); code != http.StatusAccepted || n != 2 || sup.restored[1]["without_copy"] != true {
+		t.Fatalf("agreed %d %v %v", code, out, sup.restored)
+	}
 	deadline := time.Now().Add(5 * time.Second)
 	for len(cl.commands()) == 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if got := cl.commands(); len(got) != 1 || got[0] != "s-n1 disconnect" {
+	if got := cl.commands(); len(got) < 1 || got[0] != "s-n1 disconnect" {
 		t.Fatalf("machines told %v", got)
 	}
 	for _, p := range []string{"/api/cluster/updates/backups", "/api/cluster/updates/backups/x.dump/restore"} {

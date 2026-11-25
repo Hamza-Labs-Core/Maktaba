@@ -111,9 +111,22 @@ func TestListDeleteAndMoveDumps(t *testing.T) {
 			t.Errorf("deleted %q", bad)
 		}
 	}
+	// a restore that is not done held them, and an older release removed one
+	if err := HoldBackups(from); err != nil {
+		t.Fatal(err)
+	}
+	if err := KeepForRestore(from, "maktaba-20261020-030000.dump"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(from, "maktaba-20261020-030000.dump")); err != nil {
+		t.Fatal(err)
+	}
 	n, err := MoveDumps(from, to)
 	if err != nil || n != 2 {
 		t.Fatalf("moved %d %v", n, err)
+	}
+	if got := left(t, from); len(got) != 0 {
+		t.Errorf("left %v", got)
 	}
 	if got := left(t, to); !slices.Equal(got, []string{"backups-keep", "maktaba-20261020-030000.dump", "pre-1.0-to-1.1.dump"}) {
 		t.Errorf("moved %v", got)

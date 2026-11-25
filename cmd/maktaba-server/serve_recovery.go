@@ -154,15 +154,29 @@ func startRecovery(d recoveryDeps) http.Handler {
 			}
 			return out, nil
 		},
-		Restore: func(name, by string) error {
+		Restore: func(name, by string, withoutCopy bool) error {
 			u := d.upd()
 			if u == nil || u.r == nil {
 				return errors.New("this machine restores no backups (a joined machine's database is the home's)")
 			}
-			_, err := u.r.restore(context.Background(), name, by, true, false)
+			_, err := u.r.restoreAs(context.Background(), name, by, restoreAsk{confirm: true, withoutCopy: withoutCopy})
 			return err
 		},
 		Held: func() *recovery.Held { return heldOf(state) },
+		Stuck: func() *recovery.Stuck {
+			u := d.upd()
+			if u == nil || u.r == nil {
+				return nil
+			}
+			return stuckOf(u.r)
+		},
+		GiveUp: func(by string) error {
+			u := d.upd()
+			if u == nil || u.r == nil {
+				return errors.New("this machine restores no backups (a joined machine's database is the home's)")
+			}
+			return u.r.abandon(context.Background(), by)
+		},
 	}
 	serveRecovery.Store(h)
 	return recovery.LinkHandler(codes, "http://"+supervisor.LocalAddr(d.cfg.Server.WebListen, "8088"), record)

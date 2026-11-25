@@ -59,10 +59,12 @@ progress as their `detail`.
   without a record; the newest `[postgres] update_dumps`, default 3, are kept beside the nightly
   7), the record says `migrating`, `maktaba-api migrate --timeout 0 up`, the record says
   `migrated`.
-- **A failing migration:** the dump goes back into the running cluster (`restoring`, then
-  `restored`, naming the release from before) and every process stays stopped, saying why and
-  what next: install the old release again, or an update that fixes it (each start tries the
-  update again). A stop or a crash part way goes on from the record at the next start.
+- **A failing migration:** the schema is kept when it is additive, or undone by its Down scripts;
+  else the update is held (`held`) and every process stays stopped, saying why and the choices:
+  put the backup back (the recovery page, or `maktaba-server restore`), or install a release that
+  fixes it. The dump goes back only when a person asks (`restoring`, then `restored`, naming the
+  release from before; since 2026-11-24, never by itself). A stop or a crash part way goes on from
+  the record at the next start.
 - **A database ahead of the code:** the API refuses it on any install: `migrate up` exits 3 when
   the database holds a migration newer than its folder's, and `serve` when it holds one newer
   than the code ships.
@@ -79,4 +81,4 @@ progress as their `detail`.
 
 There is no in-app rollback. Installing an older installer over a newer one is allowed by NSIS;
 the database step then refuses to run any process on the newer database (above). The way back is
-the `pre-<old>-to-<new>.dump` (a restore command is a follow-up, as on the Mac).
+the `pre-<old>-to-<new>.dump`, put back when a person asks (`maktaba-server restore`).

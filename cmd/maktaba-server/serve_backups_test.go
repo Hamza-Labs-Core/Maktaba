@@ -226,3 +226,70 @@ func TestAHeldUpdatesBackupIsNotDeleted(t *testing.T) {
 		t.Fatalf("once the record moved on: %v", err)
 	}
 }
+
+// The backups moved while a restore waits: its record names them where they are, kept there as
+// they were when an older release is to put one back. Never while a try runs, and what did not
+// move is still found.
+func TestMovingTheBackupsMovesTheRestore(t *testing.T) {
+	const first, other = "pre-v1-to-v2.dump", "maktaba-20261025-030000.dump"
+	for name, kept := range map[string]bool{"an older release's": true, "this release's": false} {
+		t.Run(name, func(t *testing.T) {
+			cfgPath, data, backups := backupsEnv(t)
+			cfg, _, err := config.LoadFrom(cfgPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			rec := apppayload.Database{Version: "v2", State: apppayload.DatabaseRestoring, From: "v1", By: "admin",
+				Dump: filepath.Join(backups, first), Aside: filepath.Join(backups, other), AsideBytes: 4}
+			if kept {
+				if err := pgbundle.KeepForRestore(backups, first, other); err != nil {
+					t.Fatal(err)
+				}
+				rec.Dump = pgbundle.KeptPath(backups, first)
+			}
+			if err := pgbundle.HoldBackups(backups); err != nil {
+				t.Fatal(err)
+			}
+			if err := apppayload.WriteDatabase(cfg.StateDir(), rec); err != nil {
+				t.Fatal(err)
+			}
+			dir, yes := filepath.Join(filepath.Dir(data), "B"), true
+			ch := backupsChange{MoveDumps: &yes}
+			ch.Dir = &dir
+			g := restoreGuardOf(cfg.StateDir())
+			_, end, _ := g.begin(context.Background())
+			if _, err := applyBackups(cfgPath, ch); restoreCode(err) != "restore_under_way" {
+				t.Fatalf("while a try runs: %v", err)
+			}
+			if c, _, _ := config.LoadFrom(cfgPath); c.Backups.Dir != "" {
+				t.Fatalf("saved %q", c.Backups.Dir)
+			}
+			end()
+			if _, err := applyBackups(cfgPath, ch); err != nil {
+				t.Fatal(err)
+			}
+			now, _, err := apppayload.ReadDatabase(cfg.StateDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			c, _, _ := config.LoadFrom(cfgPath)
+			dir = c.Backups.Dir
+			want := filepath.Join(dir, first)
+			if kept {
+				want = pgbundle.KeptPath(dir, first)
+			}
+			if now.Dump != want || now.Aside != filepath.Join(dir, other) || !pgbundle.BackupsHeld(dir) || pgbundle.BackupsHeld(backups) {
+				t.Fatalf("%+v", now)
+			}
+			if _, err := os.Stat(now.Dump); err != nil || !asideThere(now) {
+				t.Fatalf("%v, %v", err, asideThere(now))
+			}
+			if _, err := os.Stat(pgbundle.KeptPath(dir, other)); kept != (err == nil) {
+				t.Fatalf("the copy kept: %v", err)
+			}
+			if left, _ := filepath.Glob(filepath.Join(backups, "*")); len(left) != 0 {
+				t.Fatalf("left %v", left)
+			}
+		})
+	}
+}

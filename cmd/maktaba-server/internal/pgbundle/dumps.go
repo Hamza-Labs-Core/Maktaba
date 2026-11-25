@@ -88,13 +88,21 @@ func DeleteDump(dir, name string) error {
 	if err != nil {
 		return err
 	}
+	if err := RemoveDump(KeptPath(dir, name)); err != nil { // a link of it would hold its room
+		return err
+	}
 	return RemoveDump(p)
 }
 
 // MoveDumps moves every finished dump of from (and the record of the pre-update
 // dumps to keep) into to: renamed on the same disk, else copied, compared by size
 // and removed. A dump to already has stays as it is. It returns how many it moved.
+// What from holds for a restore that is not done (ReleaseBackups) is let go there: the next
+// start holds to.
 func MoveDumps(from, to string) (int, error) {
+	if err := ReleaseBackups(from); err != nil {
+		return 0, err
+	}
 	dumps, err := ListDumps(from)
 	if err != nil {
 		return 0, err

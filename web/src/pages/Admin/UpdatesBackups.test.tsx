@@ -112,6 +112,96 @@ describe("UpdatesBackups", () => {
     ).toBeInTheDocument();
   });
 
+  it("says that an older version's own rules hold", async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve(path === "/api/cluster/updates/backups" ? list : { ...plan, older: true })
+    );
+    for (const [lang, words, says] of [
+      ["en", en, "may remove other backups"],
+      ["ar", ar, "قد يحذف نسخًا احتياطية أخرى"],
+    ] as const) {
+      const { unmount } = renderIt(lang);
+      const row = await screen.findByTestId(`updates-backup-${NAME}`);
+      await userEvent
+        .setup()
+        .click(within(row).getByRole("button", { name: words["updates.backups.restore"] }));
+      expect(await screen.findByTestId("updates-backups-plan")).toHaveTextContent(says);
+      unmount();
+    }
+  });
+
+  it("asks to go on without a copy when there is no room for one", async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === "/api/cluster/updates/backups"
+          ? list
+          : { ...plan, no_copy: "no room", copy_free: 10 * 1024 ** 3, copy_need: 46 * 1024 ** 3 }
+      )
+    );
+    post.mockResolvedValue(plan);
+    for (const [lang, words] of [
+      ["en", en],
+      ["ar", ar],
+    ] as const) {
+      post.mockClear();
+      const { unmount } = renderIt(lang);
+      const user = userEvent.setup();
+      const row = await screen.findByTestId(`updates-backup-${NAME}`);
+      await user.click(within(row).getByRole("button", { name: words["updates.backups.restore"] }));
+      const said = await screen.findByTestId("updates-backups-no-copy");
+      expect(said).toHaveTextContent("10.0 GiB");
+      expect(said).toHaveTextContent("46.0 GiB");
+      const dialog = screen.getByRole("dialog");
+      const go = within(dialog).getByRole("button", { name: words["updates.backups.restore"] });
+      await user.type(within(dialog).getByRole("textbox"), NAME);
+      expect(go).toBeDisabled();
+      await user.click(within(dialog).getByLabelText(words["updates.backups.noCopyAgree"]));
+      expect(go).toBeEnabled();
+      await user.click(go);
+      await waitFor(() =>
+        expect(post).toHaveBeenCalledWith(`/api/cluster/updates/backups/${NAME}/restore`, {
+          confirm: NAME,
+          without_copy: true,
+        })
+      );
+      unmount();
+    }
+  });
+
+  it("asks again when the room went meanwhile", async () => {
+    let full = false;
+    get.mockImplementation((path: string) =>
+      Promise.resolve(
+        path === "/api/cluster/updates/backups"
+          ? list
+          : full
+            ? { ...plan, no_copy: "no room", copy_free: 1, copy_need: 2 }
+            : plan
+      )
+    );
+    post.mockImplementation(() => {
+      full = true;
+      return Promise.reject(
+        new ApiError({
+          type: "about:blank#restore_no_copy",
+          title: "conflict",
+          status: 409,
+          detail: "no room",
+          code: "restore_no_copy",
+        })
+      );
+    });
+    renderIt();
+    const user = userEvent.setup();
+    const row = await screen.findByTestId(`updates-backup-${NAME}`);
+    await user.click(within(row).getByRole("button", { name: en["updates.backups.restore"] }));
+    const dialog = await screen.findByRole("dialog");
+    expect(screen.queryByTestId("updates-backups-no-copy")).not.toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox"), NAME);
+    await user.click(within(dialog).getByRole("button", { name: en["updates.backups.restore"] }));
+    expect(await screen.findByTestId("updates-backups-no-copy")).toBeInTheDocument();
+  });
+
   it("says a refusal in the page's language", async () => {
     get.mockImplementation((path: string) => {
       if (path === "/api/cluster/updates/backups") return Promise.resolve(list);

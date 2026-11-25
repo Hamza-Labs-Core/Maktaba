@@ -166,9 +166,7 @@ def test_the_keys_people_read(key: str, read: bool) -> None:
 def test_every_app_is_found() -> None:
     assert {
         "Maktaba Remote",
-        "Maktaba Remote iPad",
         "Maktaba Player",
-        "Maktaba Player iPad",
         "Maktaba Player Mac",
         "Maktaba TV",
     } <= set(APPS)
@@ -293,5 +291,4 @@ def test_the_project_file_is_generated() -> None:
         catalogs = [r for r in _resources(target) if r.endswith(":InfoPlist.xcstrings")]
         assert len(catalogs) == 1, f"{target} copies {len(catalogs)} InfoPlist.xcstrings"
         copied[target] = catalogs[0]
-    assert copied["Maktaba Player"] == copied["Maktaba Player iPad"]
     assert copied["Maktaba Player Mac"] != copied["Maktaba Player"]

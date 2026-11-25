@@ -181,13 +181,25 @@ func applyBackups(path string, ch backupsChange) ([]string, error) {
 		return nil, ref
 	}
 	cfg.Backups = next.Section()
-	if err := cfg.SaveTo(path); err != nil {
-		return nil, err
-	}
 	if moving && ch.MoveDumps != nil && *ch.MoveDumps {
-		if _, err := pgbundle.MoveDumps(oldDir, newDir); err != nil {
+		// never in the middle of a restore, which reads one and records its own path
+		saved := false
+		err := restoreGuardOf(cfg.StateDir()).exclusive(nil, func() (bool, error) {
+			if err := cfg.SaveTo(path); err != nil {
+				return false, err
+			}
+			saved = true
+			_, err := pgbundle.MoveDumps(oldDir, newDir)
+			return false, errors.Join(err, moveRestore(cfg.StateDir(), newDir))
+		})
+		switch {
+		case err != nil && saved:
 			return changed, fmt.Errorf("the settings are saved, but the dumps did not all move to %s: %w", newDir, err)
+		case err != nil:
+			return nil, err
 		}
+	} else if err := cfg.SaveTo(path); err != nil {
+		return nil, err
 	}
 	if next.UpdateKeep > 0 {
 		// the database step's pruning reads it there (rules.updates.backups_keep's record)
@@ -196,6 +208,35 @@ func applyBackups(path string, ch backupsChange) ([]string, error) {
 		}
 	}
 	return changed, nil
+}
+
+// moveRestore makes a restore that is not done name its backups where they were moved, kept there
+// as they were (an older release, which puts back what the record names, may be the one that
+// starts).
+func moveRestore(stateDir, dir string) error {
+	rec, ok, err := apppayload.ReadDatabase(stateDir)
+	if err != nil || !ok || !asked(rec) {
+		return err
+	}
+	kept := pgbundle.OriginalPath(rec.Dump) != rec.Dump
+	rec.Dump, rec.Aside = pgbundle.MovedDump(dir, rec.Dump), pgbundle.MovedDump(dir, rec.Aside)
+	if err := pgbundle.HoldBackups(dir); err != nil {
+		return err
+	}
+	if kept && filepath.Dir(rec.Dump) == filepath.Clean(dir) {
+		var names []string
+		for _, n := range asideKeeps(rec) {
+			if _, err := os.Lstat(filepath.Join(dir, n)); err == nil {
+				names = append(names, n)
+			}
+		}
+		if err := pgbundle.KeepForRestore(dir, names...); err != nil {
+			fmt.Fprintf(os.Stderr, "[serve] level=warn the backups a restore needs cannot be kept from an older release in %s: %v\n", dir, err)
+		} else {
+			rec.Dump = pgbundle.KeptPath(dir, filepath.Base(rec.Dump))
+		}
+	}
+	return writeRecord(stateDir, rec)
 }
 
 // backupsFolderProblem says why dir cannot hold the dumps ("": it can): not a local
@@ -235,7 +276,7 @@ func deleteBackup(path, name string) error {
 	if err != nil {
 		return err
 	}
-	if rec, ok, _ := apppayload.ReadDatabase(cfg.StateDir()); ok && filepath.Base(rec.Dump) == name &&
+	if rec, ok, _ := apppayload.ReadDatabase(cfg.StateDir()); ok && (filepath.Base(rec.Dump) == name || (asked(rec) && filepath.Base(rec.Aside) == name)) &&
 		(rec.State == apppayload.DatabaseMigrating || rec.State == apppayload.DatabaseRestoring ||
 			rec.State == apppayload.DatabaseHeld) {
 		return fmt.Errorf("%w: %s is the way back from the update under way", errDumpInUse, name)

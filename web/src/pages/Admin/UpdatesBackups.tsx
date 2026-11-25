@@ -3,7 +3,8 @@
 // database a failed update or a restore replaced), and putting one back: the home restarts
 // on the kept release whose schema is the backup's, and that release puts the backup back
 // before anything else runs. Every change made since the backup is lost, so the restore
-// asks for the backup's name to be typed; the database it replaces is kept aside.
+// asks for the backup's name to be typed; the database it replaces is kept aside, and when
+// there is no room for that copy it goes on only once that is agreed to.
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { Input } from "@ds/components/Input/Input";
@@ -45,6 +46,7 @@ export function UpdatesBackups() {
   const [list, setList] = useState<HomeBackups | null>(null);
   const [plan, setPlan] = useState<RestorePlan | null>(null);
   const [typed, setTyped] = useState("");
+  const [noCopy, setNoCopy] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -75,6 +77,7 @@ export function UpdatesBackups() {
     setBusy(true);
     try {
       setTyped("");
+      setNoCopy(false);
       setPlan(await updatesApi.restorePlan(name));
     } catch (e) {
       toast.show({ tone: "error", message: refusal(t, e) });
@@ -87,7 +90,7 @@ export function UpdatesBackups() {
     if (!plan) return;
     setBusy(true);
     try {
-      const done = await updatesApi.restore(plan.backup);
+      const done = await updatesApi.restore(plan.backup, Boolean(plan.no_copy) && noCopy);
       setPlan(null);
       toast.show({
         tone: "success",
@@ -96,6 +99,8 @@ export function UpdatesBackups() {
       await load();
     } catch (e) {
       toast.show({ tone: "error", message: refusal(t, e) });
+      // the room went meanwhile: what it would do now, and what to agree to
+      if (e instanceof ApiError && e.problem.code === "restore_no_copy") await ask(plan.backup);
     } finally {
       setBusy(false);
     }
@@ -164,7 +169,9 @@ export function UpdatesBackups() {
             </Button>
             <Button
               variant="primary"
-              disabled={busy || !plan || typed.trim() !== plan.backup}
+              disabled={
+                busy || !plan || typed.trim() !== plan.backup || (Boolean(plan.no_copy) && !noCopy)
+              }
               onClick={() => void restore()}
             >
               {t("updates.backups.restore")}
@@ -175,12 +182,39 @@ export function UpdatesBackups() {
         {plan && (
           <>
             <p data-testid="updates-backups-plan">
-              {t("updates.backups.confirmBody", {
-                release: plan.release,
-                running: plan.running || t("updates.backups.unknownRelease"),
-                at: formatDate(plan.at),
-              })}
+              {t(
+                plan.no_copy
+                  ? "updates.backups.confirmBodyNoCopy"
+                  : plan.older
+                    ? "updates.backups.confirmBodyOlder"
+                    : "updates.backups.confirmBody",
+                {
+                  release: plan.release,
+                  running: plan.running || t("updates.backups.unknownRelease"),
+                  at: formatDate(plan.at),
+                }
+              )}
             </p>
+            {plan.no_copy && (
+              <>
+                <p role="alert" data-testid="updates-backups-no-copy">
+                  {plan.copy_need
+                    ? t("updates.backups.noCopy", {
+                        free: size(plan.copy_free ?? 0),
+                        need: size(plan.copy_need),
+                      })
+                    : plan.no_copy}
+                </p>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={noCopy}
+                    onChange={(e) => setNoCopy(e.target.checked)}
+                  />{" "}
+                  {t("updates.backups.noCopyAgree")}
+                </label>
+              </>
+            )}
             <Input
               label={t("updates.backups.typeName", { name: plan.backup })}
               value={typed}

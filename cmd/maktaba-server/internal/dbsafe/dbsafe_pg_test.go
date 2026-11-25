@@ -715,6 +715,10 @@ func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
 	if _, err := r.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('after.update', '1')`); err != nil {
 		t.Fatal(err)
 	}
+	before, schema, err := r.t.Identity(ctx)
+	if err != nil || before == "" || schema == 0 {
+		t.Fatalf("identity %q %d %v", before, schema, err)
+	}
 	// the programs, with a pg_restore that writes the tables and then hangs (until the server
 	// that runs it is gone)
 	bin := filepath.Join(t.TempDir(), "bin")
@@ -727,7 +731,8 @@ func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
 		}
 	}
 	mark := filepath.Join(bin, "wrote")
-	script := "#!/bin/sh\n[ \"$1\" = -l ] && exec '" + r.t.bin("pg_restore") + "' \"$@\"\n'" + r.t.bin("pg_restore") + "' --no-owner --no-publications --section=pre-data --file=- \"$DBSAFE_DUMP\"\n" +
+	script := "#!/bin/sh\n[ \"$1\" = -l ] && exec '" + r.t.bin("pg_restore") + "' \"$@\"\n" +
+		"for a; do shift; [ \"$a\" = --section=data ] || set -- \"$@\" \"$a\"; done\n'" + r.t.bin("pg_restore") + "' \"$@\"\n" +
 		"echo \"SELECT pg_notify('x', 'y');\"\n: > '" + mark + "'\nwhile kill -0 $PPID; do sleep 1; done\n"
 	if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -760,20 +765,16 @@ func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("a killed restore changed the database: %d %v\n%s", n, err, out.String())
 	}
-	if !r.has(t, "videos") {
-		t.Fatal("the library's tables are gone")
+	if id, _, err := r.t.Identity(ctx); err != nil || id != before {
+		t.Fatalf("identity %q, was %q (%v)", id, before, err)
 	}
+	// whole, it is another database
 	var log bytes.Buffer
-	if err := r.t.Restore(ctx, dump, &log); err != nil { // whole, it is committed
+	if err := r.t.Restore(ctx, dump, &log); err != nil {
 		t.Fatalf("%v\n%s", err, log.String())
 	}
-	db2, err := r.t.open(ctx, "") // the restore ended the other sessions
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db2.Close()
-	if err := db2.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 0 {
-		t.Fatalf("not restored: %d %v", n, err)
+	if id, v, err := r.t.Identity(ctx); err != nil || id == before || id == "" || v != schema {
+		t.Fatalf("identity after the restore %q %d (%v)", id, v, err)
 	}
 }
 
@@ -821,6 +822,250 @@ func TestRestoreOfRowsCutShortCommitsNothing(t *testing.T) {
 	var n int
 	if err := db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("the database changed: %d %v\n%s", n, err, log.String())
+	}
+}
+
+// scriptRig is a restore whose pg_restore writes the real script with more at its end, and
+// whose psql is followed by after (a shell's: it does not end with it).
+func scriptRig(t *testing.T, more, after string) (*pgRig, Target, string) {
+	t.Helper()
+	r := newPGRig(t)
+	if runtime.GOOS == "windows" || !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql and a shell")
+	}
+	// (a Postgres of the person's own has no pg_textsearch of the home's: #1671)
+	if _, err := r.db.Exec(`DROP EXTENSION IF EXISTS pg_textsearch CASCADE; DROP SCHEMA IF EXISTS textsearch CASCADE`); err != nil {
+		t.Fatal(err)
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(context.Background(), dump); err != nil {
+		t.Fatal(err)
+	}
+	prev := psqlLookEvery
+	t.Cleanup(func() { psqlLookEvery = prev })
+	psqlLookEvery = 100 * time.Millisecond
+	bin := t.TempDir()
+	for name, body := range map[string]string{
+		"pg_restore": "#!/bin/sh\n'" + r.t.bin("pg_restore") + "' \"$@\" || exit 1\ncase \"$*\" in *=post-data*) " + more + ";; esac\n",
+		"psql":       "#!/bin/sh\n'" + r.t.bin("psql") + "' \"$@\"\nrc=$?\n[ \"$1\" = --version ] || { " + after + "; }\nexit $rc\n",
+	} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tg := r.t
+	tg.Bin = func(name string) string { return filepath.Join(bin, name) }
+	return r, tg, dump
+}
+
+func runScript(t *testing.T, tg Target, dump string) ([]string, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var log bytes.Buffer
+	var steps []string
+	err := tg.RestoreWith(ctx, dump, func(s string) error { steps = append(steps, s); return nil }, &log)
+	if ctx.Err() != nil {
+		t.Fatalf("still running after a minute: %v", err)
+	}
+	return steps, err
+}
+
+// A psql that failed and does not end is not waited for, wherever in its script it failed: at
+// its end, or with more of it to come than its pipe takes.
+func TestRestoreDoesNotWaitForAPsqlThatFailed(t *testing.T) {
+	const never = "while kill -0 $PPID; do sleep 1; done"
+	for name, more := range map[string]string{
+		"at the end": "echo 'SELECT nothing FROM nowhere;'",
+		"with more to come": "echo 'SELECT nothing FROM nowhere;'; i=0; while [ $i -lt 20000 ]; do echo 'SELECT 1; -- padding padding'; " +
+			"i=$((i+1)); done",
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, tg, dump := scriptRig(t, more, never)
+			steps, err := runScript(t, tg, dump)
+			if err == nil || !strings.Contains(err.Error(), "psql failed and did not end (its session: gone)") || len(steps) != 0 {
+				t.Fatalf("the restore: %v, told %v", err, steps)
+			}
+			if !r.has(t, "videos") {
+				t.Fatal("the library's tables are gone")
+			}
+		})
+	}
+}
+
+// A restore that is slow is left alone: whatever name its connection has (its URL's, a
+// pooler's), and whatever another session of its own name does.
+func TestRestoreThatIsSlowIsLeftAlone(t *testing.T) {
+	const slow = "echo 'SELECT pg_sleep(3);'" // 30 looks, 5 of them would end it
+	withName := func(u string) string {
+		if strings.Contains(u, "?") {
+			return u + "&application_name=maktaba"
+		}
+		return u + "?application_name=maktaba"
+	}
+	t.Run("a name of its own in the URL", func(t *testing.T) {
+		_, tg, dump := scriptRig(t, slow, "true")
+		tg.URL = withName(tg.URL)
+		before, _, err := tg.Identity(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if steps, err := runScript(t, tg, dump); err != nil || len(steps) != 1 {
+			t.Fatalf("%v, told %v", err, steps)
+		}
+		if id, _, err := tg.Identity(context.Background()); err != nil || id == before {
+			t.Fatalf("not restored: %q %v", id, err)
+		}
+	})
+	t.Run("another session of its name that failed", func(t *testing.T) {
+		r, tg, dump := scriptRig(t, slow, "true")
+		go func() {
+			time.Sleep(time.Second) // after the restore ended the other sessions
+			d, err := r.t.open(context.Background(), "")
+			if err != nil {
+				return
+			}
+			defer d.Close()
+			if c, err := d.Conn(context.Background()); err == nil {
+				_, _ = c.ExecContext(context.Background(), "SET application_name = '"+pgbundle.RestoreApp+"'")
+				_, _ = c.ExecContext(context.Background(), "BEGIN")
+				_, _ = c.ExecContext(context.Background(), "SELECT 1/0")
+				time.Sleep(4 * time.Second)
+			}
+		}()
+		if steps, err := runScript(t, tg, dump); err != nil || len(steps) != 1 {
+			t.Fatalf("%v, told %v", err, steps)
+		}
+	})
+}
+
+// A session a killed restore left is found under any connection name, ended, and the database
+// is then told from what it is.
+func TestIdentityEndsWhatAKilledRestoreLeft(t *testing.T) {
+	r, tg, _ := scriptRig(t, "true", "true")
+	u := tg.URL + "?application_name=maktaba"
+	if strings.Contains(tg.URL, "?") {
+		u = tg.URL + "&application_name=maktaba"
+	}
+	d, err := (Target{URL: u}).open(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	before, _, err := r.t.Identity(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := d.Begin() // as the script begins
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{"SET LOCAL application_name = '" + pgbundle.RestoreApp + "'", "DROP SCHEMA public CASCADE", "CREATE SCHEMA public"} {
+		if _, err := tx.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if id, _, err := r.t.Identity(context.Background()); err != nil || id != before {
+		t.Fatalf("identity %q, was %q (%v)", id, before, err)
+	}
+	if err := tx.Commit(); err == nil {
+		t.Fatal("the session a restore left committed after the identity was told")
+	}
+}
+
+// The watch says nothing of what it cannot see: no answer, another server, a session it was
+// not told of; and what it does see, only at several looks in a row.
+func TestWatchSessionSaysNothingOfWhatItCannotSee(t *testing.T) {
+	r := newPGRig(t)
+	prev := psqlLookEvery
+	t.Cleanup(func() { psqlLookEvery = prev })
+	psqlLookEvery = 20 * time.Millisecond
+	var server string
+	if err := r.db.QueryRow(`SELECT extract(epoch FROM pg_postmaster_start_time())::text`).Scan(&server); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		tg          Target
+		pid, server string
+	}{
+		"no answer":             {Target{URL: "postgres://x@127.0.0.1:1/x?sslmode=disable"}, "1", server},
+		"another server":        {r.t, "999999", "1.5"},
+		"a session not told of": {r.t, "", ""},
+	} {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		c.tg.watchSession(ctx, &psqlSession{pid: c.pid, server: c.server}, func(state string) {
+			t.Errorf("%s: said %q", name, state)
+		})
+		cancel()
+	}
+	// one that is there, then is not
+	conn, err := r.db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pid string
+	if err := conn.QueryRowContext(context.Background(), `SELECT pg_backend_pid()::text`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(300*time.Millisecond, func() {
+		d, err := r.t.open(context.Background(), "")
+		if err == nil {
+			_, _ = d.Exec(`SELECT pg_terminate_backend($1::int)`, pid)
+			_ = d.Close()
+		}
+	})
+	said := ""
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	r.t.watchSession(ctx, &psqlSession{pid: pid, server: server}, func(state string) { said = state })
+	if said != "gone" {
+		t.Fatalf("a session that went: %q", said)
+	}
+}
+
+func TestPsqlSessionSaid(t *testing.T) {
+	text := "NOTICE:  x\nmaktaba-restore-1-session 4242 1700000000.5\nmaktaba-restore-1-ran\n"
+	for _, size := range []int{1, 5, 1 << 20} {
+		s := &psqlSession{word: "maktaba-restore-1-session"}
+		for rest := text; rest != ""; {
+			n := min(size, len(rest))
+			_, _ = s.Write([]byte(rest[:n]))
+			rest = rest[n:]
+		}
+		if pid, server := s.said(); pid != "4242" || server != "1700000000.5" {
+			t.Errorf("%d bytes at a time: %q %q", size, pid, server)
+		}
+	}
+}
+
+// A home killed while it closed its own database to sessions, for another to take its place,
+// left it closed to everyone: it is the same database, and takes sessions again. A person's own
+// is left as they have it.
+func TestIdentityOpensWhatAKilledRestoreClosed(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	before, schema, err := r.t.Identity(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own, err := r.t.open(ctx, "postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer own.Close()
+	if _, err := own.Exec(`ALTER DATABASE ` + pgbundle.AppDatabase + ` ALLOW_CONNECTIONS false`); err != nil {
+		t.Fatal(err)
+	}
+	if id, _, err := r.t.Identity(ctx); err == nil {
+		t.Fatalf("a closed database of a person's own: %q", id)
+	}
+	bundled := r.t
+	bundled.Data = t.TempDir()
+	if id, v, err := bundled.Identity(ctx); err != nil || id != before || v != schema {
+		t.Fatalf("identity %q %d, was %q %d (%v)", id, v, before, schema, err)
+	}
+	if _, _, err := r.t.Identity(ctx); err != nil {
+		t.Fatalf("still closed: %v", err)
 	}
 }
 
@@ -1049,5 +1294,272 @@ func TestRestoreGivesTheGrantsAfterTheRows(t *testing.T) {
 	var log bytes.Buffer
 	if err := tg.Restore(ctx, dump, &log); err != nil {
 		t.Fatalf("%v\n%s", err, log.String())
+	}
+}
+
+// Only public is made afresh: an extension in a schema of its own, made by the superuser
+// (pg_textsearch on an operator's own PostgreSQL 18), is there still, and the dump's items that
+// make it again, with its schema, grants and comments, are left out. Every role has the use of
+// public a new database gives it. With psql and without, for a role that could make none of it.
+func TestRestoreLeavesWhatIsOutsidePublic(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	u, err := r.b.URL() // the app role, which owns its database and is no superuser
+	if err != nil {
+		t.Fatal(err)
+	}
+	must := func(d *sql.DB, q string) {
+		t.Helper()
+		if _, err := d.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(r.db, `CREATE DATABASE outside_check OWNER `+pgbundle.AppRole+` TEMPLATE template0`)
+	must(r.db, `CREATE ROLE outside_reader NOLOGIN; CREATE ROLE outside_maker NOLOGIN`)
+	t.Cleanup(func() {
+		d, err := r.t.open(ctx, "")
+		if err != nil {
+			return
+		}
+		defer d.Close()
+		_, _ = d.Exec(`DROP DATABASE IF EXISTS outside_check WITH (FORCE)`)
+		_, _ = d.Exec(`DROP ROLE IF EXISTS outside_reader, outside_maker`)
+	})
+	super, err := r.t.open(ctx, "outside_check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer super.Close()
+	must(super, `CREATE SCHEMA outside; GRANT USAGE ON SCHEMA outside TO `+pgbundle.AppRole+`;
+		CREATE EXTENSION pageinspect SCHEMA outside; COMMENT ON SCHEMA outside IS 'the operator''s';
+		GRANT CREATE ON SCHEMA public TO outside_maker`)
+	tg := r.t
+	if tg.URL, err = (Target{URL: u}).urlFor("outside_check"); err != nil {
+		t.Fatal(err)
+	}
+	app, err := tg.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	must(app, `CREATE TABLE own (id int); INSERT INTO own VALUES (1), (2)`)
+	dump := filepath.Join(r.t.Backups, "outside.dump")
+	if err := tg.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	_ = app.Close()
+	list, err := tg.list(ctx, dump)
+	if err != nil || !strings.Contains(list, " SCHEMA - outside ") || !strings.Contains(list, " COMMENT - EXTENSION pageinspect") {
+		t.Fatalf("the dump makes no extension of its own schema, so this shows nothing: %v\n%s", err, list)
+	}
+	lists := t.TempDir()
+	t.Setenv("TMPDIR", lists)
+	t.Setenv("TMP", lists) // Windows
+	for name, psql := range map[string]bool{"with psql": true, "without psql": false} {
+		if psql && !havePSQL(r.t.bin("psql")) {
+			continue
+		}
+		rt := tg
+		if !psql {
+			rt.Bin = func(n string) string {
+				if n == "psql" {
+					return filepath.Join(t.TempDir(), "no-such-psql")
+				}
+				return r.t.bin(n)
+			}
+		}
+		d, err := tg.open(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		must(d, `INSERT INTO own VALUES (3)`) // a row since
+		_ = d.Close()
+		var log bytes.Buffer
+		if err := rt.Restore(ctx, dump, &log); err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, log.String())
+		}
+		if d, err = r.t.open(ctx, "outside_check"); err != nil {
+			t.Fatal(err)
+		}
+		var rows int
+		var there, uses bool
+		if err := d.QueryRow(`SELECT (SELECT count(*) FROM own),
+			EXISTS (SELECT FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'pageinspect' AND n.nspname = 'outside'
+				AND has_schema_privilege('`+pgbundle.AppRole+`', n.oid, 'USAGE')),
+			has_schema_privilege('outside_reader', 'public', 'USAGE') AND NOT has_schema_privilege('outside_reader', 'public', 'CREATE')
+				AND has_schema_privilege('outside_maker', 'public', 'CREATE')`).
+			Scan(&rows, &there, &uses); err != nil {
+			t.Fatal(err)
+		}
+		_ = d.Close()
+		if rows != 2 || !there || !uses {
+			t.Errorf("%s: %d rows, the extension there %v, public's grants %v", name, rows, there, uses)
+		}
+	}
+	if left, _ := filepath.Glob(filepath.Join(lists, "maktaba-restore-list-*")); len(left) != 0 {
+		t.Errorf("left %v", left)
+	}
+}
+
+// With no psql a dump with chunks is refused before anything is touched: no session is ended.
+func TestChunksWithoutPsqlTouchNothing(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	prev := pgbundle.Chunked
+	t.Cleanup(func() { pgbundle.Chunked = prev })
+	pgbundle.Chunked = []pgbundle.ChunkedTable{{Name: "public.chunk_t", Key: "id"}}
+	if _, err := r.db.Exec(`CREATE TABLE chunk_t (id int PRIMARY KEY, v text); INSERT INTO chunk_t SELECT i, 'x' FROM generate_series(1, 50) i`); err != nil {
+		t.Fatal(err)
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	if len(pgbundle.Chunks(dump)) == 0 {
+		t.Skip("the dump has no chunks (no psql here)")
+	}
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var pid, now int
+	if err := conn.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	tg := r.t
+	tg.Bin = func(n string) string {
+		if n == "psql" {
+			return filepath.Join(t.TempDir(), "no-such-psql")
+		}
+		return r.t.bin(n)
+	}
+	if err := tg.Restore(ctx, dump, nil); err == nil || !strings.Contains(err.Error(), "nothing was changed") {
+		t.Fatal(err)
+	}
+	if err := conn.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&now); err != nil || now != pid {
+		t.Fatalf("the session was ended: %v", err)
+	}
+}
+
+// An extension in public that the database user may not make again (pgvector, made by a
+// superuser): without psql it is refused before anything is touched; with psql the server says it
+// and nothing is committed. A superuser's goes on.
+func TestRestoreOfAnExtensionItMayNotMakeTouchesNothing(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	u, err := r.b.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`CREATE DATABASE ext_check OWNER ` + pgbundle.AppRole + ` TEMPLATE template0`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if d, err := r.t.open(ctx, ""); err == nil {
+			_, _ = d.Exec(`DROP DATABASE IF EXISTS ext_check WITH (FORCE)`)
+			_ = d.Close()
+		}
+	})
+	super := r.t
+	if super.URL, err = r.t.urlFor("ext_check"); err != nil {
+		t.Fatal(err)
+	}
+	sd, err := super.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sd.Close()
+	if _, err := sd.Exec(`CREATE EXTENSION hstore`); err != nil { // trusted
+		t.Fatal(err)
+	}
+	tg := r.t
+	if tg.URL, err = (Target{URL: u}).urlFor("ext_check"); err != nil {
+		t.Fatal(err)
+	}
+	d, err := tg.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if _, err := d.Exec(`CREATE TABLE own (id int); INSERT INTO own VALUES (1)`); err != nil {
+		t.Fatal(err)
+	}
+	earlier, dump := filepath.Join(r.t.Backups, "earlier.dump"), filepath.Join(r.t.Backups, "ext.dump")
+	if err := tg.Dump(ctx, earlier); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sd.Exec(`CREATE EXTENSION pageinspect`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tg.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := d.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	without := tg
+	without.Bin = func(n string) string {
+		if n == "psql" {
+			return filepath.Join(t.TempDir(), "no-such-psql")
+		}
+		return r.t.bin(n)
+	}
+	if err := without.Restore(ctx, dump, nil); err == nil || !strings.Contains(err.Error(), "(nothing changed)") ||
+		!strings.Contains(err.Error(), "pageinspect") || strings.Contains(err.Error(), "hstore") {
+		t.Fatalf("without psql: %v", err)
+	}
+	var n int
+	if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM own`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("the session was ended, or the rows are gone: %d %v", n, err)
+	}
+	_ = conn.Close()
+	if !havePSQL(r.t.bin("psql")) {
+		return
+	}
+	if err := tg.Restore(ctx, dump, nil); err == nil || !strings.Contains(err.Error(), `permission denied to create extension "pageinspect"`) {
+		t.Fatalf("with psql: %v", err)
+	}
+	if d, err = tg.open(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.QueryRow(`SELECT count(*) FROM own`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("with psql: %d rows, %v", n, err)
+	}
+	_ = d.Close()
+	// a backup from before it was made needs none of it
+	if err := without.Restore(ctx, earlier, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := super.Restore(ctx, dump, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An extension in a schema of its own that depends on one in public goes with public, and is made
+// again, not left out.
+func TestRestoreMakesWhatGoesWithPublicAgain(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	if _, err := r.db.Exec(`CREATE EXTENSION cube; CREATE SCHEMA outside; CREATE EXTENSION earthdistance SCHEMA outside`); err != nil {
+		t.Fatal(err)
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, dump, &log); err != nil {
+		t.Fatalf("%v\n%s", err, log.String())
+	}
+	d, err := r.t.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	var in string
+	if err := d.QueryRow(`SELECT string_agg(n.nspname, ' ' ORDER BY e.extname) FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+		WHERE e.extname IN ('cube', 'earthdistance')`).Scan(&in); err != nil || in != "public outside" {
+		t.Fatalf("in %q, %v", in, err)
 	}
 }

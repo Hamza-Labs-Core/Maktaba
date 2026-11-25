@@ -22,7 +22,7 @@ packages:
     url: https://github.com/microsoft/plcrashreporter
     exactVersion: 1.12.2
   # Google Cast beside AirPlay (Epic 58 story 58.06): Google's own Swift package, the
-  # Player's iPhone and iPad targets only (the SDK is iOS and iPadOS only: never the Mac or
+  # Player's iOS target only, on iPhone and iPad (the SDK is iOS and iPadOS only: never the Mac or
   # the Apple TV). The dynamic build carries the SDK's UI resources. Started only when the
   # build names a receiver (Config/Cast.xcconfig, from shared/cast/app.json).
   GoogleCast:
@@ -100,7 +100,7 @@ targetTemplates:
           UIImageName: LaunchLogo
 
 targets:
-  # ---- Maktaba Player: iPhone (iPhone Duo too), iPad, Mac -------------------------------
+  # ---- Maktaba Player: one app for iPhone (iPhone Duo too) and iPad, and the Mac ----------
   Maktaba Player:
     templates: [IOSApp]
     sources:
@@ -112,7 +112,9 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player
-        TARGETED_DEVICE_FAMILY: "1"
+        # one universal app on iPhone and iPad (App Review 4.3(a): no second bundle ID for
+        # the same app); the iPad-only com.hamzalabs.maktaba.player.tablet is retired
+        TARGETED_DEVICE_FAMILY: "1,2"
         INFOPLIST_KEY_CFBundleDisplayName: Maktaba
     configFiles:
       Debug: Config/Cast.xcconfig
@@ -121,37 +123,7 @@ targets:
       - package: GoogleCast
         product: GoogleCastDynamic
     info:
-      path: Player/Info-iPhone.plist
-      properties:
-        # the Cast receiver (story 58.06): Config/Cast.xcconfig, empty when none is registered
-        MaktabaCastReceiverAppID: $(MAKTABA_CAST_APP_ID)
-        # the Cast SDK's two services when a receiver is named, after the template's (with
-        # none, both read `_maktaba._tcp` again: no Cast service declared)
-        NSBonjourServices: ["$(MAKTABA_CAST_BONJOUR)", "$(MAKTABA_CAST_BONJOUR_APP)"]
-        # the sound plays on in the background (the screen locked, another app open) and
-        # Picture in Picture can start: iOS allows neither without the audio background mode.
-        # In the Info.plist itself: Xcode has no INFOPLIST_KEY_ for UIBackgroundModes, so a
-        # build setting of that name never reached the app
-        UIBackgroundModes: [audio]
-  Maktaba Player iPad:
-    templates: [IOSApp]
-    sources:
-      - path: Player
-        excludes: ["*.plist", "Mac/InfoPlist.xcstrings"]
-      - path: Shared/Assets.xcassets
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.tablet
-        TARGETED_DEVICE_FAMILY: "2"
-        INFOPLIST_KEY_CFBundleDisplayName: Maktaba
-    configFiles:
-      Debug: Config/Cast.xcconfig
-      Release: Config/Cast.xcconfig
-    dependencies:
-      - package: GoogleCast
-        product: GoogleCastDynamic
-    info:
-      path: Player/Info-iPad.plist
+      path: Player/Info-iOS.plist
       properties:
         # the Cast receiver (story 58.06): Config/Cast.xcconfig, empty when none is registered
         MaktabaCastReceiverAppID: $(MAKTABA_CAST_APP_ID)
@@ -177,7 +149,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.mac
         INFOPLIST_KEY_CFBundleDisplayName: Maktaba Player
         # only the system's HTTPS: no export-compliance question on every TestFlight build
-        # (the iPhone and iPad apps have it from IOSApp)
+        # (the iOS apps have it from IOSApp)
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         ARCHS: arm64
         ENABLE_HARDENED_RUNTIME: YES
@@ -259,7 +231,7 @@ targets:
         TEST_TARGET_NAME: Maktaba Player Mac
         ARCHS: arm64
 
-  # ---- Maktaba Remote: iPhone (iPhone Duo too), iPad -------------------------------------
+  # ---- Maktaba Remote: one app for iPhone (iPhone Duo too) and iPad ----------------------
   Maktaba Remote:
     templates: [IOSApp]
     sources:
@@ -269,29 +241,17 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote
         ASSETCATALOG_COMPILER_APPICON_NAME: RemoteIcon
-        TARGETED_DEVICE_FAMILY: "1"
+        # one universal app on iPhone and iPad, as the Player (com.hamzalabs.maktaba.remote.tablet
+        # is retired)
+        TARGETED_DEVICE_FAMILY: "1,2"
         # App Store Connect's name: a bare "Remote" is another app's (ITMS-90129). Every app's
         # name starts with Maktaba (tools/ci/tests/test_apple_app_names.py), and every app has
         # its Arabic in its InfoPlist.xcstrings (here Remote/InfoPlist.xcstrings)
         INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
     info:
-      path: Remote/Info-iPhone.plist
-  Maktaba Remote iPad:
-    templates: [IOSApp]
-    sources:
-      - path: Remote
-        excludes: ["*.plist"]
-      - path: Shared/Assets.xcassets
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.tablet
-        ASSETCATALOG_COMPILER_APPICON_NAME: RemoteIcon
-        TARGETED_DEVICE_FAMILY: "2"
-        INFOPLIST_KEY_CFBundleDisplayName: Maktaba Remote
-    info:
-      path: Remote/Info-iPad.plist
+      path: Remote/Info-iOS.plist
 
-  # ---- the permissions walkthrough's UI tests on iPhone (UITests/) ----------------------
+  # ---- the UI tests (UITests/), run on an iPhone and on an iPad simulator ----------------
   # UITests/Player*.swift are the Player's own (Epic 48: its shell and screens, against
   # MockHome and UITests/Fixtures); the Remote's targets leave them out. The Player's test
   # targets also compile the shell's plain types (sections, routes, launch arguments, the
@@ -354,65 +314,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.uitests
         TEST_TARGET_NAME: Maktaba Remote
-  # the same tests on the iPad apps: the wide layouts (story 42.8) and signing in there
-  Maktaba Player iPad UITests:
-    type: bundle.ui-testing
-    platform: iOS
-    sources:
-      - path: UITests
-      - path: Player/Shell/PlayerSection.swift
-      - path: Player/Shell/PlayerRoute.swift
-      - path: Player/Shell/ShellLaunch.swift
-      - path: Player/Shell/TextSizeHook.swift
-      - path: Player/Shell/TouchHook.swift
-      - path: Player/Shell/ConsoleHook.swift
-      - path: Player/Cast/CastSDKState.swift
-      - path: Player/Components/ImageCache.swift
-      - path: Player/Components/PlaceholderTiming.swift
-      - path: Player/Watch/WatchLogic.swift
-      - path: Player/Watch/PlayerTracks.swift
-      # the demo library (story 60.09: the product screenshots), its folders as they are
-      - path: ../../tests/fixtures/demo-library/routes
-        type: folder
-        buildPhase: resources
-        group: DemoLibrary
-      - path: ../../tests/fixtures/demo-library/art
-        type: folder
-        buildPhase: resources
-        group: DemoLibrary
-      - path: ../../tests/fixtures/demo-library/library.json
-        buildPhase: resources
-        group: DemoLibrary
-    dependencies: [{ target: Maktaba Player iPad }]
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.player.tablet.uitests
-        TEST_TARGET_NAME: Maktaba Player iPad
-        TARGETED_DEVICE_FAMILY: "2"
-  Maktaba Remote iPad UITests:
-    type: bundle.ui-testing
-    platform: iOS
-    sources:
-      - path: UITests
-        excludes: ["Player*.swift"]
-      # the demo library (story 60.09: the product screenshots), its folders as they are
-      - path: ../../tests/fixtures/demo-library/routes
-        type: folder
-        buildPhase: resources
-        group: DemoLibrary
-      - path: ../../tests/fixtures/demo-library/art
-        type: folder
-        buildPhase: resources
-        group: DemoLibrary
-      - path: ../../tests/fixtures/demo-library/library.json
-        buildPhase: resources
-        group: DemoLibrary
-    dependencies: [{ target: Maktaba Remote iPad }]
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.hamzalabs.maktaba.remote.tablet.uitests
-        TEST_TARGET_NAME: Maktaba Remote iPad
-        TARGETED_DEVICE_FAMILY: "2"
 
   # ---- Maktaba TV: Apple TV (Epic 14). Its sources stay with the other TV app in apps/tv. -
   Maktaba TV:
@@ -478,13 +379,6 @@ schemes:
     test:
       targets: [Maktaba Player UITests]
     archive: { config: Release }
-  Maktaba Player iPad:
-    build:
-      targets: { Maktaba Player iPad: all }
-    run: { config: Debug }
-    test:
-      targets: [Maktaba Player iPad UITests]
-    archive: { config: Release }
   Maktaba Player Mac:
     build:
       targets: { Maktaba Player Mac: all }
@@ -498,13 +392,6 @@ schemes:
     run: { config: Debug }
     test:
       targets: [Maktaba Remote UITests]
-    archive: { config: Release }
-  Maktaba Remote iPad:
-    build:
-      targets: { Maktaba Remote iPad: all }
-    run: { config: Debug }
-    test:
-      targets: [Maktaba Remote iPad UITests]
     archive: { config: Release }
   Maktaba TV:
     build:

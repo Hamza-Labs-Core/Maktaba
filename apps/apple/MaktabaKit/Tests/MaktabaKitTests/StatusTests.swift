@@ -312,6 +312,20 @@ import Testing
         }
     }
 
+    /// #1670: a restore that failed says what the library database is since, and the backup, in
+    /// both languages.
+    @Test func aFailedRestoreSaysWhatTheDatabaseIs() {
+        for (code, en1, ar1) in [("db_restore_backup_failed", "Nothing was changed", "لم يتغيّر شيء"),
+                                 ("db_restore_backup_part", "may hold a part of it", "وقد تحوي القاعدة جزءًا منها"),
+                                 ("db_restore_backup_gone", "the database is gone", "ولم تعد القاعدة موجودة"),
+                                 ("db_restore_no_copy", "no copy of the library as it is now could be kept", "تعذّر الاحتفاظ بنسخة من المكتبة كما هي الآن")] {
+            let en = words(StatusWords.processDetails, "setup.starting.detail.", code, Locale(identifier: "en"))
+            let ar = words(StatusWords.processDetails, "setup.starting.detail.", code, Locale(identifier: "ar"))
+            #expect(en.contains(en1) && en.contains("{dump}"), "\(code): \(en)")
+            #expect(ar.contains(ar1) && ar.contains("{dump}"), "\(code): \(ar)")
+        }
+    }
+
     /// A process whose component is off reads held (the home's snapshot says "held"), never raw.
     @Test func aProcessWhoseComponentIsOffReadsHeld() {
         #expect(words(StatusWords.processStates, "health.processes.state.", "held", Locale(identifier: "en"))
