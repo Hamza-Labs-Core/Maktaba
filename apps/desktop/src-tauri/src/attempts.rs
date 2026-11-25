@@ -84,6 +84,7 @@ pub const INSTALLER_NOT_FINISHED: &str = "installer_not_finished";
 pub const INSTALLER_NO_ROOM: i32 = 112;
 /// The flag that installer starts the app with again (installer.nsi, MaktabaNoRoom): the update
 /// it was started for did not fit on the disk.
+#[cfg_attr(target_os = "macos", allow(dead_code))]
 pub const NO_ROOM_FLAG: &str = "--update-no-room";
 pub const CHECK_FAILED: &str = "check_failed";
 pub const DOWNLOAD_FAILED: &str = "download_failed";
