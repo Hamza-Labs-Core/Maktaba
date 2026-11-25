@@ -41,6 +41,8 @@ Part one of story 13.22, on top of 13.18 (#1591). Part two (JavaFX leaves) is ga
 - **mpv's `log-file` is the fastest way to read a CI-only failure:** one option, set from a system property the tests own, gave the cause on the first look.
 - **`withContext(NonCancellable)` throws on return when the caller was cancelled:** decide inside the block whether the made player is shown or disposed, or it leaks.
 - **Stacked on #1644**: channels ask the engine setting (13.21) at each opening, count as open for the probe (13.19), and keep the stream's own subtitles off (13.20).
+- **mpv draws a paused stream's first frame before it says the picture started**: a frame drawn while held is shown when the hold ends, or it stays black.
+- **An id read on another thread belongs to the load that asked for it**: each load is numbered, and only the newest keeps its id.
 
 ## Keep doing
 - Wire the screen and the real-library test through the same function (`channelPlayback`), so CI tests the screen's own wiring.
