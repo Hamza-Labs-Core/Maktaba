@@ -30,7 +30,7 @@ has no backend, no KV and no secrets. Every request goes through the Worker, whi
 | `/contributing/`                               | working on Maktaba: guides                       | `docs/developers/contributing/`                              |
 | `/security/conformance/`                       | security rules for plugins and contributors      | `docs/developers/security/conformance.md`                    |
 | `/api/`                                        | the API reference: Redoc, served from this site  | `shared/api/openapi.json`, the `redoc` package               |
-| `/changelog/`                                  | the changelog                                    | `CHANGELOG.md`                                               |
+| `/changelog/`                                  | the changelog                                    | `CHANGELOG.md`, `changelog.d/` and the release tags          |
 | `/security/policy/`, `/security/hall-of-fame/` | the disclosure policy                            | `scripts/strings.mjs`                                        |
 | `/.well-known/security.txt`                    | RFC 9116                                         | `api/internal/security/disclosure.go` (the API's own policy) |
 | `/robots.txt`, `/sitemap.xml`                  | for crawlers                                     | the build                                                    |
@@ -43,7 +43,7 @@ Every page is in English and Arabic: `/x/` in English, `/ar/x/` in Arabic, right
 | ----------------------- | ------------------------------------- | ------------------------------------------------------------------ |
 | the portal's own pages  | `scripts/strings.mjs` (`en`)          | `scripts/strings.mjs` (`ar`)                                       |
 | a guide                 | `docs/developers/<group>/x.md`        | its twin, `docs/developers/<group>/x.ar.md`                        |
-| the changelog           | `CHANGELOG.md`                        | `CHANGELOG.ar.md`                                                  |
+| the changelog           | `CHANGELOG.md`, `changelog.d/x.md`    | `CHANGELOG.ar.md`, `changelog.d/x.ar.md`                           |
 | the API reference prose | `shared/api/openapi.json`             | `shared/api/openapi.ar.json`, an overlay (below)                   |
 | the wiki                | `web/wiki-app/public/db/`             | `web/wiki-app/public/db/ar/`, from the store in `docs/wiki/db/ar/` |
 | the wiki app's own text | `web/wiki-app/src/lib/i18n.ts` (`EN`) | `web/wiki-app/src/lib/i18n.ts` (`AR`)                              |
@@ -58,7 +58,8 @@ in English: Redoc has no way to translate them.
 
 **The parity checks** (`scripts/parity.mjs`) fail the build when the languages drift: a guide
 without its `.ar.md` (or the other way round); a release, section or entry in one changelog
-and not the other; an OpenAPI string with no Arabic, or whose English changed since it was
+and not the other; a changelog fragment without its pair, or with other sections or entries than
+it; an OpenAPI string with no Arabic, or whose English changed since it was
 translated; a wiki entry with no Arabic, or whose English changed since it was translated
 (each Arabic entry records the hash of the English it translates, `i18n.source`); an English
 page with no `/ar/` page (or the other way round); and an Arabic page or wiki file that is
@@ -90,6 +91,16 @@ letters, digits and `. _ - / @` only, and the same rules), and every image's met
 image may carry no EXIF or XMP (they can name the machine, the person or the place), and the
 text of a PNG's text chunks goes through the same rules. CI runs it again, and
 `src/site.test.ts` checks the scan against samples and runs it on the built site.
+
+### The changelog
+
+`/changelog/` is `CHANGELOG.md` with the fragments of `changelog.d/` (one pair of files per pull
+request, [`changelog.d/README.md`](../../../changelog.d/README.md)), put together by
+`scripts/changelog.mjs`. A fragment's release is the first `vX.Y.Z` tag whose tree has it;
+`_devportal.yml` fetches the tags' commits and trees before the build (`git fetch --depth=1
+--filter=blob:none origin '+refs/tags/v*:refs/tags/v*'`), and a fragment no tag has is
+unreleased, as every one is in a clone without tags. The daily deploy is the latest a new tag's
+section waits; a merge that adds a fragment deploys too.
 
 ### The plugin reference
 
@@ -169,8 +180,8 @@ dev hands the Worker the route's own URL over http, and the redirects would loop
 
 `.github/workflows/devportal-deploy.yml` deploys **on every push to main that changes what
 the site is built from** (the portal, the developer guides, the changelog, the OpenAPI
-description, the disclosure policy, the icons), on the 1st of every month (so
-`security.txt`'s `Expires` rolls forward), and by hand from Actions → _Deploy maktaba.dev_ →
+description, the disclosure policy, the icons), every day (so the changelog follows the release
+tags), on the 1st of every month (so `security.txt`'s `Expires` rolls forward), and by hand from Actions → _Deploy maktaba.dev_ →
 _Run workflow_. Within one run:
 
 1. **build**: the same `_devportal.yml` as the pull request check. Typecheck, build, the
@@ -221,8 +232,8 @@ The Worker has no `workers.dev` URL (`workers_dev = false`).
 ## Changing the site
 
 - **A new guide:** write it in `docs/developers/<group>/` with its Arabic twin (`x.ar.md`)
-  and add it to `GUIDES` in `scripts/build.mjs`. **A changelog entry:** in `CHANGELOG.md` and,
-  in Arabic, in `CHANGELOG.ar.md`. **An API description:** its Arabic in
+  and add it to `GUIDES` in `scripts/build.mjs`. **A changelog entry:** a pair of
+  files in `changelog.d/`, English and Arabic. **An API description:** its Arabic in
   `shared/api/openapi.ar.json`. **A new page:** add it to the build, and its
   strings to both languages in `scripts/strings.mjs`. The tests fail on a key that is missing
   in one language.

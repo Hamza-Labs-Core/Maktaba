@@ -82,6 +82,19 @@ final class CastController {
             UserDefaults.standard.removeObject(forKey: interstitialKey)
             return CastController(context: FakeCastContext(empty: fake == "fake-empty"))
         }
+        // `-maktaba-cast off`: no Cast, whatever receiver the build names (CI's UI-test build
+        // names one, for the tests of the SDK itself)
+        if ShellLaunch.value(of: "-maktaba-cast", in: arguments) == "off" { return CastController(context: nil) }
+        #if canImport(GoogleCast) && os(iOS)
+        // `-maktaba-cast real`: the real Google Cast SDK with the build's receiver, before its
+        // first cast and watched (`CastSDKState`). Debug builds only: a Release build ignores it
+        if ShellLaunch.value(of: "-maktaba-cast", in: arguments) == "real" {
+            UserDefaults.standard.removeObject(forKey: interstitialKey)
+            // the SDK's own note that a person let it search once: it then searches from launch
+            UserDefaults.standard.removeObject(forKey: "kGCKDiscoveryEverStarted")
+            GoogleCastContext.watch = CastSDKWatch()
+        }
+        #endif
         #endif
         #if canImport(GoogleCast) && os(iOS)
         if config.isEnabled {
@@ -90,6 +103,11 @@ final class CastController {
         #endif
         return CastController(context: nil)
     }
+
+    #if DEBUG
+    /// What the real SDK says of itself, for its UI tests.
+    var sdk: CastSDKState? { context?.sdk }
+    #endif
 
     /// Whether this build casts at all.
     var available: Bool { context != nil }

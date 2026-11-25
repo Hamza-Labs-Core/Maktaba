@@ -4,11 +4,12 @@ All notable changes to Maktaba are recorded here. Format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versioning
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The `[Unreleased]` section accrues entries between tagged releases.
-The CI changelog gate (Story 22.5 AC-3) blocks user-visible PRs that
-don't append a line here; docs-only PRs are exempt. Every entry is also added, in Arabic,
-to [CHANGELOG.ar.md](CHANGELOG.ar.md), in the same release and section; the maktaba.dev
-build fails when the two differ.
+A new entry does not go in this file: each pull request adds its own two small files, in English
+and Arabic, to [changelog.d/](changelog.d/README.md), and the lint job refuses a new line under
+`[Unreleased]` here. [maktaba.dev/changelog](https://maktaba.dev/changelog/) shows both, each new
+entry in the release that brought it. The `[Unreleased]` entries below are from before that, and
+are also in [CHANGELOG.ar.md](CHANGELOG.ar.md), in the same sections; the maktaba.dev build fails
+when the two differ.
 
 ## [Unreleased]
 
