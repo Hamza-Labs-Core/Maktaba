@@ -29,6 +29,8 @@ import javafx.scene.text.TextAlignment
 internal class VideoPanel : JFXPanel() {
     private var view: MediaView? = null
     private var text: Text? = null
+    // the subtitle size chosen (on JavaFX's thread, as the text is)
+    private var scale = 1f
 
     init {
         Platform.runLater {
@@ -43,8 +45,8 @@ internal class VideoPanel : JFXPanel() {
             StackPane.setAlignment(t, Pos.BOTTOM_CENTER)
             v.fitWidthProperty().bind(root.widthProperty())
             v.fitHeightProperty().bind(root.heightProperty())
-            root.heightProperty().addListener { _, _, h -> t.font = Font.font((h.toDouble() / 22).coerceIn(14.0, 48.0)) }
-            t.wrappingWidthProperty().bind(root.widthProperty().multiply(0.85))
+            root.heightProperty().addListener { _, _, h -> t.font = Font.font(fxCaptionFont(h.toDouble(), scale)) }
+            t.wrappingWidthProperty().bind(root.widthProperty().multiply(FX_CAPTION_WIDTH))
             t.translateYProperty().bind(root.heightProperty().multiply(-0.06))
             scene = Scene(root, javafx.scene.paint.Color.BLACK)
             view = v
@@ -57,14 +59,26 @@ internal class VideoPanel : JFXPanel() {
     /** The caption shown now (null: none), laid out right to left when [rtl], at [scale] in [colour] (story 13.20). */
     fun caption(s: String?, rtl: Boolean, scale: Float, colour: SubtitleColour = SubtitleColour.White) = Platform.runLater {
         val t = text ?: return@runLater
+        if (scale != this.scale) {
+            this.scale = scale
+            t.font = Font.font(fxCaptionFont(scene.height, scale))
+        }
         t.text = s.orEmpty()
         t.isVisible = !s.isNullOrBlank()
         t.nodeOrientation = if (rtl) NodeOrientation.RIGHT_TO_LEFT else NodeOrientation.LEFT_TO_RIGHT
-        t.scaleX = scale.toDouble()
-        t.scaleY = scale.toDouble()
         t.fill = javafx.scene.paint.Color.web(colour.rgb)
     }
 }
+
+/** How much of the picture's width a JavaFX caption's lines take: the text is wrapped at it. */
+internal const val FX_CAPTION_WIDTH = 0.85
+
+/**
+ * A JavaFX caption's font size in a picture [height] high, at [scale] (the subtitle size chosen).
+ * The font takes the scale, not the laid-out text, so a Large line still wraps within
+ * [FX_CAPTION_WIDTH] of the picture.
+ */
+internal fun fxCaptionFont(height: Double, scale: Float): Double = (height / 22).coerceIn(14.0, 48.0) * scale
 
 /** Whether [s] reads right to left (Arabic, Hebrew, Urdu…): its first strong letter says. */
 fun isRtlText(s: String): Boolean {

@@ -110,8 +110,9 @@ interface Video {
 
     /**
      * Subtitles drawn by the player itself (story 13.20): a file's own track or a home's file
-     * ([SubtitleOption.Kind.File], [SubtitleOption.Kind.Home]), or none (null). False: this
-     * player cannot, and an HLS rendition's cues are drawn as [caption]s.
+     * ([SubtitleOption.Kind.File], [SubtitleOption.Kind.Home]), or none (null: a forced track of
+     * the file's may still show). False: this player cannot, and an HLS rendition's cues
+     * ([SubtitleOption.Kind.Stream]) are drawn as [caption]s, with nothing of the player's own.
      */
     fun selectSubtitle(option: SubtitleOption?): Boolean = false
 
@@ -141,6 +142,8 @@ interface VideoEvents {
     val subtitleStyle: SubtitleStyle get() = SubtitleStyle()
     /** Ready: its length (null: not known) and, for a file, its audio tracks in order. */
     fun ready(durationMs: Long?, audio: List<AudioOption>)
+    /** The home has subtitles on; off, not even a forced track of the file's shows. */
+    val subtitlesOn: Boolean get() = true
     /** A file's own subtitle tracks, in order, once it is open (a player that reads them: libmpv's). */
     fun subtitleTracks(tracks: List<FileSubtitle>) {}
     /** The player could not draw [option] (a home's file it could not add), and [why]; the choice before it stays on screen. */
@@ -518,7 +521,7 @@ class Playback(
         subtitle = o
         cues = emptyList()
         caption = null
-        if (o == null || o.kind == SubtitleOption.Kind.Stream) player?.selectSubtitle(null) else player?.selectSubtitle(o)
+        player?.selectSubtitle(o)
     }
 
     /** Plays [o]'s audio from the same moment; kept for the next video. */
@@ -881,6 +884,7 @@ class Playback(
         // story 13.20: the subtitles the player draws itself, and their style, kept by its next player
         override val subtitleChoice: SubtitleOption? get() = subtitle?.takeIf { it.kind != SubtitleOption.Kind.Stream }
         override val subtitleStyle: SubtitleStyle get() = this@Playback.subtitleStyle
+        override val subtitlesOn: Boolean get() = features().isOn(Feature.SUBTITLES)
 
         override fun ready(durationMs: Long?, audio: List<AudioOption>) = onReady(durationMs, audio)
 

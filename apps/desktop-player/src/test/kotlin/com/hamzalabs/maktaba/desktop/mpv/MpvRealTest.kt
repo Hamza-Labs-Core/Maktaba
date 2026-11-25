@@ -40,7 +40,13 @@ import java.util.concurrent.atomic.AtomicInteger
  *    reference (src/test/resources/references/mpv-subs-*.png, reviewed once for Arabic joined
  *    and right to left), as FrameReferencesTest does;
  *  - T06: Large and Yellow: the SRT line yellow and about 1.3 times as tall, the ASS line as
- *    tall too in its own green, the PGS picture as authored.
+ *    tall too in its own green, the PGS picture as authored;
+ *  - a forced track of `subs/forced.mkv` (made with ffmpeg and committed: a small black picture,
+ *    silent Arabic and English audio, an Arabic SRT, then a forced Arabic and a forced English
+ *    one) shows while subtitles are off, in the language of the audio playing, and again once a
+ *    chosen track is turned off.
+ *
+ * And a video opened paused (a renewed address while paused) shows its picture.
  */
 class MpvRealTest {
     private val dir = System.getenv("MAKTABA_LIBMPV_DIR")
@@ -367,7 +373,10 @@ class MpvRealTest {
     /** The frames with no committed reference yet. */
     private val missing = mutableListOf<String>()
 
-    /** As FrameReferencesTest: compared on Linux with src/test/resources/references/[name].png; a missing one is written and fails. */
+    /**
+     * As FrameReferencesTest, but within the line ([SubtitleReference]): compared on Linux with
+     * src/test/resources/references/[name].png; a missing one is written and fails.
+     */
     private fun reference(name: String, img: java.awt.image.BufferedImage) {
         val build = File("build")
         File(build, "mpv-references").also { it.mkdirs() }.let { javax.imageio.ImageIO.write(img, "png", File(it, "$name.png")) }
@@ -379,19 +388,9 @@ class MpvRealTest {
             return
         }
         val want = javax.imageio.ImageIO.read(ref)
-        assertTrue("$name: ${img.width}x${img.height}, the reference ${want.width}x${want.height}", want.width == img.width && want.height == img.height)
-        var differ = 0
-        for (y in 0 until want.height) for (x in 0 until want.width) {
-            val a = want.getRGB(x, y)
-            val b = img.getRGB(x, y)
-            val d = maxOf(kotlin.math.abs((a shr 16 and 255) - (b shr 16 and 255)), kotlin.math.abs((a shr 8 and 255) - (b shr 8 and 255)), kotlin.math.abs((a and 255) - (b and 255)))
-            if (d > 16) differ++
-        }
-        val ratio = differ.toDouble() / (want.width * want.height)
-        if (ratio > 0.001) {
-            File(build, "reference-diffs").also { it.mkdirs() }.let { javax.imageio.ImageIO.write(img, "png", File(it, "$name.png")) }
-            throw AssertionError("$name: ${"%.4f".format(ratio)} of the pixels differ from the reference")
-        }
+        val why = SubtitleReference.differs(want, img) ?: return
+        File(build, "reference-diffs").also { it.mkdirs() }.let { javax.imageio.ImageIO.write(img, "png", File(it, "$name.png")) }
+        throw AssertionError("$name: $why")
     }
 
     @Test
@@ -447,5 +446,106 @@ class MpvRealTest {
         // the PGS picture as authored: neither size nor colour
         assertTrue("PGS the same size: $pgs, $pgsBig", kotlin.math.abs(pgsBig.height - pgs.height) <= 2)
         assertTrue("PGS white: $pgsBig", pgsBig.b > 200)
+    }
+
+    /** What a video alone (no [Playback]) tells; [on]: the home has subtitles. */
+    private class Told(on: Boolean = true) : com.hamzalabs.maktaba.desktop.VideoEvents {
+        override val volume = 1f
+        override val muted = false
+        override val subtitlesOn = on
+        @Volatile var audio: List<com.hamzalabs.maktaba.desktop.AudioOption>? = null
+        @Volatile var subs: List<com.hamzalabs.maktaba.desktop.watch.FileSubtitle>? = null
+        val failed: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+        override fun ready(durationMs: Long?, audio: List<com.hamzalabs.maktaba.desktop.AudioOption>) {
+            this.audio = audio
+        }
+        override fun subtitleTracks(tracks: List<com.hamzalabs.maktaba.desktop.watch.FileSubtitle>) {
+            subs = tracks
+        }
+        override fun position(ms: Long) {}
+        override fun playing(on: Boolean) {}
+        override fun failed(why: String) {
+            failed += why
+        }
+        override fun ended() {}
+    }
+
+    private fun until(v: MpvVideo, told: Told, what: String, ok: () -> Boolean) {
+        val end = System.currentTimeMillis() + 20_000
+        while (!ok()) {
+            if (System.currentTimeMillis() > end) throw AssertionError("never: $what (failed ${told.failed}; sid ${v.property("sid")}; frame ${v.frame != null}; mpv ${v.state()})")
+            Thread.sleep(20)
+        }
+    }
+
+    @Test
+    fun s13_22_aVideoOpenedPausedShowsItsPicture() {
+        val lib = lib()
+        val told = Told()
+        // the size is known before the first frame, as when a reopen replaces a player on screen
+        val v = MpvVideo(lib, file("h264-ac3-51-1080p.mkv").absolutePath, 10_000, autoplay = false, told, null)
+        try {
+            v.resize(1280, 720)
+            until(v, told, "a frame of a video opened paused") { v.frame != null }
+            assertEquals("yes", v.property("pause"))
+            val img = v.frame!!.toAwtImage()
+            var bright = 0
+            for (y in 0 until img.height) for (x in 0 until img.width) {
+                val p = img.getRGB(x, y)
+                if (maxOf(p shr 16 and 255, p shr 8 and 255, p and 255) > 96) bright++
+            }
+            val share = bright.toDouble() / (img.width * img.height)
+            println("13.22 a video opened paused: ${"%.2f".format(share)} of its picture is bright (${v.state()})")
+            // testsrc2 is colour bars all over: a black frame has none
+            assertTrue("a black frame: $share of it is bright", share > 0.25)
+            // the same while it stays paused: the picture does not go
+            Thread.sleep(500)
+            assertTrue("the picture went", v.shown != null && told.failed.isEmpty())
+        } finally {
+            v.dispose()
+        }
+    }
+
+    @Test
+    fun s13_20_offShowsTheForcedTrackOfTheAudiosLanguage() {
+        val lib = lib()
+        val path = File("src/test/resources/subs/forced.mkv").also { assertTrue("$it is missing", it.isFile) }.absolutePath
+        val told = Told()
+        val v = MpvVideo(lib, path, 0, autoplay = true, told, null)
+        try {
+            v.resize(320, 180)
+            until(v, told, "its tracks") { told.subs?.size == 3 && told.audio?.size == 2 }
+            // from the start: Arabic is heard, its forced track (the second) shows
+            until(v, told, "the forced Arabic track at the start") { v.property("sid") == "2" }
+            val arabic = com.hamzalabs.maktaba.desktop.watch.SubtitleOption("Full", "ara", com.hamzalabs.maktaba.desktop.watch.SubtitleOption.Kind.File, trackId = "1")
+            v.selectSubtitle(arabic)
+            until(v, told, "the track chosen") { v.property("sid") == "1" }
+            // off: the chosen track goes, the forced one is back
+            v.selectSubtitle(null)
+            until(v, told, "the forced Arabic track once off") { v.property("sid") == "2" }
+            // another audio: the forced track of its language
+            v.selectAudio(1)
+            until(v, told, "the forced English track") { v.property("sid") == "3" }
+            // a chosen track stays with another audio
+            v.selectSubtitle(arabic)
+            until(v, told, "the track chosen again") { v.property("sid") == "1" }
+            v.selectAudio(0)
+            until(v, told, "the Arabic audio") { v.property("aid") == "1" }
+            Thread.sleep(300)
+            assertEquals("1", v.property("sid"))
+            println("13.20 forced tracks follow the audio while subtitles are off")
+        } finally {
+            v.dispose()
+        }
+        // the home has no subtitles: none at all
+        val none = Told(on = false)
+        val w = MpvVideo(lib, path, 0, autoplay = true, none, null)
+        try {
+            w.resize(320, 180)
+            until(w, none, "its picture") { w.frame != null && none.subs?.size == 3 }
+            assertEquals("no", w.property("sid"))
+        } finally {
+            w.dispose()
+        }
     }
 }

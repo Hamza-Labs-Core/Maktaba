@@ -420,6 +420,10 @@ class PlaybackMpvTest {
         Thread.sleep(300)
         assertTrue(onMain { playback.subtitleOptions }.isEmpty())
         assertTrue(p.subtitles.isEmpty())
+        // the player is told: not even a forced track of the file's shows
+        assertFalse(p.events.subtitlesOn)
+        features = com.hamzalabs.maktaba.core.api.Capabilities.AllOn
+        assertTrue(p.events.subtitlesOn)
     }
 
     @Test

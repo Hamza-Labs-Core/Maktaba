@@ -11,6 +11,7 @@ import com.hamzalabs.maktaba.desktop.Video
 import com.hamzalabs.maktaba.desktop.VideoEvents
 import com.hamzalabs.maktaba.core.playback.SubtitleColour
 import com.hamzalabs.maktaba.desktop.watch.FileSubtitle
+import com.hamzalabs.maktaba.desktop.watch.PICTURE_SUBTITLE_CODECS
 import com.hamzalabs.maktaba.desktop.watch.SubtitleOption
 import com.sun.jna.Memory
 import com.sun.jna.Pointer
@@ -101,6 +102,10 @@ class MpvVideo internal constructor(
     // until then)
     private val newest = NewestLoad()
 
+    // a forced track of the file's may show while subtitles are off: not over a channel, nor when
+    // the home has no subtitles at all
+    private val forcedShows: Boolean get() = !live && events.subtitlesOn
+
     init {
         ops.execute(::start)
     }
@@ -144,8 +149,9 @@ class MpvVideo internal constructor(
                 // the end stays on screen, so a seek back after it plays again; eof-reached says it ended
                 opt("keep-open", "yes")
                 // story 13.20: the Player chooses the subtitles (selectSubtitle); until it does, mpv
-                // shows only a forced track, one in the audio's language, as players do
-                opt("sid", "auto")
+                // shows only a forced track, one in the audio's language, as players do (none when
+                // the home has no subtitles)
+                opt("sid", if (forcedShows) "auto" else "no")
                 opt("slang", "")
                 opt("subs-fallback", "no")
                 opt("subs-fallback-forced", "yes")
@@ -364,11 +370,21 @@ class MpvVideo internal constructor(
                 if (string(c, "track-list/$i/selected") == "yes") shownByMpv = t
             }
         }
-        // a forced picture track mpv picked itself is drawn as authored too
-        if (events.subtitleChoice == null && shownByMpv?.picture == true) onMpv { lib.mpv_set_property_string(it, "sub-scale", "1.0") }
         audioIds = ids
         // the track chosen before this player (a reopen keeps it)
-        events.audioIndex.takeIf { it > 0 }?.let { ids.getOrNull(it) }?.let { lib.mpv_set_property_string(c, "aid", it) }
+        val audioId = events.audioIndex.takeIf { it > 0 }?.let { ids.getOrNull(it) }
+        if (audioId != null) lib.mpv_set_property_string(c, "aid", audioId)
+        if (events.subtitleChoice == null) {
+            onMpv {
+                when {
+                    wanted != null -> {} // chosen meanwhile
+                    // mpv picked a forced track for the first audio: one for this audio instead
+                    audioId != null -> forcedOnly(it)
+                    // a forced picture track mpv picked itself is drawn as authored too
+                    shownByMpv?.picture == true -> lib.mpv_set_property_string(it, "sub-scale", "1.0")
+                }
+            }
+        }
         events.ready(duration, audio)
         events.subtitleTracks(subs)
         // the subtitles chosen before this player (a reopen keeps them)
@@ -382,10 +398,25 @@ class MpvVideo internal constructor(
     }
 
     /**
+     * Subtitles off: only a forced track of the file's shows, one in the language of the audio
+     * playing (the options of [start]), as when it opened; none when the home has no subtitles.
+     * Setting `sid` to `auto` runs mpv's own selection again (player/command.c's
+     * update_track_switch), but only when it changes: from `no`, always.
+     */
+    private fun forcedOnly(c: Pointer) {
+        lib.mpv_set_property_string(c, "sid", "no")
+        if (!forcedShows) return
+        lib.mpv_set_property_string(c, "sid", "auto")
+        val picture = string(c, "current-tracks/sub/codec") in PICTURE_SUBTITLE_CODECS
+        lib.mpv_set_property_string(c, "sub-scale", if (picture) "1.0" else events.subtitleStyle.scale.toString())
+    }
+
+    /**
      * [o] drawn: a file's track by its id; a home's file added once, then by its id; none:
-     * `sid=no`. A home's file is added without waiting (`sub-add` on mpv's own time, so a slow
-     * read never holds a pause or a seek back): the track before it stays until mpv has it
-     * ([added]), and one mpv could not add is reported, the choice before it kept.
+     * [forcedOnly]; an HLS rendition: nothing of mpv's (its cues are the Player's). A home's file
+     * is added without waiting (`sub-add` on mpv's own time, so a slow read never holds a pause or
+     * a seek back): the track before it stays until mpv has it ([added]), and one mpv could not
+     * add is reported, the choice before it kept.
      */
     private fun showSubtitle(c: Pointer, o: SubtitleOption?) {
         wanted = o
@@ -407,7 +438,8 @@ class MpvVideo internal constructor(
                     events.subtitleFailed(o, lib.mpv_error_string(err))
                 }
             }
-            else -> show(c, "no", picture = false)
+            SubtitleOption.Kind.Stream -> show(c, "no", picture = false)
+            null -> forcedOnly(c)
         }
     }
 
@@ -443,11 +475,10 @@ class MpvVideo internal constructor(
     /** One of mpv's properties now, as a string (a test's look at what mpv is doing). */
     internal fun property(name: String): String? = ctx?.let { string(it, name) }
 
-    /** Subtitles drawn by mpv (story 13.20): a file's own track, a home's file, or none. An HLS rendition is not one. */
+    /** Subtitles drawn by mpv (story 13.20): a file's own track, a home's file, or none but a forced track. An HLS rendition is not one. */
     override fun selectSubtitle(option: SubtitleOption?): Boolean {
-        if (option?.kind == SubtitleOption.Kind.Stream) return false
         onMpv { showSubtitle(it, option) }
-        return true
+        return option?.kind != SubtitleOption.Kind.Stream
     }
 
     /** mpv's playback state in one line, for a test that waited in vain. */
@@ -509,7 +540,11 @@ class MpvVideo internal constructor(
     /** A direct file's audio track [index] (in [VideoEvents.ready]'s order), switched in place. */
     override fun selectAudio(index: Int): Boolean {
         val id = audioIds.getOrNull(index) ?: return false
-        onMpv { lib.mpv_set_property_string(it, "aid", id) }
+        onMpv {
+            lib.mpv_set_property_string(it, "aid", id)
+            // subtitles off: a forced track in this audio's language, not the one's before
+            if (wanted == null) forcedOnly(it)
+        }
         return true
     }
 

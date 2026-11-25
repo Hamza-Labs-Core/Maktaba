@@ -25,7 +25,9 @@ import java.util.concurrent.TimeUnit
  * Story 13.20 at mpv's own calls, with a pretend libmpv (no library here; CI's MpvRealTest has
  * the real one): the subtitle options a video opens with, the file's tracks read from its
  * track-list, and the subtitles chosen: a file's track (`sid`), a home's file (`sub-add` with
- * the proxy's URL, then its id) and off (`sid=no`) (T04).
+ * the proxy's URL, then its id) and off (T04): mpv's own selection again (`sid` from `no` to
+ * `auto`), so only a forced track in the audio's language shows, or none (`sid=no`) when the
+ * home has no subtitles.
  */
 class MpvVideoTest {
     /** What the pretend libmpv was told, and what it answers. */
@@ -100,7 +102,9 @@ class MpvVideoTest {
     private val failed: MutableList<Pair<SubtitleOption, String>> = Collections.synchronizedList(mutableListOf())
     private var video: MpvVideo? = null
 
-    private fun events(style: SubtitleStyle = SubtitleStyle(), chosen: SubtitleOption? = null) = object : VideoEvents {
+    private fun events(style: SubtitleStyle = SubtitleStyle(), chosen: SubtitleOption? = null, on: Boolean = true, track: Int = 0) = object : VideoEvents {
+        override val subtitlesOn = on
+        override val audioIndex = track
         override val volume = 1f
         override val muted = false
         override val subtitleStyle = style
@@ -193,13 +197,74 @@ class MpvVideoTest {
         until("added and shown") { fake.calls.last() == "set sid=9" }
         assertEquals("async sub-add http://127.0.0.1:1/x/stream/s1/subs/sidecar/en.vtt?sig=abc auto en en", fake.calls.first { it.startsWith("async sub-add") })
         assertTrue(v.selectSubtitle(null))
-        until("off") { fake.calls.last() == "set sid=no" }
+        until("off") { "set sid=auto" in fake.calls }
+        // off the track chosen, then mpv's own selection: only a forced track shows
+        assertEquals(listOf("set sid=9", "set sid=no", "set sid=auto"), fake.calls.filter { it.startsWith("set sid=") }.takeLast(3))
         // the home's file again: by the id mpv gave it, not added twice
         v.selectSubtitle(home)
         until("by its id") { fake.calls.last() == "set sid=9" }
         assertEquals(1, fake.calls.count { it.startsWith("async sub-add") })
-        // an HLS rendition's cues are the Player's to draw
+        // an HLS rendition's cues are the Player's to draw, over nothing of mpv's
         assertFalse(v.selectSubtitle(SubtitleOption("Arabic", "ar", SubtitleOption.Kind.Stream)))
+        until("nothing of mpv's") { fake.calls.last() == "set sid=no" }
+    }
+
+    @Test
+    fun offShowsAForcedPictureTrackAsAuthoredAndATextOneInTheSize() {
+        val v = open(events(SubtitleStyle(SubtitleSize.Large)))
+        until("set up") { fake.calls.any { it.startsWith("loadfile") } }
+        v.selectSubtitle(SubtitleOption(null, "ar", SubtitleOption.Kind.File, trackId = "1"))
+        fake.properties["current-tracks/sub/codec"] = "hdmv_pgs_subtitle"
+        v.selectSubtitle(null)
+        until("unscaled") { fake.calls.last() == "set sub-scale=1.0" }
+        fake.properties["current-tracks/sub/codec"] = "subrip"
+        v.selectSubtitle(null)
+        until("in the size") { fake.calls.last() == "set sub-scale=1.3" }
+    }
+
+    @Test
+    fun anotherAudioTrackChoosesTheForcedTrackAgainOnlyWhileOff() {
+        trackList()
+        fake.properties["track-list/5/type"] = "audio"
+        fake.properties["track-list/5/id"] = "2"
+        fake.properties["track-list/count"] = "6"
+        val v = open(events())
+        until("set up") { fake.calls.any { it.startsWith("loadfile") } }
+        fake.post(MpvConst.EVENT_FILE_LOADED)
+        until("tracks read") { tracks.isNotEmpty() }
+        assertTrue(v.selectAudio(1))
+        until("chosen again") { "set sid=auto" in fake.calls }
+        assertEquals(listOf("set aid=2", "set sid=no", "set sid=auto"), fake.calls.filter { it.startsWith("set ") }.take(3))
+        // a track the person chose stays, whatever the audio
+        v.selectSubtitle(SubtitleOption(null, "ar", SubtitleOption.Kind.File, trackId = "1"))
+        v.selectAudio(0)
+        until("the other audio") { fake.calls.last() == "set aid=1" }
+        Thread.sleep(100)
+        assertEquals("set aid=1", fake.calls.last())
+    }
+
+    @Test
+    fun aReopenedVideosAudioTrackChoosesItsForcedTrack() {
+        trackList()
+        fake.properties["track-list/5/type"] = "audio"
+        fake.properties["track-list/5/id"] = "2"
+        fake.properties["track-list/count"] = "6"
+        open(events(track = 1))
+        until("set up") { fake.calls.any { it.startsWith("loadfile") } }
+        fake.post(MpvConst.EVENT_FILE_LOADED)
+        until("chosen for that audio") { "set sid=auto" in fake.calls }
+        assertEquals(listOf("set aid=2", "set sid=no", "set sid=auto"), fake.calls.filter { it.startsWith("set ") }.take(3))
+    }
+
+    @Test
+    fun withTheHomesSubtitlesOffNotEvenAForcedTrackShows() {
+        val v = open(events(on = false))
+        until("set up") { fake.calls.any { it.startsWith("loadfile") } }
+        assertEquals("no", fake.options["sid"])
+        v.selectSubtitle(null)
+        until("off") { "set sid=no" in fake.calls }
+        Thread.sleep(100)
+        assertFalse(fake.calls.toString(), "set sid=auto" in fake.calls)
     }
 
     @Test
