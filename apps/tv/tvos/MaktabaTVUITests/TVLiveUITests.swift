@@ -331,7 +331,8 @@ final class TVLiveUITests: XCTestCase {
         shot("tv-library-shuffle-en")
     }
 
-    /// The Collections tab (story 56.08 T08, T09): the cards with their badges, in Arabic.
+    /// The Collections tab (story 56.08 T08, T09): the cards with their badges, in Arabic; a
+    /// channel's collection shows with no source badge.
     func testTheCollectionsTabInArabic() throws {
         signIn("ar")
         openFirstLibrary()
@@ -341,7 +342,10 @@ final class TVLiveUITests: XCTestCase {
         moveFocus(to: tab, with: .left)
         XCTAssertTrue(element("collection.col-yt").waitForExistence(timeout: 20), "the collections")
         XCTAssertTrue(app.staticTexts["قائمة تشغيل يوتيوب"].exists, "the YouTube badge in Arabic")
-        XCTAssertTrue(app.staticTexts["مجموعة Plex"].exists, "the Plex badge in Arabic")
+        XCTAssertTrue(element("collection.col-ch").exists, "a channel's collection shows")
+        // a channel's collection has no source badge: no more text than the hand-made one's
+        XCTAssertEqual(element("collection.col-ch").staticTexts.count, element("collection.col-mine").staticTexts.count,
+                       "a channel's collection has no source badge")
         shot("tv-library-collections-ar")
     }
 

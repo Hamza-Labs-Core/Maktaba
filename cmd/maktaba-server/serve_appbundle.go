@@ -47,9 +47,10 @@ import (
 //     release before took for it while it still served (the update's backup step,
 //     internal/updater), else it dumps the database now (backups/pre-<old>-to-<new>.dump,
 //     the way back), and records the update before migrating; then it runs the api's
-//     migrations (`maktaba-api migrate up`) and records them done. When they fail, it
-//     puts the dump back (nothing is dumped first) and keeps the server stopped,
-//     saying so;
+//     migrations (`maktaba-api migrate up`) and records them done. When they fail, their
+//     Down scripts take the database back (or it is kept, when they are additive), and
+//     when those cannot, the update is held: nothing is put back by itself, the server
+//     stays stopped and a person chooses (backWithoutDump, heldUpdate);
 //   - the pipeline's processes then wait for the venv bootstrap (one run for all
 //     of them), unless MAKTABA_PYTHON or [pipeline] python names their Python;
 //   - postgres refuses a cluster another major made;
@@ -190,9 +191,9 @@ func appBundleGates(cfg config.Config, dir string, pg *pgbundle.Bundle, procs []
 // layoutHomeGates gives a plain server home (the side-by-side layout: Epic 35 story
 // 35.2) the app's database step (Epic 38 story 38.12): at the start of a release other
 // than the one whose migrations the database holds, every role waits while the database
-// is dumped (the bundled Postgres, or an operator's with the pg programs), migrated, and
-// put back when the migrations fail; a rollback of an automatic update marks the record
-// for the next start to put the dump back (internal/updater). releaseDir is the release
+// is dumped (the bundled Postgres, or an operator's with the pg programs) and migrated; when
+// the migrations fail their Down scripts undo them, or the update is held (nothing is put
+// back by itself). releaseDir is the release
 // running (its folder's name its version); a SQLite home has no step (its migrations run
 // as before).
 func layoutHomeGates(cfg config.Config, releaseDir string, pg *pgbundle.Bundle, ext *dbsafe.Target, procs []supervisor.Process,
@@ -890,9 +891,13 @@ const migrateLockTimeout = "2m"
 // bounds an update's: updater.pendingCap), but none waits on another session's lock
 // longer than migrateLockTimeout. Their output goes to the server's log; an error
 // carries their last lines.
+//
+// The library is stopped while they run (this step runs before any role), so they build
+// their indexes plainly, not CONCURRENTLY (MAKTABA_MIGRATE_OFFLINE: api/migrate_offline.go):
+// a plain build waits for no older snapshot and leaves no INVALID index when it is cut short.
 func runMigrateUp(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout, "up")
-	cmd.Env, cmd.Dir = api.Env, api.Dir
+	cmd.Env, cmd.Dir = append(envOrOS(api.Env), envMigrateOffline+"=1"), api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
 	cmd.Stderr = cmd.Stdout
@@ -911,11 +916,24 @@ func runMigrateUp(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	return errors.New(msg)
 }
 
+// envMigrateOffline tells `maktaba-api migrate up` that nothing else uses the database
+// (api/migrate_offline.go): its CREATE INDEX CONCURRENTLY statements run as plain builds.
+const envMigrateOffline = "MAKTABA_MIGRATE_OFFLINE"
+
+// envOrOS is env, or this process's environment when env is nil (exec.Cmd's own rule),
+// copied so an append never writes into the caller's.
+func envOrOS(env []string) []string {
+	if env == nil {
+		return os.Environ()
+	}
+	return append([]string(nil), env...)
+}
+
 // runDropInvalid is `maktaba-api migrate drop-invalid` with the api's binary and
 // environment: the INVALID indexes the pending migrations' cancelled builds left, dropped.
 func runDropInvalid(ctx context.Context, api *exec.Cmd, log io.Writer) error {
 	cmd := exec.CommandContext(ctx, api.Path, "migrate", "--timeout", "0", "--lock-timeout", migrateLockTimeout, "drop-invalid")
-	cmd.Env, cmd.Dir = api.Env, api.Dir
+	cmd.Env, cmd.Dir = append(envOrOS(api.Env), envMigrateOffline+"=1"), api.Dir
 	tail := &tailWriter{max: 4 << 10}
 	cmd.Stdout = io.MultiWriter(log, tail)
 	cmd.Stderr = cmd.Stdout
@@ -1018,6 +1036,15 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	// a restart of Postgres (the machines' reach changed) would cut the dump, the
 	// migrations or a restore short: it waits until this step is done
 	defer pgbundle.Hold()()
+	// the machines' copies come back once the step leaves a settled schema
+	defer func() {
+		if g.api != nil && ctx.Err() == nil {
+			if err == nil {
+				clearDownFailed(g.stateDir) // this release's migrations ran to their end
+			}
+			g.resumeCopies()
+		}
+	}()
 	cur := g.version
 	rec, err := g.record()
 	if err != nil {
@@ -1029,6 +1056,8 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		// a run without the api (serve --role ...): nothing migrates here, so
 		// nothing is dumped or recorded; only what must not run is refused
 		switch {
+		case rec.State == apppayload.DatabaseHeld:
+			return supervisor.Halt(heldUpdate(rec))
 		case rec.State == apppayload.DatabaseRestoring:
 			return supervisor.Halt(detailErr("db_restore_unfinished", fmt.Sprintf("the library database is being put "+
 				"back as it was before the update to %s (from %s): start the whole server (`maktaba-server serve`) to "+
@@ -1038,6 +1067,12 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		}
 		return nil
 	}
+	switch rec.State {
+	case apppayload.DatabaseMigrating, apppayload.DatabaseRestoring, apppayload.DatabaseHeld:
+		// a schema part way (migrations cut short, a restore not done, a held update): the
+		// machines' copies wait until it is settled
+		g.pauseCopies(ctx, 0)
+	}
 	// a start of another release that never finished (stopped during its dump, or the
 	// launcher went back from it) ends failed: this start is cur's
 	if n, err := attempts.SettleStale(g.updates, cur); err != nil {
@@ -1045,15 +1080,33 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	} else if n > 0 {
 		fmt.Fprintf(g.log, "[serve] %d update attempt(s) that never finished are recorded failed\n", n)
 	}
-	// a putting back cut short (the server stopped meanwhile): finish it first
-	if rec.State == apppayload.DatabaseRestoring {
-		if rec, err = g.restore(ctx, rec, report); err != nil {
+	// a restore mark no person asked for (a release before 2026-11-24 marked it, or its
+	// launcher's guard did): nothing is put back by itself, the update is held
+	if rec.State == apppayload.DatabaseRestoring && rec.By == "" {
+		if rec, err = g.holdUnasked(rec); err != nil {
 			return err
 		}
-		if cur == rec.Failed {
-			return supervisor.Halt(failedUpdate(rec))
+	}
+	// a restore a person asked for (cut short, or not begun): it is done first
+	if rec.State == apppayload.DatabaseRestoring {
+		if rec, err = g.restoreAsked(ctx, rec, report); err != nil {
+			return err
 		}
 		held = rec.Version
+	}
+	// a held update (it stopped, and nothing was put back by itself): every start stops on
+	// it until a person chooses, but a release newer than the one that failed, which a
+	// person installed, goes on from where it stopped (its migrations run what is missing)
+	wasHeld := false
+	if rec.State == apppayload.DatabaseHeld {
+		failed := layout.NormalizeVersion(rec.Failed)
+		if failed == "" || layout.NormalizeVersion(cur) == failed || !apppayload.Older(failed, cur) {
+			g.settleHeld(rec)
+			return supervisor.Halt(heldUpdate(rec))
+		}
+		fmt.Fprintf(g.log, "[serve] the update to %s was held (%s): %s goes on from where it stopped, the "+
+			"database as it is (the backup taken before it is %s)\n", rec.Failed, rec.Error, cur, orUnknown(rec.Dump))
+		rec.State, wasHeld = apppayload.DatabaseMigrating, true
 	}
 	// a rollback that kept the newer, rollback-safe schema for this release (nothing put
 	// back: updater/schemakeep.go): it starts on it, its api told it may
@@ -1080,9 +1133,10 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		// back failed): go on; the dump is still the one from before it all
 		update.From, update.Dump, update.DumpKeptFor = rec.From, rec.Dump, rec.DumpKeptFor
 		update.SchemaBefore = rec.SchemaBefore
-		if update.SchemaBefore == 0 && !rec.At.IsZero() {
+		if update.SchemaBefore == 0 && !rec.At.IsZero() && !wasHeld {
 			// begun by a release from before schema_before: the record was saved as the
-			// migrations started, and goose says what the database held then
+			// migrations started, and goose says what the database held then (a held record
+			// was saved when the update failed, after them: it says nothing of it)
 			if v, verr := schemaVersionAt(ctx, g, rec.At); verr == nil && v > 0 {
 				update.SchemaBefore = v
 			} else if verr != nil {
@@ -1167,6 +1221,12 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 		report(detail("db_checking", "Checking the library database", cur))
 	}
 	migStart := time.Now()
+	if migrating {
+		// the machines' copies wait out their table syncs, then pause until the schema is
+		// settled: the migrations done, or undone (their Down scripts, backWithoutDump, wait
+		// on the same locks), or a person's choice on a held update carried out (run)
+		g.pauseCopies(ctx, copySyncWait)
+	}
 	err = g.migrate(ctx, cur, migrating, report)
 	if err == nil && migrating {
 		// the update's migrations, for /metrics (story 35.15)
@@ -1177,11 +1237,10 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	if ctx.Err() != nil {
 		return ctx.Err() // stopped: the next start goes on (the record says migrating)
 	}
-	if now, rerr := g.record(); rerr == nil && now.State == apppayload.DatabaseRestoring && now.Failed == cur {
+	if now, rerr := g.record(); rerr == nil && markedFailed(now, cur) {
 		// the update's watch gave up on this start meanwhile (start_timeout) and marked the
-		// dump to be put back: the start it restarts does that; nothing is recorded over it
-		return detailErr("db_restoring", fmt.Sprintf("The update to %s gave up: the library database is put back "+
-			"as it was at the next start", cur), cur, now.Dump)
+		// record held: nothing is recorded over it, and nothing is put back by itself
+		return supervisor.Halt(heldUpdate(now))
 	}
 	switch {
 	case err == nil:
@@ -1233,18 +1292,85 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 			return herr
 		}
 	}
-	update.State, update.Failed, update.Error = apppayload.DatabaseRestoring, cur, err.Error()
-	if update.Restore == "" && !back {
-		update.Restore = "db_restored_unknown"
+	// neither: the update stops and waits for a person (no automatic restore, ever: three
+	// restores of the whole dump took the library down for hours in November 2026). The
+	// database stays as the migrations, and any Down scripts that ran, left it; the
+	// record is held, so every start stops on it and says the choices (db_held).
+	update.State, update.Failed, update.Error = apppayload.DatabaseHeld, cur, err.Error()
+	if update.Held == "" {
+		update.Held = "db_held_unknown"
 	}
 	if err := g.save(update); err != nil {
 		return err
 	}
-	rec, err = g.restore(ctx, update, report)
-	if err != nil {
-		return err
+	fmt.Fprintf(g.log, "[serve] level=error the update to %s failed (%s) and stops here (%s): nothing is put back "+
+		"by itself; Maktaba stays stopped until a person puts the backup %s back or installs a release that fixes "+
+		"this\n", cur, err, update.Held, orUnknown(update.Dump))
+	if !back {
+		settleAttempt(g.updates, cur, update.From, false, g.log, func(a *attempts.Attempt) {
+			if a.From == "" {
+				a.From = layout.NormalizeVersion(update.From)
+			}
+			if a.Step == "" || a.Step == "dump" {
+				a.Step = "migrate"
+			}
+			a.Code, a.Detail = update.Held, err.Error()
+			a.Ended(attempts.Failed)
+		})
 	}
-	return supervisor.Halt(failedUpdate(rec))
+	return supervisor.Halt(heldUpdate(update))
+}
+
+// markedFailed reports whether rec was marked for cur's failed update by someone else
+// meanwhile (the update's watch, the launcher): held, or restoring by a release from
+// before 2026-11-24.
+func markedFailed(rec apppayload.Database, cur string) bool {
+	return (rec.State == apppayload.DatabaseHeld || (rec.State == apppayload.DatabaseRestoring && rec.By == "")) &&
+		layout.NormalizeVersion(rec.Failed) == layout.NormalizeVersion(cur)
+}
+
+// settleHeld ends the attempt at the held update's release failed, with why it is held
+// (the Updates page): an attempt that ended already keeps what it says.
+func (g *migrationGate) settleHeld(rec apppayload.Database) {
+	if rec.Failed == "" {
+		return
+	}
+	code := rec.Held
+	if code == "" || code == "db_held_unasked" {
+		code = reasonCode(rec.Error) // the rollback's reason (watch_timeout, launcher_boot_loop, ...)
+	}
+	settleAttempt(g.updates, rec.Failed, rec.From, false, g.log, func(a *attempts.Attempt) {
+		if a.EndedAt != nil {
+			return
+		}
+		if a.From == "" {
+			a.From = layout.NormalizeVersion(rec.From)
+		}
+		if a.Step == "" || a.Step == "dump" {
+			a.Step = "start"
+		}
+		a.Code, a.Detail = code, rec.Error
+		a.Ended(attempts.Failed)
+	})
+}
+
+// holdUnasked turns a restore mark no person asked for (restoring, no by: written by a
+// release before 2026-11-24, by its launcher's guard, or a putting back such a release
+// began and did not finish) into a held record: the dump is not put back by itself. A
+// putting back cut short leaves a database that is neither; a person chooses all the
+// same (put the backup back, which is that restore done again in full).
+func (g *migrationGate) holdUnasked(rec apppayload.Database) (apppayload.Database, error) {
+	rec.State = apppayload.DatabaseHeld
+	if rec.Held == "" {
+		rec.Held = "db_held_unasked"
+	}
+	if err := g.save(rec); err != nil {
+		return rec, err
+	}
+	fmt.Fprintf(g.log, "[serve] level=error the library database's record was marked for the backup %s to be put "+
+		"back after the update to %s (%s), with no person asking: nothing is put back by itself, the update is "+
+		"held until a person chooses\n", orUnknown(rec.Dump), orUnknown(rec.Failed), rec.Error)
+	return rec, nil
 }
 
 // backWithoutDump takes the database of an update whose migrations failed back without
@@ -1268,22 +1394,24 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 // Either way the migration that failed part way is undone by its own Down script first
 // (`migrate undo-failed`), and the INVALID indexes its cancelled builds left are dropped
 // (`migrate drop-invalid`): the release before would keep them up on every write, and the
-// next try builds them again. The dump goes back only when the Down scripts fail
-// (db_down_failed), when a migration that ran lost data they cannot give back
-// (db_restored_lossy), or when the way back cannot be told (db_restored_unknown): logged
-// at level=error, and the update attempt's code says which on the Updates page.
+// next try builds them again. Nothing is put back by itself otherwise: when the Down
+// scripts fail (db_down_failed), when a migration that ran lost data they cannot give
+// back (db_held_lossy), or when the way back cannot be told (db_held_unknown), the update
+// is held (done false, upd.Held the code) and a person chooses: logged at level=error,
+// and the update attempt's code says which on the Updates page.
 func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, upd *apppayload.Database, cause error) (bool, error) {
 	update := *upd
-	// the dump goes back: why, on the update attempt and in the log, loudly (it is not the
-	// way back; the Down scripts are)
+	// the update is held: why, on the update attempt and in the log, loudly (nothing is
+	// put back by itself; a person decides)
 	dumpBack := func(code, why string) (bool, error) {
-		upd.Restore = code
+		upd.Held = code
 		fmt.Fprintf(g.log, "[serve] level=error the update to %s failed (%s) and its Down scripts do not take the "+
-			"database back (%s: %s): the whole dump %s goes back instead\n", cur, cause, code, why, update.Dump)
+			"database back (%s: %s): the update stops and waits for a person (the backup %s is not put back by "+
+			"itself)\n", cur, cause, code, why, update.Dump)
 		return false, nil
 	}
 	if update.From == "" || g.api == nil {
-		return dumpBack("db_restored_unknown", "the release before, or this release's api, is not known")
+		return dumpBack("db_held_unknown", "the release before, or this release's api, is not known")
 	}
 	prev := ""
 	if g.prev != nil {
@@ -1308,14 +1436,13 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, upd *ap
 		})
 	}
 	// the update's watch may give up on this start meanwhile (start_timeout) and mark the
-	// dump to be put back (its rollback): then that is what happens, nothing is saved over it
+	// record held (its rollback): then that stands, nothing is saved over it
 	gaveUp := func() (bool, error) {
 		now, rerr := g.record()
-		if rerr != nil || now.State != apppayload.DatabaseRestoring || now.Failed != cur {
+		if rerr != nil || !markedFailed(now, cur) {
 			return false, nil
 		}
-		return true, detailErr("db_restoring", fmt.Sprintf("The update to %s gave up: the library database is put "+
-			"back as it was at the next start", cur), cur, now.Dump)
+		return true, supervisor.Halt(heldUpdate(now))
 	}
 	switch how {
 	case updater.FailedKeep:
@@ -1367,8 +1494,7 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, upd *ap
 		}
 		g.dropLeftovers(ctx)
 		if done, err := gaveUp(); done {
-			// the rollback puts the dump back over the schema the Down scripts left: the
-			// same database as before the update either way
+			// held meanwhile by the rollback: a person chooses, on the schema the Down scripts left
 			return true, err
 		}
 		rec := apppayload.Database{Version: update.From, State: apppayload.DatabaseMigrated, From: update.From,
@@ -1388,9 +1514,9 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, upd *ap
 		return true, supervisor.Halt(undoneUpdate(rec))
 	}
 	if how == updater.FailedLossy {
-		return dumpBack("db_restored_lossy", why)
+		return dumpBack("db_held_lossy", why)
 	}
-	return dumpBack("db_restored_unknown", why)
+	return dumpBack("db_held_unknown", why)
 }
 
 // dropLeftovers drops the INVALID indexes the failed migrations' cancelled builds left
@@ -1435,75 +1561,16 @@ func existingDir(dirs ...string) string {
 	return ""
 }
 
-// restore puts the dump of a failed update back (rec is restoring) and records
-// it; the database is then as it was before that update. Nothing is dumped first: the
-// release before starts as soon as its dump is back (the failed state is not kept).
-func (g *migrationGate) restore(ctx context.Context, rec apppayload.Database, report func(supervisor.Detail)) (apppayload.Database, error) {
-	if !g.keeps() {
-		return rec, supervisor.Halt(detailErr("db_no_cluster", fmt.Sprintf("the update to %s could not change the "+
-			"library database (%s), and this Maktaba runs no database of its own to put %s back into",
-			rec.Failed, rec.Error, rec.Dump), rec.Failed, rec.Error, rec.Dump))
-	}
-	if rec.By != "" {
-		return g.restoreAsked(ctx, rec, report)
-	}
-	report(detail("db_restoring", fmt.Sprintf("The update to %s could not change the library database: putting it "+
-		"back as it was", rec.Failed), rec.Failed, rec.Dump))
-	why := ""
-	if rec.Restore != "" {
-		why = " (" + rec.Restore + ")"
-	}
-	fmt.Fprintf(g.log, "[serve] level=error the update to %s failed (%s): restoring the whole dump %s%s\n",
-		rec.Failed, rec.Error, rec.Dump, why)
-	err := g.putBack(ctx, rec.Dump)
-	if ctx.Err() != nil {
-		return rec, ctx.Err() // the record still says restoring: the next start finishes it
-	}
-	// the attempt at the failed release: put back (its database and the release before
-	// run again), or failed when even the dump could not be put back
-	code := "db_migrate_failed" // its own migrations failed (this start is the failed release's)
-	if layout.NormalizeVersion(rec.Failed) != layout.NormalizeVersion(g.version) {
-		code = reasonCode(rec.Error) // the release before puts it back (a rollback marked it)
-	}
-	if rec.Restore != "" {
-		code = rec.Restore // why its Down scripts did not take it back: the Updates page says so
-	}
-	settleAttempt(g.updates, rec.Failed, rec.From, false, g.log, func(a *attempts.Attempt) {
-		if a.From == "" {
-			a.From = layout.NormalizeVersion(rec.From)
-		}
-		if a.Step == "" || a.Step == "dump" {
-			a.Step = "start"
-		}
-		a.Code, a.Detail = code, rec.Error
-		if err != nil {
-			a.Code, a.Detail = "db_restore_failed", fmt.Sprintf("%s; putting %s back failed: %v", rec.Error, rec.Dump, err)
-			a.Ended(attempts.Failed)
-			return
-		}
-		a.Ended(attempts.PutBack)
-	})
-	if err != nil {
-		return rec, supervisor.Halt(detailErr("db_restore_failed", fmt.Sprintf("the update to %s could not change "+
-			"the library database (%s), and putting the database back from %s failed too: %v. Maktaba stays stopped; "+
-			"its next start tries to put it back again", rec.Failed, rec.Error, rec.Dump, err),
-			rec.Failed, rec.Error, rec.Dump, err.Error()))
-	}
-	// the dump of a schema kept for a release is that schema again, kept for it
-	done := apppayload.Database{Version: rec.From, State: apppayload.DatabaseRestored, From: rec.From, Dump: rec.Dump,
-		Failed: rec.Failed, Error: rec.Error, KeptFor: rec.DumpKeptFor}
-	if err := g.save(done); err != nil {
-		return rec, err
-	}
-	fmt.Fprintf(g.log, "[serve] the library database is back as it was before the update to %s\n", rec.Failed)
-	return done, nil
-}
-
 // restoreAsked puts back a backup a person asked for (rec.By: story 35.5 AC8), before
 // any role runs: the database it replaces set aside first, the dump put back as a failed
 // update's is (one transaction, the machines' copies made anew), and recorded restored
 // with the release it was put back for. No update attempt: nothing failed.
 func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Database, report func(supervisor.Detail)) (apppayload.Database, error) {
+	if !g.keeps() {
+		return rec, supervisor.Halt(detailErr("db_no_cluster", fmt.Sprintf("the library database cannot be put back "+
+			"from %s (%s): this Maktaba runs no database of its own to put it back into", rec.Dump, rec.Error),
+			rec.Failed, rec.Error, rec.Dump))
+	}
 	report(detail("db_restoring_backup", fmt.Sprintf("Putting the library database back from %s, as %s asked",
 		rec.Dump, rec.By), rec.Dump, rec.By))
 	g.setAsideReplaced(ctx, rec)
@@ -1517,8 +1584,9 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 			"back from %s failed: %v. Nothing was changed; Maktaba stays stopped and its next start tries again",
 			rec.Dump, err), rec.Dump, err.Error()))
 	}
+	// the dump of a schema kept for a release is that schema again, kept for it
 	done := apppayload.Database{Version: rec.From, State: apppayload.DatabaseRestored, From: rec.From, Dump: rec.Dump,
-		By: rec.By}
+		By: rec.By, KeptFor: rec.DumpKeptFor}
 	if err := g.save(done); err != nil {
 		return rec, err
 	}
@@ -1526,17 +1594,27 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 	return done, nil
 }
 
-// failedUpdate is the detail of an update whose migrations failed and whose
-// database was put back.
-func failedUpdate(rec apppayload.Database) error {
+// heldUpdate is the detail of an update that stopped with nothing put back by itself
+// (held): its migrations failed, or it was rolled back after they ran, and neither
+// keeping its schema nor its Down scripts took the database back. It says what happened
+// and the choices: put the backup taken before the update back (the recovery page, or
+// `maktaba-server restore`), or install a release newer than the one that failed.
+func heldUpdate(rec apppayload.Database) error {
 	before := "the version you had before"
 	if rec.From != "" {
 		before = rec.From
 	}
-	return detailErr("db_restored", fmt.Sprintf("the update to %s could not change the library database (%s). The "+
-		"database is back as it was before the update (restored from %s), and Maktaba stays stopped: install %s again "+
-		"to go on as before, or an update that fixes this; starting Maktaba again tries this update again",
-		rec.Failed, rec.Error, rec.Dump, before), rec.Failed, rec.Error, rec.Dump, rec.From)
+	why := rec.Error
+	if rec.Held != "" {
+		why += "; " + rec.Held
+	}
+	return detailErr("db_held", fmt.Sprintf("the update to %s stopped: it could not change the library database "+
+		"(%s), and its own Down scripts could not take the database back. Nothing was put back by itself, and "+
+		"Maktaba stays stopped until you choose: put back the backup taken before the update (%s) on the recovery "+
+		"page (/recovery) or with `maktaba-server restore`, which brings %s back and loses the changes made since "+
+		"that backup; or install a release newer than %s that fixes this, which goes on from here",
+		rec.Failed, why, filepath.Base(orUnknown(rec.Dump)), before, rec.Failed),
+		rec.Failed, why, filepath.Base(orUnknown(rec.Dump)), rec.From)
 }
 
 // downgrade is the detail of a release older than the database's.

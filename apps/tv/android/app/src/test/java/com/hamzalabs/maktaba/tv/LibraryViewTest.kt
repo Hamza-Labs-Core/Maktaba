@@ -15,7 +15,9 @@ import com.hamzalabs.maktaba.core.api.AuthTokens
 import com.hamzalabs.maktaba.core.queue.QueueSource
 import com.hamzalabs.maktaba.core.session.TokenStore
 import com.hamzalabs.maktaba.tv.data.TvApi
+import com.hamzalabs.maktaba.tv.data.TvCollection
 import com.hamzalabs.maktaba.tv.ui.screens.library.LibraryTabsScreen
+import com.hamzalabs.maktaba.tv.ui.screens.library.collectionBadge
 import com.hamzalabs.maktaba.tv.ui.screens.library.LocalTvNav
 import com.hamzalabs.maktaba.tv.ui.screens.library.PlaylistScreen
 import com.hamzalabs.maktaba.tv.ui.screens.library.SeriesScreen
@@ -86,7 +88,7 @@ class LibraryViewTest {
                     p == "/api/libraries/L1/collections" && request.url.queryParameter("kind") == "youtube" ->
                         json("""{"items":[{"kind":"youtube","id":"y1","name":"PL Lessons","source_kind":"youtube_playlist","automatic":true}]}""")
                     p == "/api/libraries/L1/collections" -> json("""{"items":[{"kind":"youtube","id":"y1","name":"PL Lessons","source_kind":"youtube_playlist"},
-                        {"kind":"plex","id":"p1","name":"Plex picks","source_kind":"plex"},{"kind":"curated","id":"c1","name":"Picked"}]}""")
+                        {"kind":"youtube","id":"y2","name":"Weekly talks","source_kind":"youtube_channel"},{"kind":"curated","id":"c1","name":"Picked"}]}""")
                     p == "/api/series/S1" -> json("""{"id":"S1","name":"Tafsir"}""")
                     p == "/api/series/S1/episodes" -> json("""{"seasons":[{"season":1,"id":"ss1","episodes":[{"video_id":"e1","title":"One","watched":true},{"video_id":"e2","title":"Two"}]}],
                         "next_episode":{"video_id":"e2","title":"Two","season":1}}""")
@@ -140,13 +142,28 @@ class LibraryViewTest {
         show { LibraryTabsScreen(it, "L1", "Fiqh") }
         compose.waitUntil(5_000) { compose.waitForIdle(); shows("Collections") }
         compose.onNodeWithTag("tab-Collections").performSemanticsAction(SemanticsActions.RequestFocus)
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Plex picks") }
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("Weekly talks") }
         assertTrue("youtube badge", shows("YouTube playlist"))
-        assertTrue("plex badge", shows("Plex collection"))
         compose.onNodeWithTag("collections-kind").performSemanticsAction(SemanticsActions.OnClick)
         // the kind's own read, then its cards
         compose.waitUntil(5_000) { compose.waitForIdle(); urls.any { it.contains("kind=youtube") } }
-        compose.waitUntil(5_000) { compose.waitForIdle(); shows("PL Lessons") && !shows("Plex picks") }
+        compose.waitUntil(5_000) { compose.waitForIdle(); shows("PL Lessons") && !shows("Weekly talks") }
+    }
+
+    @Test
+    fun aChannelsOrAPlexReadCollectionHasNoBadge() {
+        var channel: String? = "unset"
+        var plex: String? = "unset"
+        var playlist: String? = null
+        compose.setContent {
+            channel = collectionBadge(TvCollection("youtube", id = "y2", sourceKind = "youtube_channel"))
+            plex = collectionBadge(TvCollection("curated", id = "p1", sourceKind = "plex"))
+            playlist = collectionBadge(TvCollection("youtube", id = "y1", sourceKind = "youtube_playlist"))
+        }
+        compose.waitForIdle()
+        assertNull(channel)
+        assertNull(plex)
+        assertEquals("YouTube playlist", playlist)
     }
 
     @Test

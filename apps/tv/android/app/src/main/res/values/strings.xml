@@ -180,13 +180,10 @@
     <string name="collections_kind">Kind</string>
     <string name="collections_kind_all">All</string>
     <string name="collections_kind_youtube">From YouTube</string>
-    <string name="collections_kind_plex">From Plex</string>
     <string name="collections_kind_curated">Curated</string>
     <string name="collections_kind_topics">Topics</string>
     <string name="collections_kind_clips">Clips</string>
     <string name="collections_badge_youtube_playlist">YouTube playlist</string>
-    <string name="collections_badge_youtube_channel">YouTube channel</string>
-    <string name="collections_badge_plex">Plex collection</string>
     <string name="collections_badge_smart">Smart</string>
     <string name="collections_empty">No collections in this library yet.</string>
     <string name="playlists_title">Playlists</string>

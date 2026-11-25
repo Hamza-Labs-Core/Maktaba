@@ -1952,7 +1952,10 @@ var needsPersonCodes = map[string]bool{"not_self_managed": true, "old_launcher":
 	// macOS refused the server's login item of the new app (not code-signed): its fix is a
 	// signed app, or codesign; a release whose bundled Postgres major is not this one's (no
 	// upgrade path: its data directory would not open)
-	"login_item_unsigned": true, "pg_major_change": true}
+	"login_item_unsigned": true, "pg_major_change": true,
+	// the desktop app of the machine never took its order (it was not running): opening it is
+	// a person's, and says nothing of the release
+	"app_no_answer": true}
 
 func needsPerson(doc map[string]any) bool {
 	code, _ := doc["code"].(string)

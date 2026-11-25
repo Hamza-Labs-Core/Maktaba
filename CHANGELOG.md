@@ -4606,6 +4606,56 @@ when the two differ.
   spent and the home had no credentials, so linking needed a new code and another name. The same
   home now uses the same code again, for as long as the code lasts.
 
+- **A failed update never puts the whole backup back by itself: it stops and asks.** Until now,
+  when an update's Down scripts could not take the library database back (they failed, a change
+  had deleted data they cannot bring back, or the way back could not be told), or when the
+  launcher's guard gave up on a new release after its migrations ran, the whole backup taken
+  before the update went back by itself: hours with the library stopped on a large home, and the
+  writes since that backup lost. Now the update stops there and the database stays as it is.
+  The previous release is switched back in and stops on it too, and the start page, the recovery
+  page (`/recovery`) and the Updates page say what happened and the two choices: put back the
+  backup taken before the update (**Restore** on the recovery page, which names it), or install
+  a newer release that fixes the update, which goes on from where it stopped. A restore mark
+  written by an older release or its launcher is held the same way. The first update to this is
+  protected too: until its watch passes, the new release's record names its backup where no older
+  launcher or release puts it back from. A held update stays held when the switch back
+  fails. In English and Arabic.
+
+- **An update's migrations no longer fight the machines' copies of the home's database.** An
+  automatic update waits while a machine is still making its copy of a table, and the
+  migrations wait up to 10 minutes for such copies, then keep the machines' copies out until the
+  database is settled (an update that stopped and asks included), so a copy no longer comes
+  straight back or holds an index build up. Since the
+  migrations run with the library stopped, their index builds now run plainly: they wait for no
+  older session and leave no half-built index behind. The machines go on from where they
+  stopped. The Updates page says when an update waits for a machine's copy, in English and
+  Arabic.
+
+- **`maktaba-server update` on a self-managed or package install is no longer undone after 15
+  minutes.** Its switch was never confirmed, so the launcher went back to the previous release
+  once the new one had run for a quarter of an hour. The new release now confirms itself once it
+  has run healthy, as it does after a switch by hand, including a switch made by an older
+  `maktaba-server update`.
+
+- **A release that hangs while it starts after an update is now timed out.** Its own update watch
+  pushed the launcher's deadline on every minute, without limit. The release that switches now
+  says how long the new one may run before it confirms, and the launcher counts that time itself.
+  A machine switched off or asleep, or a clock set forward, is no time it had: a good update is
+  not taken back after a long power cut.
+
+- **An update no longer waits forever for a desktop app that is not running.** When the Mac or
+  Windows app never takes the update, the update stops waiting at the end of its window (or after
+  three hours) and says so on the Updates page, in English and Arabic: open Maktaba on that machine,
+  then update again. A failed start of the app is now written in the update's log. The Linux app
+  has nothing to download for its update, so the update goes on without it after 10 minutes.
+
+- **Automatic updates wait while the list of releases cannot be read.** When the home has not
+  read the list for over 12 hours it reads it again before it installs by itself, and waits while
+  that fails: a stale list may not know the newest releases, nor that one was withdrawn. On
+  2026-11-24 a home installed a release older than one that had rolled back, from a list it had
+  not been able to read for a day. The Updates page says why the update waits and the admins are
+  notified once a day, in English and Arabic; **Update now** still installs.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

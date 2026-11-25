@@ -1,8 +1,9 @@
 package updater
 
 // The way back from an update whose migrations failed part way. A failed update is undone
-// by the migrations' own Down scripts (#831); the dump goes back only when they fail, or
-// in the one case where they cannot give back what an Up script already lost (below).
+// by the migrations' own Down scripts (#831). When they fail, or in the one case where
+// they cannot give back what an Up script already lost (below), nothing is put back by
+// itself: the update is held and a person decides (db_held; the dump is one choice).
 //
 // The outages of 2026-11-23 (0.3.153 to 0.3.158) and 2026-11-24 (to 0.3.157): 0235's
 // CREATE INDEX CONCURRENTLY was cancelled by its lock timeout, and the database step put
@@ -24,11 +25,11 @@ package updater
 //   - lossy: a migration that ran deleted, overwrote, recast or dropped data (its Up
 //     script: losesData), and its Down script cannot bring that data back. Running the
 //     Down scripts would start the release before on a database missing that data, so the
-//     dump goes back, loudly (db_restored_lossy). migration-lint refuses such an Up script
+//     update is held, loudly (db_held_lossy): a person decides. migration-lint refuses such an Up script
 //     in a new migration unless shared/db/migrations/meta/lints.json exempts it for a time,
 //     so a release whose migrations pass the lint never takes this way.
 //   - restore: what cannot be told (this release's migrations, or the slot the database was
-//     at before the update, not known): the dump, loudly (db_restored_unknown).
+//     at before the update, not known): held, loudly (db_held_unknown).
 
 import (
 	"fmt"

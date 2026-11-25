@@ -19,6 +19,7 @@ type fakeMachine struct {
 	st        *MachineStatus
 	version   string
 	prepFail  string // a failure code at prepare
+	applyFail string // the code of an MApplyFailed outcome ("": app_install_failed)
 	outcome   string // after apply: MCommitted (default), MRolledBack, MApplyFailed, "silent"
 	applies   int
 	onApply   func()
@@ -180,6 +181,9 @@ func (m *fakeMachine) do(op string, body any) (*MachineStatus, error) {
 				}
 			case MApplyFailed:
 				m.st.State, m.st.Error = MApplyFailed, &MachineError{Step: "restart", Code: "app_install_failed"}
+				if m.applyFail != "" {
+					m.st.Error = &MachineError{Step: "order", Code: m.applyFail}
+				}
 			default:
 				m.st.State = MCommitted
 				m.st.Backup, m.st.TV = m.backup, m.tv
