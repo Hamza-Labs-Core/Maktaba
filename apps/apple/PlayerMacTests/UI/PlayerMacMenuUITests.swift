@@ -22,7 +22,7 @@ final class PlayerMacMenuUITests: XCTestCase {
 
     override func tearDown() async throws {
         // a failure here is recorded, not an interruption: one inside an async tearDown hangs
-        // XCTest (`PlayerUITestCase.tearDown`)
+        // XCTest (`PlayerUITestCase.setUpWithError`'s comment says how)
         continueAfterFailure = true
         if app?.state == .runningForeground || app?.state == .runningBackground {
             // never leave a full-screen space behind
@@ -136,8 +136,8 @@ final class PlayerMacMenuUITests: XCTestCase {
         // View's item now says Exit, and its key, the same one, leaves. Not by a click in the menu
         // bar, which macOS hides in full screen and slides down for a pointer at the screen's top:
         // for the one move a test makes there it sometimes does not (the pointer at the edge for
-        // 10 s, the bar still hidden: runs 45492271775 and 45548723868). The item's title and
-        // action are PlayerMenuTests' too.
+        // 10 s, the bar still hidden: runs 45492271775 and 45548723868). The key is
+        // the item's own, so it runs the item's action.
         let exit = app.menuBars.menuItems["Exit Full Screen"].firstMatch
         XCTAssertTrue(exit.waitForExistence(timeout: 5), "View ▸ Exit Full Screen while full screen")
         XCTAssertFalse(app.menuBars.menuItems["Enter Full Screen"].exists, "no Enter Full Screen while full screen")

@@ -289,13 +289,18 @@ jobs:
           #   45495588048, twice; "does not have a process ID" in 45513857454).
           # - apsd retries its push connection 8 to 17 times a second for good: it has no device
           #   identity here. Each try writes some 80 log lines. It and diagnosticd, which reads
-          #   them, held more than one of the three cores, and kept 3 of 8 simulators from ever
-          #   settling below.
+          #   them, held up to more than one of the three cores (136 % of one at the most), and
+          #   kept 3 of 8 simulators from ever settling below.
+          # each call into the simulator has a time limit (macOS has no `timeout`): one that
+          # never answers is a warning here, not the job's hour
+          limit() { perl -e 'alarm shift; exec @ARGV or exit 127' "$@"; }
           for service in com.apple.PosterBoard com.apple.apsd; do
-            xcrun simctl spawn "$udid" launchctl disable "user/foreground/$service" || true
-            xcrun simctl spawn "$udid" launchctl bootout "user/foreground/$service" || true
-            running=$(xcrun simctl spawn "$udid" launchctl list || true)
-            if grep -q "[[:space:]]$service\$" <<< "$running"; then
+            limit 30 xcrun simctl spawn "$udid" launchctl disable "user/foreground/$service" || true
+            limit 30 xcrun simctl spawn "$udid" launchctl bootout "user/foreground/$service" || true
+            running=$(limit 30 xcrun simctl spawn "$udid" launchctl list || true)
+            if [ -z "$running" ]; then
+              echo "::warning::the simulator did not list its services: $service may still run, and its load can fail a test (#1678)"
+            elif grep -q "[[:space:]]$service\$" <<< "$running"; then
               echo "::warning::$service still runs in the simulator: its load can fail a test (#1678)"
             fi
           done

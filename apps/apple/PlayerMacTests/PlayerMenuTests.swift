@@ -7,8 +7,7 @@ import Testing
 
 /// The Mac Player's menu bar as the app builds it (story 48.25, FR-42): each item's key, read
 /// from the running app's main menu. `PlayerMacMenuUITests` drives the same menus from outside.
-/// One test at a time: one of them changes the menu the others read.
-@MainActor @Suite(.serialized) struct PlayerMenus {
+@MainActor @Suite struct PlayerMenus {
     /// Whichever sections show get ⌘1, ⌘2 … in their order, never more than five.
     @Test func theShownSectionsTakeTheNumbers() {
         let all = PlayerViewMenu.items(PlayerSection.allCases)
@@ -72,10 +71,10 @@ import Testing
         #expect(!MacFullScreen.canFullScreen(panel))
     }
 
-    /// View's full-screen item while the window is full screen: it says Exit, keeps its key, and
-    /// choosing it asks the window to leave; once left it says Enter again (FR-43). The UI test
-    /// uses the key alone: in full screen macOS hides the menu bar.
-    @Test func theFullScreenItemSaysExitAndLeaves() async throws {
+    /// What View's full-screen item says and does follows its window (FR-43): Exit while it is full
+    /// screen, and choosing it asks the window to leave or enter. The UI test reads the item itself
+    /// and uses its key: in full screen macOS hides the menu bar.
+    @Test func fullScreenFollowsItsWindowAndTogglesIt() {
         let full = MacFullScreen.shared
         let was = full.window
         let window = FullScreenWindow(contentRect: .init(x: 0, y: 0, width: 400, height: 300),
@@ -85,21 +84,21 @@ import Testing
             full.window = was
             full.refresh()
         }
-        window.isFull = true
         full.window = { window }
         full.refresh()
-        let exit = try #require(await Self.viewItem("Exit Full Screen"), "Exit Full Screen")
-        #expect(exit.keyEquivalent == "f")
-        #expect(Self.modifiers(exit) == [.control, .command])
-        #expect(exit.isEnabled)
-        let view = try #require(exit.menu)
-        #expect(!view.items.contains { $0.title == "Enter Full Screen" })
-        view.performActionForItem(at: view.index(of: exit))
-        #expect(window.toggles == 1, "choosing it toggles the window")
+        #expect(!full.isFullScreen)
+        full.toggle()
+        #expect(window.toggles == 1, "asked to enter")
+
+        window.isFull = true
+        NotificationCenter.default.post(name: NSWindow.didEnterFullScreenNotification, object: window)
+        #expect(full.isFullScreen, "Exit, once the window is full screen")
+        full.toggle()
+        #expect(window.toggles == 2, "asked to leave")
 
         window.isFull = false
-        full.refresh()
-        #expect(await Self.viewItem("Enter Full Screen") != nil, "Enter Full Screen again")
+        NotificationCenter.default.post(name: NSWindow.didExitFullScreenNotification, object: window)
+        #expect(!full.isFullScreen, "Enter again, once it has left")
     }
 
     /// A window that says it is full screen when told to, and counts what it is asked.
@@ -111,15 +110,6 @@ import Testing
             set { super.styleMask = newValue }
         }
         override func toggleFullScreen(_ sender: Any?) { toggles += 1 }
-    }
-
-    /// View's item of this title, once SwiftUI has drawn the menu again (at most 5 s).
-    private static func viewItem(_ title: String) async -> NSMenuItem? {
-        for _ in 0 ..< 50 {
-            if let item = (try? menu("View"))?.items.first(where: { $0.title == title }) { return item }
-            try? await Task.sleep(for: .milliseconds(100))
-        }
-        return nil
     }
 
     static func menu(_ title: String) throws -> NSMenu {
