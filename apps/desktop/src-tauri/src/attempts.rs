@@ -78,6 +78,10 @@ pub const LOCAL_BUILD: &str = "local_build";
 /// (or the agent's watchdog) started it again on the release it had.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const INSTALLER_NOT_FINISHED: &str = "installer_not_finished";
+/// The exit code of a Windows installer that found no room for the release and changed
+/// nothing (installer.nsi, MK_ROOM_EXIT): Windows' ERROR_DISK_FULL.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const INSTALLER_NO_ROOM: i32 = 112;
 pub const CHECK_FAILED: &str = "check_failed";
 pub const DOWNLOAD_FAILED: &str = "download_failed";
 pub const INSTALL_FAILED: &str = "install_failed";
