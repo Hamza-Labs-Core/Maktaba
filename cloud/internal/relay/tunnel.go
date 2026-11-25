@@ -45,6 +45,7 @@ type Tunnel struct {
 	// closes it or the deadline (drain.go)
 	draining  atomic.Bool
 	drainOnce sync.Once
+	cutAt     atomic.Pointer[time.Time] // a drain's deadline (drain.go); nil: not draining
 	// inflight counts proxied requests not yet finished (a stream registered)
 	inflight atomic.Int64
 	// tracked: in its registry's open set (Registry.track)
@@ -157,6 +158,7 @@ func (t *Tunnel) Streams() int64 { return t.inflight.Load() }
 // Close shuts down the tunnel and unblocks all pending streams.
 func (t *Tunnel) Close() {
 	t.closeOnce.Do(func() {
+		t.countCut()
 		t.closed.Store(true)
 		_ = t.conn.Close()
 		close(t.done)
