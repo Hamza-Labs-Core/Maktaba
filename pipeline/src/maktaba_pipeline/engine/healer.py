@@ -19,7 +19,8 @@ the stage on) whose cause is one that passes (:data:`_PASSES`):
   foreign key): nothing else queues those again.
 
 ``ffmpeg_rc``, ``db_error`` and the plugin causes are left out: they are as often a bug or a
-bad file. So is a stage that runs once by design (``max_attempts`` 1).
+bad file. So is a stage that runs once by design (``max_attempts`` 1), and one that changes
+files (``external_write``: a conversion does not start again by itself days later).
 
 What is done with each:
 
@@ -111,7 +112,7 @@ SELECT j.id, j.stage, j.subject_id, j.force, j.finished_at, v.path, v.missing_co
    AND j.stage <> 'access_check'
    AND {_PASSES}
    AND (j.not_before IS NULL OR j.not_before <= $2)
-   AND s.enabled AND v.deleted_at IS NULL AND v.state <> 'superseded'
+   AND s.enabled AND NOT s.external_write AND v.deleted_at IS NULL AND v.state <> 'superseded'
    AND l.deleted_at IS NULL
    AND NOT EXISTS (SELECT 1 FROM processing_jobs n
                     WHERE n.subject_kind = 'video' AND n.subject_id = j.subject_id

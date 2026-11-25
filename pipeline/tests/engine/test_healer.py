@@ -285,7 +285,10 @@ async def test_what_is_not_open_or_not_wanted_is_left_alone(db: Database, tmp_pa
     res = await enqueue_job(db, subject_kind="video", subject_id=cancelled, stage="t_a")
     await db.execute("UPDATE processing_jobs SET state = 'cancelled' WHERE id = $1", res.job_id)
     assert await heal_once(db, UP) == 0
+    await db.execute("UPDATE job_stages SET external_write = $1", True if is_pg(db) else 1)
     off = await failed()
+    assert await heal_once(db, UP) == 0  # it changes files
+    await db.execute("UPDATE job_stages SET external_write = $1", False if is_pg(db) else 0)
     await db.execute(
         "UPDATE job_stages SET enabled = $1 WHERE stage = 't_a'", False if is_pg(db) else 0
     )

@@ -19,7 +19,7 @@ Before an item lands here, Maktaba has already handled it by itself. What it doe
 
 ### Failed items that come back by themselves {#comes-back}
 
-Every 10 minutes Maktaba looks at failed items whose cause can pass: a [missing file](#file-missing), a NAS that [timed out](#nas-timeout), [refused a read](#nas-invalid-argument) or [returned a partial read](#nas-partial-read), or a database that went away while a step ran. If the file is there now, the step is queued again behind all other work, a few hundred at a time. If the file is still gone, Maktaba looks again later, less and less often (after 7 days at most). An item that is there and keeps failing is brought back three times in all: an hour, a day and 7 days after it failed. After that it needs you. Ignored items are left alone.
+Every 10 minutes Maktaba looks at failed items whose cause can pass: a [missing file](#file-missing), a NAS that [timed out](#nas-timeout), [refused a read](#nas-invalid-argument) or [returned a partial read](#nas-partial-read), or a database that went away while a step ran. If the file is there now, the step is queued again behind all other work, a few hundred at a time. If the file is still gone, Maktaba looks again later, less and less often (after 7 days at most). An item that is there and keeps failing is brought back three times in all: an hour, a day and 7 days after it failed. After that it needs you. Ignored items, and steps that change files (such as a conversion), are left alone.
 
 Two groups are not failures: **Waiting for your review** (changes waiting for **Apply**) and **No worker has synced this stage recently**.
 

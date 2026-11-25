@@ -138,7 +138,8 @@ minutes, at most 250 at a time, on the share probes it just made:
   `nas_partial_read` or `nas_invalid_argument` of class `transient`; because the database went away
   under a plugin's job (`DatabaseUnavailable`, `plugin_tx`, a connection error of
   `plugin_database`); or on a foreign key (a row went away under it). Not: an ignored failure, a
-  stage that is off, a stage that runs once by design, any other cause.
+  stage that is off, a stage that runs once by design or changes files (`external_write`), any
+  other cause.
 - **Its file is there:** the stage is queued again at priority 950, behind all other work, and what
   follows it keeps that priority. A stage with 250 such jobs still to run gets no more.
 - **Still gone:** it stays failed, and is looked at again after as long as it has been failed (at
