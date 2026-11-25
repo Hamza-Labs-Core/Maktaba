@@ -53,8 +53,8 @@ type Driver struct {
 	// Copying is how many tables the joined machines copy from the home's database now
 	// (nil: machinesCopying of the store's).
 	Copying func(ctx context.Context) int
-	Log             *slog.Logger
-	Now             func() time.Time
+	Log     *slog.Logger
+	Now     func() time.Time
 	// Tick is how often the run is looked at (3 s).
 	Tick time.Duration
 	// Getenv reads the watch overrides (tests; nil: os.Getenv).

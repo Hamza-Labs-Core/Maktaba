@@ -34,6 +34,9 @@ func (r *rehearsal) onGuardRelease() {
 	if r.kit.guard == "" {
 		r.t.Fatal("the kit has no guard/ (tools/rehearsal/build.sh --guard-src, --guard-version)")
 	}
+	if layout.CompareVersions(r.kit.cur, r.kit.guard) <= 0 { // a run by hand from an older prev_tag
+		r.t.Skipf("the kit's %s is no update of %s", r.kit.cur, r.kit.guard)
+	}
 	k := *r.kit
 	k.prev, k.prevVariant = k.guard, "guard"
 	r.kit = &k
