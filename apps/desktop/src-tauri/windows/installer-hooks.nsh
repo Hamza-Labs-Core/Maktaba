@@ -99,6 +99,20 @@
   Pop $R9
 !macroend
 
+; MAKTABA_START_AGAIN: an update refused before it touched anything (installer.nsi, no room on the
+; disk): the app's updater stopped the server and held it (shell.rs) before it started this
+; installer, and no POSTINSTALL will end that. Nothing to do where it runs, or is paused.
+!macro MAKTABA_START_AGAIN
+  Push $R8
+  Push $R9
+  !insertmacro MAKTABA_INSTALLED_TAKES_FLAGS
+  ${If} $R8 = 1
+    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-start'
+  ${EndIf}
+  Pop $R9
+  Pop $R8
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   ; While this installer runs, its mutex says so: the app's watchdog keeps the install hold
   ; of a long install (a slow disk, an antivirus) instead of starting the server under it

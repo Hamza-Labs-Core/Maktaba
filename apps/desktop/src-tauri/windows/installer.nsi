@@ -2,9 +2,9 @@
 ; Maktaba's two pages in place of its stock ones. bundle.windows.nsis.template points here.
 ;
 ; Taken from tauri-bundler 2.10.3 (the one @tauri-apps/cli 2.12.3 runs; its installer.nsi's
-; SHA-256 8ae02c66f8adb4a0d15d97f984fbacd2b44262d8a4d03fefaf6177f67f7008e5). Everything that
-; installs, updates, uninstalls and reads the command line (/S, /P, /UPDATE, /NS, /R, /ARGS)
-; is tauri's, unchanged; tools/ci/tests/test_installers.py keeps its sections and functions
+; SHA-256 8ae02c66f8adb4a0d15d97f984fbacd2b44262d8a4d03fefaf6177f67f7008e5). What installs,
+; updates, uninstalls and reads the command line (/S, /P, /UPDATE, /NS, /R, /ARGS) is tauri's,
+; unchanged but for the marked parts; tools/ci/tests/test_installers.py keeps its sections and functions
 ; here and fails when the CLI moves to another bundler, so a bump re-takes the template.
 ; Maktaba's parts are marked "Maktaba (13.14)":
 ;   - the pages: welcome (the brand pane, the title, where it installs, the Start menu and
@@ -12,6 +12,10 @@
 ;     Maktaba when it's done"); the reinstall page (only over an earlier install) and the
 ;     uninstaller's pages stay MUI's, with the header in the chrome colour. No finish page:
 ;     the window closes itself when the install is done and opens Maktaba when asked.
+;   - the room on the disk (MaktabaRoom): looked at before anything is stopped or deleted, in
+;     every mode (the directory page's own check went with that page);
+;   - the desktop shortcut: off on a new install in every mode, kept when this one replaces an
+;     install that has it;
 ;   - the art: installer/*.bmp, drawn by docs/design/desktop/installer-art.mjs (the brand
 ;     pane and the titles at 100, 150 and 200%, picked by the window's DPI); the hooks file
 ;     (installer-ui.nsh, or installer-hooks.nsh which includes it) says where it is.
@@ -32,6 +36,9 @@ ManifestDPIAwareness PerMonitorV2
 !else
   ; Set the compression algorithm. We default to LZMA.
   SetCompressor /SOLID "{{compression}}"
+  ; Maktaba (13.14): a solid installer unpacks all it holds into %TEMP% as it goes (NSIS's
+  ; fileform.c, dbd_hFile), beside the copies it makes of it: MaktabaRoom counts both
+  !define MK_SOLID
 !endif
 
 ; Keep above !include to stay ahead of any plugin command
@@ -149,9 +156,20 @@ Var MkStep3Text
 Var MkNow          ; what is being done now
 Var MkOpen         ; the "open when done" check box
 Var MkReinstallShown ; 1: the reinstall page came before the welcome page
+Var MkRoomShort    ; MaktabaRoom's answer: 1, not enough room, and the words for it
+Var MkRoomText
+Var MkRoomOn       ; the words' drive, what it takes there and what is free
+Var MkRoomNeed
+Var MkRoomFree
+; the room kept beside what the install copies (256 MB, in KB: clusters, the uninstaller, the
+; pages' art, what the server writes as it starts), and the exit code of an installer that found
+; too little and changed nothing (Windows' ERROR_DISK_FULL; attempts.rs INSTALLER_NO_ROOM)
+!define MK_ROOM_MARGIN 262144
+!define MK_ROOM_EXIT 112
 
 Name "${PRODUCTNAME}"
-BrandingText "${COPYRIGHT}"
+; Maktaba (13.14): no line under any page (the copyright is in the version info below)
+BrandingText " "
 OutFile "${OUTFILE}"
 
 ; We don't actually use this value as default install path,
@@ -425,6 +443,18 @@ Function PageLeaveReinstall
   ${EndIf}
 
   reinst_uninstall:
+    ; Maktaba (13.14): the old version goes only when the new one fits (nothing is looked at for
+    ; a person who chose to uninstall the same version; .onInit looked for a passive run)
+    ${If} $PassiveMode <> 1
+      ${If} $R0 <> 0
+      ${OrIf} $R1 = 1
+        Call MaktabaRoom
+        ${If} $MkRoomShort = 1
+          MessageBox MB_ICONEXCLAMATION "$MkRoomText$\r$\n$\r$\n$(mkNoRoomAgain)"
+          Abort
+        ${EndIf}
+      ${EndIf}
+    ${EndIf}
     HideWindow
     ClearErrors
 
@@ -586,6 +616,10 @@ LangString mkNowFinish ${LANG_ENGLISH} "Adding the shortcuts"
 LangString mkNowDone ${LANG_ENGLISH} "Done"
 LangString mkFailed ${LANG_ENGLISH} "The install stopped. The details below say where."
 LangString mkOpenAfter ${LANG_ENGLISH} "Open Maktaba when it's done"
+LangString mkNoRoom ${LANG_ENGLISH} "Not enough free space on $MkRoomOn: the install needs $MkRoomNeed there, and $MkRoomFree is free."
+LangString mkNoRoomTemp ${LANG_ENGLISH} "Not enough free space on $MkRoomOn for the temporary files the install unpacks: it needs $MkRoomNeed there, and $MkRoomFree is free."
+LangString mkNoRoomFolder ${LANG_ENGLISH} "Free some space or choose another folder, then try again."
+LangString mkNoRoomAgain ${LANG_ENGLISH} "Nothing was changed. Free some space, then try again."
 !ifdef LANG_ARABIC
   !ifdef MK_SERVER
     LangString mkLead ${LANG_ARABIC} "الخادم وتطبيق الويب والبث المباشر في تطبيق واحد. يُثبَّت لك وحدك ولا يحتاج إلى مسؤول."
@@ -611,6 +645,11 @@ LangString mkOpenAfter ${LANG_ENGLISH} "Open Maktaba when it's done"
   LangString mkNowDone ${LANG_ARABIC} "تم"
   LangString mkFailed ${LANG_ARABIC} "توقّف التثبيت. التفاصيل أدناه تبيّن أين."
   LangString mkOpenAfter ${LANG_ARABIC} "افتح مكتبة عند الانتهاء"
+  ; (the drive between U+200E marks: it reads left to right)
+  LangString mkNoRoom ${LANG_ARABIC} "لا توجد مساحة كافية على ‎$MkRoomOn‎: يحتاج التثبيت إلى $MkRoomNeed هناك، والمتاح $MkRoomFree."
+  LangString mkNoRoomTemp ${LANG_ARABIC} "لا توجد مساحة كافية على ‎$MkRoomOn‎ للملفات المؤقتة التي يفكّها التثبيت: يحتاج إلى $MkRoomNeed هناك، والمتاح $MkRoomFree."
+  LangString mkNoRoomFolder ${LANG_ARABIC} "أفرغ بعض المساحة أو اختر مجلدًا آخر، ثم حاول مرة أخرى."
+  LangString mkNoRoomAgain ${LANG_ARABIC} "لم يتغيّر شيء. أفرغ بعض المساحة، ثم حاول مرة أخرى."
 !endif
 
 ; ---- Maktaba (13.14): the pages ---------------------------------------------------------------
@@ -704,6 +743,12 @@ FunctionEnd
 Function MaktabaVersionText
   StrCpy $R1 "${VERSION}"
   IntOp $0 ${ESTIMATEDSIZE} + 0
+  Call MaktabaSize
+  StrCpy $R0 "$(mkVersion)"
+FunctionEnd
+
+; $R2 = the size of $0 KB in words, as above
+Function MaktabaSize
   ${If} $0 >= 1048576
     IntOp $0 $0 * 10
     IntOp $0 $0 / 1048576
@@ -721,7 +766,6 @@ Function MaktabaVersionText
     Call MaktabaDigits
     StrCpy $R2 "$(mkMB)"
   ${EndIf}
-  StrCpy $R0 "$(mkVersion)"
 FunctionEnd
 
 ; $R2: its digits and decimal point in Arabic-Indic, when the page is Arabic
@@ -744,6 +788,190 @@ Function MaktabaDigits
     IntOp $4 $4 + 1
   ${Loop}
   StrCpy $R2 $3
+FunctionEnd
+
+; ---- Maktaba (13.14): the room on the disk ------------------------------------------------
+; The hooks stop the server and delete the old payload before the new one is copied: an install
+; that runs out of room after that leaves a home with no server. So the room is looked at first,
+; in every mode: the reinstall page's and the welcome page's leave (a person at the window, who
+; stays on the page), .onInit (silent, passive, an update: the run ends there), and once more in
+; Section Install right before the hooks. GetInstDirError answers only on NSIS's own directory
+; page, which is not here.
+;
+; It asks for the whole size of the new files, though an upgrade deletes the old payload first:
+; the old one's files may not go (a server that did not stop, a compressed folder that frees less
+; than its size), and a run that stops half way is what this is for. A solid installer asks for
+; the same again in %TEMP%, where it unpacks (one sum when that is the same volume).
+
+; MaktabaFree: of the folder $0, there already or not: $1 = what this user can still write there,
+; in KB ("" when Windows does not say: nothing is refused for it), $2 = its volume's root (C:\ or
+; \\server\share\) and $3 its serial number ("" when unknown). Uses $4 to $6.
+Function MaktabaFree
+  StrCpy $1 ""
+  StrCpy $2 ""
+  StrCpy $3 ""
+  ; a folder not there yet: its nearest parent that is, up to the drive's or the share's root
+  ${Do}
+    StrCpy $6 $0 1 -1
+    ${If} $6 == "\"
+      StrCpy $0 $0 -1
+    ${EndIf}
+    ; past the root (a share that does not answer ends at its leading \, which would be the root
+    ; of whatever drive is current)
+    ${If} $0 == ""
+      Return
+    ${EndIf}
+    StrCpy $6 "$0\"
+    System::Call 'kernel32::GetDiskFreeSpaceExW(w r6, *l .r1, *l .r5, p 0) i .r4'
+    ${If} $4 <> 0
+      ${Break}
+    ${EndIf}
+    StrCpy $1 ""
+    ${GetParent} $0 $0
+  ${Loop}
+  ; bytes past what NSIS counts (32 bits): System's 64-bit numbers. Some network drives give no
+  ; size (a total of 0) or a number that is none (below 0): not known
+  System::Int64Op $5 < 1
+  Pop $4
+  System::Int64Op $1 < 0
+  Pop $5
+  ${If} $4 <> 0
+  ${OrIf} $5 <> 0
+    StrCpy $1 ""
+    Return
+  ${EndIf}
+  System::Int64Op $1 / 1024
+  Pop $1
+  System::Call 'kernel32::GetVolumePathNameW(w r6, w .r2, i ${NSIS_MAX_STRLEN}) i .r4'
+  ${If} $4 = 0
+    StrCpy $2 $0
+    Return
+  ${EndIf}
+  System::Call 'kernel32::GetVolumeInformationW(w r2, p 0, i 0, *i .r3, p 0, p 0, p 0, i 0) i .r4'
+  ${If} $4 = 0
+    StrCpy $3 ""
+  ${EndIf}
+FunctionEnd
+
+; MaktabaShort: whether $1 KB ("" unknown) is less than $0 KB; $MkRoomOn is $2 when it is
+Function MaktabaShort
+  ${If} $1 == ""
+    Return
+  ${EndIf}
+  System::Int64Op $1 < $0
+  Pop $4
+  ${If} $4 = 0
+    Return
+  ${EndIf}
+  StrCpy $MkRoomShort 1
+  StrCpy $MkRoomOn $2
+  ; what it needs rounded up, what is free rounded down
+  ${If} $0 >= 1048576
+    IntOp $0 $0 + 104857
+  ${Else}
+    IntOp $0 $0 + 1023
+  ${EndIf}
+  Push $1
+  Call MaktabaSize
+  Pop $0
+  StrCpy $MkRoomNeed $R2
+  ${If} $0 < 1024
+    StrCpy $R2 0
+    Call MaktabaDigits
+    StrCpy $MkRoomFree "$(mkMB)"
+  ${Else}
+    Call MaktabaSize
+    StrCpy $MkRoomFree $R2
+  ${EndIf}
+FunctionEnd
+
+; MaktabaRoom: $MkRoomShort = 1 when the install does not fit in $INSTDIR's drive, or what it
+; unpacks in %TEMP%'s, with the words for it in $MkRoomText; else 0
+Function MaktabaRoom
+  Push $0
+  Push $1
+  Push $2
+  Push $3
+  Push $4
+  Push $5
+  Push $6
+  Push $7
+  Push $8
+  Push $9
+  Push $R2
+  StrCpy $MkRoomShort 0
+  StrCpy $0 $INSTDIR
+  Call MaktabaFree
+  StrCpy $7 $1
+  StrCpy $8 $2
+  StrCpy $9 $3
+  IntOp $0 ${ESTIMATEDSIZE} + ${MK_ROOM_MARGIN}
+  !ifdef MK_SOLID
+    Push $0
+    StrCpy $0 $TEMP
+    Call MaktabaFree
+    Pop $0
+    ${If} $9 != ""
+    ${AndIf} $9 == $3
+      IntOp $0 $0 + ${ESTIMATEDSIZE}
+    ${Else}
+      Call MaktabaShort
+      StrCpy $MkRoomText "$(mkNoRoomTemp)"
+      IntOp $0 ${ESTIMATEDSIZE} + ${MK_ROOM_MARGIN}
+    ${EndIf}
+  !endif
+  ${If} $MkRoomShort = 0
+    StrCpy $1 $7
+    StrCpy $2 $8
+    Call MaktabaShort
+    StrCpy $MkRoomText "$(mkNoRoom)"
+  ${EndIf}
+  Pop $R2
+  Pop $9
+  Pop $8
+  Pop $7
+  Pop $6
+  Pop $5
+  Pop $4
+  Pop $3
+  Pop $2
+  Pop $1
+  Pop $0
+FunctionEnd
+
+; MaktabaNoRoom: a run that chose its folder before it began (silent, passive, an update) has no
+; room. It changed nothing, and says so with its exit code (the agent's orders read it). The app
+; stopped the server for its own update and closed (shell.rs), and nothing after this would
+; start them: so the server starts again on the release it has, and the app when the updater
+; asked for it (/R). Then the words, for a person at a window or the console that ran it; none
+; for the agent's update (/P /UPDATE, no /R), where nobody is there to close them.
+Function MaktabaNoRoom
+  SetErrorLevel ${MK_ROOM_EXIT}
+  ${If} $UpdateMode = 1
+    !ifdef MK_SERVER
+      !insertmacro MAKTABA_START_AGAIN
+    !endif
+  ${EndIf}
+  StrCpy $R1 0
+  ${GetOptions} $CMDLINE "/R" $R0
+  ${IfNot} ${Errors}
+    StrCpy $R1 1
+    ${If} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
+      ${GetOptions} $CMDLINE "/ARGS" $R0
+      nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+    ${EndIf}
+  ${EndIf}
+  ${If} ${Silent}
+    System::Call 'kernel32::AttachConsole(i -1)i.r0'
+    ${If} $0 <> 0
+      System::Call 'kernel32::GetStdHandle(i -11)i.r0'
+      FileWrite $0 "$MkRoomText $(mkNoRoomAgain)$\r$\n"
+    ${EndIf}
+  ${ElseIf} $PassiveMode <> 1
+  ${OrIf} $UpdateMode <> 1
+  ${OrIf} $R1 = 1
+    MessageBox MB_ICONSTOP "$MkRoomText$\r$\n$\r$\n$(mkNoRoomAgain)"
+  ${EndIf}
 FunctionEnd
 
 ; $R0 (a control) above the brand pane's bitmap, which no longer paints over it
@@ -851,9 +1079,10 @@ FunctionEnd
 Function MaktabaWelcomeLeave
   ${NSD_GetState} $MkStartMenuBox $MkStartMenu
   ${NSD_GetState} $MkDesktopBox $MkDesktop
-  GetInstDirError $0
-  ${If} $0 <> 0
-    MessageBox MB_ICONEXCLAMATION "$(^DirSubText)$\r$\n$INSTDIR"
+  ; no room: the page stays, for another folder or some space freed
+  Call MaktabaRoom
+  ${If} $MkRoomShort = 1
+    MessageBox MB_ICONEXCLAMATION "$MkRoomText$\r$\n$\r$\n$(mkNoRoomFolder)"
     Abort
   ${EndIf}
   Call MaktabaNormalWindow
@@ -1155,10 +1384,11 @@ Function MaktabaInstallingLeave
   ${EndIf}
 FunctionEnd
 
-; MaktabaPriorDesktop: the welcome page's desktop box starts ticked when this PC has the
-; shortcut already (an upgrade's uninstall, the reinstall page's default, takes it away and this
-; install makes it again), or has the WiX .msi this installer replaces (its uninstall takes the
-; shortcut away too; the reinstall page finds it the same way)
+; MaktabaPriorDesktop: the desktop shortcut is made (the welcome page's box starts ticked; a
+; silent or passive run has no box) when this PC has it already (an upgrade's uninstall, the
+; reinstall page's default, takes it away and this install makes it again), or has the WiX .msi
+; this installer replaces (its uninstall takes the shortcut away too; the reinstall page finds it
+; the same way). A new install starts without.
 Function MaktabaPriorDesktop
   ${If} ${FileExists} "$DESKTOP\${PRODUCTNAME}.lnk"
     StrCpy $MkDesktop 1
@@ -1266,6 +1496,17 @@ Function .onInit
     ${EndIf}
   ${EndIf}
   !endif
+
+  ; Maktaba (13.14): no room, in the same modes: nothing was stopped, deleted or downloaded yet
+  ${If} ${Silent}
+  ${OrIf} $PassiveMode = 1
+  ${OrIf} $UpdateMode = 1
+    Call MaktabaRoom
+    ${If} $MkRoomShort = 1
+      Call MaktabaNoRoom
+      Abort
+    ${EndIf}
+  ${EndIf}
 FunctionEnd
 
 Section WebView2
@@ -1364,6 +1605,22 @@ Section WebView2
 SectionEnd
 
 Section Install
+  ; Maktaba (13.14): the last look, right before the hooks stop the server and delete its old
+  ; payload (the disk may have filled since the pages' or .onInit's, WebView2's installer part
+  ; of it)
+  Call MaktabaRoom
+  ${If} $MkRoomShort = 1
+    ${If} ${Silent}
+    ${OrIf} $PassiveMode = 1
+    ${OrIf} $UpdateMode = 1
+      Call MaktabaNoRoom
+      Quit
+    ${EndIf}
+    SetErrorLevel ${MK_ROOM_EXIT}
+    DetailPrint "$(mkNoRoomAgain)"
+    Abort "$MkRoomText"
+  ${EndIf}
+
   SetOutPath $INSTDIR
 
   !ifmacrodef NSIS_HOOK_PREINSTALL
@@ -1463,13 +1720,10 @@ Section Install
     Call CreateOrUpdateStartMenuShortcut
   !insertmacro MUI_STARTMENU_WRITE_END
 
-  ; Create desktop shortcut for silent and passive installers
-  ; because finish page will be skipped
-  ${If} $PassiveMode = 1
-  ${OrIf} ${Silent}
-    Call CreateOrUpdateDesktopShortcut
-  ; Maktaba (13.14): a person at the window asked for one on the welcome page
-  ${ElseIf} $MkDesktop = ${BST_CHECKED}
+  ; Create desktop shortcut
+  ; Maktaba (13.14): when the welcome page's box says so, or, in the modes without the page
+  ; (silent, passive), when this install replaces one that has it (MaktabaPriorDesktop)
+  ${If} $MkDesktop = ${BST_CHECKED}
     Call CreateOrUpdateDesktopShortcut
   ${EndIf}
 

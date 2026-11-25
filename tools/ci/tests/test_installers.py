@@ -261,6 +261,22 @@ def function(script: str, name: str) -> str:
     return m.group(0)
 
 
+def blocks_at(code: str, pos: int) -> list[str]:
+    """The LogicLib ${If} (or ${Else}...) branches open at POS of CODE, outermost first."""
+    open_: list[str] = []
+    for raw in code[:pos].splitlines():
+        line = raw.strip()
+        if line.startswith(("${If} ", "${IfNot} ")):
+            open_.append(line)
+        elif line.startswith(("${ElseIf} ", "${Else}")):
+            open_[-1] = f"not ({open_[-1]}) {line}"
+        elif line.startswith(("${OrIf} ", "${AndIf} ")):
+            open_[-1] += " " + line
+        elif line.startswith("${EndIf}"):
+            open_.pop()
+    return open_
+
+
 def test_an_upgrade_keeps_the_desktop_shortcut(script: str) -> None:
     # the reinstall page's default runs the old uninstaller, which deletes the shortcut; so does
     # the WiX .msi's: the welcome page's desktop box starts ticked when either is there
@@ -272,9 +288,36 @@ def test_an_upgrade_keeps_the_desktop_shortcut(script: str) -> None:
     assert '${FileExists} "$DESKTOP\\${PRODUCTNAME}.lnk"' in prior
     assert "EnumRegKey $1 HKLM \"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\"" in prior
     assert '"msiexec"' in prior and prior.count("StrCpy $MkDesktop 1") == 2
-    # and the box decides for a person at the window
-    install = re.search(r"^Section Install.*?^SectionEnd", script, re.M | re.S).group(0)
-    assert "${ElseIf} $MkDesktop = ${BST_CHECKED}\n    Call CreateOrUpdateDesktopShortcut" in install
+    # and a new one starts without: nothing else turns it on
+    assert script.count("StrCpy $MkDesktop 1") == 2
+
+
+def install_section(script: str) -> str:
+    return re.search(r"^Section Install\b.*?^SectionEnd", script, re.M | re.S).group(0)
+
+
+def test_every_mode_makes_the_desktop_shortcut_by_the_one_rule(script: str) -> None:
+    # silent and passive runs have no welcome page: what it would start with decides for them
+    # (none on a new install, kept when this one replaces an install that has it)
+    install = install_section(script)
+    assert install.count("Call CreateOrUpdateDesktopShortcut") == 1
+    call = install.index("Call CreateOrUpdateDesktopShortcut")
+    assert install[:call].rstrip().endswith("${If} $MkDesktop = ${BST_CHECKED}")
+    assert blocks_at(install, call) == ["${If} $MkDesktop = ${BST_CHECKED}"]
+    # the old main binary's shortcut is moved to the new one before anything is skipped, an
+    # update (and /NS) makes none, the WiX .msi's is always made again: tauri's, as it was
+    fn = function(script, "CreateOrUpdateDesktopShortcut")
+    moved = fn.index('!insertmacro IsShortcutTarget "$DESKTOP\\${PRODUCTNAME}.lnk" "$INSTDIR\\$OldMainBinaryName"')
+    skipped = fn.index("${If} $WixMode = 0")
+    update = fn.index("${If} $UpdateMode = 1")
+    assert moved < skipped < update < fn.index("${OrIf} $NoShortcutMode = 1") < fn.index('CreateShortcut "$DESKTOP\\${PRODUCTNAME}.lnk"')
+
+
+def test_no_copyright_line_under_any_page(script: str) -> None:
+    assert re.findall(r"^BrandingText (.*)$", script, re.M) == ['" "']
+    # the exe's version info keeps tauri's; nothing else shows it
+    assert [l.strip() for l in script.splitlines() if "${COPYRIGHT}" in l] == ['VIAddVersionKey "LegalCopyright" "${COPYRIGHT}"']
+    assert "©" not in re.sub(r'^!define COPYRIGHT .*$', "", script, flags=re.M)
 
 
 def test_a_failed_install_keeps_its_details_on_screen(script: str) -> None:
@@ -288,6 +331,124 @@ def test_a_failed_install_keeps_its_details_on_screen(script: str) -> None:
     # the window closes by itself only after the install succeeded (the end of Section Install)
     install = re.search(r"^Section Install.*?^SectionEnd", script, re.M | re.S).group(0)
     assert install.rstrip().splitlines()[-2].strip() == "SetAutoClose true"
+
+
+# --- the room on the disk: looked at before anything is stopped or deleted ---------------------
+
+
+def test_nothing_asks_the_directory_page_that_is_not_there(script: str) -> None:
+    # NSIS answers GetInstDirError only for its own directory page (Ui.c): 0 anywhere else
+    code = "\n".join(l for l in script.splitlines() if not l.lstrip().startswith(";"))
+    assert "GetInstDirError" not in code
+
+
+def test_the_room_is_looked_at_before_the_hooks_in_every_mode(script: str) -> None:
+    install = install_section(script)
+    look = install.index("Call MaktabaRoom")
+    # no condition around it: silent, passive, an update and a person at the window all pass it
+    assert blocks_at(install, look) == []
+    hook = install.index("!insertmacro NSIS_HOOK_PREINSTALL")
+    assert look < hook
+    # before the section writes anything too, and it ends the run when there is none
+    assert look < install.index("SetOutPath $INSTDIR")
+    refused = install[look : install.index("SetOutPath $INSTDIR")]
+    assert "${If} $MkRoomShort = 1" in refused
+    for mode in ("${If} ${Silent}", "${OrIf} $PassiveMode = 1", "${OrIf} $UpdateMode = 1"):
+        assert mode in refused
+    assert "Call MaktabaNoRoom\n      Quit" in refused
+    assert "SetErrorLevel ${MK_ROOM_EXIT}" in refused and 'Abort "$MkRoomText"' in refused
+
+
+def test_a_run_with_no_pages_is_refused_as_it_starts(script: str) -> None:
+    init = function(script, ".onInit")
+    look = init.index("Call MaktabaRoom")
+    assert blocks_at(init, look) == ["${If} ${Silent} ${OrIf} $PassiveMode = 1 ${OrIf} $UpdateMode = 1"]
+    # once the folder is known (/D=, the earlier install's, the default)
+    assert init.index("Call RestorePreviousInstallLocation") < look
+    assert init[look:].split("\n", 1)[1].strip().startswith("${If} $MkRoomShort = 1\n      Call MaktabaNoRoom\n      Abort")
+    # and that is before the reinstall page's silent uninstall and the WebView2 download
+    assert script.index("Function .onInit") < script.index("Section WebView2")
+
+
+def test_the_pages_refuse_before_the_uninstall_and_before_the_install(script: str) -> None:
+    # the reinstall page's leave runs the old uninstaller: the room first
+    leave = function(script, "PageLeaveReinstall")
+    look = leave.index("Call MaktabaRoom")
+    assert leave.index("reinst_uninstall:") < look < leave.index("HideWindow") < leave.index("ExecWait")
+    assert blocks_at(leave, look) == ["${If} $PassiveMode <> 1", "${If} $R0 <> 0 ${OrIf} $R1 = 1"]
+    # the welcome page's: the person stays on it, the folder still to choose
+    welcome = function(script, "MaktabaWelcomeLeave")
+    look = welcome.index("Call MaktabaRoom")
+    assert blocks_at(welcome, look) == []
+    assert look < welcome.index("Call MaktabaNormalWindow")
+    for fn, words in ((leave[leave.index("Call MaktabaRoom") :], "$(mkNoRoomAgain)"), (welcome, "$(mkNoRoomFolder)")):
+        said = fn.index("MessageBox")
+        assert fn.index("${If} $MkRoomShort = 1") < said < fn.index(words) < fn.index("Abort")
+
+
+def test_the_room_counts_the_payload_twice_when_the_temp_folder_shares_its_drive(script: str) -> None:
+    # tauri's default compression is solid: the installer unpacks all it holds into %TEMP%
+    assert 'SetCompressor /SOLID "lzma"' in script and "!define MK_SOLID" in script
+    assert int(re.search(r"^!define MK_ROOM_MARGIN (\d+)$", script, re.M).group(1)) == 256 * 1024
+    room = function(script, "MaktabaRoom")
+    assert room.index("StrCpy $0 $INSTDIR") < room.index("StrCpy $0 $TEMP")
+    assert room.count("IntOp $0 ${ESTIMATEDSIZE} + ${MK_ROOM_MARGIN}") == 2
+    assert "${AndIf} $9 == $3\n      IntOp $0 $0 + ${ESTIMATEDSIZE}" in room
+    # every register it uses is put back: it is called from pages and sections that hold theirs
+    pushed = re.findall(r"^  Push (\$\S+)$", room.split("StrCpy $MkRoomShort 0")[0], re.M)
+    popped = re.findall(r"^  Pop (\$\S+)$", room, re.M)
+    assert pushed == popped[::-1] == ["$0", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8", "$9", "$R2"]
+
+
+def test_the_free_space_is_counted_past_32_bits_and_never_guessed(script: str) -> None:
+    free = function(script, "MaktabaFree")
+    assert "GetDiskFreeSpaceExW(w r6, *l .r1, *l .r5, p 0)" in free
+    assert "System::Int64Op $1 / 1024" in free
+    # a folder not there yet: its nearest parent that is
+    assert "${GetParent} $0 $0" in free and free.index("${Do}") < free.index("${GetParent} $0 $0") < free.index("${Loop}")
+    # past the root nothing is asked (a share that does not answer ends as "\\", the root of
+    # whatever drive is current): the slash goes first, then nothing left ends it
+    assert free.index("StrCpy $0 $0 -1") < free.index('${If} $0 == ""\n      Return') < free.index('StrCpy $6 "$0\\"')
+    # a drive that does not answer refuses nothing
+    assert function(script, "MaktabaShort").splitlines()[1:4] == ['  ${If} $1 == ""', "    Return", "  ${EndIf}"]
+    assert "System::Int64Op $1 < $0" in function(script, "MaktabaShort")
+
+
+def test_a_refused_update_starts_the_home_and_the_app_again(script: str) -> None:
+    refused = function(script, "MaktabaNoRoom")
+    assert refused.splitlines()[1].strip() == "SetErrorLevel ${MK_ROOM_EXIT}"
+    # the app stopped the server for its own update and closed
+    start = refused.index("!insertmacro MAKTABA_START_AGAIN")
+    assert "${If} $UpdateMode = 1" in blocks_at(refused, start)
+    app = refused.index("nsis_tauri_utils::RunAsUser")
+    assert refused.index('${GetOptions} $CMDLINE "/R" $R0') < app
+    # both before a window that waits for a person, and none where nobody is (the agent's /P /UPDATE)
+    box = refused.index("MessageBox")
+    assert start < app < box
+    assert blocks_at(refused, box) == ["not (${If} ${Silent}) ${ElseIf} $PassiveMode <> 1 ${OrIf} $UpdateMode <> 1 ${OrIf} $R1 = 1"]
+    hooks = (SRC_TAURI / "windows" / "installer-hooks.nsh").read_text(encoding="utf-8")
+    again = re.search(r"^!macro MAKTABA_START_AGAIN.*?^!macroend", hooks, re.M | re.S).group(0)
+    assert "--server-start" in again and "--server-stop" not in again and "RMDir" not in again
+
+
+def test_the_app_reads_the_installers_own_exit_code(script: str) -> None:
+    code = int(re.search(r"^!define MK_ROOM_EXIT (\d+)$", script, re.M).group(1))
+    rust = (SRC_TAURI / "src" / "attempts.rs").read_text(encoding="utf-8")
+    assert int(re.search(r"pub const INSTALLER_NO_ROOM: i32 = (\d+);", rust).group(1)) == code
+    # NSIS's own: 0 done, 1 cancelled, 2 stopped by the script
+    assert code not in (0, 1, 2)
+    check = (ROOT / "tools/release/win-app/check.sh").read_text(encoding="utf-8")
+    assert f"NO_ROOM_EXIT={code}" in check
+
+
+def test_the_room_words_say_where_and_how_much(script: str) -> None:
+    for lang in ("ENGLISH", "ARABIC"):
+        for name in ("mkNoRoom", "mkNoRoomTemp"):
+            text = re.search(rf'^\s*LangString {name} \$\{{LANG_{lang}\}} "(.*)"$', script, re.M).group(1)
+            for what in ("$MkRoomOn", "$MkRoomNeed", "$MkRoomFree"):
+                assert what in text, (name, lang, what)
+        for name in ("mkNoRoomFolder", "mkNoRoomAgain"):
+            assert re.search(rf'^\s*LangString {name} \$\{{LANG_{lang}\}} "', script, re.M), (name, lang)
 
 
 def test_a_cleared_start_menu_box_holds_in_every_mode(script: str) -> None:
@@ -496,6 +657,7 @@ def test_the_player_build_themes_its_msi() -> None:
     assert 'it.name == "packageMsi"' in gradle and "tools/release/msi/theme_msi.py" in gradle
     for wf in (".github/workflows/_desktop-player.yml", ".github/workflows/desktop-release.yml"):
         assert "tools/release/msi/theme_msi.py --check" in (ROOT / wf).read_text(encoding="utf-8"), wf
+
 
 
 # --- the .dmg ------------------------------------------------------------------------------

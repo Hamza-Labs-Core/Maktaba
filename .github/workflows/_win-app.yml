@@ -229,6 +229,8 @@ jobs:
           # the pinned downloads go by the GitHub API first (tools/release/fetch-pinned.sh)
           GITHUB_TOKEN: ${{ github.token }}
           WIN_APP_REQUIRE_PGVECTOR: "1"
+          # check.sh's install where there is no room runs on a small VHD: always here
+          WIN_APP_REQUIRE_SMALL_DISK: "1"
         run: make win-app
 
       # Epic 49 story 49.2: the 16 → 18 upgrade on this platform's own payload, both majors

@@ -20,8 +20,10 @@ build fails when the two differ.
   leave that ticked. Both follow Windows' language, English or Arabic (right to left). The
   Player's `.msi` has Maktaba's art and light-on-dark words, and its dialogs come in Arabic where
   Windows is Arabic. On the Mac, opening the `.dmg` shows Maktaba standing in the arch and an
-  arrow to Applications. On a new install the desktop shortcut is off unless you tick it;
-  an upgrade keeps the one you have.
+  arrow to Applications. On a new install, a silent one too, there is no desktop shortcut unless
+  you tick it; an upgrade keeps the one you have. The setup and the updater look at the free space
+  first, on the install's drive and where it unpacks: with too little they say how much is needed,
+  change nothing, and the home keeps running on the release it has.
 
 - **The Windows and Linux Player plays files as they are.** It now plays with libmpv, which it
   carries: MKV, WebM, MP4, MOV and TS; H.264, HEVC (10-bit too), VP9, AV1 and MPEG-2; AAC, AC-3,

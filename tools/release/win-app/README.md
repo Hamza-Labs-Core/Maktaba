@@ -6,7 +6,7 @@ so one Windows install runs everything. This directory builds the payload and th
 | File | What it does |
 |---|---|
 | `payload.sh` | builds `build/win-app/server` (layout below), writes the tauri overlay `build/win-app/tauri.win-app.conf.json` |
-| `check.sh` | smoke test of the payload and, with `--installer`, a silent install over a client-only app, a reinstall, an update (`/UPDATE`) and an uninstall of the installer |
+| `check.sh` | smoke test of the payload and, with `--installer`, a silent install over a client-only app, a reinstall, an update (`/UPDATE`), the same where there is no room (a small VHD) and an uninstall of the installer |
 | `test-hooks.sh` | the installer hooks on both kinds of `Maktaba.exe`, with stand-ins (no app build needed, only makensis) |
 | `run-watched.ps1` | runs an installer for `check.sh` in a job object and reports every process it starts |
 | `build-app.sh` | payload → `tauri build --bundles nsis` → check. `make win-app` runs it |
@@ -155,7 +155,9 @@ command line); where it takes none, on any run of `Maktaba.exe` by a hook at all
 `check.sh --installer` changes this user's registry while it runs (the uninstall entry, the
 `maktaba://` links, `HKCU\Software\<publisher>\Maktaba` for the last install folder) and puts
 it back. It refuses to run where Maktaba is installed for the user, its sign-in task exists or
-`maktaba://` is registered, and installs with `/NS` (no shortcuts). The hooks' app runs with
+`maktaba://` is registered. Where the user has no Maktaba shortcut it installs with them and
+removes them (a new install makes the Start menu's and no desktop one, a reinstall and an update
+keep the desktop one); else it installs with `/NS` (no shortcuts). The hooks' app runs with
 `LOCALAPPDATA` and WebView2's data in its scratch folder; an empty
 `%LOCALAPPDATA%\com.hamzalabs.maktaba` a shell window would make is removed afterwards.
 
@@ -165,24 +167,54 @@ The `-setup.exe` is tauri's NSIS installer from Maktaba's own template,
 [`apps/desktop/src-tauri/windows/installer.nsi`](../../../apps/desktop/src-tauri/windows/installer.nsi)
 (`bundle.windows.nsis.template`): tauri-bundler 2.10.3's, with its welcome, folder and finish
 pages replaced by two of Maktaba's (the mockups `installer-welcome` and `installer-progress` in
-`docs/design/desktop/`). Everything that installs, updates and uninstalls, and every command-line
-flag (`/S`, `/P`, `/UPDATE`, `/NS`, `/R`, `/ARGS`), is tauri's, unchanged; Maktaba's parts are
-marked `Maktaba (13.14)`.
+`docs/design/desktop/`). What installs, updates and uninstalls, and every command-line flag
+(`/S`, `/P`, `/UPDATE`, `/NS`, `/R`, `/ARGS`), is tauri's but for Maktaba's parts, marked
+`Maktaba (13.14)`: the pages, the room on the disk and the desktop shortcut's default (below).
 
 - **Welcome:** the brand pane (the wordmark, the version and size, the arch), the title in
   Maktaba Display, a line on what it installs, the folder with Change, the Start menu and desktop
   shortcuts, the licence. Skipped by `/P` and `/S`. It stands where tauri's folder page did, after
   the reinstall page, so on a first install it is the first page. The desktop box starts ticked
   when the PC has the shortcut already or has the WiX `.msi` this installer replaces (an
-  upgrade's uninstall removes the shortcut, and this install makes it again).
+  upgrade's uninstall removes the shortcut, and this install makes it again). A silent or passive
+  install follows the same rule without the box: no desktop shortcut on a new install, an
+  existing one kept; an update (`/UPDATE`) makes none, and neither does `/NS`.
 - **Installing:** tauri's progress page drawn as Maktaba's: the brand pane, the title, a brass
   progress bar, the steps (the app, the server and its tools, the Start menu and shortcuts) and
   "Open Maktaba when it's done". It closes itself when done; a failure keeps it open and shows
   the details, the status line and "Show details" (the page's leave function, which MUI calls as
   the install ends, with `IfAbort`).
 - The reinstall page (only over an earlier install) and the uninstaller's pages are MUI's, their
-  header in the chrome colour. English and Arabic (`languages`), by Windows' language; Arabic is
+  header in the chrome colour; no copyright line under any page (`BrandingText " "`; it stays in
+  the exe's version info). English and Arabic (`languages`), by Windows' language; Arabic is
   right to left.
+
+### The room on the disk
+
+The hooks stop the server and delete its old payload before the new one is copied, so an install
+that runs out of room half way would leave a home with no server. The installer looks first
+(`MaktabaRoom`), before anything is stopped, deleted or downloaded:
+
+- **What it asks for:** tauri's `ESTIMATEDSIZE` (every file it copies) and 256 MB on the install
+  folder's drive, and the same on `%TEMP%`'s, where a solid installer unpacks all it holds as it
+  goes (NSIS's `fileform.c`); both on one volume are one sum (twice the size and 256 MB). An upgrade is
+  asked for the whole size too, though its old payload goes first: the old files may not free
+  their size (a server that did not stop, a compressed folder). 64-bit, in KB; a folder not there
+  yet is judged by its nearest parent; a drive or a share that does not say (an error, a total of
+  0) refuses nothing.
+- **A person at the window:** the welcome page's leave (and the reinstall page's, before it runs
+  the old uninstaller) says where, how much it needs and how much is free, in English or Arabic,
+  and stays on the page.
+- **`/S`, `/P` and `/UPDATE`:** refused in `.onInit`, exit code **112** (Windows'
+  `ERROR_DISK_FULL`; `attempts.rs` `INSTALLER_NO_ROOM`). An update (`/UPDATE`) first runs the
+  installed `Maktaba.exe --server-start` (the app's updater stopped the server and held it before
+  it started the installer) and opens the app again when the updater asked (`/R`), so the home runs
+  on the release it has. A passive run says why in a message; the agent's (`/P /UPDATE`, no `/R`)
+  does not, as nobody is there to close it. The agent reads the exit code and the home's run fails
+  with `disk_full` at once (`agent_orders.rs` `installer_ended`).
+- **Section Install** looks once more right before the hooks, in every mode.
+
+`GetInstDirError` is not used: NSIS answers it only on its own directory page.
 
 The art is `apps/desktop/src-tauri/windows/installer/*.bmp` (the brand pane and the two titles,
 English and Arabic, at 100, 150 and 200%: the template picks one by the window's DPI), drawn by

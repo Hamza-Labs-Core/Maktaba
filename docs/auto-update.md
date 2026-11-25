@@ -65,6 +65,9 @@ sideload build, the AAB's the store build).
   start (`installer_not_finished`); an unattended home's server is started again on the release
   it had once the installer is gone (15 minutes at the soonest, 2 hours at most), and the home's
   run is told at once. The installer removes the old payload only when the server stopped.
+  It looks at the free space before it stops or removes anything
+  (`tools/release/win-app/README.md`, "The room on the disk"): with too little it exits 112, starts
+  the server and the app again, and an ordered run fails with `disk_full` at once.
 - **On Linux**, an app whose server an updater will order never switches the server to its own
   newer payload (a newer AppImage, an apt upgrade): a node's home orders it, and so does a home
   whose automatic updates are on (its `/api/cluster/self` says `updates_auto`, to callers on

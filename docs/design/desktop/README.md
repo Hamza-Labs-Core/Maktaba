@@ -351,6 +351,9 @@ every piece at 1x. Where the build differs from the mockups (`installer-welcome`
 | | Windows' own buttons (Cancel, Install), not brass | NSIS buttons are system push buttons |
 | | the check boxes drawn classic, their words in the page's colours | a themed check box ignores its text colour, which would be black on ink |
 | | over an earlier install, MUI's reinstall page comes first and the welcome page second | the welcome page holds the folder, and tauri asks about the earlier install before the folder |
+| | the desktop box off on a new install (silent and passive installs make none either), ticked when the PC has the shortcut already | an upgrade keeps what is there, and a new install adds nothing unasked |
+| | no room on the disk: a system message over the welcome page (or the reinstall page), in English or Arabic, and the page stays | the check the directory page made went with it, and an install that stops half way has already removed the old server |
+| | no copyright line under the pages that stay MUI's | the two pages have none; the exe's version info keeps it |
 | | no "Start Maktaba when I sign in" on the welcome page; an "Installs in" caption over the folder | the app's setup decides the sign-in start (`run_entry.rs`), and the installer never did; the folder field needs a name for screen readers |
 | | three steps (the app; the server and its tools; the Start menu and shortcuts), ✓ ● ○ glyphs, no percentage | the steps the installer really takes; the sign-in task is setup's |
 | | "Open Maktaba when it's done" at the page's foot, not in the button strip | the strip is NSIS's outer window |

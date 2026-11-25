@@ -177,7 +177,7 @@ def data(build: str, work: Path) -> dict:
         "install_webview2_mode": "downloadBootstrapper",
         "webview2_installer_args": "/silent",
         "additional_plugins_path": str(work / "plugins"),
-        "compression": "none",
+        "compression": "lzma",
     }
 
 
