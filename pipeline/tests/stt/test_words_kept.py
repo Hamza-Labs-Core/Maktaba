@@ -152,11 +152,12 @@ def test_the_second_listen_still_corrects_around_a_damaged_sentence() -> None:
     assert all("v" in t for i, t in enumerate(text) if i != 3)
 
 
+@pytest.mark.parametrize("seed", range(8))  # a few windows each: the unit tier's time cap
 @pytest.mark.parametrize("old", [False, True])
-def test_no_word_is_lost_doubled_or_moved_in_random_windows(old: bool) -> None:
-    rng = random.Random(1756)
+def test_no_word_is_lost_doubled_or_moved_in_random_windows(old: bool, seed: int) -> None:
+    rng = random.Random(seed)
     damaged = 0
-    for _ in range(400):
+    for _ in range(40):
         n = 0
         window: Window = []
         for _s in range(rng.randint(2, 9)):

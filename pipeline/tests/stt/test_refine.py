@@ -203,6 +203,69 @@ def test_refine_hears_the_stretch_of_audio_it_corrects() -> None:
     assert seen == [3 * SAMPLE_RATE + SAMPLE_RATE // 4]
 
 
+# ------------------------------------------------- what its words do not cover (issue #1756)
+
+
+def test_a_sentence_its_words_do_not_cover_is_left_out() -> None:
+    ss = [sentence("ا ب", 0), sentence("ج د", 1), sentence("ه و", 2), sentence("ز ح", 3)]
+    ss[1].words = ss[1].words[1:]  # type: ignore[index]  # «ج» has no slot
+    assert rf.chunks(ss) == [[0], [2, 3]]
+    t = transcript(*ss)
+    stats = rf.refine(t, silence(), lambda xs: ["ا ب", "ه و ز ط"][: len(xs)], None, "c")
+    assert [s.text for s in t.sentences] == ["ا ب", "ج د", "ه و", "ز ط"] and stats.stretches == 2
+
+
+def test_no_stretch_hears_a_sentence_left_out() -> None:
+    ss = [sentence("ا ب", 0), sentence("ج د", 1), sentence("ه و", 2), sentence("ز ح", 3)]
+    ss[1].words = None
+    ss[1].end = 2.5  # runs into the next one, which is left out too
+    seen: list[tuple[float, float]] = []
+
+    def hear(stretches: list[Any]) -> list[str]:
+        seen.extend((a[0] / SAMPLE_RATE, (a[-1] + 1) / SAMPLE_RATE) for a in stretches)
+        return [""] * len(stretches)
+
+    rf.refine(transcript(*ss), range(10 * SAMPLE_RATE), hear, None, "c")
+    # no quarter second more before the one left out
+    assert seen == [(0.0, 1.0), (3.0, 4.25)]
+
+
+def test_punctuation_alone_left_out_takes_no_audio_from_the_others() -> None:
+    ss = [sentence("ا ب", 0), Sentence(1.0, 1.1, "؟", -0.1, 0.0, [Word(1.0, 1.1, "؟", 0.9)])]
+    seen: list[int] = []
+
+    def hear(stretches: list[Any]) -> list[str]:
+        seen.extend(len(a) for a in stretches)
+        return [""] * len(stretches)
+
+    rf.refine(transcript(*ss), silence(), hear, None, "c")
+    assert seen == [SAMPLE_RATE + SAMPLE_RATE // 4]
+
+
+def test_a_kept_word_stays_in_its_sentence_whatever_its_time() -> None:
+    a, b = sentence("ا ب", 0), sentence("ج د", 1)
+    a.words = [Word(0.0, 1.2, "ا", 0.9), Word(1.2, 1.4, "ب", 0.9)]  # past the next one's start
+    t = transcript(a, b)
+    rf.refine(t, silence(), lambda _a: ["ا ب ج ط"], None, "c")
+    assert [s.text for s in t.sentences] == ["ا ب", "ج ط"]
+
+
+def test_fewer_words_at_a_stretch_s_edge_are_no_correction() -> None:
+    w = timed("قال الشيخ كلاما طويلا")
+    merged, changed = rf.merge_words(w, "قال الشيخ كلام", [False] * 4, no_speller())
+    assert merged == w and changed == 0
+    merged, _ = rf.merge_words(w, "قال الشيخ كلام طويل", [False] * 4, no_speller())
+    assert [x.text for x in merged] == ["قال", "الشيخ", "كلام", "طويل"]
+
+
+def test_punctuation_beside_a_replaced_word_stays() -> None:
+    w = timed('قال " لأي خليفة')
+    places: list[tuple[int, int]] = []
+    merged, _ = rf.merge_words(w, "قال لأبي خليفة", [False] * 4, no_speller(), None, places)
+    assert [x.text for x in merged] == ["قال", '"', "لأبي", "خليفة"]
+    assert places == [(0, 0), (1, 1), (2, 2), (3, 3)]
+
+
 # ------------------------------------------------------------------ the stage
 
 
