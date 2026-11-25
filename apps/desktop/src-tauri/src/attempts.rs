@@ -82,6 +82,9 @@ pub const INSTALLER_NOT_FINISHED: &str = "installer_not_finished";
 /// nothing (installer.nsi, MK_ROOM_EXIT): Windows' ERROR_DISK_FULL.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const INSTALLER_NO_ROOM: i32 = 112;
+/// The flag that installer starts the app with again (installer.nsi, MaktabaNoRoom): the update
+/// it was started for did not fit on the disk.
+pub const NO_ROOM_FLAG: &str = "--update-no-room";
 pub const CHECK_FAILED: &str = "check_failed";
 pub const DOWNLOAD_FAILED: &str = "download_failed";
 pub const INSTALL_FAILED: &str = "install_failed";
@@ -564,6 +567,9 @@ fn settle_on(a: &Attempt, own: &str, ctx: &Ctx, now: &str, windows: bool) -> Opt
                 TRANSLOCATED
             } else if ctx.quarantined {
                 QUARANTINED
+            } else if windows && a.step == STEP_INSTALL && ctx.no_room {
+                // it found too little free space, and changed nothing
+                DISK_FULL
             } else if windows && a.step == STEP_INSTALL {
                 // the installer this app started as it closed failed, or was cancelled
                 INSTALLER_NOT_FINISHED
@@ -571,7 +577,16 @@ fn settle_on(a: &Attempt, own: &str, ctx: &Ctx, now: &str, windows: bool) -> Opt
                 RELAUNCH_FAILED
             }
             .into();
-            out.detail = if windows && a.step == STEP_INSTALL {
+            out.detail = if out.code == DISK_FULL {
+                out.step = STEP_INSTALL.into();
+                format!(
+                    "the installer of {} found too little free space on the disk and changed \
+                     nothing: the app started again on {}, and the server it had stopped starts \
+                     again on it",
+                    or_dash(&a.to),
+                    or_dash(&own)
+                )
+            } else if windows && a.step == STEP_INSTALL {
                 out.step = STEP_INSTALL.into();
                 format!(
                     "the installer, which runs once the app has closed, did not install {}: \
@@ -730,6 +745,8 @@ pub struct Ctx {
     pub app_management: bool,
     /// this app was built locally (no release key: local_build)
     pub local_build: bool,
+    /// the installer started this app again because the update did not fit (NO_ROOM_FLAG)
+    pub no_room: bool,
 }
 
 impl Ctx {
@@ -751,11 +768,13 @@ impl Ctx {
                 needs_admin: code == Some(NEEDS_ADMIN),
                 app_management: code == Some(APP_MANAGEMENT),
                 local_build: local_build(),
+                no_room: false,
             }
         }
         #[cfg(not(target_os = "macos"))]
         Ctx {
             local_build: local_build(),
+            no_room: std::env::args().any(|a| a == NO_ROOM_FLAG),
             ..Ctx::default()
         }
     }
@@ -1489,6 +1508,21 @@ mod tests {
                  starts again on it"
             )
         );
+        // and one that found no room on the disk started the app again with its flag
+        let no_room = Ctx {
+            no_room: true,
+            ..Ctx::default()
+        };
+        let a = running(STEP_INSTALL, "0.3.0");
+        let full = settle_on(&a, "0.3.0-rc.5", &no_room, now, true).unwrap();
+        assert_eq!(
+            (full.step.as_str(), full.code.as_str(), full.fix.as_str()),
+            (STEP_INSTALL, DISK_FULL, fix_for(DISK_FULL).as_str())
+        );
+        assert!(full.detail.contains("too little free space"));
+        // an update that did install says nothing of it
+        let done = settle_on(&a, "0.3.0", &no_room, now, true).unwrap();
+        assert_eq!(done.outcome, INSTALLED);
         // what the attempt noted follows its failure
         let mut noted = running(STEP_RELAUNCH, "0.3.0");
         noted.detail = "the server's restart failed: x".into();

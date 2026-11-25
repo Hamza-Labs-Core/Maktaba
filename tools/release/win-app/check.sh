@@ -679,10 +679,10 @@ if [ -n "$SETUP" ]; then
 
     # No room (installer.nsi, MaktabaRoom): an update onto a disk too small for it must end before
     # the hooks stop the server or delete its payload, with its own exit code, and start the home
-    # again. The disk is a VHD of 200 MB (the margin alone is 256), with an install on it: the
-    # installed Maktaba.exe (the record is of its size and time) and a payload.
+    # again. The disk is a VHD of 200 MB, with an install on it: the installed Maktaba.exe (the
+    # record is of its size and time) and a payload.
     echo "no room on the disk"
-    # small_disk: SMALL = the small disk's root ("X:\") and SMALL_U that for bash ("/x"), or why
+    # small_disk MB: SMALL = a small disk's root ("X:\") and SMALL_U that for bash ("/x"), or why
     # not in SMALL_WHY
     small_disk() {
         SMALL="" SMALL_WHY=""
@@ -697,8 +697,8 @@ if [ -n "$SETUP" ]; then
         letter="$(powershell.exe -NoProfile -NonInteractive -Command \
             '$used = [IO.DriveInfo]::GetDrives() | ForEach-Object { $_.Name.Substring(0, 1) }; 90..68 | ForEach-Object { [string][char]$_ } | Where-Object { $used -notcontains $_ } | Select-Object -First 1' | tr -d '\r')"
         [ -n "$letter" ] || { SMALL_WHY="no drive letter is free"; return; }
-        vhd="$(win "$SCRATCH")\\small.vhd"
-        printf '%s\n' "create vdisk file=\"$vhd\" maximum=200 type=expandable" "select vdisk file=\"$vhd\"" \
+        vhd="$(win "$SCRATCH")\\small-$1.vhd"
+        printf '%s\n' "create vdisk file=\"$vhd\" maximum=$1 type=expandable" "select vdisk file=\"$vhd\"" \
             "attach vdisk" "convert mbr" "create partition primary" "format fs=ntfs label=maktabaroom quick" \
             "assign letter=$letter" >"$SCRATCH/small.txt"
         SMALL_VHD="$vhd"
@@ -710,7 +710,7 @@ if [ -n "$SETUP" ]; then
         done
         SMALL_WHY="diskpart made no disk: $(tr -d '\r' <"$SCRATCH/small.log" | grep -v '^ *$' | tail -3 | paste -sd'|' -)"
     }
-    small_disk
+    small_disk 200
     if [ -z "$SMALL" ]; then
         if [ "${WIN_APP_REQUIRE_SMALL_DISK:-}" = 1 ]; then fail "no small disk: $SMALL_WHY"; else note "not checked: $SMALL_WHY"; fi
     else
@@ -759,6 +759,79 @@ if [ -n "$SETUP" ]; then
         fi
         loc="$(reg_value "$UNINSTALL_KEY" InstallLocation)"
         if [ "${loc//\"/}" = "$(win "$INST")" ]; then ok "the registration is the install's still"; else fail "a refused install registered itself: '$loc'"; fi
+    fi
+    detach_small
+
+    # Room because the old payload goes first: an update that fits today is never refused. A disk
+    # with a whole install on it (this one's payload) and %TEMP%, with room for the new payload
+    # once and not twice; and, first, with too little for it whatever goes.
+    echo "room only once the old payload is gone"
+    payload_mb=$(( ($(reg_value "$UNINSTALL_KEY" EstimatedSize) + 1023) / 1024 ))
+    small_disk $((payload_mb * 2 + 400))
+    if [ -z "$SMALL" ]; then
+        if [ "${WIN_APP_REQUIRE_SMALL_DISK:-}" = 1 ]; then fail "no small disk: $SMALL_WHY"; else note "not checked: $SMALL_WHY"; fi
+    else
+        small="$SMALL_U/Maktaba"
+        mkdir -p "$small/data" "$SMALL_U/t"
+        cp -R "$INST/server" "$small/server"
+        printf 'a file the release before had\n' >"$small/server/gone-with-the-old-payload"
+        printf 'state\n' >"$small/data/state.txt"
+        # shellcheck disable=SC2016  # PowerShell's own $ variables; the paths go in through the environment
+        FROM="$(win "$INST")\\Maktaba.exe" TO="${SMALL}Maktaba\\Maktaba.exe" powershell.exe -NoProfile -NonInteractive -Command \
+            'Copy-Item -LiteralPath $env:FROM -Destination $env:TO' || fail "could not copy Maktaba.exe to the small disk"
+        small_free_mb() {
+            # shellcheck disable=SC2016  # PowerShell's own $ variables
+            D="$SMALL" powershell.exe -NoProfile -NonInteractive -Command \
+                '[long][Math]::Floor((New-Object IO.DriveInfo $env:D).AvailableFreeSpace / 1MB)' | tr -d '\r'
+        }
+        # leave_free MB: fills the disk but for MB
+        leave_free() {
+            rm -f "$SMALL_U/fill"
+            local over=$(($(small_free_mb) - $1))
+            [ "$over" -gt 0 ] || { fail "the small disk has only $(small_free_mb) MB free, want $1"; return; }
+            wincmd fsutil.exe file createnew "${SMALL}fill" $((over * 1048576)) >/dev/null || fail "could not fill the small disk"
+        }
+        # what is installed there, by name and size (thousands of files: no sums)
+        small_list() { (cd "$small" && find . -type f -printf '%p %s\n' | sort); }
+        # the keys an install writes, as this run's install left them
+        keys=("$UNINSTALL_KEY" "$PRODUCT_KEY" "$DEEPLINK_KEY")
+        for i in "${!keys[@]}"; do
+            if reg_exists "${keys[$i]}"; then wincmd reg.exe export "${keys[$i]}" "$(win "$SCRATCH")\\key-$i.reg" /y >/dev/null; fi
+        done
+        WATCH_DIR="${SMALL}Maktaba"
+        before="$(small_list)"
+        leave_free $((payload_mb / 2))
+        echo "        $payload_mb MB payload, $(small_free_mb) MB free"
+        TMP="${SMALL}t" TEMP="${SMALL}t" watched "$SETUP" "/S /UPDATE /NS /D=${SMALL}Maktaba" 20 300
+        if [ "$WATCHED_EXIT" = "$NO_ROOM_EXIT" ] && [ "$(small_list)" = "$before" ]; then
+            ok "an update that does not fit whatever the old payload frees: exit $NO_ROOM_EXIT, nothing touched"
+        else
+            fail "an update that does not fit: exit $WATCHED_EXIT, want $NO_ROOM_EXIT (the install there $([ "$(small_list)" = "$before" ] && echo as it was || echo changed))"
+        fi
+        hooks "an update that does not fit" --server-start
+        # more than one payload, less than two: today's updates fit here
+        leave_free $((payload_mb + 160))
+        free="$(small_free_mb)"
+        echo "        $payload_mb MB payload, $free MB free"
+        TMP="${SMALL}t" TEMP="${SMALL}t" watched "$SETUP" "/S /UPDATE /NS /D=${SMALL}Maktaba"
+        if [ "$WATCHED_EXIT" = 0 ] && [ -f "$small/Maktaba.exe" ] && cmp -s "$small/server/payload.json" "$INST/server/payload.json" &&
+            [ ! -e "$small/server/gone-with-the-old-payload" ] && [ "$(cat "$small/data/state.txt")" = state ]; then
+            ok "an update with $free MB free over a $payload_mb MB payload installs: the old payload's room counts"
+        else
+            fail "an update with $free MB free over a $payload_mb MB payload: exit $WATCHED_EXIT"
+        fi
+        if diff <(cd "$INST/server" && find . -type f -printf '%p %s\n' | grep -v '__pycache__' | sort) \
+            <(cd "$small/server" && find . -type f -printf '%p %s\n' | grep -v '__pycache__' | sort) >"$SCRATCH/payload.diff"; then
+            ok "the whole payload is there"
+        else
+            fail "the payload on the small disk differs: $(sed -n '1,4p' "$SCRATCH/payload.diff" | paste -sd'|' -)"
+        fi
+        hooks "an update with room once the old payload is gone" --server-stop --server-start
+        WATCH_DIR="$(win "$INST")"
+        for i in "${!keys[@]}"; do
+            wincmd reg.exe delete "${keys[$i]}" /f >/dev/null 2>&1 || true
+            if [ -f "$SCRATCH/key-$i.reg" ]; then wincmd reg.exe import "$(win "$SCRATCH")\\key-$i.reg" >/dev/null 2>&1 || fail "could not put ${keys[$i]} back"; fi
+        done
     fi
     detach_small
 

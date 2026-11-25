@@ -1417,6 +1417,18 @@ fn install_update_from(app: AppHandle, source: Source) {
                 if !source.still_go() {
                     return Ok(Done::Withdrawn);
                 }
+                // no room for it: said before anything stops (the installer would refuse too,
+                // once the server has stopped and this app has closed)
+                let size = bytes.len() as u64;
+                let short =
+                    tauri::async_runtime::spawn_blocking(move || crate::room::short_here(size));
+                if let Ok(Some(why)) = short.await {
+                    return Err(failed(Failure::new(
+                        attempts::STEP_INSTALL,
+                        attempts::DISK_FULL,
+                        why,
+                    )));
+                }
                 // stop the server and wait for it (the install hold keeps the
                 // task's watchdog from starting it meanwhile); the update is
                 // not installed when it does not stop in time

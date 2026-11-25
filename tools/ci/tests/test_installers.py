@@ -389,7 +389,7 @@ def test_the_pages_refuse_before_the_uninstall_and_before_the_install(script: st
 def test_the_room_counts_the_payload_twice_when_the_temp_folder_shares_its_drive(script: str) -> None:
     # tauri's default compression is solid: the installer unpacks all it holds into %TEMP%
     assert 'SetCompressor /SOLID "lzma"' in script and "!define MK_SOLID" in script
-    assert int(re.search(r"^!define MK_ROOM_MARGIN (\d+)$", script, re.M).group(1)) == 256 * 1024
+    assert int(re.search(r"^!define MK_ROOM_MARGIN (\d+)$", script, re.M).group(1)) == 64 * 1024
     room = function(script, "MaktabaRoom")
     assert room.index("StrCpy $0 $INSTDIR") < room.index("StrCpy $0 $TEMP")
     assert room.count("IntOp $0 ${ESTIMATEDSIZE} + ${MK_ROOM_MARGIN}") == 2
@@ -398,6 +398,42 @@ def test_the_room_counts_the_payload_twice_when_the_temp_folder_shares_its_drive
     pushed = re.findall(r"^  Push (\$\S+)$", room.split("StrCpy $MkRoomShort 0")[0], re.M)
     popped = re.findall(r"^  Pop (\$\S+)$", room, re.M)
     assert pushed == popped[::-1] == ["$0", "$1", "$2", "$3", "$4", "$5", "$6", "$7", "$8", "$9", "$R2"]
+
+
+def test_the_old_payload_the_hooks_delete_counts_as_room(script: str) -> None:
+    # an update deletes the old server\\ before it copies the new one: a home that has room for
+    # it must not be refused
+    room = function(script, "MaktabaRoom")
+    old = room.index("Call MaktabaOld")
+    last = room.rindex("Call MaktabaShort")
+    assert blocks_at(room, old) == ["${If} $MkRoomShort = 0"]
+    assert room[old:last].splitlines()[1].strip() == "IntOp $0 $0 - $1"
+    # never in %TEMP%, when that is another drive: the old payload frees nothing there
+    assert room.index("Call MaktabaShort") < old or room.count("Call MaktabaShort") == 1
+    # and never below the margin
+    assert "${If} $0 < ${MK_ROOM_MARGIN}\n      StrCpy $0 ${MK_ROOM_MARGIN}" in room[old:last]
+    fn = function(script, "MaktabaOld")
+    if "!define MK_SERVER" not in script:
+        return
+    hooks = (SRC_TAURI / "windows" / "installer-hooks.nsh").read_text(encoding="utf-8")
+    pre = re.search(r"^!macro NSIS_HOOK_PREINSTALL.*?^!macroend", hooks, re.M | re.S).group(0)
+    # its conditions are the hook's own
+    for what in ("!insertmacro MAKTABA_INSTALLED_TAKES_FLAGS", "${If} $R8 = 1", '${FileExists} "$INSTDIR\\server\\payload.json"'):
+        assert what in fn and what in pre, what
+    assert 'RMDir /r "$INSTDIR\\server"' in pre and 'Push "$INSTDIR\\server"' in fn
+    assert fn.index("StrCpy $MkRoomOld 0") < fn.index("Call MaktabaTake")
+
+
+def test_what_the_old_payload_frees_is_what_it_takes_on_the_disk(script: str) -> None:
+    if "!define MK_SERVER" not in script:
+        return
+    take = function(script, "MaktabaTake")
+    assert "GetCompressedFileSizeW" in take
+    assert "System::Int64Op $MkRoomOld + $3" in take
+    # a link's target is not freed, and is not walked
+    link = take.index("IntOp $4 $3 & 0x400")
+    assert link < take.index("Call MaktabaTake")
+    assert take.count("Push $") == 4 and re.findall(r"^  Pop (\$\d)$", take, re.M) == ["$4", "$3", "$2", "$1", "$0"]
 
 
 def test_the_free_space_is_counted_past_32_bits_and_never_guessed(script: str) -> None:
@@ -422,9 +458,14 @@ def test_a_refused_update_starts_the_home_and_the_app_again(script: str) -> None
     assert "${If} $UpdateMode = 1" in blocks_at(refused, start)
     app = refused.index("nsis_tauri_utils::RunAsUser")
     assert refused.index('${GetOptions} $CMDLINE "/R" $R0') < app
+    # the app is told why, so its attempt says the disk is full, not that the installer failed
+    flag = re.search(r'pub const NO_ROOM_FLAG: &str = "(--[\w-]+)";', (SRC_TAURI / "src" / "attempts.rs").read_text(encoding="utf-8")).group(1)
+    assert f'"$R0 {flag}"' in refused[app:].splitlines()[0]
     # both before a window that waits for a person, and none where nobody is (the agent's /P /UPDATE)
     box = refused.index("MessageBox")
     assert start < app < box
+    # in front of the app just reopened: it has no window of its own to belong to
+    assert "MB_ICONSTOP|MB_TOPMOST|MB_SETFOREGROUND" in refused[box:].splitlines()[0]
     assert blocks_at(refused, box) == ["not (${If} ${Silent}) ${ElseIf} $PassiveMode <> 1 ${OrIf} $UpdateMode <> 1 ${OrIf} $R1 = 1"]
     hooks = (SRC_TAURI / "windows" / "installer-hooks.nsh").read_text(encoding="utf-8")
     again = re.search(r"^!macro MAKTABA_START_AGAIN.*?^!macroend", hooks, re.M | re.S).group(0)

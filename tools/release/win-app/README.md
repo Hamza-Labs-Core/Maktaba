@@ -195,13 +195,18 @@ The hooks stop the server and delete its old payload before the new one is copie
 that runs out of room half way would leave a home with no server. The installer looks first
 (`MaktabaRoom`), before anything is stopped, deleted or downloaded:
 
-- **What it asks for:** tauri's `ESTIMATEDSIZE` (every file it copies) and 256 MB on the install
-  folder's drive, and the same on `%TEMP%`'s, where a solid installer unpacks all it holds as it
-  goes (NSIS's `fileform.c`); both on one volume are one sum (twice the size and 256 MB). An upgrade is
-  asked for the whole size too, though its old payload goes first: the old files may not free
-  their size (a server that did not stop, a compressed folder). 64-bit, in KB; a folder not there
-  yet is judged by its nearest parent; a drive or a share that does not say (an error, a total of
-  0) refuses nothing.
+- **What it asks for:** tauri's `ESTIMATEDSIZE` (every file it copies) and 64 MB on the install
+  folder's drive, less what the old payload takes there when the hooks will delete it first
+  (`MaktabaOld`: the installed app takes the flags, and `server\payload.json` is there; the files'
+  size on the disk, links left out); and the new files' size again on `%TEMP%`'s drive, where a solid
+  installer unpacks all it holds as it goes (NSIS's `fileform.c`), in one sum when that is the same
+  volume. So an update needs about one payload free on one drive, as it did before the look. 64-bit,
+  in KB; a folder not there yet is judged by its nearest parent; a drive or a share that does not
+  say (an error, a total of 0) refuses nothing.
+- **The app's own update** looks before it stops the server (`room.rs`): the installer's file and
+  nine tenths of the payload installed now, on the temporary folder's drive. Its attempt says the
+  disk is full. The installer decides exactly; one it refuses after that opens the app again with
+  `--update-no-room`, and the attempt says the same.
 - **A person at the window:** the welcome page's leave (and the reinstall page's, before it runs
   the old uninstaller) says where, how much it needs and how much is free, in English or Arabic,
   and stays on the page.
@@ -209,7 +214,7 @@ that runs out of room half way would leave a home with no server. The installer 
   `ERROR_DISK_FULL`; `attempts.rs` `INSTALLER_NO_ROOM`). An update (`/UPDATE`) first runs the
   installed `Maktaba.exe --server-start` (the app's updater stopped the server and held it before
   it started the installer) and opens the app again when the updater asked (`/R`), so the home runs
-  on the release it has. A passive run says why in a message; the agent's (`/P /UPDATE`, no `/R`)
+  on the release it has. A passive run says why in a message, in front of the app just opened; the agent's (`/P /UPDATE`, no `/R`)
   does not, as nobody is there to close it. The agent reads the exit code and the home's run fails
   with `disk_full` at once (`agent_orders.rs` `installer_ended`).
 - **Section Install** looks once more right before the hooks, in every mode.
