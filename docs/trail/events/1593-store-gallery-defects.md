@@ -60,6 +60,19 @@ A second look, image by image at full size, found more, each fixed in #1593:
 - **The iPad's status bar** showed an English date in the Arabic set. The panel starts under it.
 - **TV guides** cut every title (quarter-hour programmes). The shots are On now.
 
+The review found two majors, fixed in #1593:
+
+- **Subtitles placed at the top left the big screen.** The first fix moved the whole cue
+  container up. Now only a cue whose line is "auto" is raised, by its own count of lines; a
+  Playwright test on the app's own player fails without it and with the container moved.
+- **The word guards did not run where words go missing.** `ServerWordsTest` and
+  `StageWordsTests` read the pipeline and the API, whose pull requests run neither app.
+  `tools/ci/app_words.py` (text only) runs in the lint job on every pull request, for the web and
+  both Remotes, and holds a step to one wording on all three.
+
+Its minors too: the NOAA emblem is out of the demo library's art, the Apple TV's sign-in keeps
+its focus and has room for its lines, and the changelog claims less. The rest is #1709.
+
 Two CI failures on the merged branch came from the fixes themselves:
 - Android's ask-a-parent shot was taken before Enter parent PIN appeared on the slower runner.
   The test now waits for it.
@@ -88,6 +101,16 @@ Two CI failures on the merged branch came from the fixes themselves:
 - **A Mac Roborazzi run can pass where CI's Linux fails:** here, a button that loads late on
   the slower runner. A screenshot test waits for everything it shows, not only the screen's
   main element.
+
+- **A guard that reads another part's files must run where those files change.** An app's unit
+  test that reads the pipeline passes on the pull request that breaks it, and main goes red.
+- **A cue's snapped line counts its first line from the bottom.** `line:-2` raises one line; a
+  cue of n lines needs `-(n + 1)`. A percentage line is clamped, and cues shown together overlap.
+- **Run the routing guard after committing.** `ci_paths.py guard` reads tracked files, so a new
+  file passes it until it is added.
+- **`/tmp/claude-501` is shared by every session on the machine.** A pull request body built
+  from a file there carried another session's text for some seconds. Use the session's own
+  scratchpad, and read the file before posting it.
 
 ## Open
 - The owner's approval of the corrected set (decision `store-gallery-full-set`).
