@@ -188,8 +188,9 @@ No rating column exists in any migration. The next free migration slot was 0216 
 
 ### 2.4 The Apple apps
 
-- XcodeGen `apps/apple/project.yml`: Player (iPhone `com.hamzalabs.maktaba.player`, iPad
-  `.player.tablet`, Mac `.player.mac`), Remote, and TV (`com.hamzalabs.maktaba.tv`); iOS 26.0,
+- XcodeGen `apps/apple/project.yml`: Player (iPhone and iPad, one app,
+  `com.hamzalabs.maktaba.player`; Mac `.player.mac`), Remote, and TV
+  (`com.hamzalabs.maktaba.tv`); iOS 26.0,
   tvOS 26.0, macOS 15.0; shared `MaktabaKit` (`Package.swift`).
 - No iOS or tvOS entitlements file; Info.plist has Local Network, Bonjour, camera, background audio.
 - Player tabs `home, libraries, liveTV, search, profile` (`Player/Shell/PlayerSection.swift`);
