@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.164
-up_to_commit: 77815eaf4
-built_from: v0.3.163
+tag: v0.3.165
+up_to_commit: 33b9cbecd
+built_from: v0.3.164
 ---
 
-# Trail snapshot: v0.3.164
+# Trail snapshot: v0.3.165
 
 ## Keep doing
 
@@ -96,7 +96,9 @@ built_from: v0.3.163
 - Exercise cloud deployment end to end with a real released home, and test restores on the real prior database and extensions; simulated homes and incomplete rigs miss licensing, linking, schema and extension failures. Number cloud migrations above the newest until applied-set readiness ships everywhere. (d20261124-cloud-single-node-qa, #1716, #1727)
 - Homes read Maktaba's small signed, platform-filtered release feed first and fall back to GitHub when it is unreachable, older, or too old; a refused feed stops the check. Measure external responses with the product's exact request and exercise the same code path in CI. (#1597, #1599)
 - A failed update holds for a person instead of restoring a dump automatically; a newer release can continue from the held database. Command-line updates confirm themselves, guard deadlines count running time rather than wall time, and automatic installs retry the catalog and hold on actual failure instead of age alone. For each step, identify which release's code runs it; the updater research recommends an old, trusted judge separate from the release being installed. (#1601, #1605, #1607, #1608)
-- Before migrations, wait out active table syncs and keep replica logins out through `pg_hba.conf` until the schema settles; offline Up index builds are plain, not concurrent. Every rollback path targets the recorded schema, including a database already on a kept schema. (d20261124-dump-instead-of-down, #1609, #1663)
+- Before migrations, wait for a machine replication role's actual `COPY` in `pg_stat_progress_copy`, before any database restart that would end it, with a 20-hour bound; an `active` replication slot does not show a table sync's `COPY`. Test against a real subscription and break the query on purpose to prove the test fails. Keep replica logins out through `pg_hba.conf` until the schema settles; offline Up index builds are plain, not concurrent. Every rollback path targets the recorded schema, including a database already on a kept schema. (d20261124-dump-instead-of-down, #1609, #1663, #1749)
+- A restore that keeps `public` must preserve the schema and extensions, exclude extension-owned grants and others' default privileges, predict `CASCADE` through `pg_depend`, and verify the whole catalog with `pg_dump --schema-only`; grants on another owner's objects can be warnings even after a successful commit. Record the migration table's identity separately from the schema identity. (#1732)
+- A rehearsal whose premise is the previous release must pin the last release before the behavior changed, with its reason, and run against each newly published release before the next PR meets the moving premise. A hand-built state must be one the pinned release can actually create. (#1745)
 - During live recovery, read each state file and both releases' code before stopping anything: a `restoring` record restarts the restore on every launch. The app's signed order can install a named release; independently verify its bytes too. (d20261124-home-161-by-order)
 - Prove update, rollback, restore and migration paths in CI first: nothing touching update, restore, migration, supervisor, launcher, front door or TV-staging code ships unless `update-rehearsal` passed on that exact commit. One release at a time on the live install, and the rehearsal runs a machine's copy, or any session holding a snapshot, across the migrations. (d20261031-standing-rules, #435, #433, #460, #461, d20261123-cic-lock-timeout)
 - Never stop processes on the live home while an update watch runs; read the server log's watch lines before blaming the release. (d20261107-update-watch-rollback)
@@ -885,7 +887,7 @@ built_from: v0.3.163
 - Desktop Player: stories 13.20–13.22 (subtitles, engine setting, Live TV and JavaFX removal) remain unbuilt; the device probe's easy committed clips overstate 2160p support and need realistic media or a correction. (#1591, #1629, #1633)
 - Apple: migrate testers from the retired tablet apps and remove their old App IDs after expiry; Cast still needs receiver registration, publication and device checks, and SDK 4.8.6 crashes on a malformed TXT record. (#1616, #1621)
 - Restore and Postgres follow-ups are tracked on issue #1681, issue #1688, issue #1671, issue #1689 and issue #1720; `--abandon` still needs the running server, and pgvector can prevent an unprivileged own-Postgres restore from recreating `public`. (#1670, #1691, #1698, #1727)
-- A late machine copy and the unbounded copying blocker remain on issue #1667; a release between a kept schema and its owning release can still refuse the record as `db_ahead`. (#1609, #1663)
+- Machine copies can be up to 30 minutes late after an update, machine-connection keepalives remain, and a release between a kept schema and its owning release can still refuse the record as `db_ahead` (issue #1667). Hosted-Postgres restore and the remaining restore-review minors are on issue #1736. (#1609, #1663, #1732, #1749)
 - With broadcasting off, the operator console's Moderation page shows an error state; dormant edge legal pages and moderation code remain. (#1624, #1657)
 - Player UI: keep measuring the PosterBoard/apsd fix over subsequent runs; TV and Remote simulators are unchanged, simulator process delays remain untraced, and the rare follow-ups are on issue #1739 and issue #1740. The main-actor stream race has no committed load regression test, and cancellation can still close an unread response body on the cancelling thread. (#1710, #1724, #1729, #1738, #1743)
 - Audit the big screen's separate Search code for the URL races fixed on the web; Apple TV's Collections test can pass with zero texts (issue #1702). (#1683, #1701)
@@ -1009,8 +1011,8 @@ built_from: v0.3.163
 | #1451 | 2026-11-19 | search: retire Chroma, semantic search on pgvector only (story 43.5) |
 | #1471 | 2026-11-19 | docs(wiki): derive epic-status.md's counts from its story rows |
 | #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
+| #1708 | 2026-11-25 | fix(cloud-relay): a rollback that can't reach Docker says so, and the rest of the review's minors |
 | #1737 | 2026-11-25 | fix(cloud): a release whose migration has a lower slot is ready on the database it updates |
-| #1745 | 2026-11-25 | fix(updates): Update now goes on past a machine's copy; the rehearsal's old-release scenarios pinned to v0.3.162 |
 
 ## Index
 
@@ -1883,7 +1885,10 @@ built_from: v0.3.163
 | 1724-permissions-browse-order | 2026-11-25 | pr | The permissions browse timed out with the answer behind a tick: a race fixed twice in part |
 | 1727-restore-follow-ups | 2026-11-25 | pr | An own PostgreSQL 18 with pg_textsearch can put a backup back, and the restore's smaller follow-ups |
 | 1729-tv-keyboard-daemon | 2026-11-25 | pr | TV testGuide's \"could not focus\" was the keyboard daemon starting 15 s late |
+| 1732-restore-inside-public | 2026-11-25 | pr | A backup is put back inside public when the database's user may not make it again |
 | 1738-desktop-tests-v2 | 2026-11-25 | pr | The desktop screen tests ran effects on OkHttp's thread, and a screen could lose a change |
 | 1743-ai-refusal-main-thread | 2026-11-25 | pr | Android: AI mode's refusal was read on the main thread, and a swallowed exception chose the reason |
+| 1745-rehearsal-previous | 2026-11-25 | pr | Update now goes on past a machine's copy; the update rehearsal's old-release scenarios are pinned to v0.3.162 |
+| 1749-updates-see-the-copy | 2026-11-25 | pr | An update sees a machine's running copy, and waits for it before its restart |
 | d20261125-cloud-first-deploy-stays-down | 2026-11-25 | incident | A failed first deploy started again at the next boot, and only a machine that really reboots shows what a boot does |
 
