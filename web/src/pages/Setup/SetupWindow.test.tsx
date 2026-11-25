@@ -128,6 +128,21 @@ describe("the setup window", () => {
     expect(screen.getByRole("button", { name: /Set up this PC/ })).toBeInTheDocument();
   });
 
+  it("Enter in the address asks once while it connects, and never without an address", async () => {
+    // no server in this build: the address is the form's one input (user-event submits a form
+    // with no button only then; a browser does with the radio too)
+    const api = fakeApi({ server_available: false });
+    let answer: () => void = () => {};
+    api.useRemoteServer.mockImplementation(() => new Promise<void>((r) => (answer = r)));
+    wizard(api);
+    const field = await screen.findByPlaceholderText(/192\.168\.1\.20/);
+    await userEvent.type(field, "{Enter}");
+    expect(api.useRemoteServer).not.toHaveBeenCalled();
+    await userEvent.type(field, "http://192.168.1.20:8080{Enter}{Enter}{Enter}");
+    expect(api.useRemoteServer).toHaveBeenCalledTimes(1);
+    answer();
+  });
+
   it("Connect waits for an address", async () => {
     wizard(fakeApi({ server_available: false }));
     expect(await screen.findByRole("button", { name: "Connect" })).toBeDisabled();

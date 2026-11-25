@@ -642,6 +642,9 @@ function Welcome({
   const chosenWay = serverAvailable ? way : "remote";
   const connect = (e?: FormEvent) => {
     e?.preventDefault();
+    // Enter in the field asks again while the first is on its way, or with no address: its
+    // button, which would not, is in the footer, outside the form
+    if (busy || !url.trim()) return;
     setBusy(true);
     setError(null);
     api

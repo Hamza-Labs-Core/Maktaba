@@ -162,6 +162,28 @@ impl Pending {
 /// where closing the window quits.
 pub struct KeepInTray(pub bool);
 
+/// What closing a window does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Closing {
+    /// hides to the tray
+    Hide,
+    /// the app quits: there is no tray to come back from
+    Quit,
+    /// the window goes, the app stays
+    Close,
+}
+
+/// What closing window `label` does. The main window's and the setup's is the app's: without a
+/// tray the app quits with it, whatever other window is open. Left to the last window's close,
+/// an open status window would keep an app no one can open again (no main window, no tray).
+pub fn on_close(label: &str, keep_in_tray: bool) -> Closing {
+    match label {
+        webcache::MAIN | SETUP if keep_in_tray => Closing::Hide,
+        webcache::MAIN | SETUP => Closing::Quit,
+        _ => Closing::Close,
+    }
+}
+
 /// The setup is to run in its own window: the main window's page shows nothing from now on
 /// (unless that window could not be made this run).
 pub fn claim_setup(app: &AppHandle) {
@@ -295,12 +317,14 @@ fn build(app: &AppHandle, kind: Kind) -> tauri::Result<WebviewWindow> {
     let w = window.clone();
     let handle = app.clone();
     window.on_window_event(move |event| match event {
-        WindowEvent::CloseRequested { api, .. } if kind == Kind::Setup => {
-            if handle.state::<KeepInTray>().0 {
-                api.prevent_close();
-                let _ = w.hide();
-            } else {
-                handle.exit(0);
+        WindowEvent::CloseRequested { api, .. } => {
+            match on_close(kind.label(), handle.state::<KeepInTray>().0) {
+                Closing::Hide => {
+                    api.prevent_close();
+                    let _ = w.hide();
+                }
+                Closing::Quit => handle.exit(0),
+                Closing::Close => {}
             }
         }
         WindowEvent::Resized(_) => crate::frame::on_resized(&w),
@@ -388,6 +412,18 @@ mod tests {
         );
         // the mockups' window, which is also its least
         assert_eq!((WIDTH, HEIGHT), (960.0, 640.0));
+    }
+
+    /// Linux without a tray: the main window's close quits, an open status window or not.
+    #[test]
+    fn closing_the_app_s_window_hides_it_to_the_tray_or_quits() {
+        for label in ["main", "setup"] {
+            assert_eq!(on_close(label, true), Closing::Hide, "{label}");
+            assert_eq!(on_close(label, false), Closing::Quit, "{label}");
+        }
+        for keep in [true, false] {
+            assert_eq!(on_close("status", keep), Closing::Close);
+        }
     }
 
     #[test]

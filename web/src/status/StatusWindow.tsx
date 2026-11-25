@@ -10,6 +10,7 @@ import { FrameStart, WindowControls, useFrameHost } from "../components/DesktopF
 import { bidiIsolate, useI18n } from "../lib/i18n";
 import { formatBytes, NO_ANSWER } from "../lib/desktopSetup";
 import {
+  PART_OF_ROLE,
   canResume,
   onStatusWindow,
   statusTone,
@@ -159,7 +160,15 @@ function whyLine(view: StatusWindowView, t: T, words: Record<string, string>): s
   const said = startingDetail(t, s.detail_code, s.detail_params, words);
   if (said.text) return said.text;
   if (s.detail) return s.detail;
-  return s.kind === "problem" ? t("statusWindow.keepsStopping", { roles: s.roles.join(", ") }) : "";
+  return s.kind === "problem"
+    ? t("statusWindow.keepsStopping", { parts: partsOf(s.roles, t) })
+    : "";
+}
+
+/** The parts `roles` are in, by their tiles' names, each once. */
+function partsOf(roles: string[], t: T): string {
+  const names = roles.map((r) => t(`statusWindow.part.${PART_OF_ROLE[r] ?? "other"}`));
+  return [...new Set(names)].join(t("statusWindow.listSep"));
 }
 
 function Status({ view, words }: { view: StatusWindowView; words: Record<string, string> }) {

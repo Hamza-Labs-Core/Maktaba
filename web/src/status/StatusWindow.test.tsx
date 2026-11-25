@@ -149,11 +149,18 @@ describe("StatusWindow", () => {
     show({ ...RUNNING, status: { kind: "paused" }, update: undefined });
     await userEvent.click(await screen.findByRole("button", { name: "Resume server" }));
     expect(io.action).toHaveBeenLastCalledWith("resume");
-    act(() => push({ ...RUNNING, status: { kind: "problem", roles: ["pipeline"] } }));
+    act(() =>
+      push({
+        ...RUNNING,
+        status: { kind: "problem", roles: ["streaming", "tv-slot", "pipeline", "log-reader"] },
+      })
+    );
     expect(
       await screen.findByRole("heading", { name: "Maktaba has a problem" })
     ).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("These keep stopping: pipeline.");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "These keep stopping: Playback and Live TV, Indexing, transcription and search, Another part of the server."
+    );
     act(() =>
       push({
         ...RUNNING,
@@ -165,6 +172,15 @@ describe("StatusWindow", () => {
     expect(
       screen.getByText("The server does not answer yet: its parts show here once it does.")
     ).toBeInTheDocument();
+  });
+
+  it("names what keeps stopping in Arabic too, never by its role", async () => {
+    show({ ...RUNNING, status: { kind: "problem", roles: ["streaming", "pipeline"] } }, "ar");
+    const why = await screen.findByRole("alert");
+    expect(why).toHaveTextContent(
+      "هذه تتوقف مرارًا: التشغيل والبث المباشر، الفهرسة والتفريغ والبحث."
+    );
+    expect(why.textContent).not.toMatch(/[a-z]/);
   });
 
   it("speaks Arabic, right to left", async () => {

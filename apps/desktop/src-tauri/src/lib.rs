@@ -113,7 +113,12 @@ async fn discover_servers(timeout_ms: Option<u64>) -> Result<Vec<DiscoveredServe
 /// size and a place of its own. The plugin restores a window inside its build, whatever the
 /// builder says: one with no state kept yet is shown with the focus, and one with a state gets
 /// its size in physical pixels back, the wrong size on a screen of another scale.
-const UNSAVED_WINDOWS: [&str; 2] = [traypanel::LABEL, shelldialog::LABEL];
+const UNSAVED_WINDOWS: [&str; 4] = [
+    traypanel::LABEL,
+    shelldialog::LABEL,
+    ownwindows::SETUP,
+    ownwindows::STATUS,
+];
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -274,14 +279,19 @@ pub fn run() {
             // Close-to-tray (Story 13.4 AC-5): closing the window hides
             // it instead of terminating the app; Quit (tray/menu) still
             // exits. In server mode the server keeps running either way.
-            // Linux without a tray: closing it quits.
+            // Linux without a tray: closing it quits, with any other window of the app's open
+            // (the status window, a dialog) too.
             if let Some(main) = app.get_webview_window(webcache::MAIN) {
                 let win = main.clone();
                 main.on_window_event(move |event| match event {
                     WindowEvent::CloseRequested { api, .. } => {
-                        if keep_in_tray {
-                            api.prevent_close();
-                            let _ = win.hide();
+                        match ownwindows::on_close(webcache::MAIN, keep_in_tray) {
+                            ownwindows::Closing::Hide => {
+                                api.prevent_close();
+                                let _ = win.hide();
+                            }
+                            ownwindows::Closing::Quit => win.app_handle().exit(0),
+                            ownwindows::Closing::Close => {}
                         }
                     }
                     // story 13.10: the title bar's maximize button follows the window

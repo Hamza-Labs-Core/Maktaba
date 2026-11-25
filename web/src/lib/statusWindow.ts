@@ -70,6 +70,19 @@ export type StatusAction =
   | "libraries"
   | "devices";
 
+/** The tile each of the server's processes is in (statusview.rs PARTS): what it is called. */
+export const PART_OF_ROLE: Record<string, string> = {
+  postgres: "database",
+  api: "server",
+  streaming: "playback",
+  "tv-slot": "playback",
+  pipeline: "indexing",
+  ollama: "model",
+  plugins: "plugins",
+  "plugin-runner": "plugins",
+  relay: "remote",
+};
+
 export const STATUS_EVENT = "status-window";
 
 interface PreviewWindow {

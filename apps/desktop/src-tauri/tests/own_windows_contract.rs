@@ -159,3 +159,36 @@ fn the_pages_call_the_commands_by_the_shell_s_names() {
     assert!(mark.contains("__MAKTABA_PANEL__"));
     assert!(rs.contains("__MAKTABA_PANEL__"));
 }
+
+/// The sentence of what keeps stopping names each part as its tile does: the page's roles are
+/// the tiles' (statusview.rs PARTS).
+#[test]
+fn the_page_knows_every_role_of_a_tile() {
+    let rust = read(&root().join("src/statusview.rs"));
+    let start = rust.find("const PARTS").expect("PARTS in statusview.rs");
+    let table = &rust[start..start + rust[start..].find("];").expect("its end")];
+    let ts = read(&root().join("../../../web/src/lib/statusWindow.ts"));
+    let start = ts
+        .find("PART_OF_ROLE")
+        .expect("PART_OF_ROLE in statusWindow.ts");
+    let map = &ts[start..start + ts[start..].find("};").expect("its end")];
+    let mut roles = 0;
+    for line in table.lines().filter(|l| l.trim_start().starts_with("(\"")) {
+        let names: Vec<&str> = line.split('"').skip(1).step_by(2).collect();
+        for role in &names[1..] {
+            let key = if role.contains('-') {
+                format!("\"{role}\"")
+            } else {
+                (*role).to_string()
+            };
+            let pair = format!("{key}: \"{}\"", names[0]);
+            assert!(map.contains(&pair), "statusWindow.ts does not say {pair}");
+            roles += 1;
+        }
+    }
+    assert_eq!(
+        roles,
+        map.matches(": \"").count(),
+        "a role of no tile: {map}"
+    );
+}
