@@ -39,6 +39,8 @@ The installers build story of the approved desktop design (D3).
 - **A solid NSIS installer unpacks its whole payload into `%TEMP%`**, so the room is needed twice on one drive.
 - **A safety check can break what it protects**: asking for an update's whole size refused a home that updates fine today, because the old payload goes first. It counts as room now; CI installs an update with room for one payload and not two.
 - **The installer's refusal comes after the app has stopped its server**: the app looks first, so too little room costs no outage.
+- **Two processes settle one update**: the agent starts before the app, so a reason told to one of them is lost. It is left in a file both read, tied to the release and the attempt, and only the app, which tells the person, takes it away.
+- **What an installer unpacks can be read from its version information**, uncompressed at the start of its file: the app asks for exactly what its installer will.
 
 ## Keep doing
 - Compile-check the NSIS template locally (`nsis_template.py --makensis`) before pushing. It found a swallowed line that would have broken every Windows build.
