@@ -286,12 +286,12 @@ def power_cut_while_the_database_is_made() -> str:
     begin("a")
     set_up("a")
     was = boot_id()
+    # from inside, for its first second is all there is: the machine resets itself, nothing written out
+    on("""nohup sh -c 'while [ ! -e /var/lib/docker/volumes/maktaba-relay_pg_data/_data/PG_VERSION ]; do sleep 0.01; done
+sleep 0.2; echo b > /proc/sysrq-trigger' >/dev/null 2>&1 &""")
     p = subprocess.Popen(deploy_sh("apply"), env=deploy_env(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    end = time.monotonic() + 300
-    while on("test -e /var/lib/docker/volumes/maktaba-relay_pg_data/_data/PG_VERSION", check=False)[0] != 0:
-        assert time.monotonic() < end and p.poll() is None, "the database's folder was never made"
+    up(was)
     p.kill()
-    power_cut(was)
     settled()
     nothing_serves()
     out = begin("a")
