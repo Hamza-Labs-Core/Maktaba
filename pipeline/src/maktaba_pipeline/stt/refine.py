@@ -255,7 +255,7 @@ def _mark(words: Sequence[Any], locked: Sequence[bool]) -> list[TimedWord]:
 
 
 def chunks(sentences: Sequence[Sentence], limit: float = CHUNK_SEC) -> list[list[int]]:
-    """Consecutive sentences grouped into stretches of at most ``limit`` seconds (a
+    """The sentences, in order, grouped into stretches of at most ``limit`` seconds (a
     longer sentence is a stretch on its own). A sentence whose words do not cover it
     (:func:`~.word_data.covers`) is left out: there is nothing to align it on. No stretch
     runs over one: what it says would be merged into its neighbours. One of punctuation
@@ -392,8 +392,12 @@ def refine(
     for group in groups:
         stats.stretches += 1
         whisper = [w for i in group for w in (sentences[i].words or [])]
-        lo = first[group[0]]
-        locked = locked_all[lo : lo + len(whisper)]
+        # by sentence: a stretch passes over one of punctuation alone, which can have words
+        locked = [
+            lock
+            for i in group
+            for lock in locked_all[first[i] : first[i] + len(sentences[i].words or [])]
+        ]
         stats.words += len(whisper)
         stats.quran_words += sum(locked)
         # a quarter second more, for the last word's end, but none of a sentence left out

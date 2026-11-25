@@ -244,6 +244,20 @@ def test_punctuation_alone_left_out_takes_no_audio_from_the_others() -> None:
     assert seen == [SAMPLE_RATE + SAMPLE_RATE // 4]
 
 
+def test_a_verse_after_a_worded_full_stop_in_its_stretch_keeps_every_word_locked() -> None:
+    dot = Sentence(1.0, 1.2, ".", -0.1, 0.0, [Word(1.0, 1.2, ".", 0.9)])
+    verse = "والسماء ذات البروج واليوم الموعود"
+    t = transcript(sentence("قال الشيخ", 0), dot, sentence(verse, 1.5), sentence("ثم سكت", 5))
+    assert rf.chunks(t.sentences) == [[0, 2, 3]]
+    stats = rf.refine(
+        t, silence(), lambda _a: ["قال الشيخ والسماء ذات البروج واليوم الموعوج ثم سكن"], None, "c"
+    )
+    assert [s.text for s in t.sentences] == ["قال الشيخ", ".", verse, "ثم سكن"]
+    flags = [[bool(w.flags & QURAN) for w in s.words or []] for s in t.sentences]
+    assert flags == [[False] * 2, [False], [True] * 5, [False] * 2]
+    assert stats.quran_words == 5 and stats.changed == 1
+
+
 def test_a_kept_word_stays_in_its_sentence_whatever_its_time() -> None:
     a, b = sentence("ا ب", 0), sentence("ج د", 1)
     a.words = [Word(0.0, 1.2, "ا", 0.9), Word(1.2, 1.4, "ب", 0.9)]  # past the next one's start
