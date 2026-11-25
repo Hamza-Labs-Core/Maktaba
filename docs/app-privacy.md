@@ -22,8 +22,14 @@ what an app collects or sends changes this file in the same pull request.
     shows everything it will send first: the app and device, the app's log for the last 30
     minutes (readable in the preview, already scrubbed), the last request ids, the kept
     crashes (a tick box) and a screenshot only when the person ticks it and sees it.
-- **To Maktaba**: nothing from the apps directly. A problem report also goes to Maktaba, through
-  the home, only when both of these hold (Epic 53 story 53.16):
+- **To Maktaba**, from the apps directly, only for Maktaba Cloud, and no diagnostic data:
+  - the email and password a person types to sign in to a Maktaba Cloud account, and, signed in,
+    the calls that list and reach their homes;
+  - a TV app that shows a sign-in code asks the cloud for it, with the platform and the app's
+    version, and no account. The cloud keeps the code for 10 minutes and its row an hour more.
+
+  A problem report also goes to Maktaba, through the home, only when both of these hold (Epic 53
+  story 53.16):
   - the home's admin turned on **Let people send problem reports to Maktaba** (Settings →
     Privacy, off by default, needing the home linked to Maktaba Cloud);
   - the person ticked **Also send to Maktaba** on the form (unticked by default), or an admin

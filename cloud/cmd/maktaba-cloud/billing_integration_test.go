@@ -228,7 +228,7 @@ func TestBillingProviderCheckoutAndWebhooks(t *testing.T) {
 	if me := c.mustStatus(c.do("GET", "/v1/billing/me", nil), 200).json(t); me["status"] != "past_due" || me["plan"] != "pro" {
 		t.Fatalf("past_due: %v", me)
 	}
-	if _, ok := e.mail.Last("payment_failed", email); !ok {
+	if _, ok := e.lastMail("payment_failed", email); !ok {
 		t.Fatal("payment-failed mail not sent")
 	}
 

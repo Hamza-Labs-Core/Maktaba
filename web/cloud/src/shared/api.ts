@@ -68,6 +68,15 @@ export function setChangeHeaders(headers: Record<string, string>): void {
   changeHeaders = { ...headers };
 }
 
+/**
+ * The app's own language (the i18n provider puts it on <html lang>), so a mail a call causes is
+ * written in it. The browser's languages stand when the page has none.
+ */
+function languageHeader(): Record<string, string> {
+  const lang = typeof document === "undefined" ? "" : document.documentElement.lang;
+  return lang === "en" || lang === "ar" ? { "Accept-Language": lang } : {};
+}
+
 const isChange = (method: string): boolean => !["GET", "HEAD"].includes(method.toUpperCase());
 
 export function setAccessToken(token: string | null): void {
@@ -144,6 +153,7 @@ export async function fetchApi(
   const send = () => {
     const headers: Record<string, string> = {
       Accept: "application/json",
+      ...languageHeader(),
       ...(isChange(method) ? changeHeaders : {}),
     };
     if (opts.body !== undefined) headers["Content-Type"] = "application/json";

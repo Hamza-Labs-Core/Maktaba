@@ -161,11 +161,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 	sess := sessions.New(pool.DB)
 	detector := abuse.New(pool.DB)
 	auditLog := audit.New(pool.DB)
-	var mailer mailpkg.Mailer = mailpkg.LogMailer{Logger: logger}
-	if o.Mailer != nil {
-		mailer = o.Mailer
+	// The mails (handlers and the worker only put them in the outbox; this role sends them).
+	mailer, err := mailOutbox(cfg, pool, logger, o.Mailer)
+	if err != nil {
+		return apiRouters{}, nil, err
 	}
-	templates := mailpkg.Templates{WebURL: cfg.Server.WebURL}
+	level := slog.LevelInfo
+	if cfg.Server.Env == "production" && !cfg.Mail.Delivers() {
+		level = slog.LevelWarn // a sign-up can be confirmed by an operator only
+	}
+	logger.Log(context.Background(), level, "mail", "driver", cfg.Mail.Driver, "delivers", cfg.Mail.Delivers(),
+		"recipients", mailStatus(cfg).Recipients, "event", "mail_driver")
 
 	// Entitlement signing is optional in development: without a key the
 	// entitlement endpoints answer 503.
@@ -319,18 +325,17 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 
 	// The account routes (the user listener only: the console signs in on /v1/staff/*).
 	authDeps := &authh.Deps{
-		Users:     users,
-		Sessions:  sess,
-		Signer:    signer,
-		Tokens:    stores.NewMailTokens(pool.DB),
-		Mailer:    mailer,
-		Templates: templates,
-		Abuse:     detector,
-		Audit:     auditLog,
-		Logger:    logger,
-		Google:    googleFlow,
-		Apple:     appleFlow,
-		WebURL:    cfg.Server.WebURL,
+		Users:    users,
+		Sessions: sess,
+		Signer:   signer,
+		Tokens:   stores.NewMailTokens(pool.DB),
+		Mail:     mailer,
+		Abuse:    detector,
+		Audit:    auditLog,
+		Logger:   logger,
+		Google:   googleFlow,
+		Apple:    appleFlow,
+		WebURL:   cfg.Server.WebURL,
 		// Host-only: a Domain=.maktaba.tv cookie would also go to
 		// every home server behind *.relay.maktaba.tv.
 		CookieDomain:     "",
@@ -339,7 +344,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		TurnstileSiteKey: cfg.Turnstile.SiteKey,
 		BroadcastEnabled: cfg.Broadcast.Enabled,
 	}
-	accountDeps := &accounth.Deps{Users: users, Sessions: sess, Audit: auditLog, Logger: logger}
+	accountDeps := &accounth.Deps{Users: users, Sessions: sess, Tokens: stores.NewMailTokens(pool.DB), Audit: auditLog, Logger: logger}
 	// Build the router. Order matters: health probes mount on the
 	// outer router before the auth-required group so they don't need
 	// a token.
@@ -362,7 +367,7 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		server.WithTrustedProxies(cfg.Server.TrustedProxies), server.WithUserHosts(cfg.Server.UserHosts),
 		server.WithDraining(draining.Load), server.WithTVOrigins(tvcodesh.PublicPaths),
 		server.WithFormOrigins(formPaths, moderationh.WatchOriginsFor(cfg.Server.Staging())),
-		server.WithGate(gate.Middleware))
+		server.WithGate(gate.Middleware), server.WithMail(mailStatus(cfg)))
 	adminR := server.NewAdminRouter(logger, pool, mig, build, cfg.Server.AdminHost,
 		cfg.Server.AdminOriginOrDefault(), cfg.Server.TrustedProxies, server.WithDraining(draining.Load),
 		server.WithGate(consoleGate.Middleware))
@@ -511,7 +516,18 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		})
 	})
 
-	return apiRouters{User: r, Admin: adminR, Metrics: private, Draining: draining}, stopMetrics, nil
+	// the outbox's sender, stopped and waited for before the pool closes: a mail being sent goes
+	// back to the outbox for the next process
+	mailDone := make(chan struct{})
+	go func() { defer close(mailDone); mailer.Run(metricsCtx) }()
+	stop := func() {
+		stopMetrics()
+		select {
+		case <-mailDone:
+		case <-time.After(10 * time.Second):
+		}
+	}
+	return apiRouters{User: r, Admin: adminR, Metrics: private, Draining: draining}, stop, nil
 }
 
 // keyedLimiter is a rate limiter as a middleware: ratelimit.Limiter (this process's buckets)
@@ -578,7 +594,7 @@ func staffKeys(cfg config.Config) (*staffauth.Signer, *staffauth.Box, error) {
 // staffTurnstile is the bot check on staff sign-in (50.30): the same switch and secret as the
 // user pages', asked of the console's own origin. Off when the user pages' check is off.
 func staffTurnstile(cfg config.Config, user *turnstile.Guard, fake turnstile.Verifier) *turnstile.Guard {
-	if user == nil {
+	if user == nil || !cfg.Turnstile.Staff {
 		return nil
 	}
 	origin := cfg.Server.AdminOriginOrDefault()

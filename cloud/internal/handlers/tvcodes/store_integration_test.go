@@ -80,7 +80,8 @@ func TestMigration00580001(t *testing.T) {
 	if err := pool.DB.QueryRowContext(ctx, `SELECT indexdef FROM pg_indexes WHERE indexname = 'idx_tv_codes_expires'`).Scan(&def); err != nil || !contains(def, "(expires_at)") {
 		t.Fatalf("index: %q %v", def, err)
 	}
-	if err := mig.Down(ctx, 1); err != nil {
+	// its own down, whatever was applied after it
+	if err := mig.Undo(ctx, []int64{580001}); err != nil {
 		t.Fatal(err)
 	}
 	if tb, _ := exists(); tb {

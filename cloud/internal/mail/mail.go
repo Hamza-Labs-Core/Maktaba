@@ -1,24 +1,46 @@
-// Package mail sends the account mails: email verification, password
-// reset, and notices. The only driver is LogMailer, which writes the
-// message to the log; a real provider is a separate decision (it needs
-// an account with one) and slots in behind Mailer.
+// Package mail is the account mails: email verification, password reset, and notices.
+// Templates writes them (plain text and HTML, English and Arabic); a Mailer delivers one:
+// LogMailer writes it to the log (development, and a node without a provider's key), Resend
+// sends it through resend.com (resend.go), and Guard keeps a deployment to its own recipients
+// (policy.go). The cloud's roles never call these on a request: they put the mail in the
+// outbox (package outbox), which delivers it.
 package mail
 
 import (
 	"context"
+	"errors"
 	"log/slog"
-	"net/url"
 	"sync"
+)
+
+// The mails' kinds. A notice's kind is its own (NoticeKinds).
+const (
+	KindVerifyEmail       = "verify_email"
+	KindPasswordReset     = "password_reset"
+	KindAlreadyRegistered = "already_registered"
+	KindTest              = "test"
 )
 
 // Message is one outbound mail.
 type Message struct {
+	// ID names the mail to the provider: sent again with the same ID, it is delivered once.
+	ID      string
 	To      string
 	Subject string
-	Body    string
+	Body    string // plain text
+	HTML    string // the same content; "" is a plain-text mail
 	// Kind names the template ("verify_email", "password_reset", …) so
 	// tests and logs can tell mails apart without parsing the body.
 	Kind string
+	Lang string // "en" or "ar"; "" is both (the moderation mails)
+}
+
+// Ask is a person's request that causes a mail: whom to, in which language ("" is the account's),
+// from which network (a key of the requester's network; "" is not counted), and whether it passed
+// the bot check.
+type Ask struct {
+	Kind, To, Lang, Net string
+	Checked             bool
 }
 
 // Mailer delivers messages.
@@ -26,12 +48,16 @@ type Mailer interface {
 	Send(ctx context.Context, m Message) error
 }
 
+// ErrSuppressed: this deployment does not mail the recipient (Guard).
+var ErrSuppressed = errors.New("mail: this deployment does not mail the recipient")
+
 // LogMailer writes each message to the logger. Development and test
 // deployments use it; the link in the body is what a user would click.
 type LogMailer struct {
 	Logger *slog.Logger
 }
 
+// Send logs m.
 func (l LogMailer) Send(_ context.Context, m Message) error {
 	l.Logger.Info("mail (log driver; not delivered)", "to", m.To, "kind", m.Kind, "subject", m.Subject, "body", m.Body)
 	return nil
@@ -43,6 +69,7 @@ type Recorder struct {
 	Sent []Message
 }
 
+// Send records m.
 func (r *Recorder) Send(_ context.Context, m Message) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -60,42 +87,4 @@ func (r *Recorder) Last(kind, addr string) (Message, bool) {
 		}
 	}
 	return Message{}, false
-}
-
-// Templates builds the account mails. WebURL is the cloud web app's
-// origin; the links land on its pages, which post the token to the API.
-type Templates struct {
-	WebURL string
-}
-
-func (t Templates) link(path, token string) string {
-	return t.WebURL + path + "?token=" + url.QueryEscape(token)
-}
-
-// VerifyEmail is sent at registration and on resend.
-func (t Templates) VerifyEmail(to, token string) Message {
-	return Message{To: to, Kind: "verify_email", Subject: "Confirm your Maktaba Cloud email",
-		Body: "Confirm your email to finish setting up your Maktaba Cloud account:\n\n" +
-			t.link("/verify-email", token) + "\n\nThe link expires in 24 hours. If you did not sign up, ignore this mail."}
-}
-
-// PasswordReset is sent by "forgot password".
-func (t Templates) PasswordReset(to, token string) Message {
-	return Message{To: to, Kind: "password_reset", Subject: "Reset your Maktaba Cloud password",
-		Body: "Someone asked to reset the password of your Maktaba Cloud account. To choose a new one:\n\n" +
-			t.link("/reset-password", token) + "\n\nThe link expires in 1 hour and works once. If it was not you, ignore this mail."}
-}
-
-// AlreadyRegistered goes to an existing account when someone tries to
-// register its address, so registration does not reveal which
-// addresses have accounts.
-func (t Templates) AlreadyRegistered(to string) Message {
-	return Message{To: to, Kind: "already_registered", Subject: "Someone tried to sign up with your email",
-		Body: "Someone tried to create a Maktaba Cloud account with this address, which already has one. " +
-			"To sign in: " + t.WebURL + "/sign-in\nForgot your password? " + t.WebURL + "/forgot-password"}
-}
-
-// Notice is a plain account notice (suspension, deletion, payment).
-func (t Templates) Notice(to, kind, subject, body string) Message {
-	return Message{To: to, Kind: kind, Subject: subject, Body: body}
 }
