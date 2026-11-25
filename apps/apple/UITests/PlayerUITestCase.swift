@@ -37,6 +37,15 @@ class PlayerUITestCase: XCTestCase {
 
     // MARK: the simulator's first launches
 
+    /// A failure from now on is recorded and what runs goes on: the warm-up, whose failures are
+    /// expected, and the tear-down. Both are async, where a failure that interrupts hangs
+    /// (`tearDown`), and XCUITest's does whatever `continueAfterFailure` says
+    /// (`withoutInterrupting(_:)`). In run 45495588048's iPhone 4/6 the warm-up's launch failed
+    /// ("has not loaded accessibility", expected) and the shard's first test stood there 7
+    /// minutes, until its 10 ran out: its spindump has `setUp` → `warmUpOnce` → `record(_:)` →
+    /// `_interruptTest` → `_performTearDownSequence…`.
+    private var goesOn = false
+
     /// Whether this test process has signed in once already (`warmUpOnce`).
     private static var warmedUp = false
 
@@ -74,10 +83,13 @@ class PlayerUITestCase: XCTestCase {
         app = XCUIApplication()
         let stops = continueAfterFailure
         continueAfterFailure = true
+        goesOn = true
         defer {
-            continueAfterFailure = stops
             app.terminate()
             home.stop()
+            // last: a failure to end the app is the warm-up's too, and one that interrupts hangs
+            goesOn = false
+            continueAfterFailure = stops
         }
         let lenient = XCTExpectedFailure.Options()
         lenient.isStrict = false
@@ -152,8 +164,9 @@ class PlayerUITestCase: XCTestCase {
         // spindump has `close` → `terminate` → `record(_:)` → `_interruptTest` →
         // `_performTearDownSequence…` → `XCTWaiter _synchronouslyWaitForTimeInterval`; twice on
         // PR #1550, the shard held until the job's 60 minutes ran out). This is for the test's
-        // own failures; XCUITest's interrupt whatever it says (`withoutInterrupting(_:)`)
+        // own failures; XCUITest's interrupt whatever it says, unless `goesOn`
         continueAfterFailure = true
+        goesOn = true
         Self.close(app)
         home?.stop()
     }
@@ -179,8 +192,9 @@ class PlayerUITestCase: XCTestCase {
             if MainActor.assumeIsolated({ Self.endedAfterAll(pid, test.app) }) { return }
             return super.record(Self.withoutInterrupting(issue))
         }
-        let cancelled = MainActor.assumeIsolated { Self.cancelledTouches(in: test.app) }
-        super.record(Self.withLostTaps(issue, cancelled: cancelled))
+        let (cancelled, goesOn) = MainActor.assumeIsolated { (Self.cancelledTouches(in: test.app), test.goesOn) }
+        let said = Self.withLostTaps(issue, cancelled: cancelled)
+        super.record(goesOn ? Self.withoutInterrupting(said) : said)
     }
 
     // MARK: an app xcodebuild ended late (#1678)
@@ -208,7 +222,8 @@ class PlayerUITestCase: XCTestCase {
     nonisolated static func withoutInterrupting(_ issue: XCTIssue) -> XCTIssue {
         XCTIssue(type: issue.type, compactDescription: issue.compactDescription,
                  detailedDescription: issue.detailedDescription, sourceCodeContext: issue.sourceCodeContext,
-                 associatedError: issue.associatedError, attachments: issue.attachments)
+                 associatedError: issue.associatedError, attachments: issue.attachments,
+                 severity: issue.severity)
     }
 
     /// Whether the app XCTest failed to end did end, and XCTest knows: looked at for
