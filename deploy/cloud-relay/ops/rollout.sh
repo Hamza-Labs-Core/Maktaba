@@ -108,11 +108,52 @@ stop_all() {
 			elif [ -n "$ids" ]; then left="$left $s"
 			fi
 		done
-		[ -n "$left" ] || return 0
+		if [ -z "$left" ]; then
+			sync # a removal half on the disk when the power goes is what heal_docker is for
+			return 0
+		fi
 		sleep "$try"
 	done
 	err "still running:$left"
 	return 1
+}
+
+# docker answers again (it was restarted under us): the daemon, and what it starts by itself
+docker_ready() {
+	local end=$((SECONDS + 120))
+	while [ "$SECONDS" -lt "$end" ]; do
+		if docker info >/dev/null 2>&1; then sleep 5; return 0; fi
+		sleep 2
+	done
+	return 1
+}
+
+# The power went while a container was being removed: docker lists it and knows nothing of it ("No such
+# container"), compose can do nothing for the stack while it is listed, and only its folder's removal
+# and another start of the daemon end that. (Not `systemctl restart`, which stops the stack's
+# unit with ExecStop. Docker's unit starts again by itself, and systemd may start the stack's again
+# with it, this included: it can be run twice.)
+heal_docker() {
+	local root id pid half=() end
+	root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 0
+	for id in $(docker ps -aq --no-trunc --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null); do
+		if docker inspect --type container "$id" >/dev/null 2>&1; then continue; fi
+		docker info >/dev/null 2>&1 || return 0 # no answer is not "no such container"
+		if [ -n "$(docker ps -aq --no-trunc --filter "id=$id" 2>/dev/null)" ]; then half+=("$id"); fi
+	done
+	[ "${#half[@]}" -gt 0 ] || return 0
+	log "docker lists ${#half[@]} container(s) that were half removed when the power went: out of its way, and docker starts again"
+	for id in "${half[@]}"; do
+		if [[ "$id" =~ ^[0-9a-f]{64}$ ]]; then rm -rf "${root:?}/containers/$id"; fi
+	done
+	sync
+	pid="$(systemctl show -p MainPID --value docker)"
+	if [ "${pid:-0}" -gt 1 ]; then kill -TERM "$pid" || true; fi
+	end=$((SECONDS + 90))
+	while [ "$SECONDS" -lt "$end" ] && [ "$(systemctl show -p MainPID --value docker)" = "$pid" ]; do sleep 1; done
+	sleep 3 # its unit starts it again by itself
+	systemctl is-active --quiet docker || systemctl start docker || true
+	docker_ready
 }
 
 psql_as() { # psql_as COMPOSE(dc|saved) ENVFILE SQL
@@ -199,6 +240,7 @@ cmd_begin() {
 	[ ! -f "$STATE/held" ] || { cat "$STATE/held" >&2; die "the node is held: a person decides first (maktaba-rollout unhold)"; }
 	[ ! -d "$STATE/pending" ] || die "begin: a deploy is under way ($(pending_id)): nothing was changed"
 	docker info >/dev/null 2>&1 || die "begin: docker does not answer: nothing was changed"
+	heal_docker || die "begin: docker does not answer: nothing was changed"
 	finish_commit
 	# a name used before would be answered with that deploy's output
 	if compgen -G "$STATE/jobs/$DEPLOY_ID.*" >/dev/null; then die "begin: deploy $DEPLOY_ID was here before: nothing was changed"; fi
@@ -437,16 +479,6 @@ drop_pending() {
 	rm -rf "$STATE/dropped" "$STATE/reserve" "$DEPLOY_DIR/.reserve" 2>/dev/null || true
 }
 
-# docker answers again (it was restarted under us): the daemon, and what it starts by itself
-docker_ready() {
-	local end=$((SECONDS + 120))
-	while [ "$SECONDS" -lt "$end" ]; do
-		if docker info >/dev/null 2>&1; then sleep 5; return 0; fi
-		sleep 2
-	done
-	return 1
-}
-
 WHY_NOT=""
 # not_now WHY: this pass can't; another may (docker was restarted meanwhile)
 not_now() { WHY_NOT="$1"; err "$1"; return 1; }
@@ -494,6 +526,7 @@ restore() { # restore WHY: back to the saved set; 0 restored (or nothing to), 1 
 	touch "$STATE/pending/restoring" || { hold "the state folder can't be written ($why)"; return 1; }
 	# a commit of it that was cut off before the saved set went is undone with it
 	if [ "$(cat "$STATE/committed-id" 2>/dev/null)" = "$(pending_id)" ]; then rm -f "$STATE/committed.new" "$STATE/committed-id"; fi
+	heal_docker || true
 	if [ -f "$STATE/pending/first" ]; then
 		if ! stop_all "${APP[@]}" caddy; then
 			log "once more, when docker answers"
@@ -510,6 +543,7 @@ restore() { # restore WHY: back to the saved set; 0 restored (or nothing to), 1 
 	if [ "$rc" = 1 ]; then
 		log "once more, when docker answers"
 		docker_ready || true
+		heal_docker || true
 		rc=0
 		restore_once || rc=$?
 	fi
@@ -645,6 +679,7 @@ cmd_boot() {
 	if [ ! -d "$STATE/pending" ]; then
 		finish_commit # the power went before a commit's last line reached the disk
 		nothing_to_start
+		heal_docker || true
 		exit 0
 	fi
 	if [ "$(cat "$STATE/pending/boot_id")" = "$(cat /proc/sys/kernel/random/boot_id)" ] && [ ! -f "$STATE/pending/restoring" ]; then

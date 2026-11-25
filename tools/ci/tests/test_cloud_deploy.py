@@ -293,7 +293,7 @@ def test_every_mutation_is_run_and_names_cases_that_exist() -> None:
     names = re.findall(r'^    "([\w-]+)": \("ops/', table, re.M)
     cases = set(re.findall(r'^        \("([^"]+)", ', text, re.M))
     noticed = {c for group in re.findall(r"\[((?:\"[^\"]+\"(?:, )?)+)\]\)", table) for c in re.findall(r'"([^"]+)"', group)}
-    assert len(names) >= 33 and noticed <= cases, noticed - cases
+    assert len(names) >= 34 and noticed <= cases, noticed - cases
     run = yaml.safe_load((ROOT / ".github/workflows/cloud-rehearsal.yml").read_text())["jobs"]
     assert run["single-node"]["strategy"]["matrix"]["part"] == ["1", "2", "3"]
     assert {"single-node", "single-node-reboots"} <= set(run["cloud-rehearsal"]["needs"])
@@ -301,8 +301,13 @@ def test_every_mutation_is_run_and_names_cases_that_exist() -> None:
     # the mutations are no part of the workflow a deploy waits for
     assert "MUTATE" not in (ROOT / ".github/workflows/cloud-rehearsal.yml").read_text()
     mutations = yaml.safe_load((ROOT / ".github/workflows/cloud-rehearsal-mutations.yml").read_text())["jobs"]
-    assert mutations["mutation"]["strategy"]["matrix"]["mutation"] == names
-    assert set(mutations["reboot-mutation"]["strategy"]["matrix"]["mutation"]) <= set(names)
+    # (a mutation that names no case here is the machine's: reboot_rehearsal.py)
+    machine = re.findall(r'^    "([\w-]+)": \("ops/.*, \[\]\),$', table, re.M)
+    assert mutations["mutation"]["strategy"]["matrix"]["mutation"] == [n for n in names if n not in machine]
+    run_there = mutations["reboot-mutation"]["strategy"]["matrix"]["mutation"]
+    assert set(machine) <= set(run_there) <= set(names)
+    notice = (NODE / "tests/reboot_rehearsal.py").read_text()
+    assert all(f'"{n}": ([' in notice for n in run_there)
 
 
 def test_the_nodes_address_is_in_no_run_log() -> None:

@@ -77,7 +77,8 @@ def psql(sql: str) -> str:
 
 # --- one guarantee at a time, taken out (MUTATE) ----------------------------------------------
 
-# name: (the file, what it says, what it says instead, the cases that must notice)
+# name: (the file, what it says, what it says instead, the cases that must notice: none here for what only
+# reboot_rehearsal.py's machine can show)
 MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
     "no-backup": ("ops/rollout.sh", r"DEPLOY_DIR=\"\$DEPLOY_DIR\" ROLLOUT_LOCKED=1 [^\n]*bash \"\$src/ops/backup\.sh\"", "true",
                   ["its tests fail after it went live"]),
@@ -121,6 +122,7 @@ MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
                          ["a commit that was cut off"]),
     "reserve-for-nothing": ("ops/rollout.sh", r"if \[ \"\$cmd\" = rollback \] && [^\n]*", "true", ["the state disk fills"]),
     "boot-never-waits": ("ops/rollout.sh", r"flock -w \"\$\{BOOT_WAIT:-30\}\" 9", "flock -n 9", ["a boot waits for the watch"]),
+    "half-removed": ("ops/rollout.sh", r"heal_docker\(\) \{\n", "heal_docker() {\n\treturn 0\n", []),
     "downgrades": ("ops/rollout.sh", r"\[ \"\$now\" -lt \"\$was\" \]", "false", ["an older release"]),
 }
 

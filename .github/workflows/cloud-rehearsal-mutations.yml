@@ -84,7 +84,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mutation: [boots-a-failed-first, first-unsaved]
+        mutation: [boots-a-failed-first, first-unsaved, half-removed]
     steps:
       - uses: actions/checkout@v6.0.2
         with:

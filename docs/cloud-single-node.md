@@ -140,6 +140,8 @@ during a deploy restores first (the stack's unit asks before it starts, and neve
 while a command is at work), and a deploy that finds an earlier one cut off undoes it before it
 begins. A failed first deploy has nothing to go back to: the stack stops, stays stopped at every boot
 until a release is committed, and what its database holds is backed up before the next deploy.
+A power cut can leave a container half removed, which Docker lists and compose then fails on: boot, a
+restore and the next deploy take it out first.
 
 What does not go back: the DNS records, the firewall, Docker's settings and the systemd units.
 Each failure is rehearsed in CI (`cloud-rehearsal.yml`, the `single-node` jobs:

@@ -42,7 +42,10 @@ STATE, DEPLOY, SRC = rr.STATE, rr.DEPLOY, rr.SRC
 
 # the cases, and what they must say: one that fails for another reason notices nothing
 NOTICE = {"boots-a-failed-first": (["a first deploy's tests fail, then a reboot", "a first deploy's tests fail, then a power cut"], "a refused release"),
-          "first-unsaved": (["the next deploy backs it up"], "begin took no backup")}
+          "first-unsaved": (["the next deploy backs it up"], "begin took no backup"),
+          "half-removed": (["a power cut with a container half removed"], "")}
+# the cases a mutation's are run after (the ones that start from nothing run from the first)
+AFTER = {"half-removed": ["the first deploy, then a power cut"]}
 
 
 # --- the machine ----------------------------------------------------------------------------
@@ -341,6 +344,24 @@ def reboot_of_a_node_that_serves() -> str:
     return "it serves"
 
 
+def half_removed_container() -> str:
+    """The power goes while a container is removed: its layer is gone, its folder is back. Docker lists it
+    and knows nothing of it; compose can do nothing while it does."""
+    before = snapshot()
+    half = (f"cd {DEPLOY} && c=$(docker compose --env-file .env ps -q --no-trunc worker) && [ ${{#c}} = 64 ] && "
+            "cp -a /var/lib/docker/containers/$c /root/half && docker rm -f $c >/dev/null && mv /root/half /var/lib/docker/containers/$c && sync")
+    for deployed in (False, True):  # a node that serves, and one in a deploy's tests
+        if deployed:
+            live("expand")
+        on(half)
+        power_cut()
+        settled()
+        same(before)
+        code, out = on("docker ps -aq --no-trunc | while read -r c; do docker inspect $c >/dev/null || echo half $c; done", check=False)
+        assert "half" not in out, out
+    return "taken out, and the node serves"
+
+
 def reboot_in_the_tests() -> str:
     before = snapshot()
     live("expand")
@@ -445,6 +466,7 @@ def main() -> int:
         ("a power cut in a first deploy's tests", power_cut_in_a_first_deploys_tests),
         ("the first deploy, then a power cut", first_deploy_then_a_power_cut),
         ("a reboot of a node that serves", reboot_of_a_node_that_serves),
+        ("a power cut with a container half removed", half_removed_container),
         ("a reboot in the tests", reboot_in_the_tests),
         ("a power cut in the tests", power_cut_in_the_tests),
         ("a power cut before apply", power_cut_before_apply),
@@ -455,7 +477,8 @@ def main() -> int:
         ("a power cut after a commit", power_cut_after_a_commit),
     ]
     if MUTATE:
-        cases = cases[:3]
+        keep = [*AFTER.get(MUTATE, ["a first deploy's tests fail, then a reboot", "a first deploy's tests fail, then a power cut"]), *NOTICE[MUTATE][0]]
+        cases = [c for c in cases if c[0] in keep]
     rr.build_releases({"expand", "slow"})
     make_machine()
     power_on()
@@ -480,6 +503,8 @@ def main() -> int:
     if MUTATE:
         names, says = NOTICE[MUTATE]
         noticed = {r["case"] for r in results if not r["ok"] and r["case"] in names and says in r["detail"]}
+        if not set(AFTER.get(MUTATE, [])).isdisjoint(bad):
+            noticed = set()  # not on a node that was not set up
         print(f"{MUTATE}: {'noticed by ' + ', '.join(sorted(noticed)) if noticed else 'NOT NOTICED'}", flush=True)
         return 0 if noticed else 1
     return 1 if bad else 0
