@@ -149,6 +149,10 @@ type Database struct {
 	Before *Database `json:"before,omitempty"`
 	Data   string    `json:"data,omitempty"`
 	DataID string    `json:"data_id,omitempty"`
+	// DataTable is the rest of that identity: the migrations' own table, which a restore that
+	// leaves the public schema where it is makes again (apart from DataID: a release that does
+	// not know of it goes by that alone, which such a restore marks before its commit).
+	DataTable string `json:"data_table,omitempty"`
 	// MaybeSchemas are the schemas of the backups asked before this one while the data was not
 	// known (0: one whose schema cannot be told): any of them may be what is there.
 	MaybeSchemas []int64 `json:"maybe_schemas,omitempty"`

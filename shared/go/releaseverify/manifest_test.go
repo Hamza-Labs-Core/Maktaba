@@ -180,3 +180,18 @@ func TestManifestAppPostgresMajor(t *testing.T) {
 		t.Fatal("nil")
 	}
 }
+
+// A release says what its restore can do; one from before says nothing, and a field this release
+// does not know is no error (a release from before reads this one's).
+func TestManifestSaysWhatItsRestoreCanDo(t *testing.T) {
+	for body, want := range map[string]int{
+		`{"v":1,"version":"0.3.2","tag":"v0.3.2","restore_protocol":1}`: 1,
+		`{"v":1,"version":"0.3.1","tag":"v0.3.1"}`:                      0,
+		`{"v":1,"version":"0.3.3","tag":"v0.3.3","not_known_yet":[1]}`:  0,
+	} {
+		m, err := rv.ParseManifest([]byte(body))
+		if err != nil || m.RestoreProtocol != want {
+			t.Errorf("%s: %+v %v", body, m, err)
+		}
+	}
+}

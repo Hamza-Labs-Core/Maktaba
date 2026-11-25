@@ -58,6 +58,12 @@ func TestParseTOC(t *testing.T) {
 	if _, ok := got["COMMENT EXTENSION pg_trgm"]; ok {
 		t.Error("a line commented out is listed")
 	}
+	// a kind of two words, and an item with no owner
+	two := ParseTOC("301; 1259 16800 FOREIGN TABLE public far_away maktaba\n2; 3079 16387 EXTENSION - vector \n")
+	if len(two) != 2 || two[0].Desc != "FOREIGN TABLE" || two[0].Name != "far_away" || two[0].Owner != "maktaba" ||
+		two[1].Desc != "EXTENSION" || two[1].Name != "vector" || two[1].Owner != "" {
+		t.Errorf("%+v", two)
+	}
 }
 
 // The grants and default privileges go in a list of their own, restored last; every other

@@ -102,6 +102,20 @@ func TestKeptLayoutReleases(t *testing.T) {
 		kept[1] != (KeptRelease{Version: "1.5.0", Schema: 149, Running: true}) {
 		t.Fatalf("kept %+v", kept)
 	}
+	// one that says what its restore can do
+	meta := filepath.Join(l.ReleaseDir("1.4.0"), "migrations", "meta")
+	if err := os.MkdirAll(meta, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(meta, "restore.json"), []byte(`{"protocol":1}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if again := li.Kept(); len(again) != 2 || !again[0].Inside || again[1].Inside {
+		t.Fatalf("kept %+v", again)
+	}
+	if err := os.RemoveAll(filepath.Dir(meta)); err != nil {
+		t.Fatal(err)
+	}
 	if err := l.Switch("1.5.0", "run-x", time.Now()); err != nil { // a guard a run left
 		t.Fatal(err)
 	}

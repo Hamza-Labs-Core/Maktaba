@@ -106,7 +106,8 @@ DATABASE_URL=... make migrate-status
    retypes, sets NOT NULL or truncates in its Up section
    (`cmd/maktaba-server/internal/updater/schemakeep.go`); any of those puts the
    pre-update dump back. `meta/schema-keep.json` says this release starts on
-   such a kept schema (keep it in the folder).
+   such a kept schema (keep it in the folder), and `meta/restore.json` what its
+   restore can do (`cmd/maktaba-server/internal/dbsafe/inside.go`).
 11. **A NO TRANSACTION file runs again whole.** A crash part way through a
    file goose runs without a transaction leaves it unapplied, and the next
    start runs it again from the top: every statement of its Up section is

@@ -55,6 +55,9 @@ type restorer struct {
 	exitDelay time.Duration
 	// room is what a dump leaves on its disk
 	room pgbundle.RoomPolicy
+	// check says whether the database's user can put a dump back, and whether inside public
+	// (dbsafe's CheckRestore, for a Postgres the home does not bundle; nil: it can)
+	check func(ctx context.Context, path string) (inside bool, err error)
 	// identity looks at the library database (dbsafe's Identity; tests replace it)
 	identity func(ctx context.Context) (string, int64, error)
 	// tell records a restore the Updates page did not ask for (the command line's) where
@@ -246,6 +249,12 @@ func (r *restorer) plan(ctx context.Context, name string) (restorePlan, error) {
 	if err != nil {
 		return restorePlan{}, err
 	}
+	if rel, err = r.mayRestore(ctx, p, rel, func() (updater.KeptRelease, error) {
+		able := slices.DeleteFunc(slices.Clone(kept), func(k updater.KeptRelease) bool { return !r.restoresInside(k) })
+		return chooseRelease(able, schema, b.From)
+	}); err != nil {
+		return restorePlan{}, err
+	}
 	pl := restorePlan{Backup: name, Schema: schema, Release: rel.Version, Running: r.running(), At: st.ModTime().UTC()}
 	if pl.Older = newerThan(r.running(), pl.Release); pl.Older {
 		if err := r.olderRoom(pl.Release); err != nil {
@@ -259,6 +268,35 @@ func (r *restorer) plan(ctx context.Context, name string) (restorePlan, error) {
 		}
 	}
 	return pl, nil
+}
+
+// mayRestore is the release that can put a backup back as the database's user: rel, or, when it
+// takes a restore inside public that rel does not do, another that does (able). It refuses when
+// there is none, before the home restarts for it. A database that does not answer now says
+// nothing: the restore itself looks again before it touches anything.
+func (r *restorer) mayRestore(ctx context.Context, path string, rel updater.KeptRelease, able func() (updater.KeptRelease, error)) (updater.KeptRelease, error) {
+	if r.check == nil {
+		return rel, nil
+	}
+	inside, err := r.check(ctx, path)
+	switch {
+	case dbsafe.CannotRestore(err):
+		return rel, refuse("restore_database_user", "the database cannot take the backup back as it is: %v", err)
+	case err == nil && inside && !r.restoresInside(rel):
+		other, oerr := able()
+		if oerr != nil {
+			return rel, refuse("restore_database_user", "the database's user may not make the public schema and its extensions again, "+
+				"and %s, the release that puts this backup back, cannot do without, nor is another kept that can: put back a backup "+
+				"that a newer release puts back, or make the user a superuser for the restore", rel.Version)
+		}
+		return other, nil
+	}
+	return rel, nil
+}
+
+// restoresInside reports whether release k can put a backup back inside public.
+func (r *restorer) restoresInside(k updater.KeptRelease) bool {
+	return k.Inside || sameRelease(k.Version, r.running())
 }
 
 // journal is the update run under way, nil when none is.
@@ -410,7 +448,7 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 		data.Data = apppayload.DataUnknown
 	}
 	rec := apppayload.Database{Version: held, State: apppayload.DatabaseRestoring, From: pl.Release, Dump: p, By: by,
-		Error: "restore asked by " + by, Before: was, Data: data.Data, DataID: data.DataID}
+		Error: "restore asked by " + by, Before: was, Data: data.Data, DataID: data.DataID, DataTable: data.DataTable}
 	if data.Aside = pgbundle.MovedDump(r.db.Backups, data.Aside); asideThere(data) {
 		rec.Aside, rec.AsideBytes = data.Aside, data.AsideBytes
 	}
@@ -471,6 +509,9 @@ func newRestorer(cfg config.Config, db *dbsafe.Target, inst updater.Installer, e
 	if db != nil {
 		t := *db
 		r.schema, r.identity = t.DumpSchema, t.Identity
+		if t.Data == "" { // not the bundled one
+			r.check = t.CheckRestore
+		}
 	}
 	return r
 }

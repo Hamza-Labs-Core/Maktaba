@@ -26,6 +26,8 @@ type KeptRelease struct {
 	Ref     string `json:"ref,omitempty"`
 	Schema  int64  `json:"schema,omitempty"`
 	Running bool   `json:"running,omitempty"`
+	// Inside: it can put a backup back inside the public schema (layout.RestoreProtocol).
+	Inside bool `json:"-"`
 }
 
 // Keeper is an installer that names the releases it keeps and makes one of them the
@@ -34,6 +36,9 @@ type Keeper interface {
 	Kept() []KeptRelease
 	RunKept(ctx context.Context, r KeptRelease) error
 }
+
+// restoresInside reports whether the release in dir can put a backup back inside public.
+func restoresInside(dir string) bool { return layout.ReleaseRestoreProtocol(dir) >= 1 }
 
 // releaseSchema is the schema a release directory's migrations make: release.json's
 // schema_rev (the signed word, beside a staged release's binaries), else the newest
@@ -85,7 +90,7 @@ func (li *LayoutInstaller) Kept() []KeptRelease {
 			continue
 		}
 		out = append(out, KeptRelease{Version: layout.NormalizeVersion(v), Schema: releaseSchema(li.Layout.ReleaseDir(v)),
-			Running: layout.NormalizeVersion(v) == running})
+			Inside: restoresInside(li.Layout.ReleaseDir(v)), Running: layout.NormalizeVersion(v) == running})
 	}
 	return out
 }
@@ -102,7 +107,8 @@ func (ri *RuntimeInstaller) Kept() []KeptRelease {
 	var out []KeptRelease
 	for _, d := range dirs {
 		out = append(out, KeptRelease{Version: layout.NormalizeVersion(d.Version), Ref: d.Name,
-			Schema: releaseSchema(filepath.Join(ri.Runtime.Root, d.Name)), Running: d.Name == cur})
+			Schema: releaseSchema(filepath.Join(ri.Runtime.Root, d.Name)), Inside: restoresInside(filepath.Join(ri.Runtime.Root, d.Name)),
+			Running: d.Name == cur})
 	}
 	return out
 }
@@ -118,7 +124,7 @@ func (ai *AppInstaller) Kept() []KeptRelease {
 	running := ai.Running()
 	if p, err := apppayload.Read(filepath.Join(ai.bundled(), "payload.json")); err == nil {
 		v := layout.NormalizeVersion(p.Version)
-		out = append(out, KeptRelease{Version: v, Schema: releaseSchema(ai.bundled()),
+		out = append(out, KeptRelease{Version: v, Schema: releaseSchema(ai.bundled()), Inside: restoresInside(ai.bundled()),
 			Running: v == running && sameDir(ai.Payload, ai.bundled())})
 	}
 	ents, _ := os.ReadDir(filepath.Join(ai.updatesDir(), "payloads"))
@@ -129,7 +135,7 @@ func (ai *AppInstaller) Kept() []KeptRelease {
 			continue
 		}
 		v := layout.NormalizeVersion(strings.TrimSpace(string(b)))
-		out = append(out, KeptRelease{Version: v, Ref: dir, Schema: releaseSchema(dir),
+		out = append(out, KeptRelease{Version: v, Ref: dir, Schema: releaseSchema(dir), Inside: restoresInside(dir),
 			Running: sameDir(ai.Payload, dir)})
 	}
 	return out
