@@ -629,6 +629,37 @@ async def test_a_load_failure_reaches_the_files_after_one_whose_loop_is_closed()
         await asyncio.wait_for(waits, 10)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ends", ["done", "unreadable", "batch_failed"])
+async def test_a_file_whose_loop_is_closed_leaves_the_one_beside_it_be(ends: str) -> None:
+    sent = threading.Event()
+
+    def loader(s: WhisperSettings) -> ct2.Loaded:
+        assert sent.wait(10)
+        return _loaded(FakeWhisper())
+
+    t = ct2.CT2Transcriber(WhisperSettings(model="fake/whisper"), loader=loader)
+    if ends == "batch_failed":
+
+        def broken(jobs: Any) -> None:
+            raise RuntimeError("out of memory")
+
+        t._pass = broken  # type: ignore[method-assign]
+    gone = asyncio.new_event_loop()
+    left = gone.create_future()
+    gone.close()
+    first: Any = None if ends == "unreadable" else _audio(1, 30)
+    t._ensure_thread((first, left, gone, None, None, 1.0, None))
+    beside = asyncio.ensure_future(t.transcribe(_audio(2, 60)))
+    await asyncio.sleep(0)
+    sent.set()  # both wait: the first one's end is told with the other in flight or in line
+    if ends == "batch_failed":
+        with pytest.raises(RuntimeError, match="out of memory"):
+            await asyncio.wait_for(beside, 10)
+    else:
+        assert (await asyncio.wait_for(beside, 10)).audio_sec == 60
+
+
 @pytest.mark.unit
 def test_the_hooks_shape_windows_and_scores_as_whisper_does() -> None:
     model = FakeWhisper()

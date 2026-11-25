@@ -587,12 +587,13 @@ export function Search() {
       opts: { notice?: boolean; youtube?: boolean } = {}
     ) => {
       const g = ++gen.current;
-      lastSearch.current = {
+      const last = {
         term: query,
         mode: m,
         ask,
         yt: opts.youtube ?? lastSearch.current?.yt ?? false,
       };
+      lastSearch.current = last;
       const withYt =
         opts.youtube === true && ytAvailableRef.current && ytGateRef.current === "show";
       if (opts.youtube !== undefined && !withYt) {
@@ -646,6 +647,8 @@ export function Search() {
           if (b) tItems = listOf(b.items);
         }
         rememberSizes(s.sid, s);
+        // asked again (an import), it is in the order it was answered in, as the URL will say
+        last.ask = { ...ask, sort: s.sort };
         commit(s, vPage, vItems, tPage, tItems);
         setNotice(Boolean(opts.notice));
         if (
@@ -692,7 +695,8 @@ export function Search() {
       quiet = false
     ) => {
       const g = ++gen.current;
-      lastSearch.current = { term: query, mode: m, ask, yt };
+      const last = { term: query, mode: m, ask, yt };
+      lastSearch.current = last;
       // the facets and did-you-mean came with the first page: kept per sid
       const help = recallHelp(s);
       if (!quiet) setPending(true);
@@ -729,6 +733,7 @@ export function Search() {
               ? read.did_you_mean.trim()
               : ""),
         };
+        last.ask = { ...ask, sort: snapshot.sort };
         // A page past the end (a hand-made link) shows the last page.
         const vPage = Math.min(want.vp, pageCount(snapshot.titlesTotal, size));
         const tPage = Math.min(want.tp, pageCount(snapshot.transcriptsTotal, size));
