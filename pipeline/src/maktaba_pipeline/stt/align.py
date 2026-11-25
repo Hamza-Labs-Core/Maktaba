@@ -6,10 +6,10 @@ time warping per window. Run per window it costs a model call each, which is mos
 what batching the decode saved. Here every window of a GPU pass is aligned in one
 forward pass (token sequences padded with end-of-text: the decoder is causal, so the
 padding changes no real position), and the per-window work after it (DTW, punctuation,
-the word / sentence bookkeeping) is MLX-Whisper's, unchanged (MIT licence). The audio
-is not encoded again: the decode's encoder output is reused (encoding is the costly half
-of a forward pass, and the decoder alone takes ~0.2 s for a 24-window pass), its rows
-taken by index.
+the word / sentence bookkeeping) is MLX-Whisper's (MIT licence; :func:`place` differs in
+one thing). The audio is not encoded again: the decode's encoder output is reused (encoding
+is the costly half of a forward pass, and the decoder alone takes ~0.2 s for a 24-window
+pass), its rows taken by index.
 
 The CTranslate2 engine (:mod:`.ct2`) gets its alignment from CTranslate2 (the same
 cross-attention heads and DTW, in C++) and places the words with :func:`place`, with
@@ -142,8 +142,12 @@ def align_batch(model: Any, tokenizer: Any, items: list[AlignItem], features: An
 
 
 def place(it: AlignItem, per_seg: list[list[int]], alignment: list[Any], merge: Any) -> None:
-    """``add_word_timestamps`` after ``find_alignment``, unchanged: the window's words
-    (``alignment``, its text's words with their times in the window) on its sentences."""
+    """``add_word_timestamps`` after ``find_alignment``: the window's words (``alignment``,
+    its text's words with their times in the window) on its sentences. One thing differs: a
+    word goes to the sentence its first token is in, and punctuation joins words of its own
+    sentence only. Whisper counts each sentence's tokens from its first word, so a word that
+    reaches into the next sentence (a "." decoded as a sentence of its own) moves every
+    later sentence's words along, and leaves the window's last sentence with none."""
     durations = np.array([t.end - t.start for t in alignment])
     durations = durations[durations.nonzero()]
     median = min(0.7, float(np.median(durations)) if len(durations) > 0 else 0.0)
@@ -156,27 +160,30 @@ def place(it: AlignItem, per_seg: list[list[int]], alignment: list[Any], merge: 
                     alignment[i].end = alignment[i].start + max_d
                 elif alignment[i - 1].word in marks:
                     alignment[i].start = alignment[i].end - max_d
-    merge(alignment, PREPEND, APPEND)
+    per: list[list[Any]] = [[] for _ in it.segments]
+    ends = list(itertools.accumulate(len(tokens) for tokens in per_seg))
+    k = pos = 0
+    for t in alignment:
+        while k + 1 < len(ends) and pos >= ends[k]:
+            k += 1
+        per[k].append(t)
+        pos += len(t.tokens)
+    for group in per:
+        merge(group, PREPEND, APPEND)
 
     offset = it.segments[0]["seek"] * HOP_LENGTH / SAMPLE_RATE
     last_speech = it.last_speech
-    wi = 0
-    for seg, text_tokens in zip(it.segments, per_seg, strict=True):
-        saved = 0
-        words: list[dict[str, Any]] = []
-        while wi < len(alignment) and saved < len(text_tokens):
-            t = alignment[wi]
-            if t.word:
-                words.append(
-                    {
-                        "word": t.word,
-                        "start": round(offset + t.start, 2),
-                        "end": round(offset + t.end, 2),
-                        "probability": float(t.probability),
-                    }
-                )
-            saved += len(t.tokens)
-            wi += 1
+    for seg, group in zip(it.segments, per, strict=True):
+        words: list[dict[str, Any]] = [
+            {
+                "word": t.word,
+                "start": round(offset + t.start, 2),
+                "end": round(offset + t.end, 2),
+                "probability": float(t.probability),
+            }
+            for t in group
+            if t.word
+        ]
         if words:
             if words[0]["end"] - last_speech > median * 4 and (
                 words[0]["end"] - words[0]["start"] > max_d

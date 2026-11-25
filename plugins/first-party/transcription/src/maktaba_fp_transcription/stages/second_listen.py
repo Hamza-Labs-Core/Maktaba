@@ -104,15 +104,13 @@ async def _segments(db: Any, transcript_id: Any) -> list[Any]:
 
 
 def _sentences(rows: list[Any]) -> tuple[list[Sentence], bool]:
-    """The stored sentences, and whether every one with text has its words."""
+    """The stored sentences, and whether any has its words. One without (issue #1756)
+    keeps Whisper's text: the second listen leaves it out (``refine.chunks``)."""
     out: list[Sentence] = []
-    words_all = True
     for r in rows:
         meta = loads(r["metadata"]) or {}
         timed = stored_words(r, meta)
         conf = float(r["confidence"] or 0.0)
-        if timed is None and str(r["text"] or "").strip():
-            words_all = False
         out.append(
             Sentence(
                 start=float(r["start_sec"]),
@@ -123,7 +121,7 @@ def _sentences(rows: list[Any]) -> tuple[list[Sentence], bool]:
                 words=timed,
             )
         )
-    return out, words_all
+    return out, any(s.words for s in out)
 
 
 def _texts_hash(sentences: list[Sentence]) -> str:
@@ -165,10 +163,20 @@ async def run(db: Any, job: Job, ctx: StageContext) -> StageResult:
     if not sentences:
         return StageResult(output_hash=out, summary={"second_listen": "no speech"})
     if not has_words:
-        # transcribed before the second listen had its own stage: no words to align on.
-        # The sweep transcribes it again (which stores them)
-        why = "the transcript has no word timings stored (made before the second listen's stage)"
-        return await _skipped(db, job, row, meta, out, fingerprint, model, why, relisten)
+        # not one sentence to align on. Its try counts (relisten=True), so none goes on
+        # for ever. What transcribe said of it decides:
+        if meta.get("words") is False:
+            # Whisper gave no words: transcribing again gives none either. Not "skipped":
+            # the sweep leaves it
+            why = "Whisper gave no word timings for this transcript"
+            info = {"model": model, "source": "none", "skipped": why}
+            return await _skipped(
+                db, job, row, meta, out, fingerprint, model, why, True, refined=info
+            )
+        # made before the second listen had its own stage, or its words are gone: without
+        # the mark that they are stored, the sweep transcribes it again
+        meta.pop("words", None)
+        return await _skipped(db, job, row, meta, out, fingerprint, model, tr.NO_WORDS, True)
 
     stream = 0
     chosen = await tr.chosen_track(db, v.id)
