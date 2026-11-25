@@ -1138,17 +1138,22 @@ def docker_restarted_during_a_rollback() -> str:
     """Docker restarted at several moments of a rollback (an unattended upgrade): a healthy previous
     release is not held for it."""
     before = snapshot()
-    for delay in (1.0, 6.0, 12.0):
+    for moment in ("at its start", "as the previous release starts", "later"):
         code, out = deploy("expand", "app expand", add_header)
         assert code == 0, out[-3000:]
         p = subprocess.Popen(["bash", "-c", f"{ROLLOUT} job {ID} rollback 0 >/dev/null 2>&1"], env={**os.environ, **JOB_ENV})
         wait_for("the rollback is at work", lambda: (STATE / "pending/restoring").exists(), 60)
-        time.sleep(delay)
+        if moment == "as the previous release starts":
+            log = STATE / f"jobs/{ID}.rollback/log"
+            wait_for("the migrations are back", lambda: log.exists() and "undone by" in log.read_text(), 120)
+            wait_for("the previous release starts", lambda: "maktaba-cloud" in app_running(), 60)
+        else:
+            time.sleep(1 if moment == "at its start" else 12)
         sh("systemctl reset-failed docker || true; systemctl restart docker")
         wait_for("the rollback ends", lambda: not pending() or (STATE / "held").exists(), 500)
         p.wait()
         code, out = rollback()
-        assert code == 0 and "HELD" not in out, f"after {delay} s:\n{out[-3000:]}"
+        assert code == 0 and "HELD" not in out, f"{moment}:\n{out[-3000:]}"
         not_pending()
         ready()
         same(before, snapshot())
