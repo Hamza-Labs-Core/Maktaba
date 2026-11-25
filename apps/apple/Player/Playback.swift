@@ -172,18 +172,13 @@ final class Playback {
     /// Every player made and not yet gone (`stopAll`).
     @ObservationIgnored private static let live = NSHashTable<Playback>.weakObjects()
 
-    /// Stops every player and waits, `limit` at most, until each has sent its last position to
-    /// the home and closed its stream: the Mac Player starting again in another language
-    /// (story 13.16) loses no one's place.
+    /// Stops every player and waits, `limit` at most (a home that does not answer does not hold
+    /// it longer), until each has sent its last position to the home and closed its stream: the
+    /// Mac Player starting again in another language (story 13.16) loses no one's place.
     static func stopAll(limit: Duration = .seconds(3)) async {
         let sent = live.allObjects.compactMap { $0.stop() }
         guard !sent.isEmpty else { return }
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { for task in sent { await task.value } }
-            group.addTask { try? await Task.sleep(for: limit) }
-            await group.next()
-            group.cancelAll()
-        }
+        await TimeLimit.wait(limit) { for task in sent { await task.value } }
     }
 
     /// Plays `v` from `start` seconds; nil: where the person left off (a finished video
