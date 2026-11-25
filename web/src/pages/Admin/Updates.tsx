@@ -137,12 +137,15 @@ function useWords() {
     return words === t("updates.page.failedCheck", { code: c }) ? c.replace(/_/g, " ") : words;
   };
   /** Why an action was refused: its code's words (a blocker's as a scheduled run's that
-   * waits), else what the server said. */
-  const refusal = (e: unknown) => {
+   * waits), else what the server said. Only Update now has nothing to install (now): a
+   * server of v0.3.164 or older says no_update of a machine's action too, for its own reason. */
+  const refusal = (e: unknown, now = false) => {
     if (!(e instanceof ApiError)) return t("common.error");
     const c = e.problem.code ?? "";
     if (has(`updates.blocker.${c}`)) return t("update.blocked", { reason: word("blocker", c) });
-    return has(`updates.refused.${c}`) ? t(`updates.refused.${c}`) : e.message;
+    return has(`updates.refused.${c}`) && (now || c !== "no_update")
+      ? t(`updates.refused.${c}`, { detail: e.problem.detail ?? "" })
+      : e.message;
   };
   return {
     t,
@@ -319,14 +322,14 @@ export function AdminUpdates() {
     }
   };
 
-  const act = async (fn: () => Promise<unknown>, done: string) => {
+  const act = async (fn: () => Promise<unknown>, done: string, now = false) => {
     setBusy(true);
     try {
       await order.saving(fn);
       toast.show({ tone: "success", message: done });
       await load();
     } catch (e) {
-      toast.show({ tone: "error", message: w.refusal(e) });
+      toast.show({ tone: "error", message: w.refusal(e, now) });
     } finally {
       setBusy(false);
     }
@@ -420,7 +423,7 @@ export function AdminUpdates() {
     return w.reason(lastCode);
   })();
   const installNow = (version: string) =>
-    act(() => updatesApi.runNow(version), t("updates.held.started", { version }));
+    act(() => updatesApi.runNow(version), t("updates.held.started", { version }), true);
   // an ended run stays up front only while it needs someone: machines held, to retry, or
   // that need a person; anything else is history
   const viewEnded = Boolean(view && RUN_ENDED.has(view.state));
@@ -957,7 +960,8 @@ export function AdminUpdates() {
                 if (target)
                   void act(
                     () => updatesApi.runNow(target.version),
-                    t("updates.held.started", { version: target.version })
+                    t("updates.held.started", { version: target.version }),
+                    true
                   );
               }}
             >

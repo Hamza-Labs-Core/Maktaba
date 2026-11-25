@@ -3,7 +3,10 @@ package updates
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"strings"
@@ -11,6 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/agent"
 )
 
 // Research item 5: no automatic run starts while a machine copies a table of the home's
@@ -317,4 +322,192 @@ func TestDriverHomeAppsGoWaitsForAMachinesCopy(t *testing.T) {
 	}
 	copies = 0
 	r.stepTo(t, 3, 10*time.Second, "the go once the copy ended", func() bool { return r.home.applies == 1 })
+}
+
+// noTransport answers nothing.
+type noTransport struct{}
+
+func (noTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("unreachable")
+}
+
+// That a run went past the machines' copies is audited when it starts, not at each try.
+func TestPastACopyIsAuditedOnlyWhenTheRunStarts(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r := newStaleRig(t, time.Hour)
+	r.svc.Blockers = []Blocker{BlockerFunc(func(context.Context) (string, error) { return BlockMachineCopying, nil })}
+	r.svc.copySince = r.now.Add(-CopyHoldMax)
+	rows := func() (n int) {
+		t.Helper()
+		if err := r.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'update_past_machine_copying'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	fails := r.svc.Discoverer.HTTP
+	r.svc.Discoverer.HTTP = &http.Client{Transport: noTransport{}}
+	for range 3 {
+		if d, err := r.svc.Tick(ctx); d.Action != "failed" || err == nil {
+			t.Fatalf("the release could not be read again: %+v %v", d, err)
+		}
+	}
+	if _, err := r.svc.RunNow(ctx, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", ""); err == nil {
+		t.Fatal("started with the release unread")
+	}
+	if n := rows(); n != 0 {
+		t.Fatalf("%d rows of runs that did not start", n)
+	}
+	r.svc.Discoverer.HTTP = fails
+	if d, err := r.svc.Tick(ctx); d.Action != "started" {
+		t.Fatalf("%+v %v", d, err)
+	}
+	if n := rows(); n != 1 {
+		t.Fatalf("%d rows of the run that started", n)
+	}
+}
+
+// A copy the restart goes past after another wait is audited too, once: the TV watched from
+// the middle of the copy's wait until past its end.
+func TestDriverSaysItWentPastACopyAfterAnotherWait(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	r.d.Copying = func(context.Context) int { return 1 }
+	_, _ = r.f.svc.Tick(context.Background())
+	waiting := func(what string) func() bool {
+		return func() bool { return r.runDetail(t).Waiting == what }
+	}
+	r.stepTo(t, 40, 10*time.Second, "the copy's wait", waiting(WaitMachineCopying))
+	r.viewers = 3
+	r.stepTo(t, 5, 10*time.Second, "the TV's wait", waiting("tv_busy"))
+	r.f.now = r.f.now.Add(CopyWait)
+	r.viewers = 0
+	r.stepTo(t, 5, 10*time.Second, "the restart", func() bool { return r.home.applies == 1 })
+	var n int
+	if err := r.f.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'copy_wait_over'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("audited %d times (%v)", n, err)
+	}
+}
+
+// What refuses a machine's action is its own code: only Update now has nothing to install.
+func TestRefusedMachineActionsHaveTheirOwnCodes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	r := newDriverRig(t)
+	r.node(t, "n1", "alpha", "linux-amd64", "1.4.0")
+	run, err := r.f.store.InsertRunWith(ctx, "1.5.0", "1.4.0", TriggerManual, "admin", RunDetail{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer := func(err error) (string, string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		(&Handler{}).retryAnswer(w, httptest.NewRequest(http.MethodPost, "/", nil), Run{}, err)
+		var body struct{ Code, Detail string }
+		if w.Code != http.StatusConflict || json.Unmarshal(w.Body.Bytes(), &body) != nil {
+			t.Fatalf("%v: %d %s", err, w.Code, w.Body)
+		}
+		return body.Code, body.Detail
+	}
+	_, err = r.d.Retry(ctx, run.ID, []string{"n1"}, "admin")
+	if code, detail := answer(err); code != "home_behind" || !strings.Contains(detail, "the home does not run 1.5.0") {
+		t.Fatalf("a home behind: %q %q", code, detail)
+	}
+	if err := r.f.store.RaiseWatermark(ctx, "1.5.0"); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.f.store.SetWithdrawn(ctx, "1.5.0", WithdrawnGone); err != nil {
+		t.Fatal(err)
+	}
+	_, err = r.d.Retry(ctx, run.ID, []string{"n1"}, "admin")
+	if code, _ := answer(err); code != "release_withdrawn" {
+		t.Fatalf("a withdrawn release: %q (%v)", code, err)
+	}
+	if err := r.f.store.InsertTarget(ctx, Target{RunID: run.ID, NodeID: "n1", ToVersion: "1.5.0"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name         string
+		raw          string // a machine's answer (cmd/maktaba-server, updates.command), or its agent's
+		err          error
+		code, detail string
+	}{
+		{"not committed", `{"error":"no_rollback: the run is applying","status":{"state":"applying","journal":{"job":{"run_id":"r"}},"attempts":[]}}`,
+			nil, "no_rollback", "the run is applying"},
+		{"another run", `{"error":"update_no_run","status":{"attempts":[]}}`, nil, "update_no_run", ""},
+		{"another reason", `{"error":"bad request: x","status":null}`, nil, "machine_refused", "bad request: x"},
+		{"an old agent", `"the machine agent does not run update.rollback"`, nil, "machine_refused",
+			"the machine agent does not run update.rollback"},
+		{"the session ended", `"disconnected"`, nil, "machine_lost", "the connection to the machine was lost before it answered"},
+		{"the session ended before it answered", ``, agent.ErrSessionLost, "machine_lost",
+			"the connection to the machine was lost before it answered"},
+		{"no session", ``, agent.ErrNoSession, "machine_offline", "the machine is not connected"},
+		{"too long", ``, agent.ErrCmdTimeout, "machine_timeout", "the machine did not answer in time"},
+	} {
+		r.d.Cluster = answering{r.cluster, json.RawMessage(c.raw), c.err}
+		_, err := r.d.TargetAction(ctx, run.ID, "n1", "rollback", "admin")
+		if code, detail := answer(err); code != c.code || detail != c.detail {
+			t.Errorf("%s: %q %q, want %q %q", c.name, code, detail, c.code, c.detail)
+		}
+	}
+}
+
+// answering is a cluster whose machines take no rollback.
+type answering struct {
+	*clusterFake
+	raw json.RawMessage
+	err error
+}
+
+func (c answering) Command(ctx context.Context, sid, name string, args any, d time.Duration) (bool, json.RawMessage, error) {
+	if name == "update.rollback" {
+		return false, c.raw, c.err
+	}
+	return c.clusterFake.Command(ctx, sid, name, args, d)
+}
+
+// A cancel the home did not take says past_switch only when the home said so.
+func TestCancelSaysPastSwitchOnlyWhenTheHomeDoes(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.home.asks, r.home.appSlow = true, true
+	_, _ = r.f.svc.Tick(ctx)
+	r.stepN(5)
+	run := r.active(t)
+	if run.State != RunHomeApplying || r.home.state() != MOrdered {
+		t.Fatalf("%s %s", run.State, r.home.state())
+	}
+	home := r.d.Home
+	for said, want := range map[string]error{
+		"supervisor unreachable: connection refused": ErrCancelFailed,
+		"update_no_run":                    ErrCancelFailed,
+		"past_switch: the run is applying": ErrPastSwitch,
+	} {
+		r.d.Home = refusing{home, errors.New(said)}
+		if err := r.d.Cancel(ctx, run.ID, ""); !errors.Is(err, want) {
+			t.Errorf("%s: %v, want %v", said, err, want)
+		}
+	}
+	if got := r.active(t); got.State != RunHomeApplying {
+		t.Fatalf("a cancel that was not taken left the run %s", got.State)
+	}
+	// it answers again: cancelled
+	r.d.Home = home
+	if err := r.d.Cancel(ctx, run.ID, ""); err != nil || r.home.state() != MAborted {
+		t.Fatalf("%v %s", err, r.home.state())
+	}
+}
+
+// refusing is a home that takes no abort.
+type refusing struct {
+	HomeSupervisor
+	err error
+}
+
+func (h refusing) Do(ctx context.Context, op string, body any) (*MachineStatus, error) {
+	if op == "abort" {
+		return nil, h.err
+	}
+	return h.HomeSupervisor.Do(ctx, op, body)
 }

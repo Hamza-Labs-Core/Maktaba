@@ -116,6 +116,8 @@ type RunDetail struct {
 	// CopySince is when the restart first saw a machine's copy (Driver.copyWait: CopyWait
 	// from then at most).
 	CopySince *time.Time `json:"copy_since,omitempty"`
+	// CopyPast: the run went past a copy that still ran after that (audited once).
+	CopyPast bool `json:"copy_past,omitempty"`
 	// Home is the home supervisor's last report.
 	Home *MachineStatus `json:"home,omitempty"`
 	// Targets restricts a run to these machines (catch_up, retry); empty: every one.

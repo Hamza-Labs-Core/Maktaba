@@ -47,8 +47,9 @@ Design: [design.md](design.md) §4, §3.5; README R4, R3.6, settings table.
 - **AC7** "Update now" (`POST /api/cluster/updates/run {version?, confirm:true}`, admin) skips only the
   window and age conditions, a recent crash (the running release's, which the update may cure;
   audited `update_past_recent_crash`) and a machine's copy of the home's database (audited
-  `update_past_machine_copying`: it may take hours; the home's restart waits for it, 10 minutes at
-  most, then ends it, and that machine copies that table again); `POST /api/admin/system/update` maps to it and returns `{run_id}`.
+  `update_past_machine_copying`: it may take hours; the home waits for it before it applies the
+  release, 10 minutes at most; the restart ends what still runs then, and that machine copies that
+  table again); `POST /api/admin/system/update` maps to it and returns `{run_id}`.
 - **AC8** Skip (`/skip {version}`), defer (`/defer {until}`), pin (settings) are audited; a pin below the
   watermark is rejected (400 `pin_below_installed`); switching `beta → stable` never selects a lower
   version.

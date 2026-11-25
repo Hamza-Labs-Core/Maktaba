@@ -319,7 +319,9 @@ func (t Target) mayAdd(ctx context.Context, d *sql.DB, list string, exts map[str
 		var pe *pq.Error
 		if errors.As(err, &pe) {
 			switch pe.Code {
-			case "42710", "42723", "42P07", "42P06", // something of its name is in public now, which the restore empties
+			case "42710", "42723", "42P07", "42P06", // something of its name is there now: in public, which the restore
+				// empties, or outside it (a schema, a foreign-data wrapper, a cast), where the restore itself meets it
+				// and commits nothing
 				"55P03", "57014", "40P01": // another session in the way, a cancel: it says nothing of what may be made
 				continue
 			}

@@ -503,10 +503,12 @@ from before it counts nothing; the release stops pushing the deadline itself at 
   update does not start while a machine copies a table (`machine_copying` on Admin → Updates): a
   day at most (20 hours from when the first was held; then it goes past it, audited
   `update_past_machine_copying`). **Update now** goes past it (v0.3.163's is refused until the
-  copy is done). Either way the home waits for a running copy once more, 10 minutes at most, right
-  before its restart, while the library still serves; then it goes on (audited `copy_wait_over`).
+  copy is done). Either way the home waits for a running copy once more, 10 minutes at most, before
+  it applies the release (its backup, where there is one, then the restart), while the library
+  serves; then it goes on (audited `copy_wait_over`). A copy that begins during the backup is ended
+  by the restart all the same.
   An update that does not come by the home's own run (an app replaced by hand) waits for none.
-  Until v0.3.163 the home looked for the table syncs' slots, which are not active while their
+  Up to v0.3.164 the home looked for the table syncs' slots, which are not active while their
   `COPY` runs, after the restart that had already ended it: neither wait saw a copy.
 - **Their copies stay out while the schema changes.** Before the migrations the home keeps the
   machines' copies out until the schema is settled: `pg_hba.conf` rejects their replication roles
@@ -525,7 +527,10 @@ from before it counts nothing; the release stops pushing the deadline itself at 
   - When they cannot be kept out (the file cannot be written, the server does not reload it), that
     is logged at level=error and the migrations run all the same, as before this rule: what they
     wait on is ended, and their index builds wait on no snapshot.
-  - Only a `COPY` that runs now counts (`pg_stat_progress_copy`, of a machine's replication role).
+  - Only a `COPY` that runs now counts (`pg_stat_progress_copy`, of a machine's replication role): it
+    is a table at a time, and between two tables of a machine's first copy there are moments with
+    none, where the hold or the wait ends. The table begun after that is the one copied again. The
+    day of the hold is not one copy's: another machine's, the next day, is gone past too.
     The slot of a table sync is permanent: one left by a machine that went away holds nothing up,
     and goes when its machine is back, or when its WAL is past the home's cap
     (`rules.cluster.replica_wal_keep_gb`) or lost, which the home looks at on its own.

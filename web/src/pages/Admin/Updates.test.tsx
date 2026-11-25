@@ -678,6 +678,101 @@ describe("Admin Updates", () => {
     expect(await screen.findByText(/said by the server/)).toBeInTheDocument();
   });
 
+  it.each(["en", "ar"] as const)("says why a machine's action was refused (%s)", async (locale) => {
+    const cat = (locale === "ar" ? ar : en) as Record<string, string>;
+    const over = {
+      ...runView,
+      state: "done_with_failures",
+      finished_at: finishedAt,
+      detail: {},
+      targets: [needsPerson],
+    };
+    routes(
+      overview({ last_run: { ...liveRun, state: "done_with_failures", finished_at: finishedAt } }),
+      over,
+      [over]
+    );
+    const user = userEvent.setup();
+    renderPage(locale);
+    const row = await screen.findByTestId("updates-target-n2");
+    const refuse = async (code: string, detail: string) => {
+      post.mockRejectedValueOnce(
+        new ApiError({ type: "about:blank#x", title: "conflict", status: 409, detail, code })
+      );
+      await user.click(within(row).getByRole("button", { name: cat["updates.page.target.retry"] }));
+    };
+    for (const code of [
+      "home_behind",
+      "release_withdrawn",
+      "machine_offline",
+      "machine_lost",
+      "machine_timeout",
+      "no_rollback",
+      "update_no_run",
+      "nothing_held",
+    ]) {
+      await refuse(code, "the server's English");
+      expect(await screen.findByText(cat[`updates.refused.${code}`])).toBeInTheDocument();
+    }
+    // the machine's own words are its reason
+    await refuse("machine_refused", "nothing to go back to");
+    expect(
+      await screen.findByText(
+        cat["updates.refused.machine_refused"].replace("{detail}", "nothing to go back to")
+      )
+    ).toBeInTheDocument();
+    // an older server's no_update is not about what there is to install
+    await refuse("no_update", "no_update: the home does not run 1.5.0");
+    expect(await screen.findByText(/the home does not run 1.5.0/)).toBeInTheDocument();
+    expect(screen.queryByText(cat["updates.refused.no_update"])).toBeNull();
+  });
+
+  it.each(["en", "ar"] as const)(
+    "says why a check and a retry were refused (%s)",
+    async (locale) => {
+      const cat = (locale === "ar" ? ar : en) as Record<string, string>;
+      routes(
+        overview({
+          catalog: [{ ...target, version: "1.4.5", blocked_reason: "rolled_back", attempts: 1 }],
+        }),
+        null
+      );
+      const user = userEvent.setup();
+      renderPage(locale);
+      const refuse = async (code: string, button: string) => {
+        post.mockRejectedValueOnce(
+          new ApiError({ type: "about:blank#x", title: "conflict", status: 409, detail: "x", code })
+        );
+        await user.click(await screen.findByRole("button", { name: cat[button] }));
+        expect(await screen.findByText(cat[`updates.refused.${code}`])).toBeInTheDocument();
+      };
+      await refuse("disabled", "updates.page.check");
+      await refuse("not_blocked", "updates.blocked.unblock");
+    }
+  );
+
+  it.each(["en", "ar"] as const)("says why a cancel was refused (%s)", async (locale) => {
+    const cat = (locale === "ar" ? ar : en) as Record<string, string>;
+    routes(overview({ run: liveRun }), runView);
+    const user = userEvent.setup();
+    renderPage(locale);
+    for (const code of ["past_switch", "cancel_failed"]) {
+      post.mockRejectedValueOnce(
+        new ApiError({
+          type: "about:blank#x",
+          title: "conflict",
+          status: 409,
+          detail: "no answer",
+          code,
+        })
+      );
+      await user.click(await screen.findByRole("button", { name: cat["updates.page.cancel"] }));
+      expect(
+        await screen.findByText(cat[`updates.refused.${code}`].replace("{detail}", "no answer"))
+      ).toBeInTheDocument();
+    }
+  });
+
   it("pauses and resumes automatic updates", async () => {
     routes(overview(), null);
     put.mockResolvedValue({ section: "updates", changed: ["auto_install"] });
