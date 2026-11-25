@@ -77,6 +77,10 @@ DEFAULT_TABLE: tuple[tuple[str, str], ...] = (
     ("nas_partial_read", TRANSIENT),
     ("nas_invalid_argument", TRANSIENT),
     ("db_error", TRANSIENT),
+    # a plugin's job met a database that went away (a restart): the plugin API answered 503,
+    # or no longer knows the transaction it had open (rolled back)
+    ("DatabaseUnavailable", TRANSIENT),
+    ("plugin_tx", TRANSIENT),
     ("ffmpeg_rc", TRANSIENT),
     # mediaintel's imported fingerprint failures: a partial read over SMB
     ("import:read failed", TRANSIENT),

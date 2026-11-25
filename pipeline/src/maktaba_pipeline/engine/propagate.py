@@ -28,6 +28,7 @@ from .graph import (
     StageDef,
     SubjectKind,
 )
+from .requeue import HEAL_PRIORITY
 from .sql import dumps, loads, now, to_ts, uid
 from .subjects import library_of_video, season_of_video
 
@@ -226,7 +227,7 @@ async def finalize_success(
                 subject_kind=req.subject_kind,
                 subject_id=req.subject_id,
                 stage=req.stage,
-                priority=req.priority,
+                priority=req.priority if req.priority is not None else _behind(job),
                 payload=req.payload,
                 reason={"why": req.reason, "by": f"job:{job.id}", "from_stage": stage.name},
                 triggered_by=job.id,
@@ -239,6 +240,12 @@ async def finalize_success(
 
         await _log_finish(db, job, stage, final_outcome, triggered, row, t)
         return FinishResult(final_outcome, changed, tuple(triggered), follow)
+
+
+def _behind(job: Job) -> int | None:
+    """The priority of what follows a healed job (:mod:`.healer`): its own, so the work a
+    large heal makes stays behind all other work too; None (the default) after any other."""
+    return job.priority if job.priority >= HEAL_PRIORITY else None
 
 
 def _plugin_event(stage: StageDef, req: Any, graph: Mapping[str, StageDef]) -> bool:
@@ -273,6 +280,8 @@ async def enqueue_dependents(
     ``when="always"`` ones; ``only`` keeps the edges into that one stage (the component
     catch-up, Epic 51). An edge into a stage its component switched off makes no job
     (outcome ``skipped_component_off``, logged by the caller)."""
+    if priority is None:
+        priority = _behind(job)
     reason = reason or {
         "why": f"{stage.name} output changed",
         "by": f"job:{job.id}",

@@ -187,7 +187,10 @@ async def test_the_scan_heals_a_file_that_is_back(db: Database, tmp_path: Path) 
     assert (
         await db.fetchval("SELECT missing_confirmed_at FROM videos WHERE id = $1", str(v)) is None
     )
-    assert [r["state"] for r in await rows(db, "t_a")] == ["failed", "pending"]
+    failed, again = await rows(db, "t_a")
+    assert (failed["state"], again["state"]) == ("failed", "pending")
+    # someone asked for the scan: forced and at the normal priority, not the healer's 950
+    assert (bool(again["force"]), again["priority"]) == (True, 100)
 
 
 @pytest.mark.asyncio

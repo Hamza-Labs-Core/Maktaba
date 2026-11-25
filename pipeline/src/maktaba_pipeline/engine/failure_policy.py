@@ -20,6 +20,7 @@ import asyncio
 import errno
 import os
 import random
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal
@@ -49,6 +50,7 @@ __all__ = [
     "not_before",
     "read_config",
     "root_answers",
+    "root_of",
 ]
 
 _log = get_logger()
@@ -143,9 +145,14 @@ async def library_root(db: Any, video_id: Any) -> str | None:
     )
     if row is None or row["path"] is None:
         return None
-    path = _norm(str(row["path"]))
+    return root_of(str(row["path"]), _roots(row["roots"]))
+
+
+def root_of(path: str, roots: Iterable[str]) -> str | None:
+    """The one of ``roots`` (the longest) that holds ``path``, or None."""
+    path = _norm(path)
     best: str | None = None
-    for root in _roots(row["roots"]):
+    for root in roots:
         r = _norm(root)
         if r and (path == r or path.startswith(r + "/")) and (best is None or len(r) > len(best)):
             best = root

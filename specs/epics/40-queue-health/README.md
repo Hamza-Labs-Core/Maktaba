@@ -83,6 +83,7 @@ signature), checked after the admin's own rows (`rules.queue_health.class_overri
 | `shm_full` (new cause: "could not resize shared memory segment") | `resource:shm` |
 | `disk_full` (new cause: "no space left on device", `ENOSPC`, `DiskFullError` without shm) | `resource:disk` |
 | `nas_timeout`, `nas_partial_read`, `nas_invalid_argument`, `db_error`, `import:read failed`, `ffmpeg_rc` (new cause: ffmpeg exit codes of the thumbnail stages) | `transient` |
+| `DatabaseUnavailable` (the plugin API lost the database: 503), `plugin_tx` (the transaction a plugin had open went with it) | `transient` |
 | `ffmpeg_decode`, `permission_denied` (new cause), `youtube_unavailable` | `item_permanent` |
 | anything else | `unknown` |
 
@@ -125,6 +126,34 @@ confirm*. After every completed scan of a library whose roots all answered, the 
 video with an open `file_missing` failure: the file is there again → `videos.missing_confirmed_at =
 NULL` and the video's failed jobs are queued again; still gone → `missing_confirmed_at = now` (*missing
 — confirmed by the scan of <date>*), with **Re-download** offered when it has a YouTube id.
+
+### Failures whose cause has passed
+
+A library is scanned when someone asks or on its own interval (0 by default), so a missing file that
+is back, or a NAS that was busy for longer than a job's tries, would stay failed for good. The
+queue-health leader round therefore looks at open failures itself (`engine/healer.py`), every 10
+minutes, at most 250 at a time, on the share probes it just made:
+
+- **Which:** the latest job of a video's stage failed as `file_missing`; as `nas_timeout`,
+  `nas_partial_read` or `nas_invalid_argument` of class `transient`; because the database went away
+  under a plugin's job (`DatabaseUnavailable`, `plugin_tx`, a connection error of
+  `plugin_database`); or on a foreign key (a row went away under it). Not: an ignored failure, a
+  stage that is off or retired, a stage that runs once by design or is marked `external_write`, any
+  other cause.
+- **Its file is there** (the database's causes say nothing of the file, so they are not looked up):
+  the stage is queued again with the failed job's payload and force, at priority 950, behind all
+  other work, and what follows it keeps that priority. A stage with 250 such jobs still to run gets
+  no more. The quiet hours do not count them as a backlog of new work; they wait themselves.
+- **Still gone:** it stays failed, and is looked at again after as long as it has been failed (at
+  least an hour, at most 7 days; at most a day when none of the library's roots holds the path).
+  `missing_confirmed_at` stays the scan's.
+- **The root does not answer:** not taken until it does.
+- **The look took over 20 s:** the file it was at and the others of its folder are put off an hour;
+  the rest stay due.
+- **At most three times** for an item and stage since it last succeeded: an hour, a day and 7 days
+  after the failure. Then it waits for an admin.
+
+When a failed row is due is kept in its `not_before` (NULL after a terminal failure).
 
 ### Tile states (read side)
 

@@ -15,6 +15,11 @@ Before an item lands here, Maktaba has already handled it by itself. What it doe
 - Steps that run once by design (**Swap TV change**, **Repair broken files**, **Canonical share paths**, **Access check**) keep their one try, even for a passing problem.
 - Some failures are not worth trying again (a YouTube bot check, a step no worker can run, a step that asked for work it may not ask for). Those fail on the first try.
 - After the last try the item is **Failed** and its group appears here. It stays until you retry it, or until the item runs again and succeeds (for example after it changes and is queued again).
+- **Some failed items come back by themselves** when [what made them fail has passed](#comes-back).
+
+### Failed items that come back by themselves {#comes-back}
+
+Every 10 minutes Maktaba looks at failed items whose cause can pass: a [missing file](#file-missing), a NAS that [timed out](#nas-timeout), [refused a read](#nas-invalid-argument) or [returned a partial read](#nas-partial-read), or a database that went away while a step ran. If the file is there now, or the problem was the database, the step is queued again behind all other work, a few hundred at a time. If the file is still gone, Maktaba looks again later, less and less often (after 7 days at most). An item that is there and keeps failing is brought back three times in all: an hour, a day and 7 days after it failed. After that it needs you. Ignored items, and steps that change files (such as a conversion), are left alone.
 
 Two groups are not failures: **Waiting for your review** (changes waiting for **Apply**) and **No worker has synced this stage recently**.
 
@@ -67,7 +72,7 @@ Every item has one status. The **Status** filter uses the same names.
 
 ### Needs you {#status-needs-you}
 
-The item failed for good, and the error is not the one that makes its queue red. Maktaba will not try it again by itself. Fix what **What happened** names, then press **Retry now**. These items are the **… need you** count on the queue tile.
+The item failed for good, and the error is not the one that makes its queue red. Maktaba will not try it again by itself, unless its cause is one [that passes](#comes-back). Fix what **What happened** names, then press **Retry now**. These items are the **… need you** count on the queue tile.
 
 ### Failing (queue problem) {#status-failing}
 
@@ -136,7 +141,7 @@ Every failure gets a class that says what Maktaba does with it. The first name o
 ### Passing (retried): a passing problem (transient) {#class-transient}
 
 - **What it means:** a problem that usually goes away by itself: a NAS timeout or partial read, a database error, ffmpeg failing on a thumbnail.
-- **What Maktaba does:** tries again with a growing pause, up to **Tries of a passing failure** (5). Then the item is **Failed**.
+- **What Maktaba does:** tries again with a growing pause, up to **Tries of a passing failure** (5). Then the item is **Failed**; a NAS problem is tried [again later](#comes-back).
 - **What you can do:** if a group stays, fix what it names (often a busy share), then press **Retry**.
 
 ### Waits on a service or share: the language model is down (dependency:model) {#class-dependency-model}
@@ -222,7 +227,7 @@ A link to [Failing items](#failing-items) filtered to this queue and [Needs you]
 
 ### Does Maktaba retry by itself? {#faq-auto-retry}
 
-It depends on the [class](#classes). A passing problem is tried up to 5 times (**Tries of a passing failure**). A problem no retry can fix (a damaged file, no permission, a video gone from YouTube, a missing file while the share answers) fails at once and needs you. When the model or a share is down, or the disk or Postgres shared memory is full, the job waits without spending a try and goes back to work when a check sees it healthy again (every **Check every (seconds)**), or after **Waiting jobs retried after (hours)**. Anything else is tried within the step's own tries. It never retries forever.
+It depends on the [class](#classes). A passing problem is tried up to 5 times (**Tries of a passing failure**). A problem no retry can fix (a damaged file, no permission, a video gone from YouTube, a missing file while the share answers) fails at once and needs you. When the model or a share is down, or the disk or Postgres shared memory is full, the job waits without spending a try and goes back to work when a check sees it healthy again (every **Check every (seconds)**), or after **Waiting jobs retried after (hours)**. Anything else is tried within the step's own tries. A missing file that is back, or a NAS or database problem that passed, is [queued again later](#comes-back). It never retries forever.
 
 ### Is Retry safe? {#faq-retry-safe}
 
@@ -299,7 +304,7 @@ The cause labels come from the server and are in English for now. The Arabic pag
 ### NAS read timed out {#nas-timeout}
 
 - **What it means:** reading the video from the network share took too long. The share was busy, asleep or briefly offline. Any step that reads files can hit it.
-- **Does Maktaba fix it itself?** Yes, it is a [passing problem](#class-transient): each item is tried up to 5 times with a growing pause. If the share stays slow, the items end up here. **Transcribe** does not retry it: there it fails at once.
+- **Does Maktaba fix it itself?** Yes, it is a [passing problem](#class-transient): each item is tried up to 5 times with a growing pause. If the share stays slow, the items end up here, and are tried [again later](#comes-back). **Transcribe** does not retry it at once.
 - **What you can do:** check that the NAS is awake and reachable and not busy with something else (a backup, a scrub). Look at **NAS reads** and **NAS open time** under **System health**. When it is calm again, press **Retry**. If it happens often, lower the **NAS reads** pool on the queue's page.
 
 ### NAS refused the read (Invalid argument) {#nas-invalid-argument}
@@ -311,13 +316,13 @@ The cause labels come from the server and are in English for now. The Arabic pag
 ### NAS returned a partial read {#nas-partial-read}
 
 - **What it means:** reading a video's fingerprint got only some of the parts it needs, because the share failed some reads. What was read is kept.
-- **Does Maktaba fix it itself?** Yes, it is a [passing problem](#class-transient): tried up to 5 times, and each retry reads only what is missing.
+- **Does Maktaba fix it itself?** Yes, it is a [passing problem](#class-transient): tried up to 5 times, and [again later](#comes-back); each retry reads only what is missing.
 - **What you can do:** usually nothing. If the group stays, the share is overloaded: lower the **NAS reads** pool, wait, then press **Retry**.
 
 ### File is missing on disk {#file-missing}
 
 - **What it means:** the file is not where Maktaba last saw it. It was moved, renamed or deleted, or the share is not mounted.
-- **Does Maktaba fix it itself?** It depends on the share. If the library folder does not answer either, the job [waits for the share](#class-dependency-share) without spending a try and goes back to work when it is back. If the share answers, the item [fails at once](#class-item-permanent). After each full scan of the library, Maktaba looks again: a file that is back is queued again by itself.
+- **Does Maktaba fix it itself?** It depends on the share. If the library folder does not answer either, the job [waits for the share](#class-dependency-share) without spending a try and goes back to work when it is back. If the share answers, the item [fails at once](#class-item-permanent). Maktaba looks again after each full scan of the library, and [by itself](#comes-back) without one: a file that is back is queued again.
 - **What you can do:** check that the share is mounted. If the file was moved or renamed, put it back and press [Rescan](#action-rescan) on [Failing items](#failing-items), or give it its new place with [Fix path](#action-fix-path). If a whole share is reached under another folder on this machine, use [Add a path rule](#action-path-map). If the file is gone for good, use [Remove](#action-remove) or [Ignore](#action-ignore).
 
 ### Could not decode the media file {#ffmpeg-decode}
