@@ -24,12 +24,13 @@ agent: claude-code
 - A new class of jobs counts everywhere jobs are counted: the quiet hours took a healed backlog for new work, so a new file would have waited for the night.
 - Putting a row off by a fixed hour starves the others once more rows than a day of rounds take are in that state: leave out in SQL what cannot be answered now (a root that is down).
 - `+column` steers SQLite's planner off an index; on PostgreSQL unary plus on text is an error, so it is per dialect. Read the plan in a test.
-- A new heading anchor in the help changes maktaba.tv's `dist-manifest.json`: `npm run build` in `web/packages/website`, and commit it.
+- A new heading anchor in the help changes maktaba.tv's `dist-manifest.json`: `npm run build` in `web/packages/website`, and commit it. Its reference pictures change with the page's length: take the `-actual` ones of the CI run's `website-visual-diff-N` artifact, look at each, and list them under `Reference images:` in the body.
 
 ## Keep doing
 - Take each guard out once and see a test fail.
 
 ## Open
+- The re-review's minors are in #1764.
 - Only videos' stages are healed; a library's or the catalog's failed stage waits for its next trigger.
 - The failures page's `retryTargets` and the queue page's bulk retry (`enqueueTargets`) drop the payload; `jobs.go`'s Retry carries it.
 - A scan's own heal (`confirm_missing`) still queues at priority 100 with no cap.
