@@ -46,7 +46,17 @@ prs: [1616, 1574]
 - **`ui-shard.py --measure` told iPad from iPhone by the test module's name,** which the two now
   share. It reads the job's name in the log, and refuses a log without one.
 
+- **The Cast SDK (4.8.6) sends no Bonjour query until it has read the network's state, at
+  background priority.** `-[GCKNNetworkReachability startMonitoring]` asks on the background
+  queue, which gets no time on a runner with no CPU to spare. #1621's test gave the TV 60 s and
+  failed on #1615, #1632, #1593 and main (#1704) while the SDK said it was searching. Measured on
+  CI with the SDK's own log: the query goes out within 0.2 s of that answer, the TV is listed
+  within about 2 s of the query, and the answer took 0 to 137 s. The test waits for the first
+  query, and looks every 5 s rather than each second. 18 of 18 runs passed; 3 of 12 failed before.
+
 ## Keep doing
+- Capture the library's own log on the machine that fails before choosing a fix. Two earlier
+  guesses here (a slow resolve, another runner's beacon) were wrong.
 - Read a decision's answer from the page when the local inbox says pending and the brief says
   it was answered.
 
