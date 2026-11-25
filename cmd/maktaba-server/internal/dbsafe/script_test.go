@@ -51,3 +51,58 @@ func TestCopyScan(t *testing.T) {
 		}
 	}
 }
+
+// Who may make an extension again.
+func TestMayMake(t *testing.T) {
+	for _, c := range []struct{ super, create, available, needsSuper, trusted, want bool }{
+		{super: true, available: true, needsSuper: true, want: true},
+		{super: true, needsSuper: true}, // its package is gone
+		{create: true, available: true, needsSuper: true},
+		{create: true, available: true, needsSuper: true, trusted: true, want: true},
+		{available: true, needsSuper: true, trusted: true},
+		{available: true, want: true}, // superuser = false
+	} {
+		if mayMake(c.super, c.create, c.available, c.needsSuper, c.trusted) != c.want {
+			t.Errorf("%+v", c)
+		}
+	}
+}
+
+// What makes a schema or an extension that is there, its grants and comments, is left out of the
+// list; all else stays, what is commented out already too.
+func TestWithoutThere(t *testing.T) {
+	lines := []string{
+		";",
+		"; Selected TOC Entries:",
+		"6; 2615 16386 SCHEMA - textsearch maktaba_admin",
+		"8; 2615 16390 SCHEMA - textsearch_other maktaba_admin",
+		"9; 2615 2200 SCHEMA - public maktaba",
+		"4701; 0 0 ACL - SCHEMA textsearch maktaba_admin",
+		"4702; 0 0 COMMENT - SCHEMA textsearch maktaba_admin",
+		"2; 3079 16387 EXTENSION - pg_textsearch ",
+		"3; 3079 16400 EXTENSION - pg_trgm ",
+		"4703; 0 0 COMMENT - EXTENSION pg_textsearch ",
+		"4704; 0 0 COMMENT - EXTENSION pg_trgm \r",
+		"4705; 0 0 ACL - SCHEMA public maktaba",
+		";4706; 0 0 ACL - SCHEMA textsearch maktaba_admin",
+		"219; 1259 16500 TABLE public textsearch maktaba",
+		"220; 1259 16501 TABLE textsearch own maktaba",
+		"4800; 0 0 COMMENT public TABLE textsearch maktaba",
+		"",
+	}
+	out := strings.Split(withoutThere(strings.Join(lines, "\n"), map[string]bool{"textsearch": true}, map[string]bool{"pg_textsearch": true}), "\n")
+	left := map[int]bool{2: true, 5: true, 6: true, 7: true, 9: true}
+	for i, l := range lines {
+		want := l
+		if left[i] {
+			want = ";" + l
+		}
+		if out[i] != want {
+			t.Errorf("%q\nwant %q", out[i], want)
+		}
+	}
+	whole := strings.Join(lines, "\n")
+	if withoutThere(whole, nil, map[string]bool{"plpgsql": true}) != whole {
+		t.Error("changed though nothing of it is there")
+	}
+}

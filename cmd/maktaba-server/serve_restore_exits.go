@@ -568,6 +568,7 @@ func (r *restorer) copyNeeded() bool {
 	if err != nil || !had || !asked(old) {
 		return true
 	}
+	old.Aside = pgbundle.MovedDump(r.db.Backups, old.Aside)
 	return !asideThere(old) && old.Data != apppayload.DataReplaced && old.Data != apppayload.DataGone
 }
 

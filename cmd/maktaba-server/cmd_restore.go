@@ -309,6 +309,12 @@ func printPlan(out io.Writer, pl restorePlan, done bool) {
 			"longer need; or add --without-copy to --confirm, and the library as it is now is lost for good.\n", pl.NoCopy)
 		return
 	}
+	if pl.Older {
+		fmt.Fprintln(out, "That release sets the library as it is now aside first. It is older than the one running, so its "+
+			"own rules hold: it may remove other backups (over their share of the disk, their number or their age). Copy "+
+			"elsewhere any that must stay.")
+		return
+	}
 	fmt.Fprintln(out, "The library as it is now is set aside first; older backups may be removed to make room for it "+
 		"(never this one, nor the newest of each kind).")
 }

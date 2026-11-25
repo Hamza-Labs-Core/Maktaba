@@ -102,6 +102,8 @@ type restorePlan struct {
 	Running string `json:"running"`
 	// At is when the dump was taken: every change since then is lost.
 	At time.Time `json:"at"`
+	// Older: Release is older than the one running, and its own rules may remove other backups.
+	Older bool `json:"older,omitempty"`
 	// NoCopy is why no copy of the database it replaces can be kept now ("": it can):
 	// CopyFree bytes are free for one, CopyNeed needed. It is then restored only once the
 	// person confirms that none is (restoreAsk.withoutCopy). Never on an older release, which
@@ -245,7 +247,7 @@ func (r *restorer) plan(ctx context.Context, name string) (restorePlan, error) {
 		return restorePlan{}, err
 	}
 	pl := restorePlan{Backup: name, Schema: schema, Release: rel.Version, Running: r.running(), At: st.ModTime().UTC()}
-	if newerThan(r.running(), pl.Release) {
+	if pl.Older = newerThan(r.running(), pl.Release); pl.Older {
 		if err := r.olderRoom(pl.Release); err != nil {
 			return pl, err
 		}
@@ -409,15 +411,15 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 	}
 	rec := apppayload.Database{Version: held, State: apppayload.DatabaseRestoring, From: pl.Release, Dump: p, By: by,
 		Error: "restore asked by " + by, Before: was, Data: data.Data, DataID: data.DataID}
-	if asideThere(data) {
+	if data.Aside = pgbundle.MovedDump(r.db.Backups, data.Aside); asideThere(data) {
 		rec.Aside, rec.AsideBytes = data.Aside, data.AsideBytes
 	}
 	if withoutCopy && !older { // an older release keeps one whatever it is told
 		// what was said when it was confirmed, and no more
 		switch {
-		case pl.NoCopy != "":
+		case pl.NoCopy != "" && pl.CopyNeed > 0:
 			rec.NoCopy = apppayload.NoCopyRoom
-		case data.CopyError != "":
+		case pl.NoCopy != "" || data.CopyError != "":
 			rec.NoCopy = apppayload.NoCopyAny
 		}
 	}
@@ -436,7 +438,14 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 			return err
 		}
 	}
-	return r.leaveFor(ctx, rec, orig, pl.Release)
+	if err := r.leaveFor(ctx, rec, orig, pl.Release); err != nil {
+		return err
+	}
+	if err := pgbundle.KeepOnly(r.db.Backups, asideKeeps(rec)...); err != nil { // an earlier one's, replaced by this
+		fmt.Fprintf(orDiscardW(r.log), "[serve] level=warn what an earlier restore kept in %s stays until this one is done: %v\n",
+			r.db.Backups, err)
+	}
+	return nil
 }
 
 func orDiscardW(w io.Writer) io.Writer {

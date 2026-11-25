@@ -426,7 +426,11 @@ what must outlive that.
 One lock covers asking for a restore, giving one up and the start's own try, and the record is written
 before the release is switched. On a Postgres the home does not bundle, the restore's transaction
 commits as the script's own last line, once psql ran all of it: a server killed in the middle of it
-commits nothing.
+commits nothing. Only its `public` schema is made again. Extensions in other schemas (pg_textsearch, where
+an operator made it) stay; one in `public` that needs a superuser (pgvector) is made again, so the
+database user has to be one, or the restore changes nothing and says so.
+
+**Backups moved to another folder** while a restore is not done: it goes on from there at the next start.
 
 **When the switch back fails** (the previous release gone, a pointer that cannot be written), a
 held record stays held: its Down scripts may have run in part, and the failed release never
