@@ -88,8 +88,7 @@ class MpvVideo internal constructor(
         private set
 
     /** How many times another stream was [load]ed into this handle. */
-    @Volatile var loads = 0
-        private set
+    val loads: Int get() = newest.load
 
     /** The frame on screen and the load it comes from (0: the first stream; [loads] once the newest shows). */
     class Shown(val load: Int, val image: ImageBitmap)
@@ -98,24 +97,9 @@ class MpvVideo internal constructor(
     @Volatile var shown: Shown? = null
         private set
 
-    // the stream's picture has not started (the first stream's, or a load's): mpv's frames are
-    // drawn, not shown, so the frame on screen stays (none at first: what mpv draws before the
-    // picture starts is black, not the stream's)
-    @Volatile private var holding = true
-
-    // mpv's playlist entry of the newest loadfile (ENTRY_PENDING: issued, its id not read yet;
-    // ENTRY_ANY: this mpv does not say). Only its events count: a stream replaced by a load may
-    // still end, fail or move on before the load is played, and none of that is the new one's.
-    private val entryLock = Any()
-    private var entry = ENTRY_PENDING
-    // ends heard while the newest entry's id was not read yet: (entry, reason, error)
-    private val early = mutableListOf<Triple<Long, Int, Int>>()
-    // the entry mpv started last (START_FILE), and the last one whose playback restarted
-    @Volatile private var startedEntry = 0L
-    @Volatile private var loadedEntry = 0L
-    @Volatile private var restartedEntry = 0L
-
-    private fun isNewest(id: Long): Boolean = synchronized(entryLock) { entry == ENTRY_ANY || (entry > 0 && id == entry) }
+    // which stream's events count, and whether its picture has started (the frame on screen held
+    // until then)
+    private val newest = NewestLoad()
 
     init {
         ops.execute(::start)
@@ -225,7 +209,7 @@ class MpvVideo internal constructor(
                 isDaemon = true
                 start()
             }
-            loadfile(c, url, replace = false)
+            loadfile(c, url, n = 0)
             lastCaption?.let { (s, rtl, look) -> overlay(c, s, rtl, look.first, look.second) }
         }
     }
@@ -240,6 +224,10 @@ class MpvVideo internal constructor(
         val addr = LongArray(3)
         var next = 0
         var drawn = 0 to 0
+        // a frame was drawn while held, and nothing has been shown since: it is shown when the
+        // hold ends, as a paused stream has no other (mpv draws its first before it says the
+        // picture started)
+        var owed = false
         val sizeArg = Memory(8)
         val stride = Memory(8)
         // no alpha: mpv leaves that byte undefined (0 where it draws subtitles), and nothing reads it
@@ -251,9 +239,9 @@ class MpvVideo internal constructor(
             val (w, h) = size
             if (w <= 0 || h <= 0) continue
             // read before drawing: a frame drawn while a load waits for its first is not shown
-            val load = loads
-            val hold = holding
-            if (flags and MpvConst.RENDER_UPDATE_FRAME == 0L && drawn == (w to h)) continue
+            val load = newest.load
+            val hold = newest.holding
+            if (flags and MpvConst.RENDER_UPDATE_FRAME == 0L && drawn == (w to h) && !(owed && !hold)) continue
             val b = pool[next]?.takeIf { it.width == w && it.height == h } ?: Bitmap().also {
                 // a size's bitmaps are left to the collector: the screen may still show one
                 it.allocPixels(frameInfo(w, h))
@@ -275,6 +263,7 @@ class MpvVideo internal constructor(
             b.notifyPixelsChanged()
             drawn = w to h
             // held: drawn into the same bitmap again, never the one on screen
+            owed = hold
             if (hold) continue
             val image = b.asComposeImageBitmap()
             shown = Shown(load, image)
@@ -288,16 +277,12 @@ class MpvVideo internal constructor(
             val ev = lib.mpv_wait_event(c, -1.0)
             when (ev.getInt(0)) {
                 MpvConst.EVENT_SHUTDOWN -> return
-                MpvConst.EVENT_START_FILE -> startedEntry = ev.getPointer(16)?.getLong(0) ?: 0L
-                MpvConst.EVENT_FILE_LOADED -> {
-                    loadedEntry = startedEntry
-                    if (isNewest(startedEntry)) loaded(c)
-                }
+                MpvConst.EVENT_START_FILE -> newest.starts(ev.getPointer(16)?.getLong(0) ?: 0L)
+                MpvConst.EVENT_FILE_LOADED -> if (newest.opens()) loaded(c)
                 // mpv_event: error at 4, reply_userdata at 8
                 MpvConst.EVENT_COMMAND_REPLY -> addedReply(ev.getLong(8), ev.getInt(4))
                 MpvConst.EVENT_PLAYBACK_RESTART -> {
-                    restartedEntry = startedEntry
-                    if (isNewest(startedEntry)) restarted()
+                    if (newest.restarts()) restarted()
                     if (hwdec == null) hwdec = string(c, "hwdec-current")?.also { Engine.hwdec = it }
                 }
                 MpvConst.EVENT_PROPERTY_CHANGE -> {
@@ -305,7 +290,7 @@ class MpvVideo internal constructor(
                     val data = p.getPointer(16) ?: continue
                     when (p.getPointer(0)?.getString(0)) {
                         // the position of the stream a load replaces is not the new one's
-                        "time-pos" -> if (p.getInt(8) == MpvConst.FORMAT_DOUBLE && !holding && isNewest(startedEntry)) {
+                        "time-pos" -> if (p.getInt(8) == MpvConst.FORMAT_DOUBLE && newest.shows()) {
                             events.position((data.getDouble(0) * 1000).toLong())
                         }
                         "pause" -> if (p.getInt(8) == MpvConst.FORMAT_FLAG) events.playing(data.getInt(0) == 0)
@@ -314,37 +299,28 @@ class MpvVideo internal constructor(
                 }
                 MpvConst.EVENT_END_FILE -> {
                     val d = ev.getPointer(16) ?: continue
-                    val end = Triple(d.getLong(8), d.getInt(0), d.getInt(4))
-                    val now = synchronized(entryLock) {
-                        when {
-                            entry == ENTRY_PENDING -> {
-                                early += end
-                                false
-                            }
-                            else -> entry == ENTRY_ANY || end.first == entry
-                        }
-                    }
-                    if (now) ended(end.first, end.second, end.third)
+                    val end = NewestLoad.End(d.getLong(8), d.getInt(0), d.getInt(4))
+                    if (newest.ends(end)) ended(end)
                 }
             }
         }
     }
 
-    /** The newest entry's picture has started: the frame held for it may go. */
+    /** The newest stream's picture has started: the frame drawn while it was held is shown ([draw]). */
     private fun restarted() {
         started = true
-        holding = false
+        wake.release()
     }
 
-    /** The newest entry's end: an error is a failure, a live stream's end the channel's. */
-    private fun ended(id: Long, reason: Int, error: Int) {
-        when (reason) {
+    /** The newest stream's end: an error is a failure, a live stream's end the channel's. */
+    private fun ended(end: NewestLoad.End) {
+        when (end.reason) {
             // a computer with no audio device plays the picture; mpv still ends that file with
             // the audio's error, which is an end, not a failure, once the picture played
-            MpvConst.END_ERROR -> if (error == MpvConst.ERROR_AO_INIT_FAILED && (restartedEntry == id || (id == 0L && started))) {
+            MpvConst.END_ERROR -> if (end.error == MpvConst.ERROR_AO_INIT_FAILED && (newest.played(end.entry) || (end.entry == 0L && started))) {
                 if (live) events.ended()
             } else {
-                events.failed(lib.mpv_error_string(error))
+                events.failed(lib.mpv_error_string(end.error))
             }
             // a live stream's playlist ended: the channel ended (a replaced one stops, not ends)
             MpvConst.END_EOF -> if (live) events.ended()
@@ -352,21 +328,16 @@ class MpvVideo internal constructor(
     }
 
     /**
-     * `loadfile` on mpv's thread (it returns once the playlist holds the entry), then the
-     * entry's id, read at once: what was heard of it meanwhile is then its.
+     * Load [n]'s `loadfile` on mpv's thread (0: the first stream; it returns once the playlist
+     * holds the entry), then the entry's id, read at once: what was heard of it meanwhile is then
+     * its, unless another load was asked for since.
      */
-    private fun loadfile(c: Pointer, url: String, replace: Boolean) {
-        lib.mpv_command(c, if (replace) arrayOf("loadfile", url, "replace", null) else arrayOf("loadfile", url, null))
-        val id = string(c, "playlist/0/id")?.toLongOrNull()?.takeIf { it > 0 } ?: ENTRY_ANY
-        val ends = synchronized(entryLock) {
-            if (entry != ENTRY_PENDING) return@synchronized emptyList()
-            entry = id
-            early.filter { id == ENTRY_ANY || it.first == id }.also { early.clear() }
-        }
-        // opened, or its picture started, before its id was read (a very fast home)
-        if (id != ENTRY_ANY && loadedEntry == id) loaded(c)
-        if (id != ENTRY_ANY && restartedEntry == id) restarted()
-        for ((id2, reason, error) in ends) ended(id2, reason, error)
+    private fun loadfile(c: Pointer, url: String, n: Int) {
+        lib.mpv_command(c, if (n > 0) arrayOf("loadfile", url, "replace", null) else arrayOf("loadfile", url, null))
+        val heard = newest.read(n, string(c, "playlist/0/id")?.toLongOrNull()?.takeIf { it > 0 })
+        if (heard.opened) loaded(c)
+        if (heard.restarted) restarted()
+        heard.ends.forEach(::ended)
     }
 
     /** The file is open: its length, its audio tracks and its own subtitle tracks, in order. */
@@ -485,7 +456,7 @@ class MpvVideo internal constructor(
         return listOf(
             "path", "playlist/0/id", "time-pos", "core-idle", "paused-for-cache", "pause", "eof-reached",
             "demuxer-cache-duration", "video-codec", "audio-codec", "current-ao", "hwdec-current",
-        ).joinToString(", ") { "$it=${string(c, it)}" } + ", holding=$holding, started=$started, entry=${synchronized(entryLock) { entry }}, startedEntry=$startedEntry"
+        ).joinToString(", ") { "$it=${string(c, it)}" } + ", picture started=$started, $newest"
     }
 
     private fun string(c: Pointer, name: String): String? {
@@ -518,16 +489,10 @@ class MpvVideo internal constructor(
      */
     override fun load(url: String): Boolean {
         if (closed) return false
-        holding = true
-        // from now on nothing heard is the new stream's until its entry is known
-        synchronized(entryLock) {
-            entry = ENTRY_PENDING
-            early.clear()
-        }
-        loads++
+        val n = newest.next()
         onMpv {
             lib.mpv_set_property_string(it, "pause", "no")
-            loadfile(it, url, replace = true)
+            loadfile(it, url, n)
         }
         return true
     }
@@ -602,9 +567,6 @@ class MpvVideo internal constructor(
 
         /** A folder for mpv's own log, one file per handle (the real-library tests only). */
         const val LOG_DIR_PROPERTY = "maktaba.mpv.logDir"
-
-        private const val ENTRY_PENDING = 0L
-        private const val ENTRY_ANY = -1L
 
         /**
          * A caption's size in ASS's units of a 720-high picture: letters a 22nd of its height, as

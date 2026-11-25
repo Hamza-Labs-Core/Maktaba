@@ -10,13 +10,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Story 13.22 with a fake libmpv: a stream loaded into the handle (`loadfile … replace`) is the
  * only one whose events count. What the stream before it still says (its end, its error, its
  * position) is dropped, and the new stream's own error is heard, also when it comes before the
- * new entry's id is read.
+ * new entry's id is read; of several loads at once, the last's. A frame mpv drew before it says
+ * the picture started is shown once it says so, also when no other follows (paused).
  */
 class MpvVideoEntryTest {
     /** libmpv's calls the Player makes, its events given by the test. */
@@ -25,6 +30,23 @@ class MpvVideoEntryTest {
         private val queue = LinkedBlockingQueue<Pointer>()
         private val kept: MutableList<Memory> = Collections.synchronizedList(mutableListOf())
         @Volatile private var entries = 0L
+
+        /** A `loadfile` of a URL here waits for its latch, its entry made. */
+        val gates = ConcurrentHashMap<String, CountDownLatch>()
+
+        /** How many frames mpv has to draw (each render update says so once), and how many were drawn. */
+        private val frames = AtomicInteger()
+        val drawn = AtomicInteger()
+        @Volatile private var update: LibMpv.UpdateCallback? = null
+
+        /** mpv has a frame to draw. */
+        fun frame() {
+            frames.incrementAndGet()
+            update?.invoke(null)
+        }
+
+        /** Whether the events pushed so far were taken. */
+        fun taken(): Boolean = queue.isEmpty()
 
         private fun keep(m: Memory): Memory = m.also { kept += it }
 
@@ -81,7 +103,10 @@ class MpvVideoEntryTest {
         override fun mpv_command(ctx: Pointer, args: Array<String?>): Int {
             commands += args.toList()
             when (args[0]) {
-                "loadfile" -> entries++
+                "loadfile" -> {
+                    entries++
+                    gates[args[1]]?.await(10, TimeUnit.SECONDS)
+                }
                 "quit" -> push(MpvConst.EVENT_SHUTDOWN)
             }
             return 0
@@ -95,9 +120,15 @@ class MpvVideoEntryTest {
             res.value = keep(Memory(8))
             return 0
         }
-        override fun mpv_render_context_set_update_callback(ctx: Pointer, callback: LibMpv.UpdateCallback?, data: Pointer?) {}
-        override fun mpv_render_context_update(ctx: Pointer) = 0L
-        override fun mpv_render_context_render(ctx: Pointer, params: Pointer) = 0
+        override fun mpv_render_context_set_update_callback(ctx: Pointer, callback: LibMpv.UpdateCallback?, data: Pointer?) {
+            update = callback
+        }
+        override fun mpv_render_context_update(ctx: Pointer) =
+            if (frames.getAndUpdate { maxOf(0, it - 1) } > 0) MpvConst.RENDER_UPDATE_FRAME else 0L
+        override fun mpv_render_context_render(ctx: Pointer, params: Pointer): Int {
+            drawn.incrementAndGet()
+            return 0
+        }
         override fun mpv_render_context_free(ctx: Pointer) {}
     }
 
@@ -107,7 +138,10 @@ class MpvVideoEntryTest {
         val positions: MutableList<Long> = Collections.synchronizedList(mutableListOf())
         val failed: MutableList<String> = Collections.synchronizedList(mutableListOf())
         @Volatile var ended = 0
-        override fun ready(durationMs: Long?, audio: List<AudioOption>) {}
+        val ready = AtomicInteger()
+        override fun ready(durationMs: Long?, audio: List<AudioOption>) {
+            ready.incrementAndGet()
+        }
         override fun position(ms: Long) {
             positions += ms
         }
@@ -195,6 +229,109 @@ class MpvVideoEntryTest {
             until("the third stream's end") { heard.ended == 1 }
             assertEquals(listOf("error -13"), heard.failed.toList())
         } finally {
+            v.dispose()
+        }
+    }
+
+    @Test
+    fun aStreamOpenedPausedShowsTheFrameDrawnBeforeItsPictureStarted() {
+        val lib = FakeLib()
+        val v = MpvVideo(lib, "/film.mkv", 0, autoplay = false, Heard(), null)
+        try {
+            v.resize(16, 9)
+            until("the loadfile") { lib.commands.any { it[0] == "loadfile" } }
+            // mpv draws the first frame, says the picture started, and draws no other (paused)
+            until("drawn at the screen's size") { lib.drawn.get() > 0 }
+            val before = lib.drawn.get()
+            lib.frame()
+            until("the first frame drawn") { lib.drawn.get() > before }
+            assertEquals("shown before its picture started", null, v.frame)
+            lib.startFile(1)
+            lib.push(MpvConst.EVENT_FILE_LOADED)
+            lib.push(MpvConst.EVENT_PLAYBACK_RESTART)
+            until("the paused picture") { v.frame != null }
+            assertEquals(0, v.shown!!.load)
+            // and it is not drawn again and again: nothing changes while paused
+            val shown = lib.drawn.get()
+            Thread.sleep(600)
+            assertEquals(shown, lib.drawn.get())
+        } finally {
+            v.dispose()
+        }
+    }
+
+    @Test
+    fun ofSeveralLoadsAtOnceTheLastsEventsCount() {
+        val lib = FakeLib()
+        val heard = Heard()
+        // the first loadfile is still on its way when two more loads are asked for
+        val first = CountDownLatch(1)
+        lib.gates["u1"] = first
+        val v = MpvVideo(lib, "u1", 0, true, heard, null, live = true)
+        try {
+            until("the first loadfile") { lib.commands.any { it[0] == "loadfile" } }
+            v.load("u2")
+            v.load("u3")
+            // the last one's id is held back too: its end comes before its id is read
+            val last = CountDownLatch(1)
+            lib.gates["u3"] = last
+            first.countDown()
+            until("the last loadfile") { lib.commands.any { it[0] == "loadfile" && it[1] == "u3" } }
+            lib.startFile(1)
+            lib.endFile(1, MpvConst.END_ERROR, -13)
+            lib.startFile(2)
+            lib.push(MpvConst.EVENT_FILE_LOADED)
+            lib.push(MpvConst.EVENT_PLAYBACK_RESTART)
+            lib.timePos(2.0)
+            lib.endFile(2, MpvConst.END_EOF)
+            lib.startFile(3)
+            lib.push(MpvConst.EVENT_FILE_LOADED)
+            lib.push(MpvConst.EVENT_PLAYBACK_RESTART)
+            until("heard") { lib.taken() }
+            Thread.sleep(100)
+            assertEquals("ready before its id", 0, heard.ready.get())
+            last.countDown()
+            until("the last stream opened") { heard.ready.get() == 1 }
+            val end = System.currentTimeMillis() + 10_000
+            while (3000L !in heard.positions && System.currentTimeMillis() < end) {
+                lib.timePos(3.0)
+                Thread.sleep(20)
+            }
+            assertEquals("the last stream's positions alone", setOf(3000L), heard.positions.toSet())
+            assertEquals(2, v.loads)
+            assertEquals("a replaced stream's error", emptyList<String>(), heard.failed.toList())
+            assertEquals("a replaced stream's end", 0, heard.ended)
+            lib.endFile(3, MpvConst.END_EOF)
+            until("the last stream's end") { heard.ended == 1 }
+            assertEquals("ready once", 1, heard.ready.get())
+        } finally {
+            first.countDown()
+            v.dispose()
+        }
+    }
+
+    @Test
+    fun theLastLoadsEndHeardBeforeItsIdIsItsOwn() {
+        val lib = FakeLib()
+        val heard = Heard()
+        val v = MpvVideo(lib, "u1", 0, true, heard, null, live = true)
+        val last = CountDownLatch(1)
+        try {
+            until("the first loadfile") { lib.commands.any { it[0] == "loadfile" } }
+            lib.gates["u3"] = last
+            v.load("u2")
+            v.load("u3")
+            until("the last loadfile") { lib.commands.any { it[0] == "loadfile" && it[1] == "u3" } }
+            lib.endFile(2, MpvConst.END_ERROR, -13)
+            lib.endFile(3, MpvConst.END_EOF)
+            until("heard") { lib.taken() }
+            Thread.sleep(100)
+            assertEquals(0, heard.ended)
+            last.countDown()
+            until("its end") { heard.ended == 1 }
+            assertEquals(emptyList<String>(), heard.failed.toList())
+        } finally {
+            last.countDown()
             v.dispose()
         }
     }

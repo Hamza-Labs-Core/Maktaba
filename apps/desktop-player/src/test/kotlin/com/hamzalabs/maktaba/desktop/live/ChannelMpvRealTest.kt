@@ -4,7 +4,9 @@ import androidx.compose.ui.graphics.toPixelMap
 import com.hamzalabs.maktaba.core.api.LiveApi
 import com.hamzalabs.maktaba.core.api.LiveChannel
 import com.hamzalabs.maktaba.desktop.StreamProxy
+import com.hamzalabs.maktaba.desktop.AudioOption
 import com.hamzalabs.maktaba.desktop.TestHome
+import com.hamzalabs.maktaba.desktop.VideoEvents
 import com.hamzalabs.maktaba.desktop.mpv.LibMpv
 import com.hamzalabs.maktaba.desktop.mpv.MpvLoad
 import com.hamzalabs.maktaba.desktop.mpv.MpvPlayers
@@ -41,6 +43,8 @@ import java.util.concurrent.TimeUnit
  *  - T03: Next channel loads into the same handle: channel one's last frame stays on screen
  *    until channel two's first, within 2 s; Pause then Back to live loads the stream again from
  *    its live edge;
+ *  - channels changed fast (several loads at once, while the first stream starts and while one
+ *    plays) end on the last one, with its own picture and moving positions;
  *  - T04: the stream stops moving on, then its playlist ends: the channel ended; a channel
  *    whose playlist answers 404, opened or loaded into the playing handle, failed, with Try
  *    again; a playing stream whose home stops answering failed, with Try again.
@@ -246,6 +250,93 @@ class ChannelMpvRealTest {
         assertTrue("Back to live started at segment ${after.minOrNull()}, the live edge being $edge", after.min() >= edge - 4)
         assertEquals("blue", colour(v.shown!!))
         assertSame(v, c.video.video)
+        assertEquals(ChannelStatus.Playing, c.playback.status)
+    }
+
+    @Test
+    fun t03_loadsGivenAtOnceEndOnTheLastWithItsPictureAndPositions() {
+        val lib = lib()
+        onAir("c1", segments("live"))
+        onAir("c2", segments("live2"))
+        val api = LiveApi(home.client)
+        val red = proxy.local(api.streamUrl("c1"))!!
+        val blue = proxy.local(api.streamUrl("c2"))!!
+        val positions: MutableList<Long> = Collections.synchronizedList(mutableListOf())
+        val failed: MutableList<String> = Collections.synchronizedList(mutableListOf())
+        val ends = java.util.concurrent.atomic.AtomicInteger()
+        val heard = object : VideoEvents {
+            override val volume = 1f
+            override val muted = false
+            override fun ready(durationMs: Long?, audio: List<AudioOption>) {}
+            override fun position(ms: Long) {
+                positions += ms
+            }
+            override fun playing(on: Boolean) {}
+            override fun failed(why: String) {
+                failed += why
+            }
+            override fun ended() {
+                ends.incrementAndGet()
+            }
+        }
+        val v = runBlocking { MpvPlayers(lib, null).openLive(red, heard) } as MpvVideo
+
+        fun settlesOn(load: Int, colour: String) {
+            val end = System.currentTimeMillis() + 20_000
+            while (v.shown?.load != load) {
+                if (System.currentTimeMillis() > end) throw AssertionError("never: load $load's picture (shown ${v.shown?.load}; failed $failed; ${v.state()})")
+                Thread.sleep(5)
+            }
+            assertEquals("load $load's first frame", colour, colour(v.shown!!))
+            // its own positions, moving on
+            val mark = positions.size
+            while (synchronized(positions) { positions.drop(mark) }.let { p -> p.size < 5 || p.last() <= p.first() }) {
+                if (System.currentTimeMillis() > end) throw AssertionError("load $load's positions do not move (${positions.drop(mark)}; ${v.state()})")
+                Thread.sleep(20)
+            }
+            assertEquals(colour, colour(v.shown!!))
+            assertEquals(load, v.loads)
+            assertEquals("a replaced stream's failure", emptyList<String>(), failed.toList())
+            assertEquals("a replaced stream's end", 0, ends.get())
+        }
+        try {
+            v.resize(1280, 720)
+            // while the first stream starts: its own loadfile may not have run yet
+            v.load(blue)
+            v.load(red)
+            v.load(blue)
+            settlesOn(3, "blue")
+            // while one plays
+            v.load(red)
+            v.load(blue)
+            v.load(red)
+            settlesOn(6, "red")
+            println("13.22 loads given at once end on the last: blue at load 3, red at load 6")
+        } finally {
+            v.dispose()
+        }
+    }
+
+    @Test
+    fun t03_aChannelChangedWhileItOpensEndsOnTheNextOne() {
+        val lib = lib()
+        onAir("c1", segments("live"))
+        onAir("c2", segments("live2"))
+        val c = start(lib)
+        onMain { c.playback.open("c1") }
+        // the player is made, its first frame not shown: the next channel at once
+        until(c, "the player") { it != null && c.playback.status == ChannelStatus.Playing }
+        onMain { c.playback.next(lineup) }
+        val v = c.video.video as MpvVideo
+        val ms = until(c, "the next channel's first frame") { it?.shown?.load == 1 }
+        println("13.22 a channel changed while it opened: the next one's first frame after $ms ms")
+        assertEquals("c2", c.playback.channelId)
+        assertSame("a new handle", v, c.video.video)
+        assertEquals("blue", colour(v.shown!!))
+        // it plays: its time moves on, and nothing stalls or fails
+        val from = v.property("time-pos")?.toDoubleOrNull()
+        until(c, "the next channel's time moving") { (it?.property("time-pos")?.toDoubleOrNull() ?: 0.0) > (from ?: 0.0) + 0.5 }
+        assertEquals("blue", colour(v.shown!!))
         assertEquals(ChannelStatus.Playing, c.playback.status)
     }
 
