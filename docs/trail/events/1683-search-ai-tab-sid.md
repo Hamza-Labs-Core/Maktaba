@@ -30,7 +30,6 @@ agent: claude-code
   callback kept over an await it is older still.
 - A test can act inside the gap: a `MutationObserver` that clicks as the results appear runs
   before the transition renders.
-
 - The first fix passed every test written for the two races. Its tests never left the one search.
 
 ## Stop doing
