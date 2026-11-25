@@ -142,8 +142,10 @@ cd apps/desktop-player
 `./gradlew test` runs the unit tests (each state class against MockWebServer, with `:client`'s
 test fixtures; `TestHome` is the mock home), the `ReadOrder` latch tests (a read held open, a
 change, then the old answer), the `StreamProxy` rules, and the screen tests: Compose for
-Desktop's `runComposeUiTest`, off screen (no window, no display), in English and Arabic. Nothing
-calls a real host; nothing opens JavaFX.
+Desktop's `androidx.compose.ui.test.v2.runComposeUiTest`, off screen (no window, no display), in
+English and Arabic. Not the deprecated one without `v2`: it runs effects on whichever thread
+resumes them, OkHttp's after an answer, and a screen can then lose the change (#1678 item 11).
+Nothing calls a real host; nothing opens JavaFX.
 
 ## Releases
 

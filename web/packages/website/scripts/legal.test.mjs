@@ -32,7 +32,7 @@ const POLICY = {
   controller: "Hamza Labs",
   contact: "privacy@maktaba.tv",
   purpose:
-    "Operate and secure the Maktaba cloud relay: capacity planning, abuse prevention, and aggregate service health.",
+    "Operate and secure the Maktaba cloud relay: capacity planning, abuse prevention, and aggregate service health; and run the accounts people make on Maktaba Cloud.",
   data_categories: [
     "Aggregate connection counts (no server identity)",
     "Aggregate bandwidth and request volume",
@@ -40,17 +40,32 @@ const POLICY = {
     "Aggregate push-delivery outcomes",
   ],
   not_collected: [
-    "IP addresses",
+    "IP addresses in analytics",
     "Server identifiers in analytics",
     "User identifiers in analytics",
     "Media titles, filenames, or content",
-    "Request URLs or payloads",
+    "Request URLs or payloads in analytics",
+  ],
+  account_data: [
+    "Email address, name, language, password hash, plan and homes: until the account is deleted, 30 days after its owner asks",
+    "A home's public IP address, for direct connections, and how much it relayed, every 5 minutes and every month: until the home is removed",
+    "Sign-in sessions, with the device's name and IP address: up to 31 days after they were last used",
+    "The cloud's request log, with the IP address and a code for the account: until it is overwritten",
+    "Security and abuse records, with IP addresses and sometimes an email address: with no fixed end yet, after the account is deleted too",
+    "Account email: its content sealed until it is sent; then the address as a keyed hash, with the kind, time and outcome, 35 days; the network that asked for it, as a keyed hash, a day",
+    "Backups of the database: 14 days",
+  ],
+  processors: [
+    "Resend (account email): sent from Ireland, stored in the United States; the address, the content and the delivery record, 30 days; an address that bounced or complained stays on its suppression list",
+    "Hetzner (the cloud's servers): Finland",
+    "Apple and Google (push notifications), for an app that asks for them",
+    "Cloudflare (the bot check on the web app's sign-in, sign-up and reset pages, when it is on): the visitor's IP address and what their browser shows it",
   ],
   lawful_basis:
-    "Legitimate interest (Art. 6(1)(f)) in operating a reliable, abuse-resistant relay, balanced by collecting only anonymous aggregates.",
+    "Legitimate interest (Art. 6(1)(f)) in operating a reliable, abuse-resistant relay, balanced by collecting only anonymous aggregates; for an account and its email, the contract with its owner (Art. 6(1)(b)).",
   retention_days: 90,
   rights: ["Access", "Erasure", "Restriction", "Objection", "Portability"],
-  updated_at: "2026-06-19",
+  updated_at: "2026-11-25",
 };
 
 const sources = (over = {}) => ({
@@ -87,14 +102,49 @@ test("every legal page builds in both languages, with the same sections", () => 
 test("T01: the cloud section is the policy, value by value, in each language", () => {
   const en = legalDoc("privacy", "en", { sources: sources() });
   const html = en.sections.find((s) => s.id === "cloud").html;
-  for (const v of [...POLICY.data_categories, ...POLICY.not_collected, ...POLICY.rights])
-    assert.ok(html.includes(`<li>${v}</li>`), v);
+  for (const v of [
+    ...POLICY.data_categories,
+    ...POLICY.not_collected,
+    ...POLICY.account_data,
+    ...POLICY.processors,
+    ...POLICY.rights,
+  ])
+    assert.ok(
+      html.includes(`<li>${v.replaceAll("'", "&#39;")}</li>`) || html.includes(`<li>${v}</li>`),
+      v
+    );
   assert.ok(html.includes('<dd data-field="controller">Hamza Labs</dd>'));
   assert.ok(html.includes('href="mailto:privacy@maktaba.tv"'));
   const ar = legalDoc("privacy", "ar", { sources: sources() });
   const arHtml = ar.sections.find((s) => s.id === "cloud").html;
   assert.ok(arHtml.includes("90 يومًا"));
   assert.ok(!arHtml.includes("Aggregate bandwidth"), "an English value left on the Arabic page");
+});
+
+test("the account's emails: who delivers them, where they are stored and for how long, in each language", () => {
+  const say = {
+    en: ["United States", "30 days", "35 days"],
+    ar: ["الولايات المتحدة", "30 يومًا", "35 يومًا"],
+  };
+  for (const lang of ["en", "ar"]) {
+    const doc = legalDoc("privacy", lang, { sources: sources() });
+    const html = doc.sections.find((s) => s.id === "account").html;
+    // the bot check, worded for when it is on
+    assert.match(
+      html,
+      /<a href="https:\/\/www\.cloudflare\.com\/turnstile-privacy-policy\/"/,
+      lang
+    );
+    assert.ok(html.includes({ en: "When it is on", ar: "حين يكون مفعّلًا" }[lang]), lang);
+    for (const w of ["Resend", "https://resend.com/security/gdpr", ...say[lang]])
+      assert.ok(html.includes(w), `${lang}: ${w}`);
+    assert.ok(doc.summary.includes("Resend"), `${lang}: the summary`);
+    // what only the relay does is not said of the whole cloud
+    assert.ok(
+      !/(Maktaba Cloud|relay) keeps only|لا تحتفظ إلا|لا يحتفظ إلا/.test(doc.summary),
+      lang
+    );
+  }
 });
 
 test("T01: a policy value with no Arabic fails the build, naming the cloud section", () => {
@@ -116,7 +166,7 @@ test("the page's date follows the policy's when the policy is newer", () => {
     legalDoc("privacy", "en", { sources: sources({ policy: later }) }).updated,
     "2099-01-02"
   );
-  assert.equal(legalDoc("privacy", "en", { sources: sources() }).updated, "2026-11-24");
+  assert.equal(legalDoc("privacy", "en", { sources: sources() }).updated, "2026-11-25");
 });
 
 test("T02: docs/app-privacy.md changed without the page fails the build, naming the section", () => {

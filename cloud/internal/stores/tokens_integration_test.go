@@ -1,0 +1,113 @@
+//go:build integration
+
+package stores
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db/dbtest"
+)
+
+// A link made in a transaction that does not commit is none. One that commits leaves the one before
+// it good; using one ends every other of its account and purpose, and no other's. RegisterTx says whether the address was free, and fails on none.
+func TestTokensAndRegistrationAreTheirCallersTransaction(t *testing.T) {
+	pool := dbtest.Migrated(t)
+	ctx := context.Background()
+	tokens, users := NewMailTokens(pool.DB), NewUsers(pool.DB)
+	register := func(commit bool) bool {
+		t.Helper()
+		tx, err := pool.DB.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		free, err := users.RegisterTx(ctx, tx, " A@Example.test ", "hash", "", "ar")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if commit {
+			if err := tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return free
+	}
+	if !register(false) || !register(true) || register(true) {
+		t.Fatal("free, free again after a rollback, then taken")
+	}
+	u, err := users.ByEmail(ctx, "a@example.test")
+	if err != nil || u.Locale != "ar" || u.EmailVerified || u.DisplayName.Valid {
+		t.Fatalf("%+v %v", u, err)
+	}
+	issue := func(commit bool) string {
+		t.Helper()
+		tx, err := pool.DB.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		tok, err := tokens.IssueTx(ctx, tx, u.ID, PurposePasswordReset, PasswordResetTTL)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if commit {
+			if err := tx.Commit(); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return tok
+	}
+	first, gone := issue(true), issue(false)
+	if _, err := tokens.Redeem(ctx, gone, PurposePasswordReset); !errors.Is(err, ErrTokenInvalid) {
+		t.Fatalf("a link that was never kept: %v", err)
+	}
+	second, third := issue(true), issue(true)
+	tx, err := pool.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirm, err := tokens.IssueTx(ctx, tx, u.ID, PurposeVerifyEmail, VerifyEmailTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := tokens.Redeem(ctx, second, PurposePasswordReset); err != nil || id != u.ID {
+		t.Fatalf("%s %v", id, err)
+	}
+	for _, tok := range []string{first, second, third} {
+		if _, err := tokens.Redeem(ctx, tok, PurposePasswordReset); !errors.Is(err, ErrTokenInvalid) {
+			t.Errorf("a link outlived the one that was used: %v", err)
+		}
+	}
+	// two links of an account used at once, again and again: one wins, the other is told it is used
+	// (never a deadlock)
+	for range 40 {
+		pair := []string{issue(true), issue(true)}
+		errs := make(chan error, 2)
+		for _, tok := range pair {
+			go func() {
+				_, err := tokens.Redeem(ctx, tok, PurposePasswordReset)
+				errs <- err
+			}()
+		}
+		a, b := <-errs, <-errs
+		if (a == nil) == (b == nil) || !errors.Is(errors.Join(a, b), ErrTokenInvalid) {
+			t.Fatalf("%v, %v", a, b)
+		}
+	}
+	// and End ends them without one being used
+	left := issue(true)
+	if err := tokens.End(ctx, u.ID, PurposePasswordReset); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tokens.Redeem(ctx, left, PurposePasswordReset); !errors.Is(err, ErrTokenInvalid) {
+		t.Errorf("a link that was ended: %v", err)
+	}
+	if _, err := tokens.Redeem(ctx, confirm, PurposeVerifyEmail); err != nil {
+		t.Errorf("another purpose's link: %v", err)
+	}
+}

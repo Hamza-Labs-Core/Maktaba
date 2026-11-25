@@ -6,12 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	netmail "net/mail"
 	"net/netip"
 	"net/url"
 	"os"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/billing"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 )
 
 // Role identifies which set of features this process is providing.
@@ -44,8 +46,13 @@ func Validate(c Config, role Role) error {
 		if c.Server.ListenAddr == "" {
 			return fmt.Errorf("%w: [server].listen_addr", ErrMissing)
 		}
-		if c.Mail.Driver != "log" {
-			return fmt.Errorf("config: [mail].driver %q: the only driver is \"log\"", c.Mail.Driver)
+		if err := validateMail(c); err != nil {
+			return err
+		}
+		if c.Mail.Delivers() {
+			if _, err := c.Mail.ResendKey(); err != nil {
+				return err
+			}
 		}
 		if err := validateBilling(c.Billing); err != nil {
 			return err
@@ -87,7 +94,17 @@ func Validate(c Config, role Role) error {
 			return err
 		}
 	case RoleWorker:
-		// Worker uses control port only; no public listener required.
+		// Worker uses control port only; no public listener required. Its notices go in the mail
+		// outbox, which the api role sends: it needs no key of the provider's, but the token
+		// secret the outbox is sealed with.
+		if c.Mail.Delivers() {
+			if err := validateMail(c); err != nil {
+				return err
+			}
+			if len(c.Auth.TokenSecret) < 32 {
+				return fmt.Errorf("%w: mail.driver %q needs MAKTABA_CLOUD_TOKEN_SECRET (the mail outbox)", ErrMissing, c.Mail.Driver)
+			}
+		}
 	case RoleDNS:
 		if len(c.Direct.Domains) == 0 {
 			return fmt.Errorf("%w: [direct].domains (the dns role answers them)", ErrMissing)
@@ -99,6 +116,46 @@ func Validate(c Config, role Role) error {
 		}
 	default:
 		return fmt.Errorf("config: unknown role %q", role)
+	}
+	return nil
+}
+
+// validateMail checks [mail]: a driver there is, and for one that delivers, who the mail is
+// from, a web app for its links, and limits (the provider's plan is never spent unbounded).
+func validateMail(c Config) error {
+	m := c.Mail
+	switch m.Driver {
+	case MailLog:
+		return nil
+	case MailResend:
+	default:
+		return fmt.Errorf("config: [mail].driver %q: it is %q or %q", m.Driver, MailLog, MailResend)
+	}
+	if m.From == "" {
+		return fmt.Errorf("%w: [mail].from", ErrMissing)
+	}
+	if _, err := netmail.ParseAddress(m.From); err != nil {
+		return fmt.Errorf("config: [mail].from %q is not an address", m.From)
+	}
+	if m.ReplyTo != "" {
+		if _, err := netmail.ParseAddress(m.ReplyTo); err != nil {
+			return fmt.Errorf("config: [mail].reply_to %q is not an address", m.ReplyTo)
+		}
+	}
+	for _, e := range m.AllowRecipients {
+		if err := mail.ParseAllow(e); err != nil {
+			return fmt.Errorf("config: [mail].allow_recipients: %w", err)
+		}
+	}
+	// a staging deployment never writes to strangers
+	if c.Server.Staging() && len(m.AllowRecipients) == 0 {
+		return fmt.Errorf("%w: [mail].allow_recipients (server.env is staging)", ErrMissing)
+	}
+	if u, err := url.Parse(c.Server.WebURL); err != nil || u.Scheme != "https" || u.Host == "" {
+		return fmt.Errorf("config: [mail].driver %q needs server.web_url, the https address of the web app its links open (it is %q)", m.Driver, c.Server.WebURL)
+	}
+	if m.DailyLimit <= 0 || m.MonthlyLimit <= 0 {
+		return fmt.Errorf("config: [mail].daily_limit and monthly_limit are above 0")
 	}
 	return nil
 }

@@ -2,8 +2,8 @@
 # Story 58.05 T04, run by _android-tv.yml's firetv-emulator job inside the Android TV emulator
 # (from apps/tv/android): keeps logcat for the whole run, takes Google Play services off the image
 # for this run (Fire OS has none), then runs the Fire TV build's journey test, the guest's
-# (story 50.27 T06: Watch a broadcast with a short code, played by the app's player) and
-# Search's with the remote (story 49.11).
+# (story 50.27 T06: Watch a broadcast with a short code, played by the app's player),
+# Search's with the remote (story 49.11) and AI mode's refusals.
 set -euo pipefail
 
 out=app/build/emulator
@@ -49,3 +49,5 @@ journey com.hamzalabs.maktaba.tv.FireTvJourneyTest
 journey com.hamzalabs.maktaba.tv.TvGuestJourneyTest
 # story 49.11: Search with the remote (the order, Filters and a library's chip by the D-pad)
 journey com.hamzalabs.maktaba.tv.TvSearchJourneyTest
+# AI mode refused: the home's reason, when its body comes after its headers (#1741)
+journey com.hamzalabs.maktaba.tv.AiRefusalTest

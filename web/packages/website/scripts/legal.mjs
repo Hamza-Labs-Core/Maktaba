@@ -222,6 +222,8 @@ export const POLICY_FIELDS = [
   "purpose",
   "data_categories",
   "not_collected",
+  "account_data",
+  "processors",
   "lawful_basis",
   "retention_days",
   "rights",

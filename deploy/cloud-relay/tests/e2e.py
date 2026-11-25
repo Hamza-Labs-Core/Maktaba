@@ -235,13 +235,26 @@ def check_tls() -> str:
                      for h in (RELAY, API_HOST, APP_HOST))
 
 
-def check_health() -> str:
+def mail_status(ready: Any, full: bool) -> str:
+    """How the node's mails go (the api's /readyz; a release from before it says nothing). A node the
+    whole test runs on (QA) that really sends must be kept to its own recipients."""
+    m = (ready or {}).get("mail")
+    if not m:
+        return "mail not stated"
+    if full and m.get("delivers") and m.get("recipients") != "listed":
+        raise AssertionError(f"QA could mail a stranger: {m}")
+    return f"mail {m.get('driver')} ({'sent' if m.get('delivers') else 'not delivered'}, recipients {m.get('recipients')})"
+
+
+def check_health(full: bool) -> str:
     out = []
     for base in (f"https://{RELAY}", API):
         for path in ("/healthz", "/readyz"):
             s, b = http("GET", base + path)
             need(s, b, (200,), f"{base}{path}")
             out.append(f"{base.split('//')[1]}{path} 200")
+            if base == API and path == "/readyz":
+                out.append(mail_status(b, full))
     s, b = http("GET", f"https://{APP_HOST}/", raw=True)
     need(s, b, (200,), "the cloud web app")
     if b"<html" not in b.lower() and b"<!doctype" not in b.lower():
@@ -780,7 +793,7 @@ def main() -> int:
     threading.Thread(target=keep_renewing, args=(done,), daemon=True).start()
     try:
         check("tls", check_tls)
-        check("health", check_health)
+        check("health", lambda: check_health(mode == "full"))
         check("firewall", check_firewall)
         check("backup", check_backup)
         a = check("account", lambda: check_account(acct))

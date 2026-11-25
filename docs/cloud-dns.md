@@ -81,6 +81,13 @@ Tunnel with the pair.
   and B (`--role=dns`, UDP/TCP 53), as `1-2-3-4.<home-id>.<direct-domain>` → `1.2.3.4`. The list
   is configuration (`direct.domains`, story 50.15 §4).
 
+## Mail records
+
+Receiving for maktaba.tv is at Proton (its MX, SPF, DKIM and DMARC). Sending the account mails is at
+Resend, under names of its own that conflict with none of those: `resend._domainkey` (TXT), `send`
+(MX and TXT) and `rsend` (CNAME), all DNS only ([`cloud-mail.md`](cloud-mail.md)). No deploy writes
+or changes a mail record.
+
 ## CAA records
 
 On `maktaba.tv`, so only our two certificate authorities can issue (50.02):
