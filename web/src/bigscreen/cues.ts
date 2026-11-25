@@ -16,13 +16,22 @@ type CueLike = Pick<VTTCue, "text" | "vertical" | "size" | "snapToLines"> & {
   region?: unknown;
 };
 
+/** How many letters of `line` show: what is inside <...> is the cue's markup (a voice, a colour). */
+function shown(line: string): number {
+  let n = 0;
+  let markup = false;
+  for (const c of line) {
+    if (c === "<") markup = true;
+    else if (c === ">") markup = false;
+    else if (!markup) n++;
+  }
+  return n;
+}
+
 /** How many lines `text` takes in a picture `aspect` wide for its height, at `scale`. */
 export function cueLines(text: string, aspect: number, scale: number): number {
   const letters = Math.max(1, Math.floor(aspect / (CUE_EM * LETTER_EM * scale)));
-  return text
-    .replace(/<[^>]*>/g, "")
-    .split("\n")
-    .reduce((n, line) => n + Math.max(1, Math.ceil([...line].length / letters)), 0);
+  return text.split("\n").reduce((n, line) => n + Math.max(1, Math.ceil(shown(line) / letters)), 0);
 }
 
 /** The cue one line up, when the author left its place to the player; whether it was moved. */
