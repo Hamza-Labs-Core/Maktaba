@@ -17,7 +17,7 @@ prs: [1670]
 - **psql's `--single-transaction` is about psql's errors, not its caller's death.** End of input is a commit.
 - **PostgreSQL 18's `pg_restore` exits 0 on a table file cut short.** Its rows' `\.` line is in the dump's file, so psql then reads the following SQL as rows, the COMMIT too.
 - **A guard written as SQL does not work:** psql 16.15 stays in COPY mode when the statement after it is empty or a syntax error. Reading the script in Go does.
-- **`pg_restore --section=data` alone gives grants before the chunked rows;** pre-data and data have to be one run for the grants to come after.
+- **A run of `pg_restore --section=pre-data` alone ends with the tables' grants,** before any row is in. Pre-data and data have to be one run for the grants to come after the rows.
 - **A dump with no `counts.json` exists in the field** (v0.3.37 to v0.3.42). Every check has to hold without it; the chunks' own trailers do.
 - **`exec.Cmd.Wait` waits for the pipe, not the process,** when a wrapper script's child keeps it. `WaitDelay` bounds that, in product code and in tests.
 - **A test that swallows as much as it adds proves nothing:** the COPY inside a function's text was read as one table more and then ate the real one's end. Adding a `\.` to the text makes it fail without the guard.
