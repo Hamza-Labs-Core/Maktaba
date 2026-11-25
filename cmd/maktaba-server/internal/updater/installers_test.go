@@ -163,6 +163,16 @@ func TestLayoutInstaller(t *testing.T) {
 	if cur, _ := l.Current(); cur != "1.5.0" || p == nil || p.Record != record || p.Deadline.Before(time.Now().Add(20*time.Minute)) {
 		t.Fatalf("after the switch: current %q pending %+v", cur, p)
 	}
+	// the running time the release being judged has is set here, by the release that switches
+	// (research P5): beyond the watch's own bound, and past a day for a large library
+	if got := time.Duration(p.MaxRunSec) * time.Second; got <= pendingCap(j)+j.Job.WatchBound() || got > layout.MaxGuardRun {
+		t.Fatalf("%s to confirm", got)
+	}
+	long := *j
+	long.Rehearsal = &Rehearsal{DBBytes: 100 << 30}
+	if got := guardRun(&long); got <= layout.MaxGuardRun || layout.GuardBudget(int64(got/time.Second), false) != got {
+		t.Fatalf("a 100 GiB library: %s to confirm", got)
+	}
 	if err := li.Revert(ctx, j); err != nil {
 		t.Fatal(err)
 	}
@@ -251,6 +261,9 @@ func TestRuntimeInstallerPointsAndReverts(t *testing.T) {
 		t.Fatal(err)
 	}
 	g, _ := layout.ReadGuard(lroot)
+	if g == nil || g.MaxRunSec != int64(guardRun(j)/time.Second) {
+		t.Fatalf("the runtime's guard %+v", g)
+	}
 	if cur, _ := rt.Current(); cur != filepath.Base(second.Dir) || g == nil || g.PreviousRuntime != filepath.Base(first.Dir) {
 		t.Fatalf("after the switch: current %q guard %+v", cur, g)
 	}
@@ -312,7 +325,8 @@ func TestAppInstaller(t *testing.T) {
 	if err := ai.Switch(ctx, j); err != nil {
 		t.Fatal(err)
 	}
-	if g, _ := layout.ReadGuard(lroot); g == nil || g.PreviousPayload != j.FromRef || g.Record != "/state/database.json" {
+	if g, _ := layout.ReadGuard(lroot); g == nil || g.PreviousPayload != j.FromRef || g.Record != "/state/database.json" ||
+		g.MaxRunSec != int64(guardRun(j)/time.Second) {
 		t.Fatalf("guard %+v", g)
 	}
 	err := ai.Restart(ctx, j, nil)

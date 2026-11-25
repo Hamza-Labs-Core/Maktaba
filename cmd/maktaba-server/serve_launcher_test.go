@@ -246,3 +246,64 @@ func TestHealthyForIgnoresAnOnDemandProcessNotAskedFor(t *testing.T) {
 		t.Fatal("a runner asked for and still starting counted as healthy")
 	}
 }
+
+// Research P4: `maktaba-server update` on a layout install switched with the run id "cli",
+// which no update run watches and confirmPending never confirmed, so the launcher went
+// back after 15 minutes. Such a switch confirms itself once healthy, as a switch by hand
+// does; an update run's switch is its watch's to confirm.
+func TestACommandLineSwitchConfirmsItself(t *testing.T) {
+	for _, c := range []struct {
+		run  string
+		want bool
+	}{{"", true}, {cliRunID, true}, {"0d6c1f0e-run", false}} {
+		if got := confirmsItself(&layout.Pending{Version: "1.5.0", RunID: c.run}); got != c.want {
+			t.Errorf("run id %q: confirms itself %v, want %v", c.run, got, c.want)
+		}
+	}
+	if confirmsItself(nil) {
+		t.Error("no marker confirms itself")
+	}
+}
+
+// Confirming a release raises the watermark before the pending marker goes: one that cannot
+// be written leaves the marker, so the release is confirmed again (and the watermark never
+// stays behind).
+func TestConfirmReleaseRaisesTheWatermarkFirst(t *testing.T) {
+	root := t.TempDir()
+	l := layout.New(root)
+	pend := func() {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, layout.PendingFile), []byte(`{"version":"1.5.0","previous":"1.4.0"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pend()
+	// the watermark's place is taken by a folder: it cannot be written
+	blocked := filepath.Join(root, layout.WatermarkFile)
+	if err := os.MkdirAll(filepath.Join(blocked, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := confirmRelease(l, "1.5.0"); err == nil {
+		t.Fatal("confirmed with no watermark")
+	}
+	if p, _ := l.ReadPending(); p == nil || p.Version != "1.5.0" {
+		t.Fatalf("the marker went before the watermark: %+v", p)
+	}
+	if err := os.RemoveAll(blocked); err != nil {
+		t.Fatal(err)
+	}
+	if err := confirmRelease(l, "1.5.0"); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := l.ReadPending(); p != nil || l.Watermark() != "1.5.0" {
+		t.Fatalf("pending %+v watermark %q", p, l.Watermark())
+	}
+	// a stop between the watermark and the marker: confirmed again at the next start
+	pend()
+	if err := confirmRelease(l, "1.5.0"); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := l.ReadPending(); p != nil {
+		t.Fatalf("pending %+v", p)
+	}
+}

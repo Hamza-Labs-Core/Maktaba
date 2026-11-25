@@ -253,6 +253,17 @@ describe("help links from the app", () => {
     expect([...SYSTEM_HEALTH_KINDS].sort()).toEqual([...api].sort());
   });
 
+  // research P10: an update that stopped waiting for a desktop app that never took it
+  it("an app that never answers is said, with what to do, and explained", () => {
+    const enWords = en as Record<string, string>;
+    const arWords = ar as Record<string, string>;
+    expect(UPDATE_CODE_HELP.get("app_no_answer")).toBe("code-desktop-app");
+    expect(enWords["updates.code.app_no_answer"]).toMatch(/not running on this machine/);
+    expect(enWords["updates.fix.app_no_answer"]).toMatch(/open Maktaba/);
+    expect(arWords["updates.code.app_no_answer"]?.trim()).toBeTruthy();
+    expect(arWords["updates.fix.app_no_answer"]?.trim()).toBeTruthy();
+  });
+
   // a failed update is undone by its Down scripts; when they cannot take it back, nothing is
   // put back by itself: the update stops and asks. The Updates page says why and the choices,
   // in both languages, and links the database entry (the restore codes stay for a release

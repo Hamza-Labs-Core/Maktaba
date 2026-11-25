@@ -4631,6 +4631,24 @@ when the two differ.
   stopped. The Updates page says when an update waits for a machine's copy, in English and
   Arabic.
 
+- **`maktaba-server update` on a self-managed or package install is no longer undone after 15
+  minutes.** Its switch was never confirmed, so the launcher went back to the previous release
+  once the new one had run for a quarter of an hour. The new release now confirms itself once it
+  has run healthy, as it does after a switch by hand, including a switch made by an older
+  `maktaba-server update`.
+
+- **A release that hangs while it starts after an update is now timed out.** Its own update watch
+  pushed the launcher's deadline on every minute, without limit. The release that switches now
+  says how long the new one may run before it confirms, and the launcher counts that time itself.
+  A machine switched off or asleep, or a clock set forward, is no time it had: a good update is
+  not taken back after a long power cut.
+
+- **An update no longer waits forever for a desktop app that is not running.** When the Mac or
+  Windows app never takes the update, the update stops waiting at the end of its window (or after
+  three hours) and says so on the Updates page, in English and Arabic: open Maktaba on that machine,
+  then update again. A failed start of the app is now written in the update's log. The Linux app
+  has nothing to download for its update, so the update goes on without it after 10 minutes.
+
 ## [0.2.0] - 2026-10-19
 
 Closes the stub audit: features that were half built, settings that were

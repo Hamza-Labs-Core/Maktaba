@@ -93,6 +93,7 @@ public enum StatusWords {
         "app_management": "macOS does not let Maktaba replace itself: it needs App Management permission, or the app's files are locked",
         "app_not_started": "The desktop app could not be started",
         "app_order_gone": "The desktop app's install order was withdrawn or replaced",
+        "app_no_answer": "The desktop app did not take the update in time: it is not running on this machine, could not be started, or did not finish its download",
         "app_request_failed": "The desktop app could not be reached",
         "apply_failed": "It could not be installed; the previous release runs",
         "apply_refused": "The machine refused to install it",

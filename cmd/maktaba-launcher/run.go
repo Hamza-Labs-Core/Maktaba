@@ -65,6 +65,9 @@ type Config struct {
 	// on this machine only).
 	PageAddr string
 	Now      func() time.Time
+	// Tick is the time since some start, which no change of the clock moves (nil: the
+	// process's monotonic clock).
+	Tick func() time.Duration
 	// Sleep waits d, or until ctx ends (false): the backoff between starts (nil: a timer;
 	// the tests record what the launcher asks for instead of timing it)
 	Sleep func(ctx context.Context, d time.Duration) bool
@@ -104,6 +107,10 @@ func (c *Config) defaults() {
 	if c.Now == nil {
 		c.Now = time.Now
 	}
+	if c.Tick == nil {
+		start := time.Now()
+		c.Tick = func() time.Duration { return time.Since(start) }
+	}
 }
 
 // launcher is one Run.
@@ -117,6 +124,8 @@ type launcher struct {
 	guardVersion string
 	firstStart   time.Time
 	failures     []time.Time
+	// clock is the guard's time (guardclock.go)
+	clock guardClock
 	// oldSelf: the launcher a replacement left (maktaba-launcher.old) is kept until this
 	// one's first good start (story 35.7 AC6), then removed
 	oldSelf bool
@@ -301,25 +310,6 @@ func (ln *launcher) isPending(ver string) bool {
 	return err == nil && p != nil && p.Version == ver
 }
 
-// deadline is when a pending release that has not confirmed is given up: the
-// update orchestrator's deadline when it set one (its database step and watch take
-// their time), else the first start plus PendingTimeout.
-func (ln *launcher) deadline(ver string) time.Time {
-	d := ln.firstStart.Add(ln.cfg.PendingTimeout)
-	var set time.Time
-	if ln.cfg.Bundle != "" {
-		if g := ln.bundleGuard(); g != nil {
-			set = g.Deadline
-		}
-	} else if p, err := ln.l.ReadPending(); err == nil && p != nil && p.Version == ver {
-		set = p.Deadline
-	}
-	if !set.IsZero() && set.After(d) {
-		return set
-	}
-	return d
-}
-
 // rollback is the boot-loop guard firing: current = previous, pending
 // removed, launcher_rollback logged (design §2.2 step 5). false when there
 // is no previous to go back to (EC1: keep retrying, log no_previous). When the
@@ -335,12 +325,14 @@ func (ln *launcher) rollback(ver, reason string) bool {
 	ln.failures = nil
 	ln.guardVersion = ""
 	if err != nil {
+		ln.startGuardAgain()
 		ln.log.Event("no_previous", ver, map[string]any{"reason": reason, "err": err.Error()})
 		return false
 	}
 	if p != nil && p.Version == ver {
 		ln.markRecord(ver, p.Record, reason)
 	}
+	ln.forgetGuard()
 	ln.log.Event("launcher_rollback", ver, map[string]any{"reason": reason, "to": to})
 	return true
 }
@@ -458,30 +450,33 @@ func (ln *launcher) bundleRollback(reason string) bool {
 	if g == nil {
 		return false
 	}
+	// nothing to go back to: the release stays
+	stays := func(detail map[string]any) bool {
+		ln.startGuardAgain()
+		ln.log.Event("no_previous", g.Version, detail)
+		return false
+	}
 	to := ""
 	switch {
 	case ln.cfg.RuntimeRoot != "" && g.PreviousRuntime != "":
 		if err := setRuntimeCurrent(ln.cfg.RuntimeRoot, g.PreviousRuntime); err != nil {
-			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
-			return false
+			return stays(map[string]any{"reason": reason, "err": err.Error()})
 		}
 		to = g.PreviousRuntime
 	case ln.cfg.RuntimeRoot == "" && g.PreviousPayload != "":
 		if _, err := os.Stat(filepath.Join(g.PreviousPayload, "bin", layout.Exe("maktaba-server"))); err != nil {
-			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
-			return false
+			return stays(map[string]any{"reason": reason, "err": err.Error()})
 		}
 		if err := layout.WriteRollbackOverride(ln.cfg.Root, g.PreviousPayload, g.Version); err != nil {
-			ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason, "err": err.Error()})
-			return false
+			return stays(map[string]any{"reason": reason, "err": err.Error()})
 		}
 		to = g.PreviousPayload
 	default:
-		ln.log.Event("no_previous", g.Version, map[string]any{"reason": reason})
-		return false
+		return stays(map[string]any{"reason": reason})
 	}
 	ln.markRecord(g.Version, g.Record, reason)
 	_ = layout.ClearGuard(ln.cfg.Root)
+	ln.forgetGuard()
 	ln.log.Event("launcher_rollback", g.Version, map[string]any{"reason": reason, "to": to})
 	return true
 }
@@ -521,6 +516,7 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 	}
 	if !pending {
 		ln.guardVersion, ln.failures = "", nil
+		ln.forgetGuard()
 	}
 
 	_ = ln.l.TakeRestartRequest() // a stale request must not restart the release we start now
@@ -586,6 +582,7 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 	defer tick.Stop()
 
 	finish := func(err error, r runResult) runResult {
+		ln.saveGuardRan()
 		r.ran = ln.cfg.Now().Sub(start)
 		r.code = exitCode(cmd, err)
 		if err != nil && r.code == -1 {
@@ -611,7 +608,7 @@ func (ln *launcher) runOnce(ctx context.Context, ver string) runResult {
 				ln.oldSelf = false
 				removeOldSelf(ln.l)
 			}
-			if ln.guardVersion == ver && ln.isPending(ver) && !ln.cfg.Now().Before(ln.deadline(ver)) {
+			if ln.guardVersion == ver && ln.isPending(ver) && ln.guardLook(ver) {
 				ln.log.Event("launcher_pending_timeout", ver, map[string]any{"after_s": int(ln.cfg.Now().Sub(ln.firstStart).Seconds())})
 				r := finish(ln.stop(cmd, child, done, stopFile), runResult{timedOut: true})
 				keep = ln.survivors(cmd.Process.Pid, false, true)

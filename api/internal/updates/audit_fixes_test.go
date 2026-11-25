@@ -105,6 +105,32 @@ func TestNeedsPersonRunsOncePerWindow(t *testing.T) {
 	}
 }
 
+// The machine's desktop app never took its order, in three windows: the machine's, not the
+// release's. Nothing is counted, and it is never blocked: the next window goes once the app
+// is open again.
+func TestAnAppThatNeverAnswersNeverBlocksTheRelease(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	ctx := context.Background()
+	r.home.outcome, r.home.applyFail = MApplyFailed, "app_no_answer"
+	for night := range 4 {
+		r.f.now = time.Date(2026, 10, 22+night, 3, 10, 0, 0, r.f.loc)
+		r.minutes(t, 5)
+		if n := len(runsOf(t, r.f.store, "1.5.0", TriggerAuto)); n != night+1 {
+			t.Fatalf("night %d: %d runs, want one a window", night+1, n)
+		}
+		if rel, _ := r.f.store.Get(ctx, "1.5.0"); rel.Attempts != 0 || rel.BlockedReason != "" {
+			t.Fatalf("night %d: attempts %d blocked %q", night+1, rel.Attempts, rel.BlockedReason)
+		}
+	}
+	r.home.outcome, r.home.applyFail = MCommitted, ""
+	r.f.now = time.Date(2026, 10, 26, 3, 10, 0, 0, r.f.loc)
+	r.minutes(t, 5)
+	if runs := runsOf(t, r.f.store, "1.5.0", TriggerAuto); len(runs) != 5 || runs[0].State == RunFailed {
+		t.Fatalf("once the app answers: %d runs, %+v", len(runs), runs[0])
+	}
+}
+
 // M5 (audit): only a refused signature or identity and migrations that fail on the copy
 // block a release; a rehearsal that could not run is an attempt, an expired trust root a
 // person's; an older build is set aside quietly.
@@ -117,7 +143,7 @@ func TestFailureClasses(t *testing.T) {
 		"verify_trust_root_expired": classPerson, "no_app_update": classPerson, "local_build": classPerson,
 		"app_management": classPerson, "translocated": classPerson, "not_writable": classPerson,
 		"needs_admin": classPerson, "login_item_unsigned": classPerson, "pg_major_change": classPerson,
-		"python_store_stub": classPerson, KindOlderBuild: classOlderBuild,
+		"python_store_stub": classPerson, "app_no_answer": classPerson, KindOlderBuild: classOlderBuild,
 	} {
 		if got := failureClass(map[string]any{"code": code}); got != want {
 			t.Errorf("%s: %s, want %s", code, got, want)

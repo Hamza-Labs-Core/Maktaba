@@ -290,3 +290,48 @@ func TestMarkRecordDown(t *testing.T) {
 		t.Fatal("a restoring record changed")
 	}
 }
+
+// The guard carries the running time its release has (the launcher counts it) and that its
+// rollback is under way; only its own run pushes its deadline, and never back.
+func TestGuardBudgetAndPush(t *testing.T) {
+	root, now := t.TempDir(), time.Now().UTC()
+	if err := WriteGuard(root, Guard{Version: "2.0.0", RunID: "run-1", Since: now, Deadline: now.Add(time.Hour), MaxRunSec: 3600}); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := ExtendGuard(root, "run-1", now.Add(50*time.Hour)); !ok || err != nil {
+		t.Fatalf("push: %v %v", ok, err)
+	}
+	if ok, _ := ExtendGuard(root, "run-1", now.Add(2*time.Hour)); ok {
+		t.Fatal("pushed back")
+	}
+	if ok, _ := ExtendGuard(root, "run-2", now.Add(60*time.Hour)); ok {
+		t.Fatal("another run pushed it")
+	}
+	if err := GuardRollingBack(root, "run-2"); err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := ReadGuard(root); g.RollingBack || GuardBudget(g.MaxRunSec, g.RollingBack) != time.Hour {
+		t.Fatalf("guard %+v", g)
+	}
+	if err := GuardRollingBack(root, "run-1"); err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := ReadGuard(root); !g.RollingBack || GuardBudget(g.MaxRunSec, g.RollingBack) != time.Hour+RollbackRun ||
+		!g.Deadline.Equal(now.Add(50*time.Hour)) {
+		t.Fatalf("guard %+v", g)
+	}
+	l := New(t.TempDir())
+	mkRelease(t, l, "2.0.0")
+	if err := l.Switch("2.0.0", "run-1", now); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.GuardPending("2.0.0", now.Add(time.Hour), 27*time.Hour, "/r"); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.RollingBackPending("run-1"); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := l.ReadPending(); p.MaxRunSec != 27*3600 || !p.RollingBack || p.Record != "/r" {
+		t.Fatalf("pending %+v", p)
+	}
+}

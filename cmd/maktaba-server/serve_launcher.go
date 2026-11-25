@@ -144,6 +144,29 @@ func healthyFor(snap supervisor.Snapshot, d time.Duration) bool {
 	return n > 0
 }
 
+// cliRunID is the run id `maktaba-server update` gave its switch before 2026-11-24: no
+// update run's watch owns it.
+const cliRunID = "cli"
+
+// confirmsItself reports whether the release a pending marker names confirms itself
+// once healthy (confirmPending): a switch no update run watches, by hand (no run id) or
+// by `maktaba-server update` (cliRunID, from a release before 2026-11-24, whose switch
+// was otherwise never confirmed and went back after the launcher's 15 minutes).
+func confirmsItself(p *layout.Pending) bool {
+	return p != nil && (p.RunID == "" || p.RunID == cliRunID)
+}
+
+// confirmRelease confirms release ver: the watermark raised first, the pending marker removed
+// next, so a stop in between (or a watermark that cannot be written) leaves the marker for
+// the next start to confirm again. (The database's record is confirmed once nothing names
+// the release any more: confirmRecord.)
+func confirmRelease(l layout.Layout, ver string) error {
+	if err := l.RaiseWatermark(ver); err != nil {
+		return fmt.Errorf("the watermark: %w", err)
+	}
+	return l.Confirm()
+}
+
 // confirmPending removes the launcher's pending marker (and raises the
 // watermark) once this release has run healthy for confirmAfter.
 func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir string) {
@@ -161,19 +184,19 @@ func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir 
 			if err != nil || p == nil || p.Version != ver {
 				return // nothing to confirm (or another version is pending)
 			}
-			if p.RunID != "" {
+			if !confirmsItself(p) {
 				// an update run's switch: its watch confirms it (or rolls it back), not a
 				// few healthy minutes here
 				return
 			}
 			if healthyFor(sup.Snapshot(), after) {
-				if err := l.Confirm(); err != nil {
-					fmt.Fprintf(os.Stderr, "[serve] confirming release %s failed: %v\n", ver, err)
+				if err := confirmRelease(l, ver); err != nil {
+					// the marker stays: tried again
+					fmt.Fprintf(os.Stderr, "[serve] confirming release %s failed (trying again): %v\n", ver, err)
+				} else {
+					fmt.Fprintf(os.Stderr, "[serve] release %s confirmed (healthy for %s)\n", ver, after)
 					return
 				}
-				_ = l.RaiseWatermark(ver)
-				fmt.Fprintf(os.Stderr, "[serve] release %s confirmed (healthy for %s)\n", ver, after)
-				return
 			}
 			select {
 			case <-ctx.Done():

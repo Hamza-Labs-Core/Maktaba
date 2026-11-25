@@ -5551,6 +5551,23 @@
         }
       }
     },
+    "updates.code.app_no_answer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The desktop app did not take the update in time: it is not running on this machine, could not be started, or did not finish its download"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يأخذ تطبيق سطح المكتب التحديث في الوقت المحدد: فهو لا يعمل على هذا الجهاز، أو تعذّر تشغيله، أو لم يكتمل تنزيله للتحديث"
+          }
+        }
+      }
+    },
     "updates.code.app_not_started" : {
       "extractionState" : "manual",
       "localizations" : {

@@ -393,6 +393,15 @@ import Testing
         #expect(shortDuration(secs) == want)
     }
 
+    /// Research P10: an update that stopped waiting for a desktop app that never took it says
+    /// so in both languages.
+    @Test func anAppThatNeverAnswersHasWords() {
+        let en = words(StatusWords.codes, "updates.code.", "app_no_answer", Locale(identifier: "en"))
+        let ar = words(StatusWords.codes, "updates.code.", "app_no_answer", Locale(identifier: "ar"))
+        #expect(en.contains("not running on this machine"), "\(en)")
+        #expect(ar.contains("لا يعمل على هذا الجهاز"), "\(ar)")
+    }
+
     /// #1605: an update that stopped and asks says why in both languages (nothing put back).
     @Test func aHeldUpdateSaysWhy() {
         for code in ["db_down_failed", "db_held_lossy", "db_held_unknown", "db_held_unasked"] {
