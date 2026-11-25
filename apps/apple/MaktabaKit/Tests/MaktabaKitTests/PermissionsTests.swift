@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import MaktabaKit
 
@@ -78,24 +79,29 @@ import Testing
     }
 }
 
-/// A probe that counts its browses.
+/// A probe that counts its browses, and those stopped.
 final class CountingProbe: LocalNetworkProbe, @unchecked Sendable {
     var script: [BrowseSignal]
     private(set) var browses = 0
+    private(set) var stops = 0
     init(_ script: [BrowseSignal]) { self.script = script }
-    func signals() -> AsyncStream<BrowseSignal> {
+    func browse(_ report: @escaping @Sendable (BrowseSignal) -> Void) -> @Sendable () -> Void {
         browses += 1
-        return ScriptedProbe(script).signals()
+        let stop = ScriptedProbe(script).browse(report)
+        return {
+            self.stops += 1
+            stop()
+        }
     }
 }
 
-/// A probe that is slow to start, as when a busy test run holds the reader back.
+/// A probe that is slow to start, as on a busy device.
 struct SlowToStartProbe: LocalNetworkProbe {
     let script: [BrowseSignal]
     let delay: TimeInterval
-    func signals() -> AsyncStream<BrowseSignal> {
+    func browse(_ report: @escaping @Sendable (BrowseSignal) -> Void) -> @Sendable () -> Void {
         Thread.sleep(forTimeInterval: delay)
-        return ScriptedProbe(script).signals()
+        return ScriptedProbe(script).browse(report)
     }
 }
 
@@ -183,13 +189,31 @@ struct SlowToStartProbe: LocalNetworkProbe {
         #expect(m.state(of: .localNetwork) == .granted)
     }
 
-    /// The clock starts when the browse is read: a reader held back past the timeout still
-    /// hears the answer.
+    /// The clock starts when the browse has: one slower to start than the timeout is still heard.
     @Test func aSlowStartStillHearsTheAnswer() async {
         let m = PermissionsModel(defaults: freshDefaults(), probe: SlowToStartProbe(script: grantedScript, delay: 1.5), timing: quick)
         await m.refresh()
         await m.request(.localNetwork)
         #expect(m.state(of: .localNetwork) == .granted)
+    }
+
+    /// The answer is queued ahead of every tick: with no time at all it is still heard, however
+    /// long a busy device takes to read it.
+    @Test func anAnswerAlreadyThereIsHeardWithNoTimeLeft() async {
+        let none = PermissionsModel.Timing(check: LocalNetworkVerdict(timeout: .zero), request: .zero)
+        let probe = CountingProbe(grantedScript)
+        let m = PermissionsModel(defaults: freshDefaults(), probe: probe, timing: none)
+        await m.request(.localNetwork) // the first: until the request's time
+        #expect(m.state(of: .localNetwork) == .granted)
+        await m.request(.localNetwork) // asked before: a check
+        #expect(m.state(of: .localNetwork) == .granted)
+
+        #expect(probe.browses == 2 && probe.stops == 2, "each browse is stopped once")
+
+        let said = Mutex<[BrowseSignal]>([])
+        let stop = ScriptedProbe(deniedScript, staysOpen: false).browse { s in said.withLock { $0.append(s) } }
+        stop()
+        #expect(said.withLock { $0 } == deniedScript + [.ended], "reported before `browse` returns")
     }
 
     @Test func aRefusalShowsItAgainOnTheNextRun() async {
