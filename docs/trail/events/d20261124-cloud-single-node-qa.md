@@ -9,9 +9,9 @@ prs: [1627, 1628]
 ---
 
 ## What happened
-- First real deploy of the cloud: one node each for QA and production, both fresh
-  Ubuntu 26.04, deployed by a new workflow, `cloud-deploy.yml` (#1628).
-  Before merge it ran from scratch branches (`scratch/cloud-deploy-*`, a push trigger added there
+- First real deploy of the cloud, to QA. There is one node for QA and one for production, both fresh
+  Ubuntu 26.04; production's has nothing deployed yet. The deploy is a new workflow,
+  `cloud-deploy.yml` (#1628). Before merge it ran from scratch branches (`scratch/cloud-deploy-*`, a push trigger added there
   only), because a workflow_dispatch needs the file on main.
 - **The shared Cloudflare token could not read or write DNS.** The owner made a DNS-only token
   (`CLOUDFLARE_DNS_TOKEN`) through the decisions inbox (`cloud-dns-token`). The deploy then wrote
@@ -30,8 +30,8 @@ prs: [1627, 1628]
     `ip_range` in the upper half. Changing a compose network's IPAM needs a one-off
     `compose down`, done once on QA.
 - **A claimed home started on Free whatever its owner's plan was** (`RedeemClaim` used the column
-  default), so the relay answered 402 `relay_needs_plan`. Fixed in #1627. Until it ships, the
-  operator tool sets the plan again after a claim.
+  default), so the relay answered 402 `relay_needs_plan`. Fixed in #1627. On a release
+  without it the operator tool sets the plan again after a claim.
 - **The cloud cannot confirm a sign-up.** The only mail driver writes to the log, and the shared
   logger redacts both the address and `?token=`, so the link reaches nobody. The operator tool
   confirms an account by hand, audited as `cli`. Decision `email-setup` is open (it replaced
@@ -39,8 +39,7 @@ prs: [1627, 1628]
 - **A released home trusts only licences signed with the key its release embeds**
   (`MAKTABA_LICENSE_PUBKEY`). Each new node generated its own key. Without a licence it trusts,
   the home turns off relayed access (403) and its link reporter, so the cloud never sees the
-  link. The private half is in the operator's Keychain. Decision `cloud-license-key` is open; the
-  deploy installs the key from `MAKTABA_LICENSE_SIGNING_KEY` once the secret exists.
+  link. Decision `cloud-license-key` is open; the deploy installs the key from `MAKTABA_LICENSE_SIGNING_KEY` once the secret exists.
 - **Everything behind that blocker was then rehearsed on QA with a stand-in home**: the release's
   `maktaba-server` image with its embedded public key replaced, byte for byte, by QA's own (a PEM
   of the same length), and `files.sha256` and `payload.json` updated to match. From a scratch
@@ -64,7 +63,8 @@ prs: [1627, 1628]
 - A remote script fed on stdin needs an end marker. Exit 0 proves nothing when a command can
   swallow stdin.
 - A deploy path that CI never ran end to end is not a deploy path. The QA e2e found every one of
-  these bugs within minutes; the cloud rehearsal never runs `deploy/cloud-relay`'s files.
+  these bugs within minutes; the cloud rehearsal did not run `deploy/cloud-relay`'s files then (since
+  #1628 its `single-node` jobs do).
 - `gh run watch` behind macOS's missing `timeout` returns at once: poll `gh run view` in a loop
   with a deadline instead.
 - `docker compose run` of a service with a fixed `ipv4_address` fails with "Address already in

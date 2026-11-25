@@ -38,7 +38,7 @@ prs: [1628]
   `deploy/cloud-relay`.
 
 ## What we learned
-- A rollback that has never run is not one. The rehearsal costs 20 minutes of CI and found what the
+- A rollback that has never run is not one. The rehearsal found what the
   code's author and its reviewer both missed.
 - Save what is there before the first script that writes, not before the first that deploys.
 

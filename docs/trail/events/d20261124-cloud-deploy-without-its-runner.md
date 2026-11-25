@@ -22,7 +22,8 @@ prs: [1628]
   - **Six guarantees taken out of the scripts at once, and the rehearsal still passed:** no backup, no
     lock, the saved set removed in place, a web app switched in two steps, no settled mark, a broken
     retention. Each now has a case that fails
-    without it, and a nightly job takes 14 guarantees out one at a time and requires that.
+    without it, and a nightly job takes guarantees out one at a time (14 then, 25 when #1628 merged) and
+    requires that.
 - The new cases found more before the third review: `docker stop` can miss a container that is
   restarting at that moment; a client killed by a signal ends at 137, not ssh's 255, so a follower that
   retries on 255 alone gives up; `pkill -f` in a shell kills its own shell.
@@ -38,4 +39,4 @@ prs: [1628]
 - Give a reviewer the head and let it break the thing on a throwaway stack: reading found none of these.
 
 ## Open
-- The third review of #1628.
+- Nothing of its own; what the next review found is in `d20261125-cloud-first-deploy-stays-down`.
