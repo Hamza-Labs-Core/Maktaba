@@ -65,6 +65,10 @@ jobs:
       - name: A simulator's settle check reads its own processes
         run: python3 tools/apple/sim-settle.py --self-test
 
+      # how a UI shard turns its simulator's own services off, and sees them go
+      - name: A simulator's services are asked for until they are gone
+        run: python3 tools/apple/sim-services.py --self-test
+
       # how a UI job keeps its simulator's logs and the app's crash reports
       - name: A simulator's logs and the app's crash reports are kept
         run: python3 tools/apple/sim-log.py --self-test
@@ -292,19 +296,8 @@ jobs:
           #   identity here. Each try writes some 80 log lines. It and diagnosticd, which reads
           #   them, held up to more than one of the three cores (136 % of one at the most), and
           #   kept 3 of 8 simulators from ever settling below.
-          # each call into the simulator has a time limit (macOS has no `timeout`): one that
-          # never answers is a warning here, not the job's hour
-          limit() { perl -e 'alarm shift; exec @ARGV or exit 127' "$@"; }
-          for service in com.apple.PosterBoard com.apple.apsd; do
-            limit 30 xcrun simctl spawn "$udid" launchctl disable "user/foreground/$service" || true
-            limit 30 xcrun simctl spawn "$udid" launchctl bootout "user/foreground/$service" || true
-            running=$(limit 30 xcrun simctl spawn "$udid" launchctl list || true)
-            if [ -z "$running" ]; then
-              echo "::warning::the simulator did not list its services: $service may still run, and its load can fail a test (#1678)"
-            elif grep -q "[[:space:]]$service\$" <<< "$running"; then
-              echo "::warning::$service still runs in the simulator: its load can fail a test (#1678)"
-            fi
-          done
+          # until a list shows neither, in one budget (the calls are slow just after a boot)
+          python3 tools/apple/sim-services.py "$udid" --off com.apple.PosterBoard --off com.apple.apsd
           xcrun simctl ui "$udid" appearance dark
           # the simulator keeps the app's info and debug lines too (its subsystem is its bundle
           # id; a parent's config is not inherited): by default `log show` finds its errors and
