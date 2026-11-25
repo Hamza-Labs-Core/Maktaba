@@ -1232,6 +1232,102 @@ func TestOnlyWhatTheRestoreNeedsIsKept(t *testing.T) {
 	}
 }
 
+// Another backup asked for lets go what the one before it needed; a switch that fails does not.
+func TestAnotherBackupLetsGoOfTheFirst(t *testing.T) {
+	e := newExitsRig(t)
+	e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
+	kept := func() string {
+		ps, _ := filepath.Glob(pgbundle.KeptPath(e.backups, "*"))
+		for i := range ps {
+			ps[i] = filepath.Base(ps[i])
+		}
+		return strings.Join(ps, " ")
+	}
+	if _, err := e.r.restore(context.Background(), firstBackup, "admin", true, false); err != nil || kept() != firstBackup {
+		t.Fatalf("%v, kept %s", err, kept())
+	}
+	e.fresh()
+	e.inst.runErr = errors.New("no space left on device")
+	if _, err := e.r.restore(context.Background(), otherBackup, "admin", true, false); restoreCode(err) != "restore_switch_failed" ||
+		!strings.Contains(kept(), firstBackup) || e.rec().Dump != pgbundle.KeptPath(e.backups, firstBackup) {
+		t.Fatalf("%v, kept %s, %+v", err, kept(), e.rec())
+	}
+	e.inst.runErr = nil
+	if _, err := e.r.restore(context.Background(), otherBackup, "admin", true, false); err != nil || kept() != otherBackup {
+		t.Fatalf("%v, kept %s", err, kept())
+	}
+}
+
+// The backups moved to another folder since a restore was asked: it goes on from there, and the
+// copy already set aside is the one it was.
+func TestARestoreGoesOnWhereTheBackupsMoved(t *testing.T) {
+	e := newExitsRig(t)
+	rec := e.asked()
+	old := t.TempDir()
+	const aside = "replaced-v0.3.0-x.dump"
+	rec.Dump, rec.Aside, rec.AsideBytes = pgbundle.KeptPath(old, firstBackup), filepath.Join(old, aside), 4
+	if err := os.WriteFile(filepath.Join(e.backups, aside), []byte("copy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.write(rec)
+	e.inst.running = "0.2.0"
+	roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }
+	if pl, err := e.r.plan(context.Background(), firstBackup); err != nil || pl.NoCopy != "" {
+		t.Fatalf("%+v %v", pl, err)
+	}
+	if _, err := e.r.restore(context.Background(), otherBackup, "admin", true, false); err != nil { // asked again instead
+		t.Fatal(err)
+	}
+	if got := e.rec().Aside; got != filepath.Join(e.backups, aside) {
+		t.Fatalf("its copy is in %s", got)
+	}
+	e.fresh()
+	e.write(rec)
+	if err := e.start("v0.2.0"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, n := e.f.counts(); n != 1 || len(e.f.asides) != 0 || !strings.Contains(e.log.String(), "putting "+filepath.Join(e.backups, firstBackup)+" back") {
+		t.Fatalf("put back %v, set aside %v", e.f.restores, e.f.asides)
+	}
+}
+
+// What was said when a restore without a copy was confirmed is what it covers: a backups folder
+// that cannot be looked at is no want of room.
+func TestAConfirmationCoversWhatWasSaid(t *testing.T) {
+	for want, why := range map[string]error{
+		apppayload.NoCopyRoom: &pgbundle.NoRoomError{Need: 1},
+		apppayload.NoCopyAny:  errors.New("read backups: input/output error"),
+	} {
+		e := newExitsRig(t)
+		e.inst.running = "0.2.0"
+		e.write(e.asked())
+		roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return why }
+		if _, err := e.r.restoreAs(context.Background(), firstBackup, "admin", restoreAsk{confirm: true, withoutCopy: true}); err != nil {
+			t.Fatal(err)
+		}
+		if got := e.rec().NoCopy; got != want {
+			t.Errorf("%v: %q, want %q", why, got, want)
+		}
+	}
+}
+
+// The plan says when an older release puts the backup back, whose own rules may remove others.
+func TestThePlanSaysAnOlderRelease(t *testing.T) {
+	e := newExitsRig(t)
+	for running, older := range map[string]bool{"0.3.0": true, "0.2.0": false} {
+		e.inst.running = running
+		pl, err := e.r.plan(context.Background(), firstBackup)
+		if err != nil || pl.Older != older {
+			t.Fatalf("on %s: %+v %v", running, pl, err)
+		}
+		var out strings.Builder
+		printPlan(&out, pl, false)
+		if strings.Contains(out.String(), "its own rules") != older {
+			t.Errorf("on %s:\n%s", running, out.String())
+		}
+	}
+}
+
 // A restore that is done names the backup in its folder: where it was kept is gone by then.
 func TestADoneRestoreNamesTheBackupInItsFolder(t *testing.T) {
 	e := newExitsRig(t)

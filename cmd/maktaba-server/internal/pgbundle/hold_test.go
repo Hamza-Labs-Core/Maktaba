@@ -343,3 +343,53 @@ func TestDeletedWhileKept(t *testing.T) {
 		}
 	}
 }
+
+// Another backup asked for: what the one before it needed is let go, back in its folder where an
+// older release removed it, and only that.
+func TestKeepOnly(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"pre-v1-to-v2.dump", "pre-v2-to-v3.dump", "replaced-v3-x.dump"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte(n), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := KeepOnly(dir, "pre-v1-to-v2.dump"); err != nil { // nothing is kept
+		t.Fatal(err)
+	}
+	if err := KeepForRestore(dir, "pre-v1-to-v2.dump", "pre-v2-to-v3.dump", "replaced-v3-x.dump"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(dir, "pre-v1-to-v2.dump")); err != nil {
+		t.Fatal(err)
+	}
+	if err := KeepOnly(dir, "pre-v2-to-v3.dump", "replaced-v3-x.dump"); err != nil {
+		t.Fatal(err)
+	}
+	kept, _ := filepath.Glob(KeptPath(dir, "*"))
+	if len(kept) != 2 || filepath.Base(kept[0]) != "pre-v2-to-v3.dump" || filepath.Base(kept[1]) != "replaced-v3-x.dump" {
+		t.Errorf("kept %v", kept)
+	}
+	if b, err := os.ReadFile(filepath.Join(dir, "pre-v1-to-v2.dump")); err != nil || string(b) != "pre-v1-to-v2.dump" {
+		t.Errorf("not back: %v", err)
+	}
+}
+
+func TestMovedDump(t *testing.T) {
+	from, to := t.TempDir(), t.TempDir()
+	for _, p := range []string{filepath.Join(from, "pre-v1-to-v2.dump"), filepath.Join(to, "pre-v1-to-v2.dump"), filepath.Join(to, "pre-v2-to-v3.dump")} {
+		if err := os.WriteFile(p, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, want := range map[string]string{
+		"":                                       "",
+		filepath.Join(from, "pre-v1-to-v2.dump"): filepath.Join(from, "pre-v1-to-v2.dump"), // where it was
+		filepath.Join(from, "pre-v2-to-v3.dump"): filepath.Join(to, "pre-v2-to-v3.dump"),
+		KeptPath(from, "pre-v2-to-v3.dump"):      filepath.Join(to, "pre-v2-to-v3.dump"),
+		filepath.Join(from, "pre-v3-to-v4.dump"): filepath.Join(from, "pre-v3-to-v4.dump"), // nowhere
+	} {
+		if got := MovedDump(to, path); got != want {
+			t.Errorf("%s: %s, want %s", path, got, want)
+		}
+	}
+}

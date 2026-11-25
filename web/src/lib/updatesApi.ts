@@ -394,6 +394,8 @@ export interface RestorePlan {
   release: string;
   running: string;
   at: string;
+  /** `release` is older than the one running: its own rules may remove other backups */
+  older?: boolean;
   /** why no copy of the library as it is now can be kept (absent: it can): it is then
    * restored only with `without_copy`; the bytes free for one, and needed */
   no_copy?: string;

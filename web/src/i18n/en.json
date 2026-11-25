@@ -3724,6 +3724,7 @@
   "updates.backups.restoring": "A restore of {name} is under way: the home's next start finishes it.",
   "updates.backups.confirmTitle": "Restore this backup?",
   "updates.backups.confirmBody": "Maktaba restarts on {release} (it runs {running} now) and puts the library database back as it was on {at}. Every change made since then is lost. The library as it is now is kept aside first; older backups may be removed to make room for it, never this one, nor the newest of each kind.",
+  "updates.backups.confirmBodyOlder": "Maktaba restarts on {release} (it runs {running} now) and puts the library database back as it was on {at}. Every change made since then is lost. That version is older: it keeps the library as it is now aside first, by its own rules, and may remove other backups (over their share of the disk, their number or their age). Copy elsewhere any that must stay.",
   "updates.backups.confirmBodyNoCopy": "Maktaba restarts on {release} (it runs {running} now) and puts the library database back as it was on {at}. Every change made since then is lost.",
   "updates.backups.noCopy": "There is no room to keep a copy of the library as it is now: {free} free, {need} needed. Free some space on the backups' disk, or delete backups you no longer need, and open this again. Or restore without a copy: the library as it is now is then lost for good.",
   "updates.backups.noCopyAgree": "Restore without keeping a copy of the library as it is now",

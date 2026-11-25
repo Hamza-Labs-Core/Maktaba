@@ -112,6 +112,24 @@ describe("UpdatesBackups", () => {
     ).toBeInTheDocument();
   });
 
+  it("says that an older version's own rules hold", async () => {
+    get.mockImplementation((path: string) =>
+      Promise.resolve(path === "/api/cluster/updates/backups" ? list : { ...plan, older: true })
+    );
+    for (const [lang, words, says] of [
+      ["en", en, "may remove other backups"],
+      ["ar", ar, "قد يحذف نسخًا احتياطية أخرى"],
+    ] as const) {
+      const { unmount } = renderIt(lang);
+      const row = await screen.findByTestId(`updates-backup-${NAME}`);
+      await userEvent
+        .setup()
+        .click(within(row).getByRole("button", { name: words["updates.backups.restore"] }));
+      expect(await screen.findByTestId("updates-backups-plan")).toHaveTextContent(says);
+      unmount();
+    }
+  });
+
   it("asks to go on without a copy when there is no room for one", async () => {
     get.mockImplementation((path: string) =>
       Promise.resolve(

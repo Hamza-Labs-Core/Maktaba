@@ -1295,3 +1295,227 @@ func TestRestoreGivesTheGrantsAfterTheRows(t *testing.T) {
 		t.Fatalf("%v\n%s", err, log.String())
 	}
 }
+
+// Only public is made afresh: an extension in a schema of its own, made by the superuser
+// (pg_textsearch on an operator's own PostgreSQL 18), is there still, and the dump's items that
+// make it again, with its schema, grants and comments, are left out. Every role has the use of
+// public a new database gives it. With psql and without, for a role that could make none of it.
+func TestRestoreLeavesWhatIsOutsidePublic(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	u, err := r.b.URL() // the app role, which owns its database and is no superuser
+	if err != nil {
+		t.Fatal(err)
+	}
+	must := func(d *sql.DB, q string) {
+		t.Helper()
+		if _, err := d.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(r.db, `CREATE DATABASE outside_check OWNER `+pgbundle.AppRole+` TEMPLATE template0`)
+	must(r.db, `CREATE ROLE outside_reader NOLOGIN`)
+	t.Cleanup(func() {
+		d, err := r.t.open(ctx, "")
+		if err != nil {
+			return
+		}
+		defer d.Close()
+		_, _ = d.Exec(`DROP DATABASE IF EXISTS outside_check WITH (FORCE)`)
+		_, _ = d.Exec(`DROP ROLE IF EXISTS outside_reader`)
+	})
+	super, err := r.t.open(ctx, "outside_check")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer super.Close()
+	must(super, `CREATE SCHEMA outside; GRANT USAGE ON SCHEMA outside TO `+pgbundle.AppRole+`;
+		CREATE EXTENSION pageinspect SCHEMA outside; COMMENT ON SCHEMA outside IS 'the operator''s'`)
+	tg := r.t
+	if tg.URL, err = (Target{URL: u}).urlFor("outside_check"); err != nil {
+		t.Fatal(err)
+	}
+	app, err := tg.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	must(app, `CREATE TABLE own (id int); INSERT INTO own VALUES (1), (2)`)
+	dump := filepath.Join(r.t.Backups, "outside.dump")
+	if err := tg.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	_ = app.Close()
+	list, err := tg.list(ctx, dump)
+	if err != nil || !strings.Contains(list, " SCHEMA - outside ") || !strings.Contains(list, " COMMENT - EXTENSION pageinspect") {
+		t.Fatalf("the dump makes no extension of its own schema, so this shows nothing: %v\n%s", err, list)
+	}
+	for name, psql := range map[string]bool{"with psql": true, "without psql": false} {
+		if psql && !havePSQL(r.t.bin("psql")) {
+			continue
+		}
+		rt := tg
+		if !psql {
+			rt.Bin = func(n string) string {
+				if n == "psql" {
+					return filepath.Join(t.TempDir(), "no-such-psql")
+				}
+				return r.t.bin(n)
+			}
+		}
+		d, err := tg.open(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		must(d, `INSERT INTO own VALUES (3)`) // a row since
+		_ = d.Close()
+		var log bytes.Buffer
+		if err := rt.Restore(ctx, dump, &log); err != nil {
+			t.Fatalf("%s: %v\n%s", name, err, log.String())
+		}
+		if d, err = r.t.open(ctx, "outside_check"); err != nil {
+			t.Fatal(err)
+		}
+		var rows int
+		var there, uses bool
+		if err := d.QueryRow(`SELECT (SELECT count(*) FROM own),
+			EXISTS (SELECT FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'pageinspect' AND n.nspname = 'outside'
+				AND has_schema_privilege('`+pgbundle.AppRole+`', n.oid, 'USAGE')),
+			has_schema_privilege('outside_reader', 'public', 'USAGE') AND NOT has_schema_privilege('outside_reader', 'public', 'CREATE')`).
+			Scan(&rows, &there, &uses); err != nil {
+			t.Fatal(err)
+		}
+		_ = d.Close()
+		if rows != 2 || !there || !uses {
+			t.Errorf("%s: %d rows, the extension there %v, public's use %v", name, rows, there, uses)
+		}
+	}
+	if left, _ := filepath.Glob(filepath.Join(os.TempDir(), "maktaba-restore-list-*")); len(left) != 0 {
+		t.Errorf("left %v", left)
+	}
+}
+
+// With no psql a dump with chunks is refused before anything is touched: no session is ended.
+func TestChunksWithoutPsqlTouchNothing(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	prev := pgbundle.Chunked
+	t.Cleanup(func() { pgbundle.Chunked = prev })
+	pgbundle.Chunked = []pgbundle.ChunkedTable{{Name: "public.chunk_t", Key: "id"}}
+	if _, err := r.db.Exec(`CREATE TABLE chunk_t (id int PRIMARY KEY, v text); INSERT INTO chunk_t SELECT i, 'x' FROM generate_series(1, 50) i`); err != nil {
+		t.Fatal(err)
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	if len(pgbundle.Chunks(dump)) == 0 {
+		t.Skip("the dump has no chunks (no psql here)")
+	}
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var pid, now int
+	if err := conn.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&pid); err != nil {
+		t.Fatal(err)
+	}
+	tg := r.t
+	tg.Bin = func(n string) string {
+		if n == "psql" {
+			return filepath.Join(t.TempDir(), "no-such-psql")
+		}
+		return r.t.bin(n)
+	}
+	if err := tg.Restore(ctx, dump, nil); err == nil || !strings.Contains(err.Error(), "nothing was changed") {
+		t.Fatal(err)
+	}
+	if err := conn.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&now); err != nil || now != pid {
+		t.Fatalf("the session was ended: %v", err)
+	}
+}
+
+// An extension in public that the database user may not make again (pgvector, made by a
+// superuser): without psql it is refused before anything is touched; with psql the server says it
+// and nothing is committed. A superuser's goes on.
+func TestRestoreOfAnExtensionItMayNotMakeTouchesNothing(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	u, err := r.b.URL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`CREATE DATABASE ext_check OWNER ` + pgbundle.AppRole + ` TEMPLATE template0`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if d, err := r.t.open(ctx, ""); err == nil {
+			_, _ = d.Exec(`DROP DATABASE IF EXISTS ext_check WITH (FORCE)`)
+			_ = d.Close()
+		}
+	})
+	super := r.t
+	if super.URL, err = r.t.urlFor("ext_check"); err != nil {
+		t.Fatal(err)
+	}
+	sd, err := super.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sd.Close()
+	if _, err := sd.Exec(`CREATE EXTENSION pageinspect; CREATE EXTENSION hstore`); err != nil { // the second is trusted
+		t.Fatal(err)
+	}
+	tg := r.t
+	if tg.URL, err = (Target{URL: u}).urlFor("ext_check"); err != nil {
+		t.Fatal(err)
+	}
+	d, err := tg.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if _, err := d.Exec(`CREATE TABLE own (id int); INSERT INTO own VALUES (1)`); err != nil {
+		t.Fatal(err)
+	}
+	dump := filepath.Join(r.t.Backups, "ext.dump")
+	if err := tg.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := d.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	without := tg
+	without.Bin = func(n string) string {
+		if n == "psql" {
+			return filepath.Join(t.TempDir(), "no-such-psql")
+		}
+		return r.t.bin(n)
+	}
+	if err := without.Restore(ctx, dump, nil); err == nil || !strings.Contains(err.Error(), "(nothing changed)") ||
+		!strings.Contains(err.Error(), "pageinspect") || strings.Contains(err.Error(), "hstore") {
+		t.Fatalf("without psql: %v", err)
+	}
+	var n int
+	if err := conn.QueryRowContext(ctx, `SELECT count(*) FROM own`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("the session was ended, or the rows are gone: %d %v", n, err)
+	}
+	_ = conn.Close()
+	if !havePSQL(r.t.bin("psql")) {
+		return
+	}
+	if err := tg.Restore(ctx, dump, nil); err == nil || !strings.Contains(err.Error(), `permission denied to create extension "pageinspect"`) {
+		t.Fatalf("with psql: %v", err)
+	}
+	if d, err = tg.open(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.QueryRow(`SELECT count(*) FROM own`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("with psql: %d rows, %v", n, err)
+	}
+	_ = d.Close()
+	if err := super.Restore(ctx, dump, nil); err != nil {
+		t.Fatal(err)
+	}
+}

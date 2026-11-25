@@ -68,12 +68,6 @@ func newPGExits(t *testing.T, kind string) *pgExits {
 	if kind != "bundled" {
 		e.dsn = super // one role does it all (pgvector's extension needs it)
 		e.ext = &target
-		// a Postgres of the person's own has no pg_textsearch of the home's
-		q, err := e.b.NewQuerier()
-		if err != nil {
-			t.Fatal(err)
-		}
-		e.must(q.Exec(e.ctx, pgbundle.AppDatabase, "DROP EXTENSION IF EXISTS pg_textsearch CASCADE; DROP SCHEMA IF EXISTS textsearch CASCADE;"))
 	}
 	cfg := config.Config{}
 	cfg.Server.DataDir = filepath.Join(root, "state")

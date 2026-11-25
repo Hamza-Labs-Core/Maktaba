@@ -711,11 +711,28 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 	if err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
 	}
+	psql := havePSQL(t.bin("psql"))
+	if !psql && len(pgbundle.Chunks(dump)) > 0 {
+		return fmt.Errorf("restore %s: its vectors are binary chunks that psql loads, and there is no psql beside "+
+			"pg_restore (install the PostgreSQL client programs, or set MAKTABA_PG_BIN): nothing was changed", dump)
+	}
 	d, err := t.open(ctx, "")
 	if err != nil {
 		return err
 	}
 	defer d.Close()
+	if !psql {
+		if err := t.mayMakeAgain(ctx, d, list); err != nil {
+			return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
+		}
+	}
+	only, err := t.restoreOnly(ctx, d, list)
+	if err != nil {
+		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
+	}
+	if only != "" {
+		defer func() { _ = os.Remove(only) }()
+	}
 	if _, err := d.ExecContext(ctx, pgbundle.DropSlotsSQL("")); err != nil {
 		// a database user without REPLICATION made no copies; one whose sessions it may
 		// not end keeps the copies streaming what is about to go
@@ -724,24 +741,21 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 	}
 	_, _ = d.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 		WHERE datname = current_database() AND pid <> pg_backend_pid()`)
-	if havePSQL(t.bin("psql")) {
-		if err := t.restoreAtomic(ctx, dump, list, tell, log); err != nil {
+	if psql {
+		if err := t.restoreAtomic(ctx, dump, list, only, tell, log); err != nil {
 			return err
 		}
 		_, _ = d.ExecContext(ctx, `ANALYZE`)
 		return t.verifyRestore(ctx, d, dump)
 	}
-	if len(pgbundle.Chunks(dump)) > 0 {
-		return fmt.Errorf("restore %s: its vectors are binary chunks that psql loads, and there is no psql beside "+
-			"pg_restore (install the PostgreSQL client programs, or set MAKTABA_PG_BIN): nothing was changed", dump)
-	}
 	if err := tell(pgbundle.StepGone); err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
 	}
-	if _, err := d.ExecContext(ctx, `DROP SCHEMA public CASCADE; CREATE SCHEMA public`); err != nil {
+	if _, err := d.ExecContext(ctx, publicAfresh); err != nil {
 		return fmt.Errorf("make the public schema afresh: %w", err)
 	}
-	cmd, err := t.command(ctx, "pg_restore", "", "--no-owner", "--no-publications", "--exit-on-error", "--single-transaction", dump)
+	args := append([]string{"--no-owner", "--no-publications", "--exit-on-error", "--single-transaction"}, useList(only)...)
+	cmd, err := t.command(ctx, "pg_restore", "", append(args, dump)...)
 	if err != nil {
 		return err
 	}
@@ -924,6 +938,96 @@ var havePSQL = func(psql string) bool {
 	return exec.Command(psql, "--version").Run() == nil
 }
 
+// publicAfresh makes the public schema again, with the use of it every role has in a new
+// database (a dump holds a grant on it only where it is another: no role is left out of a
+// schema it could use).
+const publicAfresh = "DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\nGRANT USAGE ON SCHEMA public TO PUBLIC;\n"
+
+// mayMakeAgain refuses a restore without psql (not one transaction: the database is gone by the
+// time it fails) that looks unable to make again an extension that goes with public: pgvector,
+// made there by a superuser, for a database user that is none. With psql the server says it, and
+// the transaction rolls back (a hosted Postgres may let a user make one it says needs a
+// superuser).
+func (t Target) mayMakeAgain(ctx context.Context, d *sql.DB, list string) error {
+	rows, err := d.QueryContext(ctx, `SELECT e.extname, current_user FROM pg_extension e
+		JOIN pg_namespace n ON n.oid = e.extnamespace AND n.nspname = 'public'
+		JOIN pg_available_extension_versions v ON v.name = e.extname AND v.version = e.extversion
+		WHERE v.superuser AND NOT (v.trusted AND has_database_privilege(current_database(), 'CREATE'))
+		  AND NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var ext, user string
+		if err := rows.Scan(&ext, &user); err != nil {
+			return err
+		}
+		if strings.Contains(list, " EXTENSION - "+ext+" ") {
+			return fmt.Errorf("the restore makes the public schema again, with the extension %s in it, which needs a superuser "+
+				"and the database user %s is none; with no psql beside pg_restore it could not be undone. Install the PostgreSQL "+
+				"client programs (or set MAKTABA_PG_BIN), or make %s a superuser for the restore", ext, user, user)
+		}
+	}
+	return rows.Err()
+}
+
+// restoreOnly is a list of the dump's items for pg_restore (its file, "" for all of them):
+// without the extensions and schemas outside public that the database has. Only public is made
+// afresh, so they are there still, and making one again would fail: pg_textsearch's, which an
+// operator's own PostgreSQL 18 may have in a schema of its own.
+func (t Target) restoreOnly(ctx context.Context, d *sql.DB, list string) (string, error) {
+	names := func(q string) (map[string]bool, error) {
+		rows, err := d.QueryContext(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		out := map[string]bool{}
+		for rows.Next() {
+			var n string
+			if err := rows.Scan(&n); err != nil {
+				return nil, err
+			}
+			out[n] = true
+		}
+		return out, rows.Err()
+	}
+	schemas, err := names(`SELECT nspname FROM pg_namespace WHERE nspname NOT IN ('public', 'information_schema') AND nspname NOT LIKE 'pg\_%'`)
+	if err != nil {
+		return "", err
+	}
+	extensions, err := names(`SELECT e.extname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace WHERE n.nspname <> 'public'`)
+	if err != nil {
+		return "", err
+	}
+	only := withoutThere(list, schemas, extensions)
+	if only == list {
+		return "", nil
+	}
+	f, err := os.CreateTemp("", "maktaba-restore-list-*")
+	if err != nil {
+		return "", err
+	}
+	_, err = f.WriteString(only)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+// useList is pg_restore's argument for restoreOnly's list.
+func useList(only string) []string {
+	if only == "" {
+		return nil
+	}
+	return []string{"--use-list=" + only}
+}
+
 // restoreAtomic makes the public schema afresh and restores the dump in it in one
 // transaction: pg_restore's script (no publications, no owners) streams into psql, which
 // runs it after BEGIN and the schema's drop and creation, stopping at the first error (the
@@ -940,7 +1044,7 @@ var havePSQL = func(psql string) bool {
 // short goes no further), a \copy of each chunk of its chunked tables (pgbundle.Chunked;
 // CheckChunks refused a damaged one before), with every table's rows counted, and its indexes
 // and constraints.
-func (t Target) restoreAtomic(ctx context.Context, dump, list string, tell func(step string) error, log io.Writer) error {
+func (t Target) restoreAtomic(ctx context.Context, dump, list, only string, tell func(step string) error, log io.Writer) error {
 	pctx, kill := context.WithCancel(ctx)
 	defer kill()
 	counts, err := pgbundle.CountsScript(dump, list)
@@ -1007,11 +1111,11 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, tell func(
 	// URL or a pooler, is another)
 	if err := write("BEGIN;\nSET LOCAL application_name = '" + pgbundle.RestoreApp + "';\n" +
 		"SELECT pg_catalog.pg_backend_pid() AS mk_pid, extract(epoch FROM pg_catalog.pg_postmaster_start_time()) AS mk_server \\gset\n" +
-		"\\warn " + at.word + " :mk_pid :mk_server\nDROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"); err != nil {
+		"\\warn " + at.word + " :mk_pid :mk_server\n" + publicAfresh); err != nil {
 		return stopped(err)
 	}
 	for part := dataPart; part <= postPart; part++ {
-		args := []string{"--no-owner", "--no-publications", "--section=post-data", "--file=-", dump}
+		args := []string{"--no-owner", "--no-publications", "--section=post-data", "--file=-"}
 		switch part {
 		case chunkPart:
 			// the chunks, then every table's rows counted, before the indexes are built
@@ -1020,9 +1124,9 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, tell func(
 			}
 			continue
 		case dataPart:
-			args = []string{"--no-owner", "--no-publications", "--section=pre-data", "--section=data", "--file=-", dump}
+			args = []string{"--no-owner", "--no-publications", "--section=pre-data", "--section=data", "--file=-"}
 		}
-		gen := exec.CommandContext(pctx, t.bin("pg_restore"), args...)
+		gen := exec.CommandContext(pctx, t.bin("pg_restore"), append(append(args, useList(only)...), dump)...)
 		script, err := gen.StdoutPipe()
 		if err != nil {
 			return stopped(err)

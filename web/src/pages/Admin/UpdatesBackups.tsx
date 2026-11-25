@@ -183,7 +183,11 @@ export function UpdatesBackups() {
           <>
             <p data-testid="updates-backups-plan">
               {t(
-                plan.no_copy ? "updates.backups.confirmBodyNoCopy" : "updates.backups.confirmBody",
+                plan.no_copy
+                  ? "updates.backups.confirmBodyNoCopy"
+                  : plan.older
+                    ? "updates.backups.confirmBodyOlder"
+                    : "updates.backups.confirmBody",
                 {
                   release: plan.release,
                   running: plan.running || t("updates.backups.unknownRelease"),

@@ -3,6 +3,7 @@ package dbsafe
 import (
 	"bytes"
 	"fmt"
+	"strings"
 )
 
 // copyScan reads a pg_restore script with the tables and their rows as it goes to psql: the COPY blocks
@@ -63,4 +64,33 @@ func (s *copyScan) whole(tables int) error {
 		return fmt.Errorf("it holds the rows of %d tables, not %d: some are cut short (the dump is damaged)", s.copies, tables)
 	}
 	return nil
+}
+
+// withoutThere is list (pg_restore -l's) without the items that make the schemas and the
+// extensions named, their grants and comments: commented out, as pg_restore's --use-list wants.
+func withoutThere(list string, schemas, extensions map[string]bool) string {
+	lines := strings.Split(list, "\n")
+	for i, line := range lines {
+		_, rest, ok := strings.Cut(line, "; ")
+		f := strings.SplitN(rest, " ", 3) // the catalog's and the object's oids, then the rest
+		if !ok || strings.HasPrefix(line, ";") || len(f) < 3 {
+			continue
+		}
+		there := func(kind string, names map[string]bool) bool {
+			name, ok := strings.CutPrefix(f[2], kind)
+			if !ok {
+				return false
+			}
+			if names[strings.TrimSpace(name)] {
+				return true
+			}
+			at := strings.LastIndex(strings.TrimRight(name, " \r"), " ") // its owner last, when it has one
+			return at > 0 && names[name[:at]]
+		}
+		if there("SCHEMA - ", schemas) || there("ACL - SCHEMA ", schemas) || there("COMMENT - SCHEMA ", schemas) ||
+			there("EXTENSION - ", extensions) || there("COMMENT - EXTENSION ", extensions) {
+			lines[i] = ";" + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
