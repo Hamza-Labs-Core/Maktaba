@@ -98,7 +98,7 @@ MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
     "no-reserve": ("ops/rollout.sh", r"if ! fallocate [^\n]*", "true", ["the disk fills after begin"]),
     "no-answer-is-stopped": ("ops/rollout.sh", r"if ! ids=\"\$\(containers -a \"\$s\" 2>/dev/null\)\"; then left=[^\n]*\n\t\t\telif", 'ids="$(containers -a "$s" 2>/dev/null)" || ids=""\n\t\t\tif',
                              ["a first rollback without docker", "a rollback without docker"]),
-    "stopped-not-gone": ("ops/rollout.sh", r"docker rm -f \"\$c\" >/dev/null 2>&1 \|\| true", "true", ["a failed first deploy stays down"]),
+    "stopped-not-gone": ("ops/rollout.sh", r"containers -a \"\$s\"", 'containers "$s"', ["a first deploy with a role down"]),
     "held-and-forgotten": ("ops/rollout.sh", r"stop_held \|\| true", "true", ["a rollback without docker"]),
     "boot-gives-up": ("ops/rollout.sh", r"\|\| exit 255", "|| exit 1", ["docker restarted while a command waits"]),
     "one-postgres-only": ("ops/rollout.sh", r"first_deploy \|\| die \"begin: the database", 'die "begin: the database', ["a first deploy that breaks Postgres"]),
@@ -418,8 +418,6 @@ def failed_first_stays_down() -> str:
     """The release a first deploy's tests refused starts for nobody at the next boot; and what is in the
     database by then is backed up before the next deploy."""
     nothing_serves()
-    left = sh("docker ps -aq --filter label=com.docker.compose.project=maktaba-relay --filter label=com.docker.compose.service=api")
-    assert not left.strip(), "a container docker could start again is there"
     code, out = reboot()
     nothing_serves()
     assert "committed: none" in sh(f"{ROLLOUT} status")
@@ -567,6 +565,23 @@ def unhold_after_a_failed_first() -> str:
         ready()
         same(before, snapshot())
     return "the node is as the person left it, also at boot"
+
+
+def first_with_a_role_down() -> str:
+    """A role that had failed when its first deploy went back: docker was never told to stop it, and does
+    not start it at the next boot."""
+    code, out = deploy("a", "app a")
+    assert code == 0 and (STATE / "pending/first").exists(), out[-3000:]
+    worker = dc("ps -q worker").strip()
+    sh(f"docker update --restart=no {worker}")
+    os.kill(int(sh(f"docker inspect --format '{{{{.State.Pid}}}}' {worker}").strip()), signal.SIGKILL)
+    wait_for("the worker is down", lambda: "false" in sh(f"docker inspect --format '{{{{.State.Running}}}}' {worker}"), 30)
+    sh(f"docker update --restart=unless-stopped {worker}")
+    code, out = rollback()
+    assert code == 0 and "first deploy failed" in out, out[-2000:]
+    reboot()
+    nothing_serves()
+    return "not started by docker either"
 
 
 def first_reboot_in_its_tests() -> str:
@@ -1515,6 +1530,7 @@ def main() -> int:
         ("a failed first deploy stays down", failed_first_stays_down),
         ("a first deploy that breaks Postgres", first_deploy_breaks_postgres),
         ("a first deploy, a reboot in its tests", first_reboot_in_its_tests),
+        ("a first deploy with a role down", first_with_a_role_down),
         ("a first rollback without docker", first_rollback_without_docker),
         ("the first deploy", first_deploy),
         ("log caps merged", log_caps),
