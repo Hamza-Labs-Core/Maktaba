@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,8 +62,12 @@ func newRestoreRig(t *testing.T, schemas map[string]int64) *restoreRig {
 	if err := os.MkdirAll(backups, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for name := range schemas {
-		if err := os.WriteFile(filepath.Join(backups, name), []byte("dump"), 0o600); err != nil {
+	for i, name := range slices.Sorted(maps.Keys(schemas)) { // each newer than the one before
+		p, at := filepath.Join(backups, name), time.Now().Add(time.Duration(i-len(schemas))*time.Second)
+		if err := os.WriteFile(p, []byte("dump"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, at, at); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -187,7 +194,7 @@ func TestRestoreMarksTheRecordAndRestarts(t *testing.T) {
 	}
 	rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir)
 	if rec.State != apppayload.DatabaseRestoring || rec.Version != "0.3.0" || rec.From != "0.2.0" || rec.By != "root" ||
-		rec.Failed != "" || rec.Dump != filepath.Join(rig.backups, "pre-v0.2.0-to-v0.3.0.dump") {
+		rec.Failed != "" || rec.Dump != pgbundle.KeptPath(rig.backups, "pre-v0.2.0-to-v0.3.0.dump") {
 		t.Fatalf("record %+v", rec)
 	}
 	if len(rig.inst.ran) != 1 || rig.inst.ran[0] != "0.2.0" {
@@ -255,43 +262,146 @@ func TestRestoreAskedPutsTheBackupBackBeforeAnyRole(t *testing.T) {
 	}
 }
 
-// The set aside is best effort (plan-35-05 D2: the person confirmed losing every change
-// since the backup): a disk with no room for it, here and on any machine whatever its
-// free space, skips it with a warning and the backup is put back all the same.
-func TestRestoreAskedGoesOnWhenTheReplacedDatabaseHasNoRoom(t *testing.T) {
-	t.Setenv(envLauncherRoot, "")
-	cfg, payload := appEnv(t, "v0.2.0", "")
-	backups := filepath.Join(cfg.StateDir(), "backups")
-	_ = os.MkdirAll(backups, 0o700)
-	dump := filepath.Join(backups, "maktaba-20261020-0300.dump")
-	_ = os.WriteFile(dump, []byte("dump"), 0o600)
-	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseRestoring, From: "v0.2.0",
-		Dump: dump, By: "root", Error: "restore asked by root"})
-	f := installFakeDB(t, cfg)
-	prev := makeRoom
-	t.Cleanup(func() { makeRoom = prev })
-	var asked []string
-	makeRoom = func(dir string, _ pgbundle.RoomPolicy) error {
-		asked = append(asked, dir)
-		return &pgbundle.NoRoomError{Dir: dir, Free: 10 << 30, Need: 46 << 30}
+// No copy of the database a restore replaces can be kept (a disk with no room, pg_dump refused):
+// the restore stops before it touches anything, says what is needed and the ways out, and goes
+// on without one only when the person confirmed that: asked on this release (no_copy), or then.
+// So does one a shipped release was asked for, which could ask nothing of the kind.
+func TestARestoreWithNoRoomForACopyStops(t *testing.T) {
+	noRoom := &pgbundle.NoRoomError{Dir: "/backups", Free: 10 << 30, Need: 46 << 30}
+	for name, c := range map[string]struct {
+		room, dump error
+		rec        apppayload.Database
+	}{
+		"no room": {room: noRoom, rec: apppayload.Database{Data: apppayload.DataUntouched, DataID: "1/2/3",
+			Before: &apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated}}},
+		"the dump fails": {dump: errors.New("pg_dump: invalid page in block 7"), rec: apppayload.Database{Data: apppayload.DataUntouched,
+			DataID: "1/2/3", Before: &apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrated}}},
+		"asked on a shipped release": {room: noRoom},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := newExitsRig(t)
+			prevRoom, prevAside, prevCheck, prevNow := makeRoomKeeping, dumpAsideBundled, roomKeeping, roomNow
+			t.Cleanup(func() {
+				makeRoomKeeping, dumpAsideBundled, roomKeeping, roomNow = prevRoom, prevAside, prevCheck, prevNow
+			})
+			var kept [][]string
+			makeRoomKeeping = func(_ string, _ pgbundle.RoomPolicy, names ...string) error {
+				kept = append(kept, names)
+				return c.room
+			}
+			roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return c.room }
+			roomNow = func(string, pgbundle.RoomPolicy) error { return c.room }
+			if c.dump != nil {
+				dumpAsideBundled = func(context.Context, pgbundle.Bundle, string) error { return c.dump }
+			}
+			rec := c.rec
+			rec.Version, rec.State, rec.From, rec.By = "v0.3.0", apppayload.DatabaseRestoring, "v0.2.0", "root"
+			rec.Dump, rec.Error = filepath.Join(e.backups, firstBackup), "restore asked by root"
+			e.write(rec)
+			e.r.schema = func(context.Context, string) (int64, error) { return 140, nil }
+			for i := 1; i <= 2; i++ {
+				err := e.start("v0.2.0")
+				if code := haltCode(t, err); code != "db_restore_no_copy" {
+					t.Fatalf("start %d: %s: %v", i, code, err)
+				}
+				for _, want := range []string{"This try changed nothing", "--without-copy", "no copy of it as it is now could be kept"} {
+					if !strings.Contains(err.Error(), want) {
+						t.Errorf("%q does not say %q", err, want)
+					}
+				}
+				if c.room != nil && !strings.Contains(err.Error(), "10240 MB free, 47104 MB needed") {
+					t.Errorf("%q does not say the space needed", err)
+				}
+			}
+			if _, _, r := e.f.counts(); r != 0 || len(kept) != 2 || !slices.Contains(kept[0], firstBackup) {
+				t.Fatalf("%d restores, room made keeping %v", r, kept)
+			}
+			e.inst.running = "0.2.0"
+			if s := stuckOf(e.r); s == nil || !s.NoCopy || !s.WithoutCopy {
+				t.Fatalf("stuck %+v", s)
+			}
+			// nor offered without one where the release that puts it back is older, which is refused
+			e.inst.running = "0.3.0"
+			if s := stuckOf(e.r); s == nil || !s.NoCopy || s.WithoutCopy {
+				t.Fatalf("stuck on a newer release %+v", s)
+			}
+			e.inst.running = "0.2.0"
+			// asked again as it was: refused before anything, with what is needed (when it is the room)
+			if c.room != nil {
+				pl, err := e.r.restore(context.Background(), firstBackup, "root", true, false)
+				if restoreCode(err) != "restore_no_copy" || pl.CopyNeed != 46<<30 || pl.CopyFree != 10<<30 || pl.NoCopy == "" {
+					t.Fatalf("%+v %v", pl, err)
+				}
+				var out bytes.Buffer
+				printPlan(&out, pl, false)
+				if !strings.Contains(out.String(), "--without-copy") {
+					t.Fatalf("the plan says:\n%s", out.String())
+				}
+			}
+			e.fresh()
+			// confirmed: it goes on, and says it kept none
+			if _, err := e.r.restoreAs(context.Background(), firstBackup, "root", restoreAsk{confirm: true, withoutCopy: true}); err != nil {
+				t.Fatal(err)
+			}
+			want := apppayload.NoCopyRoom
+			if c.room == nil {
+				want = apppayload.NoCopyAny
+			}
+			if rec := e.rec(); rec.NoCopy != want || rec.CopyError != "" {
+				t.Fatalf("%+v", rec)
+			}
+			e.fresh()
+			if err := e.start("v0.2.0"); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, r := e.f.counts(); r != 1 || e.rec().Version != "v0.2.0" {
+				t.Fatalf("%d restores, %+v", r, e.rec())
+			}
+			if !strings.Contains(e.log.String(), "no copy is kept of the library database the restore replaces, as root confirmed") {
+				t.Fatalf("not said:\n%s", e.log)
+			}
+		})
 	}
-	log := &syncBuf{}
-	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), log)
-	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
-		t.Fatalf("the start = %v", err)
+}
+
+// Nothing is asked of the room when no copy is needed: it is there already, or the database is
+// not the one from before any more. Confirmed or not, a copy that fits is kept.
+func TestTheCopyIsAskedForOnlyWhenNeeded(t *testing.T) {
+	e := newExitsRig(t)
+	e.inst.running = "0.2.0"
+	prev := roomKeeping
+	t.Cleanup(func() { roomKeeping = prev })
+	roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }
+	for name, set := range map[string]func(rec *apppayload.Database){
+		"kept already": func(rec *apppayload.Database) {
+			rec.Aside, rec.AsideBytes = filepath.Join(e.backups, "replaced-v0.3.0-x.dump"), 4
+			if err := os.WriteFile(rec.Aside, []byte("copy"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"replaced": func(rec *apppayload.Database) { rec.Data = apppayload.DataReplaced },
+		"gone":     func(rec *apppayload.Database) { rec.Data = apppayload.DataGone },
+	} {
+		rec := e.asked()
+		set(&rec)
+		e.write(rec)
+		if pl, err := e.r.plan(context.Background(), firstBackup); err != nil || pl.NoCopy != "" {
+			t.Errorf("%s: %+v %v", name, pl, err)
+		}
 	}
-	if len(asked) != 1 || asked[0] != backups {
-		t.Fatalf("room asked for %v, want the backups folder once", asked)
+	e.write(e.asked())
+	if pl, err := e.r.plan(context.Background(), firstBackup); err != nil || pl.NoCopy == "" {
+		t.Errorf("needed: %+v %v", pl, err)
 	}
-	if len(f.asides) != 0 || len(f.restores) != 1 || f.restores[0] != filepath.Base(dump) {
-		t.Fatalf("asides %v restores %v", f.asides, f.restores)
+	if _, err := e.r.restoreAs(context.Background(), firstBackup, "root", restoreAsk{confirm: true, withoutCopy: true}); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(log.String(), "level=warn could not set the library database aside") ||
-		!strings.Contains(log.String(), "not enough free space") {
-		t.Fatalf("the skipped set aside was not warned of:\n%s", log)
+	e.fresh()
+	if err := e.start("v0.2.0"); err != nil { // there is room by then
+		t.Fatal(err)
 	}
-	if rec := recorded(t, cfg); rec.State != apppayload.DatabaseMigrated || rec.Version != "v0.2.0" {
-		t.Fatalf("record %+v", rec)
+	if len(e.f.asides) != 1 {
+		t.Fatalf("set aside %v", e.f.asides)
 	}
 }
 
@@ -398,7 +508,7 @@ func TestRestoreOfflineRefusedWhileAServerRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	var out strings.Builder
-	err = restoreOffline(context.Background(), &out, rig.r, l, "pre-v0.2.0-to-v0.3.0.dump", true)
+	err = restoreOffline(context.Background(), &out, rig.r, l, "pre-v0.2.0-to-v0.3.0.dump", true, false)
 	if err == nil || !strings.Contains(err.Error(), "did not answer") || !strings.Contains(err.Error(), "nothing was changed") {
 		t.Fatalf("under a running server: %v", err)
 	}
@@ -410,15 +520,34 @@ func TestRestoreOfflineRefusedWhileAServerRuns(t *testing.T) {
 	}
 	// reading is fine: said to be from the files
 	out.Reset()
-	if err := restoreOffline(context.Background(), &out, rig.r, l, "", false); err != nil || !strings.Contains(out.String(), "did not answer") {
+	if err := restoreOffline(context.Background(), &out, rig.r, l, "", false, false); err != nil || !strings.Contains(out.String(), "did not answer") {
 		t.Fatalf("the list under a running server: %v %q", err, out.String())
 	}
 	layout.Unlock(held)
 	out.Reset()
-	if err := restoreOffline(context.Background(), &out, rig.r, l, "pre-v0.2.0-to-v0.3.0.dump", true); err != nil {
+	if err := restoreOffline(context.Background(), &out, rig.r, l, "pre-v0.2.0-to-v0.3.0.dump", true, false); err != nil {
 		t.Fatalf("with no server: %v", err)
 	}
 	if len(rig.inst.ran) != 1 || !strings.Contains(out.String(), "next start puts the backup back") {
 		t.Fatalf("with no server: ran %v, said %q", rig.inst.ran, out.String())
+	}
+}
+
+// A held update from a schema kept for the release before (#1605): putting its backup back
+// for that release carries whom the dump's schema was kept for, so that release starts on
+// it (the database step's restore records it kept, not db_ahead).
+func TestRestoreOfAHeldUpdateCarriesTheKeptSchema(t *testing.T) {
+	rig := newRestoreRig(t, map[string]int64{"pre-v0.2.0-to-v0.3.0.dump": 140})
+	dump := filepath.Join(rig.backups, "pre-v0.2.0-to-v0.3.0.dump")
+	if err := apppayload.WriteDatabase(rig.r.stateDir, apppayload.Database{Version: "0.3.0",
+		State: apppayload.DatabaseHeld, From: "0.2.0", Failed: "0.3.0", Dump: dump, DumpKeptFor: "0.2.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rig.r.restore(context.Background(), "pre-v0.2.0-to-v0.3.0.dump", "root", true, false); err != nil {
+		t.Fatal(err)
+	}
+	rec, _, _ := apppayload.ReadDatabase(rig.r.stateDir)
+	if rec.State != apppayload.DatabaseRestoring || rec.By != "root" || rec.DumpKeptFor != "0.2.0" {
+		t.Fatalf("record %+v", rec)
 	}
 }

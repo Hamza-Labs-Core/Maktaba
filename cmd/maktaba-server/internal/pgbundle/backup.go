@@ -152,6 +152,9 @@ func (b Bundle) backups() ([]string, error) {
 }
 
 func (b Bundle) prune() error {
+	if BackupsHeld(b.Backups) {
+		return nil // a restore is not done: every dump stays
+	}
 	names, err := b.backups()
 	if err != nil {
 		return err
@@ -224,7 +227,10 @@ func (b Bundle) RunBackups(ctx context.Context, interval time.Duration, log io.W
 // is never cut by the component's stop; the loop returns once it ends.
 func (b Bundle) RunBackupsLoop(loop, work context.Context, interval time.Duration, log io.Writer) {
 	p := b.nightly()
-	due := func() bool { return dueEvery(time.Now(), b.lastBackup(), p) }
+	due := func() bool {
+		// not while a restore is not done: what the database holds is not known to be whole
+		return !BackupsHeld(b.Backups) && dueEvery(time.Now(), b.lastBackup(), p)
+	}
 	if p.Off {
 		fmt.Fprintln(log, "[postgres] the scheduled backups are off ([backups] nightly = \"off\"): no dump is taken "+
 			"unless asked; the old ones are still pruned")

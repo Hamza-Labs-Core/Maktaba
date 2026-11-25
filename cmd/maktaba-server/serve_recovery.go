@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/recovery"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
@@ -153,13 +154,28 @@ func startRecovery(d recoveryDeps) http.Handler {
 			}
 			return out, nil
 		},
-		Restore: func(name, by string) error {
+		Restore: func(name, by string, withoutCopy bool) error {
 			u := d.upd()
 			if u == nil || u.r == nil {
 				return errors.New("this machine restores no backups (a joined machine's database is the home's)")
 			}
-			_, err := u.r.restore(context.Background(), name, by, true, false)
+			_, err := u.r.restoreAs(context.Background(), name, by, restoreAsk{confirm: true, withoutCopy: withoutCopy})
 			return err
+		},
+		Held: func() *recovery.Held { return heldOf(state) },
+		Stuck: func() *recovery.Stuck {
+			u := d.upd()
+			if u == nil || u.r == nil {
+				return nil
+			}
+			return stuckOf(u.r)
+		},
+		GiveUp: func(by string) error {
+			u := d.upd()
+			if u == nil || u.r == nil {
+				return errors.New("this machine restores no backups (a joined machine's database is the home's)")
+			}
+			return u.r.abandon(context.Background(), by)
 		},
 	}
 	serveRecovery.Store(h)
@@ -238,4 +254,22 @@ func recoveryAdmin(base, link http.Handler) http.Handler {
 		}
 		base.ServeHTTP(w, r)
 	})
+}
+
+// heldOf is the update the database record holds (held: it stopped with nothing put
+// back by itself, and waits for a person), nil when none.
+func heldOf(stateDir string) *recovery.Held {
+	rec, ok, err := apppayload.ReadDatabase(stateDir)
+	if err != nil || !ok || rec.State != apppayload.DatabaseHeld {
+		return nil
+	}
+	why := rec.Error
+	if rec.Held != "" {
+		why = rec.Held + ": " + why
+	}
+	h := &recovery.Held{Failed: rec.Failed, From: rec.From, Why: why}
+	if rec.Dump != "" {
+		h.Backup = filepath.Base(rec.Dump)
+	}
+	return h
 }

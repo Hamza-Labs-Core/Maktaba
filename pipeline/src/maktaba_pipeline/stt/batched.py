@@ -571,21 +571,27 @@ class BatchedTranscriber:
                     job.segments = list(resume.segments)
                 jobs.append(job)
             except Exception as exc:  # noqa: BLE001 - one file's failure is its own
-                loop.call_soon_threadsafe(_set_exception, fut, exc)
+                _tell(loop, _set_exception, fut, exc)
 
     def _run(self) -> None:
         try:
             self._load()
         except Exception as exc:  # noqa: BLE001 - every waiting job learns why
             _log.exception("whisper.load_failed")
-            while True:
-                try:
-                    _, fut, loop, _, _, _, _ = self._inbox.get_nowait()
-                except queue.Empty:
-                    break
-                loop.call_soon_threadsafe(_set_exception, fut, exc)
-            self._decode = None
-            self._thread = None
+            # under the lock a new file takes (:meth:`_ensure_thread`): it is either one of
+            # these, or it finds no thread and starts one, which loads again. Told after it:
+            # a file sent on hearing is not one of these either
+            waiting: list[_Submission] = []
+            with self._lock:
+                while True:
+                    try:
+                        waiting.append(self._inbox.get_nowait())
+                    except queue.Empty:
+                        break
+                self._decode = None
+                self._thread = None
+            for _, fut, loop, _, _, _, _ in waiting:
+                _tell(loop, _set_exception, fut, exc)
             return
         jobs = self._jobs
         idle_since = time.monotonic()
@@ -634,7 +640,7 @@ class BatchedTranscriber:
     def _fail(self, jobs: list[_Job], exc: BaseException) -> None:
         for j in jobs:
             self.audio_lost += j.unsaved_sec
-            j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
+            _tell(j.loop, _set_exception, j.future, exc)
         jobs.clear()
 
     def _finish(self, jobs: list[_Job]) -> None:
@@ -655,9 +661,9 @@ class BatchedTranscriber:
                 )
             except Exception as exc:  # noqa: BLE001 - the thread outlives one file
                 self.audio_lost += j.unsaved_sec
-                j.loop.call_soon_threadsafe(_set_exception, j.future, exc)
+                _tell(j.loop, _set_exception, j.future, exc)
                 continue
-            j.loop.call_soon_threadsafe(_set_result, j.future, result)
+            _tell(j.loop, _set_result, j.future, result)
 
     def _decode_rows(
         self, features: Any, temps: list[float], prompts: list[str | None]
@@ -790,6 +796,20 @@ def _set_result(fut: asyncio.Future[Transcript], value: Transcript) -> None:
 def _set_exception(fut: asyncio.Future[Transcript], exc: BaseException) -> None:
     if not fut.done():
         fut.set_exception(exc)
+
+
+def _tell(
+    loop: asyncio.AbstractEventLoop,
+    how: Callable[[asyncio.Future[Transcript], Any], None],
+    fut: asyncio.Future[Transcript],
+    what: Any,
+) -> None:
+    """Give a file its result or its failure, from the GPU thread. Its loop may be closed (the
+    caller gone): nobody waits, and the thread goes on with the other files."""
+    try:
+        loop.call_soon_threadsafe(how, fut, what)
+    except RuntimeError:
+        _log.warning("whisper.file_gone")
 
 
 _SHARED: dict[WhisperSettings, BatchedTranscriber] = {}

@@ -33,7 +33,7 @@ const maxBody = 64 << 10
 //	POST /api/cluster/updates/runs/{id}/tv/retry|drop   a TV held at the update (tvheld.go)
 //	GET  /api/cluster/updates/backups    the home's backups and kept releases (story 35.5 AC8)
 //	GET  /api/cluster/updates/backups/{name}/restore   what restoring it does
-//	POST /api/cluster/updates/backups/{name}/restore   {confirm:"<name>"}  -> 202 (the home restarts)
+//	POST /api/cluster/updates/backups/{name}/restore   {confirm:"<name>", without_copy}  -> 202 (the home restarts)
 type Handler struct {
 	Svc *Service
 	// Driver runs the runs (nil: an API that cannot install; the run actions answer 503).

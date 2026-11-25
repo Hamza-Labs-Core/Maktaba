@@ -99,3 +99,67 @@ func TestLibraryTabsSQLite(t *testing.T) {
 		t.Errorf("anonymous: %d", code)
 	}
 }
+
+// Collections are no longer read in from Plex: a YouTube channel's collection is
+// kind youtube; a leftover source_kind plex row lists as curated with no source;
+// an older client's kind=plex is an empty list (and a count of 0), not a 400.
+func TestLibraryCollectionsNoPlexKind(t *testing.T) {
+	e := groupsEnv(t)
+	for _, s := range []string{
+		`INSERT INTO collections (id, library_id, name, source_kind, source_ref) VALUES
+			('ch', '` + libA + `', 'Weekly talks', 'youtube_channel', 'UC1'),
+			('px', '` + libA + `', 'Plex picks', 'plex', 'p1')`,
+		`INSERT INTO collection_items VALUES ('ch', '` + v("a1") + `', 0), ('px', '` + v("a2") + `', 0)`,
+	} {
+		if _, err := e.db.Exec(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+	var cols struct {
+		Items  []LibraryCollection
+		Counts map[string]int
+	}
+	if code := e.do(asViewer(), "GET", "/api/libraries/"+libA+"/collections", nil, &cols); code != 200 {
+		t.Fatalf("collections: %d", code)
+	}
+	kinds := map[string]LibraryCollection{}
+	for _, c := range cols.Items {
+		kinds[c.ID] = c
+	}
+	if c := kinds["ch"]; c.Kind != KindYouTube || c.Subkind != "channel" || c.SourceKind != "youtube_channel" {
+		t.Errorf("channel collection %+v", c)
+	}
+	if c := kinds["px"]; c.Kind != KindCurated || c.SourceKind != "" || c.Automatic {
+		t.Errorf("a Plex-read collection %+v, want curated with no source", c)
+	}
+	// promoted, its row has no source either; a YouTube one's row keeps its own
+	if _, err := e.db.Exec(`UPDATE collections SET show_on_library = 1 WHERE id IN ('ch', 'px')`); err != nil {
+		t.Fatal(err)
+	}
+	var hub struct {
+		Rows []CollectionRow `json:"collection_rows"`
+	}
+	if code := e.do(asViewer(), "GET", "/api/libraries/"+libA+"/hub", nil, &hub); code != 200 {
+		t.Fatalf("hub: %d", code)
+	}
+	sources := map[string]string{}
+	for _, r := range hub.Rows {
+		sources[r.Collection.ID] = r.Collection.SourceKind
+	}
+	if len(sources) != 2 || sources["ch"] != "youtube_channel" || sources["px"] != "" {
+		t.Errorf("promoted rows' sources %v", sources)
+	}
+	if n, ok := cols.Counts["plex"]; !ok || n != 0 || cols.Counts["youtube"] != 1 || cols.Counts["curated"] != 2 {
+		t.Errorf("counts %v", cols.Counts)
+	}
+	var old struct {
+		Items []LibraryCollection
+		Total int
+	}
+	if code := e.do(asViewer(), "GET", "/api/libraries/"+libA+"/collections?kind=plex", nil, &old); code != 200 || len(old.Items) != 0 || old.Total != 0 {
+		t.Errorf("kind=plex: %d, %+v", code, old)
+	}
+	if code := e.do(asViewer(), "GET", "/api/libraries/"+libA+"/collections?kind=bogus", nil, nil); code != http.StatusBadRequest {
+		t.Errorf("kind=bogus: %d, want 400", code)
+	}
+}

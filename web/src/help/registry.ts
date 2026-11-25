@@ -334,6 +334,9 @@ export const UPDATE_CODE_HELP: ReadonlyMap<string, string> = new Map([
   ["db_down_failed", "code-database"],
   ["db_restored_lossy", "code-database"],
   ["db_restored_unknown", "code-database"],
+  ["db_held_lossy", "code-database"],
+  ["db_held_unknown", "code-database"],
+  ["db_held_unasked", "code-database"],
   ["rehearsal_failed", "code-database"],
   ["pg_major_change", "code-database"],
   // updates#code-tv
@@ -368,6 +371,7 @@ export const UPDATE_CODE_HELP: ReadonlyMap<string, string> = new Map([
   ["app_management", "code-desktop-app"],
   ["app_not_started", "code-desktop-app"],
   ["app_order_gone", "code-desktop-app"],
+  ["app_no_answer", "code-desktop-app"],
   ["app_request_failed", "code-desktop-app"],
   ["asset_not_found", "code-desktop-app"],
   ["check_failed", "code-desktop-app"],

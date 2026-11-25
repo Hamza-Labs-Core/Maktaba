@@ -14,7 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
@@ -142,6 +144,42 @@ func healthyFor(snap supervisor.Snapshot, d time.Duration) bool {
 	return n > 0
 }
 
+// cliRunID is the run id `maktaba-server update` gave its switch before 2026-11-24: no
+// update run's watch owns it.
+const cliRunID = "cli"
+
+// startConfirms starts what confirms the running release (bundle: an app's payload;
+// releaseDir: a layout's) once it runs: the launcher's pending marker (confirmPending) and the
+// database's record (confirmRecord). run is the machine's update run (nil: none).
+func startConfirms(ctx context.Context, sup *supervisor.Supervisor, record, bundle, releaseDir string, run func() *updater.Journal) {
+	confirmPending(ctx, sup, releaseDir)
+	ver := runningRelease(bundle, releaseDir)
+	if ver == "" {
+		return
+	}
+	root := os.Getenv(envLauncherRoot)
+	go confirmRecord(ctx, sup, record, ver, func() bool { return releaseTried(root, releaseDir, ver, run()) })
+}
+
+// confirmsItself reports whether the release a pending marker names confirms itself
+// once healthy (confirmPending): a switch no update run watches, by hand (no run id) or
+// by `maktaba-server update` (cliRunID, from a release before 2026-11-24, whose switch
+// was otherwise never confirmed and went back after the launcher's 15 minutes).
+func confirmsItself(p *layout.Pending) bool {
+	return p != nil && (p.RunID == "" || p.RunID == cliRunID)
+}
+
+// confirmRelease confirms release ver: the watermark raised first, the pending marker removed
+// next, so a stop in between (or a watermark that cannot be written) leaves the marker for
+// the next start to confirm again. (The database's record is confirmed once nothing names
+// the release any more: confirmRecord.)
+func confirmRelease(l layout.Layout, ver string) error {
+	if err := l.RaiseWatermark(ver); err != nil {
+		return fmt.Errorf("the watermark: %w", err)
+	}
+	return l.Confirm()
+}
+
 // confirmPending removes the launcher's pending marker (and raises the
 // watermark) once this release has run healthy for confirmAfter.
 func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir string) {
@@ -159,19 +197,19 @@ func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir 
 			if err != nil || p == nil || p.Version != ver {
 				return // nothing to confirm (or another version is pending)
 			}
-			if p.RunID != "" {
+			if !confirmsItself(p) {
 				// an update run's switch: its watch confirms it (or rolls it back), not a
 				// few healthy minutes here
 				return
 			}
 			if healthyFor(sup.Snapshot(), after) {
-				if err := l.Confirm(); err != nil {
-					fmt.Fprintf(os.Stderr, "[serve] confirming release %s failed: %v\n", ver, err)
+				if err := confirmRelease(l, ver); err != nil {
+					// the marker stays: tried again
+					fmt.Fprintf(os.Stderr, "[serve] confirming release %s failed (trying again): %v\n", ver, err)
+				} else {
+					fmt.Fprintf(os.Stderr, "[serve] release %s confirmed (healthy for %s)\n", ver, after)
 					return
 				}
-				_ = l.RaiseWatermark(ver)
-				fmt.Fprintf(os.Stderr, "[serve] release %s confirmed (healthy for %s)\n", ver, after)
-				return
 			}
 			select {
 			case <-ctx.Done():
@@ -180,4 +218,87 @@ func confirmPending(ctx context.Context, sup *supervisor.Supervisor, releaseDir 
 			}
 		}
 	}()
+}
+
+// confirmRecordEvery is how often confirmRecord looks.
+var confirmRecordEvery = 10 * time.Second
+
+// confirmRecord names the backup of the running release's update where every release reads
+// it (layout.ConfirmRecord), once its API ran for confirmAfter (the database step is done)
+// and nothing would still take the release back: no launcher's guard or pending marker names it, no
+// update run is under way (tried). It is the one path of every install: an update run's
+// commit, a container's, an app or a package installed by hand, a switch by `maktaba-server
+// update`. Before that an older launcher's guard, or an older release coming back by itself,
+// would put the backup back unasked.
+func confirmRecord(ctx context.Context, sup *supervisor.Supervisor, record, version string, tried func() bool) {
+	after := confirmAfter()
+	if after <= 0 || record == "" || version == "" {
+		return
+	}
+	t := time.NewTicker(confirmRecordEvery)
+	defer t.Stop()
+	for {
+		if apiRanFor(sup.Snapshot(), after) && !tried() {
+			ok, err := layout.ConfirmRecord(record, version)
+			if err == nil {
+				if ok {
+					fmt.Fprintf(os.Stderr, "[serve] the update to %s is confirmed: its record names the backup taken before it\n", version)
+				}
+				return
+			}
+			fmt.Fprintf(os.Stderr, "[serve] the database's record cannot say %s is confirmed (trying again): %v\n", version, err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+	}
+}
+
+// apiRanFor reports whether the API has run for at least d (restarted or not: what would take
+// the release back over that is another's to say, releaseTried).
+func apiRanFor(snap supervisor.Snapshot, d time.Duration) bool {
+	for _, p := range snap.Processes {
+		if p.Role == supervisor.RoleAPI && p.State == supervisor.StateRunning && time.Duration(p.UptimeSec)*time.Second >= d {
+			return true
+		}
+	}
+	return false
+}
+
+// releaseTried says the running release may still be taken back: the launcher's guard or
+// pending marker under root names it, the layout's pending marker under rel's install does,
+// or an update run of it is under way (run, nil: none here). What cannot be read says it may.
+func releaseTried(root, releaseDir, version string, run *updater.Journal) bool {
+	ver := layout.NormalizeVersion(version)
+	if root != "" {
+		g, err := layout.ReadGuard(root)
+		if err != nil || (g != nil && layout.NormalizeVersion(g.Version) == ver) {
+			return true
+		}
+	}
+	if releaseDir != "" {
+		p, err := layout.New(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Clean(releaseDir))))).ReadPending()
+		if err != nil || (p != nil && layout.NormalizeVersion(p.Version) == ver) {
+			return true
+		}
+	}
+	return run != nil && !updater.Ended(run.State) && layout.NormalizeVersion(run.Job.Version) == ver
+}
+
+// runningRelease is the release that runs: the app payload's (its payload.json), else the
+// release folder's name ("": neither, a development run).
+func runningRelease(bundle, releaseDir string) string {
+	if bundle != "" {
+		p, err := apppayload.Read(filepath.Join(bundle, "payload.json"))
+		if err != nil {
+			return ""
+		}
+		return p.Version
+	}
+	if releaseDir != "" {
+		return filepath.Base(filepath.Clean(releaseDir))
+	}
+	return ""
 }

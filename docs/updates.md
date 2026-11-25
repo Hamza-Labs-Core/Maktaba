@@ -18,7 +18,7 @@ The desktop and mobile apps' own updates (their badge, the signing key, the mobi
 | Installing on the home | In the quiet window, once the release is old enough, with its migrations rehearsed first. | Turning it off, a pin, a deferral, skipping a version, **Update now**. |
 | Installing on the machines | After the home commits the release: downloaded from the home, verified on each machine, switched one at a time. | What a machine's failure does to the others (`node_failure_policy`), when a machine that was offline catches up (`catch_up`). |
 | TV | Plain server installs keep TV playing across the restart; the streaming software then moves to the new release at programme boundaries, without an approval. | The viewers a restart may interrupt (`tv_staging.quiet_max_viewers`, 0) on installs that restart whole. |
-| Going back | A release that does not stay healthy is rolled back: a restart onto the previous release, its database put back first from the dump taken before the failed release's migrations when they ran. Nothing is dumped on the way back. | Rolling back by hand, restoring an older backup. |
+| Going back | A release that does not stay healthy is rolled back: a restart onto the previous release, the failed release's migrations undone first by their Down scripts when they ran (or kept, when they are additive). No backup is put back by itself: when the Down scripts cannot undo them, the update stops and asks. | Rolling back by hand, restoring an older backup. |
 | A desktop app that runs the server (Maktaba.app, the Windows or Linux app) | It downloads and stages the release the home orders, says when it installs, and installs and restarts by itself: for an **Update now** as soon as the home has committed the release, in the window for an automatic update. No click on the machine (decision D1, 2026-10-27). Machines follow once the home commits: while the home updates, the run shows them waiting for it; a home that rolls back orders none (2026-10-28). | The same as any machine. |
 
 Automatic installs are on by default (`rules.updates.auto_install`). With them off (Admin →
@@ -132,6 +132,15 @@ A release installs by itself only when every one of these holds:
 - the home's local time is inside the window (`window`, default `03:00-05:00`), at least 30
   minutes before its end;
 - no other run is active, and no TV change is being swapped;
+- the list of releases was read in the last 12 hours and 30 minutes (two checks at the default
+  cadence; two checks and 30 minutes at a slower `MAKTABA_UPDATE_INTERVAL_SEC`). One older than
+  12 hours and 30 minutes is read again first, at any cadence, so a home that slept, or started a minute ago, installs at once; only
+  when that fails does the install wait (`catalog_stale` on Admin → Updates; tried again every 15
+  minutes, and the admins notified once it lasts half an hour, or at once when the checks keep
+  failing, once a day at most), because a stale list may not know the newest releases, nor that one
+  was withdrawn. On 2026-11-24 a home whose checks had failed for a day installed a release older
+  than one that had rolled back. **Update now** still installs. A home that never read the list, or
+  whose background checks are off (`0`), is not held;
 - it does not need your approval (a release whose migrations an older home could not run,
   `breaks_previous_home`, waits on Live TV → Changes: **Approve and update now** or **Skip this
   version**).
@@ -181,8 +190,8 @@ cluster stays where it is until stable passes it.
    migration takes no backup at all: the switch is a restart of seconds. One that adds migrations
    is backed up while the running release keeps serving (`backups/pre-<old>-to-<new>.dump`, checked
    to read back; Admin → Updates shows the **Back up** step and how much it wrote); only the
-   switch waits for it. The new release's start then migrates at once, and puts the backup back if
-   a migration fails. Its health is watched (every role running, the API ready and answering as
+   switch waits for it. The new release's start then migrates at once, and undoes a
+   migration that fails with its Down script. Its health is watched (every role running, the API ready and answering as
    the new version) for 10 minutes, and its TV change goes on the air; then the release is kept
    (committed).
 4. **Every machine follows**, after the home commits: they download and verify in parallel (at
@@ -197,8 +206,15 @@ cluster stays where it is until stable passes it.
 
 A desktop app's machine is ordered as soon as it is prepared; its app downloads the release while
 the others go, and it takes its turn once staged, with no click. A run waiting only for apps to
-download gives way to a newer release. A power cut at any step is recovered at
-the next start from the update's journal (`updates/journal.json`).
+download gives way to a newer release. An app that never stages its order (not running on that
+machine, or its start with the order's link failed, which the run's log now says) ends the order
+`app_no_answer` at the time the run installs by (its window's end), else three hours after the
+order, and never within 50 minutes of it, nor before the app had 50 minutes with the machine
+awake (since it woke, or the server started); nothing changed. It is the machine's, not the
+release's: it counts no attempt, and the next window tries again. The Linux app's runtime order has
+nothing to stage, so an app that does not answer it within 10 minutes no longer holds the run: it
+goes on, and the server switches its runtime itself at the go. A power cut at any step is
+recovered at the next start from the update's journal (`updates/journal.json`).
 
 ## What happens to TV
 
@@ -306,17 +322,118 @@ else their Down scripts undo them, the one that failed part way by its own Down 
 (`maktaba-api migrate undo-failed`), back to the slot the database was at before the update
 (recorded as `schema_before` when the migrations start). They never go below that slot: a
 schema an earlier rollback kept is left as it is, still kept for the previous release, and when
-its slot is not recorded no Down script runs. The backup taken before them is put
-back only when those Down scripts fail (`db_down_failed`), when a migration that ran deleted or
-overwrote data its Down script cannot give back (`db_restored_lossy`: migration-lint refuses
-such a migration unless it says so), or when the way back cannot be told
-(`db_restored_unknown`). Each is logged at level=error and named on the Updates page, since it
-is not the way back. Writes made between that backup and the rollback are then lost (minutes,
-inside the window, with the jobs drained), and the failed state is not kept. The same applies
-when the migrations themselves fail part way: since 2026-11-24, after the backup went back on
-2026-11-23 (v0.3.158) and 2026-11-24 (v0.3.157), about three hours down each time. The way back
-is the new release's code (its database step runs the migrations and undoes them), so it holds
-for every update to a release that has it, whatever the release before. The release
+its slot is not recorded no Down script runs.
+
+A layout install (the `.deb`/`.rpm`, `setup --self-managed`) keeps the release before's
+migrations in `bin/releases/<v>/` and undoes the same way; until 2026-11-24 its rollback
+could only put the backup back.
+
+**No backup is ever put back by itself.** When those Down scripts fail (`db_down_failed`), when
+a migration that ran deleted or overwrote data its Down script cannot give back
+(`db_held_lossy`: migration-lint refuses such a migration unless it says so), when the way back
+cannot be told (`db_held_unknown`), or when the launcher's guard gave up on the new release
+after its migrations ran, the update **stops and asks**. The database record becomes `held`:
+the database stays as the migrations (and any Down scripts that ran) left it, the previous
+release is switched back in, and every start stops on the held database (`db_held`) until a
+person chooses:
+- **Put the backup taken before the update back**, on the recovery page (`/recovery`, which
+  the supervisor serves while the library is stopped: it names the backup) or with
+  `maktaba-server restore --backup <name> --confirm`. The previous release runs on it; changes
+  made since that backup are lost.
+- **Install a release newer than the one that failed**, which fixes it. Its start goes on from
+  the held database (its migrations run what is missing), with the same backup kept.
+
+Each case is logged at level=error, and the update attempt's code says which on the Updates page.
+A release from before 2026-11-24 that meets a held database refuses it as older than the
+database (`db_refused_older`) and stops the same way, putting nothing back. A restore mark that
+such a release, or its launcher, wrote (`restoring` with no person named) is held too by every
+release since: the dump is not put back. Only an update to a release with this rule is
+protected by it: a release from before it runs its own database step and puts the backup back
+as it always did.
+
+The first update to such a release is protected too, under the launcher and the release that were
+there before it (a layout install, a container and the Linux app keep their launcher). Their
+guard, and the older release coming back by itself, mark the record `restoring` only when it names
+a backup (`dump`); one that names none they leave alone, as every release with a guard has. So
+until its watch passes, the new release's record keeps its backup's path where only releases
+with this rule read it (`dump_unconfirmed`), and names it once the release is confirmed, or when
+the update is held. Given up on, the older release refuses the database as newer than its own
+(`db_refused_older`) and stops, with nothing put back; its own recovery page and `restore` still
+put the backup back when a person asks. Update rehearsal 21 runs the previous release's real
+launcher and server against it.
+
+**A restore a person asked for that cannot finish** always has a way out. The database's record
+(`state/database.json`) says what state the data is in (`data`), written before each step that
+changes it, and that alone allows or refuses each way out:
+
+| The data | Try again | Another backup | Give it up | A newer release installed since |
+|---|---|---|---|---|
+| `untouched`: the database from before the restore | yes | yes | yes | goes on from it |
+| `replaced`: the backup's, in part or whole, not known to be whole | yes | yes | no | tries again |
+| `gone`: dropped, or empty | yes | yes | no | tries again |
+| not known (asked on a release from before this, and the database does not tell) | yes | yes | no | tries again |
+
+`untouched` is checked, never trusted: the record holds the identity of the database the restore
+found (`data_id`: its cluster, its oid and its public schema's), and whatever puts a dump back makes
+another. A restart of the release the restore is for, or of one whose own try failed, tries again: it
+is never taken for a newer release (`tried_by`). A restore asked on a release from before this has no
+identity: its database is the one from before only when its schema is another than that of every
+backup asked since (`maybe_schemas`: any of them may be what is there). No backup is removed until the
+restore is done (`backups/restore-hold`: the updates' and the scheduled dumps' pruning, and the room
+made for a dump, leave them all; no scheduled dump is taken), but for the copy below and what an older
+release does.
+
+**The database it replaces is set aside first**, once for a restore, however often it is tried
+(`aside`): it holds the newest data there is. Room is made for it from the older backups, never the one
+put back, the one the stopped update names, or the newest of each kind; none is removed when that is
+not room enough. When it does not fit, or cannot be taken, the restore stops before it touches anything
+(`db_restore_no_copy`) and says why, and the space it needs: free some, or delete backups you no longer
+need, and restart. A copy that is gone, or is not the one that was taken, is taken again (`aside_bytes`). Or put it back without a
+copy, which is asked for on its own (the Updates page, the recovery page, `--without-copy`): the
+library as it is now is then lost for good, and no backup is removed. It is for that restore and that
+reason only. The room is looked at when the restore is asked
+(`restore_no_copy`), and again when it starts. A restore asked on a release from before this, which
+could not ask, stops the same way.
+
+**A restore that goes back to an older release** (older than the one running) is done by that release's
+code, by its own rules, which this one cannot change. It may know nothing of the hold or of the record's
+copy: it takes a copy of its own, whatever the data is, and when that does not fit it removes the oldest
+`*.dump` of the folder, the chosen one too, and goes on with no copy all the same. So:
+
+- **There is room for its copy as things are**, by its rules (a quarter more than the newest backup, and
+  the reserve), with nothing removed. Otherwise the restore is refused before anything is touched
+  (`restore_older_no_room`), whatever was confirmed, and says how much to free: delete backups you no
+  longer need (`maktaba-server backups delete <name>`, which works on a stopped home), or put back one
+  that the running release puts back itself. It is never asked to go without a copy. The copy's size is
+  that release's guess: a library that grew far past its newest backup since, or a `pg_dump` that fails
+  there for another reason, still ends with none, and the restore goes on.
+- **What the restore needs is out of its reach**: the chosen backup, the copy already set aside and the one
+  the stopped update names, as hard links that take no room, in `backups/being-restored/`, where no release
+  removes anything. The record names the backup there. What was removed is back, whole, at the next start
+  of a release with this rule, and the folder goes when the restore is done. Until then deleting one of
+  those three frees nothing; deleting any other backup frees its space. That release counts the
+  space of one of those it removes as freed, though it is not: on a disk that is already tight, a later
+  dump of its may use part of the reserve.
+- **On a disk without hard links** only the newest `pre-<from>-to-<to>` backup, which no release removes,
+  can be put back on an older release. Any other is refused before anything changes
+  (`restore_unprotected`): put that one back, or move the backups to a disk that has them.
+
+That release may still remove other backups by its normal rules, then and while it runs: the oldest when
+the dumps take more than their share of the disk or a later dump needs the room, the scheduled and
+pre-update ones past the number kept, `replaced-` and `failed-` ones older than 30 days. Copy elsewhere
+what must outlive that.
+
+One lock covers asking for a restore, giving one up and the start's own try, and the record is written
+before the release is switched. On a Postgres the home does not bundle, the restore's transaction
+commits as the script's own last line, once psql ran all of it: a server killed in the middle of it
+commits nothing.
+
+**When the switch back fails** (the previous release gone, a pointer that cannot be written), a
+held record stays held: its Down scripts may have run in part, and the failed release never
+migrates and runs on that by itself.
+
+The automatic restores of 2026-11-14, 2026-11-23 (v0.3.158) and 2026-11-24
+(v0.3.157) each kept the library stopped for about three hours. The release
 is then blocked until a newer one appears or an admin unblocks it (Admin → Updates → **Try it
 again**, or **Update now** naming it). A release that rolled back (or whose migrations failed on
 the rehearsal's copy) also holds back, until an admin retries it, every release below it, and
@@ -326,20 +443,31 @@ through the releases in between, which have none of the fixes made after the fai
 2026-11-24 a home chose v0.3.157 after v0.3.158 had rolled back, and rolled back again). The
 Updates page says which release holds the others back; **Update now** naming a release installs
 it all the same. On a machine, the launcher's guard does the same when the
-new release does not confirm in time (15 minutes) or stops three times in ten minutes.
+new release does not confirm in time (15 minutes) or stops three times in ten minutes. While the
+new release's database step and watch run, its watch keeps that deadline ahead,
+since 2026-11-24 within the running time the release that switched gave it in the guard
+(`max_run_seconds`: the watch's own longest wait, its start steps' cap and its bound, plus 45
+minutes; a day for a guard with none). The launcher counts that time itself while it runs, across
+its starts, and never extends it: a release that hangs with its watch alive is given up on there,
+wherever the clock is set. A machine switched off or asleep, or a clock set forward, is no time the
+release had: a good update is not taken back after a long power cut. When there is nothing to go back
+to (the kept copy gone, a full disk), the release stays up and its time starts again, twice as long
+each time, so the library and its recovery page are there for a person. A rollback under way has six
+hours more of its own (`rolling_back`), so its Down scripts are not stopped part way. A launcher
+from before it counts nothing; the release stops pushing the deadline itself at the same time.
 
 ### The database during an update
 
 | The release | Before the switch | The switch | Its rollback |
 |---|---|---|---|
 | adds no migration (none of its migrations is one the database lacks) | nothing | a restart | a restart |
-| adds migrations | the backup, taken while the release before keeps serving | a restart, then its migrations | the schema kept, undone by its Down scripts, or the backup put back; then a restart |
+| adds migrations | the backup, taken while the release before keeps serving | a restart, then its migrations | the schema kept, or undone by its Down scripts, then a restart; else held: the library stops and a person chooses (the backup, or a newer release) |
 
 - **Which releases add migrations.** Right before the switch the home compares the staged
   release's migrations (the verified `maktaba-migrations-<v>.tar.gz` of its `release.json`) with
   the newest migration the database holds. A release whose start finds none to run records that
   the database still holds the previous release's migrations, so the previous release can run on
-  it again as it is; the launcher's guard then finds no backup to put back.
+  it again as it is; the launcher's guard then has nothing to hold.
 - **The migrations never wait long on another session.** Before an update's migrations the home
   ends the other client sessions on its database. While they run, it ends any session one of
   them has waited on for more than 10 seconds, and the log names it: a machine's copy making
@@ -349,12 +477,45 @@ new release does not confirm in time (15 minutes) or stops three times in ten mi
   three tries running, and the update put a 35 GB backup back (2 h 44 min). An index build cut
   short leaves an INVALID index; the next try drops it and builds it again, where `IF NOT
   EXISTS` had taken it for done.
+- **The machines' copies wait, then pause (since 2026-11-24).** An automatic update does not
+  start while a machine is copying a table of the home's database (its first copy, or one made
+  anew: `machine_copying` on Admin → Updates); **Update now** does not wait. Before the
+  migrations the home waits for the table syncs still running, 10 minutes at most whatever the
+  database does, then keeps the machines' copies out until the schema is settled: `pg_hba.conf`
+  rejects their replication roles (`/^maktaba_rep_`; never the app role) and their sessions are
+  ended. It is `pg_hba.conf` and not the roles, since a machine asks for its copy again and again
+  and the home's answer (`cluster_node_replica_grant`) sets `LOGIN` on its role.
+  - They come back when the database's record says the schema is settled: the migrations ran, or
+    failed and were kept or undone, or the restore a person asked for is done. Each goes on from
+    where it stopped (its slot kept the changes, under the home's cap).
+  - They stay out, across restarts, while the record says `migrating` (the next start goes on),
+    `restoring` or `held` (a person has not chosen yet), and when a rollback's Down script failed.
+  - Nothing stays out for good: the pause is a marker in the data directory
+    (`maktaba-copies-paused`) that `pg_hba.conf` is written from. A release from before it writes
+    the file without the rejects at its start, and this one looks every minute whether the copies
+    are still out on a settled schema.
+  - When they cannot be kept out (the file cannot be written, the server does not reload it), that
+    is logged at level=error and the migrations run all the same, as before this rule: what they
+    wait on is ended, and their index builds wait on no snapshot.
+  - Only a table sync that streams now counts. Its slot is permanent: one left by a machine that
+    went away holds nothing up, and goes when its machine is back, or when its WAL is past the
+    home's cap (`rules.cluster.replica_wal_keep_gb`) or lost, which the home looks at on its own.
+- **Index builds are plain while the library is stopped (since 2026-11-24).** The migrations
+  run before any role starts, so their `CREATE INDEX CONCURRENTLY` and `DROP INDEX CONCURRENTLY`
+  run without `CONCURRENTLY` (`MAKTABA_MIGRATE_OFFLINE=1`, set by the database step and the
+  rehearsal on a copy). A plain build takes a lock that only holds writes to that table
+  back, waits for no older transaction, and rolls back whole: it leaves no INVALID index. The
+  stopped library writes nothing. A joined machine's own sessions (`maktaba_node_*`) are ended
+  when the migrations start and may come back: one that writes to a table while its index is
+  built waits for the build, and one a migration waits on for more than 10 seconds is ended; the
+  machine's workers try again once the home answers. The migration files keep `CONCURRENTLY`; a function's body or a `DO` block is
+  left as it is. An INVALID index an earlier try left is dropped, and built again, plainly too.
 - **When the migrations fail part way.** The library stays stopped and the start says what
   happened: `db_kept` (nothing put back: the changes so far are additive and the previous
-  release runs on them), `db_undone` (their Down scripts undid them), or `db_restored` (the
-  backup put back, and the update attempt's code says why: `db_down_failed`,
-  `db_restored_lossy` or `db_restored_unknown`). The update's watch then rolls back to the previous release, and the
-  release is blocked as above.
+  release runs on them), `db_undone` (their Down scripts undid them), or `db_held` (nothing
+  could take it back by itself: the update stops and asks, as above, and the update attempt's
+  code says why: `db_down_failed`, `db_held_lossy` or `db_held_unknown`). The update's watch
+  then rolls back to the previous release, and the release is blocked as above.
 - **The backup is taken on the side.** `pg_dump` reads one snapshot, so the library keeps serving
   while it runs. Writes made between its start and the switch (a minute or two, with the jobs
   drained) are not in it. A backup that fails switches nothing (`db_dump_failed`: the release
@@ -390,10 +551,11 @@ maktaba-server restore --backup pre-0.3.5-to-0.3.6.dump --confirm
 
 The home restarts on the kept release whose schema is the backup's (the dump's newest applied
 migration), and that release puts the backup back before anything else runs; the database it
-replaces is set aside first (`replaced-<version>-<time>.dump`). **Every change made since the
+replaces is set aside first (`replaced-<version>-<time>.dump`; older backups may go to make room for
+it, never the one put back, and with no room even so it asks: `--without-copy`). **Every change made since the
 backup was taken is lost.** It refuses while an update runs, and when no kept release has the
 backup's schema (it names the release to install first). The machines copy the restored database
-anew. The updater itself never runs a down migration.
+anew.
 
 ## Which release is newer
 
@@ -426,11 +588,13 @@ GitHub lists them.
   windows ("stuck"), and the page offers **Install now**.
 - The dumps are kept to `backups_keep`; scratch copies and dumps a crash cut short
   (`*.dump.partial`) go once nothing was written to them for an hour.
-- **Before any dump** (nightly, before an update, a restore's set aside) the oldest dumps go
+- **Before any dump** (nightly, before an update, the copy a restore keeps of what it replaces) the oldest dumps go
   until the new one fits: it must leave 5% of the disk free (at least 2 GiB), and all the dumps
   together stay within a fifth of the disk. The newest dump of each kind always stays. When it
   cannot fit even so, the dump is not started and the update stops at its database step with the
   reason (`db_dump_failed`: not enough free space): free some space or move the data to a bigger disk.
+  A restore stops too, and may go on without its copy when a person says so (`db_restore_no_copy`,
+  above). While a restore is not done every dump stays, but for the room of its own copy.
 
 ## How each kind of install takes a release
 
@@ -490,7 +654,13 @@ release that cannot start back under the guard, and finds the home as it was.
 `maktaba-server update` reads the same feed and verifies with the same code (`--check`,
 `--version vX.Y.Z`, `--rollback`): on a layout install it switches `current` (the launcher runs the
 new release at the service's restart); in the Linux runtime copy it installs a new runtime; a
-plain binary is replaced in place, the previous one kept as `<binary>.bak`.
+plain binary is replaced in place, the previous one kept as `<binary>.bak`. A layout switch from
+the command line is no update run's, so the new release confirms itself once it has run healthy
+for a few minutes, as a switch by hand does. Nothing pushes such a switch's deadline: one whose
+start takes over 15 minutes (a large library's backup or migrations) still goes back, and is for
+an update run (**Update now**). Before 2026-11-24 the command named its switch `cli`,
+which nothing confirmed, and the launcher went back after 15 minutes; a release since confirms
+such a switch too.
 
 ## Package repositories and the Homebrew tap
 

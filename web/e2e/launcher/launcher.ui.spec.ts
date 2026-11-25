@@ -30,7 +30,7 @@ import { mockHome, type MockHome } from "../tv/mockHome";
 const SHOTS = path.resolve(process.cwd(), "test-results/launcher/shots");
 const LAUNCHER = pathToFileURL(path.resolve(process.cwd(), "dist-launcher/index.html")).href;
 const HOME = "http://10.0.0.7:8088";
-const TV_UI = "http://localhost:5177";
+const TV_UI = path.resolve(process.cwd(), "dist/tv");
 const TOKEN = "tv-access-1";
 const RELAY = "https://h-test.relay.maktaba.tv";
 // the relay's address as a pattern (every character a pattern gives meaning to escaped)
@@ -65,7 +65,9 @@ function shim(platform: Platform) {
     w.webOS = {
       service: {
         request: (_uri: string, req: { onSuccess: (r: unknown) => void }) =>
-          setTimeout(() => req.onSuccess({ wired: { state: "connected", ipAddress: "10.0.0.5" } })),
+          void Promise.resolve().then(() =>
+            req.onSuccess({ wired: { state: "connected", ipAddress: "10.0.0.5" } })
+          ),
       },
       deviceInfo: (cb: (d: unknown) => void) => cb({ modelName: "OLED55CX", uhd: true }),
       platformBack: () => (w.__exited = "webos"),
@@ -99,10 +101,9 @@ async function lanHome(page: Page): Promise<{ home: MockHome; trail: Trail }> {
   };
   page.on("console", (m) => trail.console.push(`[${m.type()}] ${m.text()}`));
   page.on("pageerror", (e) => trail.console.push(`[pageerror] ${e.message}`));
-  page.on("requestfinished", async (r) => {
-    const res = await r.response();
-    trail.network.push(`${res?.status() ?? "-"} ${r.method()} ${r.url()}`);
-  });
+  page.on("response", (r) =>
+    trail.network.push(`${r.status()} ${r.request().method()} ${r.url()}`)
+  );
   const home = await mockHome(page);
   // the rest of the /24 (every address but the home's): nothing answers
   await page.route(/^http:\/\/10\.0\.0\.(?!7:)\d+:8088\//, (route) =>
@@ -201,10 +202,11 @@ async function homeAt(
       true
     )
   );
-  // /tv/ is the home's (dist/tv from vite preview)
-  await page.route(`${base}/tv/**`, async (route) => {
-    const res = await route.fetch({ url: route.request().url().replace(base, TV_UI) });
-    await route.fulfill({ response: res });
+  // /tv/ is the home's (dist/tv, read from disk: a fetch from the preview server could still
+  // be running when a test that is done closes its context, and fail it)
+  await page.route(`${base}/tv/**`, (route) => {
+    const file = new URL(route.request().url()).pathname.slice("/tv/".length) || "index.html";
+    return route.fulfill({ path: path.join(TV_UI, file) });
   });
   // the API: the bearer gate, then the mock home's tables
   await page.route(`${base}/api/**`, async (route) => {
@@ -253,21 +255,14 @@ async function homeAt(
   });
 }
 
-async function openLauncher(
-  context: BrowserContext,
-  page: Page,
-  platform: Platform,
-  lang: "en" | "ar"
-) {
+/**
+ * The language is the TV's own (the context's locale). No init script may touch the launcher's
+ * localStorage: on a file:// page Chromium can answer so early a read with an empty store, not
+ * the page's own, for as long as the document lives, and a home saved there (or one to be read
+ * there) is gone. The launcher's deferred script reads it late enough.
+ */
+async function openLauncher(context: BrowserContext, page: Page, platform: Platform) {
   await context.addInitScript(shim, platform);
-  await context.addInitScript((l) => {
-    try {
-      if (location.protocol === "file:" && !localStorage.getItem("maktaba.launcher.lang"))
-        localStorage.setItem("maktaba.launcher.lang", l);
-    } catch {
-      /* no storage: English */
-    }
-  }, lang);
   await page.goto(LAUNCHER);
 }
 
@@ -304,13 +299,14 @@ for (const platform of ["tizen", "webos"] as const) {
     }, info) => {
       const context = await browser.newContext({
         userAgent: UA[platform],
+        locale: lang,
         colorScheme: "dark",
         viewport: { width: 1920, height: 1080 },
       });
       const page = await context.newPage();
       const { home, trail } = await lanHome(page);
       try {
-        await openLauncher(context, page, platform, lang);
+        await openLauncher(context, page, platform);
         await expect(page.locator("html")).toHaveAttribute("dir", lang === "ar" ? "rtl" : "ltr");
 
         // no saved home: the start screen, the cloud code first; Find on this network
@@ -318,9 +314,15 @@ for (const platform of ["tizen", "webos"] as const) {
         await expect(page.getByTestId("cloud-code")).toHaveText("ABCD-2345");
         await shot(page, `${platform}-${lang}-start`);
         await expect(page.locator('[data-focus="find"]')).toBeFocused();
+        // an address gets 700 ms to answer (probe.test.ts times it): the page's clock waits here,
+        // so a slow machine's mock home is not taken for one that is not there
+        await page.clock.install();
+        // a minute ahead: a time already past when the call arrives is refused
+        await page.clock.pauseAt(Date.now() + 60_000);
         await page.keyboard.press("Enter");
         const found = page.getByTestId("found-home");
         await expect(found).toContainText("Test home");
+        await page.clock.resume();
         await shot(page, `${platform}-${lang}-found`);
         await found.focus();
         await page.keyboard.press("Enter");
@@ -400,13 +402,14 @@ for (const platform of ["tizen", "webos"] as const) {
     }, info) => {
       const context = await browser.newContext({
         userAgent: UA[platform],
+        locale: lang,
         colorScheme: "dark",
         viewport: { width: 1920, height: 1080 },
       });
       const page = await context.newPage();
       const { home, trail } = await lanHome(page);
       try {
-        await openLauncher(context, page, platform, lang);
+        await openLauncher(context, page, platform);
         await expect(page.locator("html")).toHaveAttribute("dir", lang === "ar" ? "rtl" : "ltr");
 
         // the first screen: the cloud code, its QR, and the other ways under it

@@ -48,12 +48,12 @@ func releaseSchema(dir string) int64 {
 			return m.SchemaRev
 		}
 	}
-	return newestMigration(filepath.Join(dir, "migrations"))
+	return NewestMigration(filepath.Join(dir, "migrations"))
 }
 
-// newestMigration is the highest Postgres migration slot in dir (NNNN_topic.sql; the
+// NewestMigration is the highest Postgres migration slot in dir (NNNN_topic.sql; the
 // SQLite siblings say the same).
-func newestMigration(dir string) int64 {
+func NewestMigration(dir string) int64 {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
 		return 0

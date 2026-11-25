@@ -189,7 +189,10 @@ func runLayoutUpdate(ctx context.Context, out io.Writer, c *selfupdate.Client, r
 		fmt.Fprintln(out, "(--check) not switching. Re-run without --check to upgrade.")
 		return nil
 	}
-	if err := st.Activate(l, "cli"); err != nil {
+	// no run id: no update run's watch owns this switch, so the release confirms itself
+	// once healthy (confirmPending). With the run id "cli" it never did, and the launcher
+	// went back after 15 minutes (research P4)
+	if err := st.Activate(l, ""); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "current = %s. Restart the service to run it; the launcher goes back to the previous release if it does not come up.\n", st.Version)

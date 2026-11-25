@@ -65,8 +65,6 @@ Component part `collections.plex` (Epic 51), default on when Plex is linked.
 
 | Key | English | Arabic |
 |---|---|---|
-| `collections.badge.plex` | Plex collection | مجموعة Plex |
-| `collections.kind.plex` | From Plex | من Plex |
 | `libraryAdmin.plex.collections` | Plex collections: {n} imported, {m} videos not in Maktaba | مجموعات Plex: استُورد {n}، و{m} مقطعًا غير موجود في مكتبة |
 | `libraryAdmin.plex.skipped` | Show the videos not in Maktaba | اعرض المقاطع غير الموجودة في مكتبة |
 | `queue.stage.plex_collections_import.title` | Read Plex collections | قراءة مجموعات Plex |

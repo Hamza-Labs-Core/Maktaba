@@ -101,6 +101,10 @@ internal object WebWords {
         "check_failed" to R.string.w_updates_code_check_failed,
         "db_dump_failed" to R.string.w_updates_code_db_dump_failed,
         "db_migrate_failed" to R.string.w_updates_code_db_migrate_failed,
+        "db_down_failed" to R.string.w_updates_code_db_down_failed,
+        "db_held_lossy" to R.string.w_updates_code_db_held_lossy,
+        "db_held_unknown" to R.string.w_updates_code_db_held_unknown,
+        "db_held_unasked" to R.string.w_updates_code_db_held_unasked,
         "db_restore_failed" to R.string.w_updates_code_db_restore_failed,
         "db_ahead" to R.string.w_updates_code_db_ahead,
         "db_refused_older" to R.string.w_updates_code_db_refused_older,
@@ -151,6 +155,7 @@ internal object WebWords {
         "no_app_update" to R.string.w_updates_code_no_app_update,
         "app_install_failed" to R.string.w_updates_code_app_install_failed,
         "app_order_gone" to R.string.w_updates_code_app_order_gone,
+        "app_no_answer" to R.string.w_updates_code_app_no_answer,
         "app_request_failed" to R.string.w_updates_code_app_request_failed,
         "app_not_started" to R.string.w_updates_code_app_not_started,
         "app_did_not_install" to R.string.w_updates_code_app_did_not_install,
@@ -217,6 +222,7 @@ internal object WebWords {
         "retry_backoff" to R.string.w_updates_waiting_retry_backoff,
         "retry_next_window" to R.string.w_updates_waiting_retry_next_window,
         "needs_person" to R.string.w_updates_waiting_needs_person,
+        "catalog_stale" to R.string.w_updates_waiting_catalog_stale,
     )
 
     /** `updates.plan.waiting.*` */
@@ -246,6 +252,7 @@ internal object WebWords {
         "recent_crash" to R.string.w_updates_blocker_recent_crash,
         "supervisor_unreachable" to R.string.w_updates_blocker_supervisor_unreachable,
         "switchover_open" to R.string.w_updates_blocker_switchover_open,
+        "machine_copying" to R.string.w_updates_blocker_machine_copying,
     )
 
     /** `queue.waiting.*` */
@@ -336,6 +343,7 @@ internal object WebWords {
         "db_restored" to Template(R.string.w_setup_starting_detail_db_restored, listOf("failed", "dump", "release")),
         "db_kept" to Template(R.string.w_setup_starting_detail_db_kept, listOf("failed", "release")),
         "db_undone" to Template(R.string.w_setup_starting_detail_db_undone, listOf("failed", "release")),
+        "db_held" to Template(R.string.w_setup_starting_detail_db_held, listOf("failed", "dump", "release")),
         "db_refused_older" to Template(R.string.w_setup_starting_detail_db_refused_older, listOf("release", "needed")),
         "db_ahead" to Template(R.string.w_setup_starting_detail_db_ahead, listOf("release")),
         "db_dump_failed" to Template(R.string.w_setup_starting_detail_db_dump_failed, listOf("to")),
@@ -344,6 +352,9 @@ internal object WebWords {
         "db_restore_unfinished" to Template(R.string.w_setup_starting_detail_db_restore_unfinished, listOf("failed", "dump")),
         "db_restoring_backup" to Template(R.string.w_setup_starting_detail_db_restoring_backup, listOf("dump", "by")),
         "db_restore_backup_failed" to Template(R.string.w_setup_starting_detail_db_restore_backup_failed, listOf("dump")),
+        "db_restore_backup_part" to Template(R.string.w_setup_starting_detail_db_restore_backup_part, listOf("dump")),
+        "db_restore_backup_gone" to Template(R.string.w_setup_starting_detail_db_restore_backup_gone, listOf("dump")),
+        "db_restore_no_copy" to Template(R.string.w_setup_starting_detail_db_restore_no_copy, listOf("dump")),
         "db_no_cluster" to Template(R.string.w_setup_starting_detail_db_no_cluster, listOf("failed", "dump")),
         "db_record_failed" to Template(R.string.w_setup_starting_detail_db_record_failed, listOf("path")),
         "pg_unreadable" to Template(R.string.w_setup_starting_detail_pg_unreadable, listOf("path")),

@@ -13,15 +13,16 @@
    "source_kind": "youtube_playlist"
   },
   {
-   "kind": "plex",
-   "id": "col-plex",
-   "name": "Plex picks",
+   "kind": "youtube",
+   "subkind": "channel",
+   "id": "col-ch",
+   "name": "محاضرات أسبوعية",
    "videos": 2,
    "poster_video_ids": [
     "v2"
    ],
    "automatic": true,
-   "source_kind": "plex"
+   "source_kind": "youtube_channel"
   },
   {
    "kind": "curated",
@@ -36,8 +37,7 @@
  ],
  "counts": {
   "all": 3,
-  "youtube": 1,
-  "plex": 1,
+  "youtube": 2,
   "curated": 1
  },
  "total": 3,

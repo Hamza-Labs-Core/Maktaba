@@ -326,6 +326,13 @@
   3. Import again, type a title in "Find a video by title", Search, pick a result; the POST fails.
 - **Expected:** no `window.prompt`. Step 1: no request. Step 2: the dialog's Import is disabled until a video is picked; `POST /api/videos/v7/import-youtube` with the result's `youtube_id`, title, channel, description, thumbnail (and date/length when known); toast "Metadata staged for “Lesson”…"; the dialog closes and the search runs again, the card now showing "Imported →" linking to `/videos/v7`. Step 3: the lookup is `POST /api/search { q, mode: "fts", view: "list" }` (its `videos` are the choices); error toast "video not found", the dialog stays open. Non-admin: no Import button (the server answers 403).
 
+### SRC-22b — An import asks again in the order on screen
+
+- **Priority:** P2
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Expected:** after a link in another order than the saved search's own, an import runs the search in its own order, and the URL has the new search.
+
 ### SRC-23 — Arabic query text, Arabic results and Arabic UI
 
 - **Priority:** P2
@@ -426,6 +433,13 @@
 - **Steps:**
   1. Open `/search?q=fox&mode=fts&sid=sid-old&vp=3`.
 - **Expected:** no `POST /api/search`; `GET …/sid-old?list=titles&offset=40&limit=20` and `…list=transcripts&offset=0…`; rows "Title 41"…"Title 45"; mode select Keyword; no notice. A page past the end shows the last page and fixes the URL.
+
+### SRC-32b — A link past the last page and in another order
+
+- **Priority:** P2
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.test.tsx`)
+- **Expected:** the last page shows; the URL has it, and the search's own order.
 
 ### SRC-33 — Expired sid: re-run, pages kept and clamped, notice, no mixing
 
@@ -674,6 +688,27 @@ The tab asks `POST /api/search/ai` (story 49.12) and reads its Server-Sent Event
 - **Steps:**
   1. Open `/search?q=patience`. 2. Choose **AI mode**. 3. Choose **Results**. 4. Choose **AI mode** again.
 - **Expected:** Results is selected and searches; AI mode adds `tab=ai` and asks "patience" once; back on Results the same results show with no new search and the answer is stopped; AI mode again shows the stopped turn and does not ask again.
+
+### SRC-60b — AI mode opened as the results appear
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** choosing **AI mode** before the URL shows the results' `sid` keeps the `sid`; back on Results, no new search.
+
+### SRC-60c — A search that answers after AI mode was opened
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`)
+- **Expected:** the person stays in AI mode; back on Results, the results show with no new search.
+
+### SRC-60d — Results shows the search the URL names
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`, English and Arabic)
+- **Expected:** in AI mode, a recent search opened or Back to another entry, then **Results**, shows that search; AI mode and Back at once leave the next search in Results; a recent search and Back at once, then **Results**, shows the search it was; new words and AI mode at once ask the new words; a search answering after the URL moved on, or after the same words were opened in another order, does not rewrite it.
 
 ### SRC-61 — A link to AI mode does not search until Results opens
 

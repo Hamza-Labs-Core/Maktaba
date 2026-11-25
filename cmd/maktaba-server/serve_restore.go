@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -52,6 +53,10 @@ type restorer struct {
 	// exitDelay is how long a restore lets its answer go out before the home restarts
 	// (restoreExitDelay; tests set it to 0)
 	exitDelay time.Duration
+	// room is what a dump leaves on its disk
+	room pgbundle.RoomPolicy
+	// identity looks at the library database (dbsafe's Identity; tests replace it)
+	identity func(ctx context.Context) (string, int64, error)
 	// tell records a restore the Updates page did not ask for (the command line's) where
 	// the page's is recorded: this machine's API audits it and tells the machines the home
 	// goes away (best effort; nil: nothing to tell)
@@ -79,6 +84,12 @@ type backupList struct {
 	Running string                `json:"running"`
 	// Restoring is a restore asked and not finished (the next start puts Restoring back).
 	Restoring string `json:"restoring,omitempty"`
+	// RestoreError is why its last try failed, and Data what the database is since
+	// (apppayload's Data*): it is tried again at the next start, replaced by another backup,
+	// or given up (CanGiveUp).
+	RestoreError string `json:"restore_error,omitempty"`
+	Data         string `json:"data,omitempty"`
+	CanGiveUp    bool   `json:"can_give_up,omitempty"`
 }
 
 // restorePlan is what a restore of a backup does.
@@ -91,6 +102,13 @@ type restorePlan struct {
 	Running string `json:"running"`
 	// At is when the dump was taken: every change since then is lost.
 	At time.Time `json:"at"`
+	// NoCopy is why no copy of the database it replaces can be kept now ("": it can):
+	// CopyFree bytes are free for one, CopyNeed needed. It is then restored only once the
+	// person confirms that none is (restoreAsk.withoutCopy). Never on an older release, which
+	// is refused instead (olderRoom).
+	NoCopy   string `json:"no_copy,omitempty"`
+	CopyFree uint64 `json:"copy_free,omitempty"`
+	CopyNeed uint64 `json:"copy_need,omitempty"`
 }
 
 // restoreError is a refusal with its code (the page says it in its language).
@@ -100,6 +118,9 @@ type restoreError struct {
 }
 
 func (e *restoreError) Error() string { return e.Code + ": " + e.Detail }
+
+// RestoreCode is its code (the recovery page's).
+func (e *restoreError) RestoreCode() string { return e.Code }
 
 func refuse(code, format string, a ...any) error {
 	return &restoreError{Code: code, Detail: fmt.Sprintf(format, a...)}
@@ -119,7 +140,8 @@ func (r *restorer) list() backupList {
 		out.Kept = append(out.Kept, k.Kept()...)
 	}
 	if rec, ok, _ := apppayload.ReadDatabase(r.stateDir); ok && rec.State == apppayload.DatabaseRestoring {
-		out.Restoring = filepath.Base(rec.Dump)
+		out.Restoring, out.RestoreError, out.Data = filepath.Base(rec.Dump), rec.RestoreError, rec.Data
+		out.CanGiveUp = asked(rec) && r.canGiveUp(rec)
 	}
 	if r.db == nil {
 		return out
@@ -222,7 +244,19 @@ func (r *restorer) plan(ctx context.Context, name string) (restorePlan, error) {
 	if err != nil {
 		return restorePlan{}, err
 	}
-	return restorePlan{Backup: name, Schema: schema, Release: rel.Version, Running: r.running(), At: st.ModTime().UTC()}, nil
+	pl := restorePlan{Backup: name, Schema: schema, Release: rel.Version, Running: r.running(), At: st.ModTime().UTC()}
+	if newerThan(r.running(), pl.Release) {
+		if err := r.olderRoom(pl.Release); err != nil {
+			return pl, err
+		}
+	} else if err := r.copyRoom(name); err != nil {
+		pl.NoCopy = err.Error()
+		var room *pgbundle.NoRoomError
+		if errors.As(err, &room) {
+			pl.CopyFree, pl.CopyNeed = room.Free, room.Need
+		}
+	}
+	return pl, nil
 }
 
 // journal is the update run under way, nil when none is.
@@ -276,7 +310,17 @@ func chooseRelease(kept []updater.KeptRelease, schema int64, hint string) (updat
 // at the matching release and the home restarted on it. by is who asked; tell: record it
 // through the API before the restart (the page's own request is recorded by the API).
 func (r *restorer) restore(ctx context.Context, name, by string, confirm, tell bool) (restorePlan, error) {
-	if !confirm {
+	return r.restoreAs(ctx, name, by, restoreAsk{confirm: confirm, tell: tell})
+}
+
+// restoreAsk is how a restore is asked: confirm (every change since the backup is lost),
+// withoutCopy (and no copy of the database it replaces is kept, when there is no room for
+// one), tell (recorded through the API here).
+type restoreAsk struct{ confirm, withoutCopy, tell bool }
+
+// restoreAs is restore.
+func (r *restorer) restoreAs(ctx context.Context, name, by string, ask restoreAsk) (restorePlan, error) {
+	if !ask.confirm {
 		return restorePlan{}, refuse("restore_not_confirmed", "a restore replaces the library database with the "+
 			"backup and loses every change made since it was taken: confirm it")
 	}
@@ -284,23 +328,24 @@ func (r *restorer) restore(ctx context.Context, name, by string, confirm, tell b
 	if err != nil {
 		return pl, err
 	}
-	if err := r.mark(pl, by); err != nil {
+	if pl.NoCopy != "" && !ask.withoutCopy {
+		return pl, refuse("restore_no_copy", "no copy of the library database as it is now can be kept (%s). Nothing was "+
+			"changed: free some space, or delete backups you no longer need, and try again; or restore it without keeping a "+
+			"copy (maktaba-server restore --without-copy), and the library as it is now is lost for good", pl.NoCopy)
+	}
+	if err := restoreGuardOf(r.stateDir).exclusive(nil, func() (bool, error) {
+		return r.exit != nil, r.mark(ctx, pl, by, ask.withoutCopy)
+	}); err != nil {
 		return pl, err
 	}
 	fmt.Fprintf(orDiscardW(r.log), "[serve] restore of %s asked by %s: the home restarts on %s, which puts it back "+
 		"before any role runs\n", pl.Backup, by, pl.Release)
-	if tell && r.tell != nil {
+	if ask.tell && r.tell != nil {
 		if err := r.tell(ctx, pl, by); err != nil {
 			fmt.Fprintf(orDiscardW(r.log), "[serve] the restore could not be recorded by the API: %v\n", err)
 		}
 	}
-	if r.exit != nil {
-		delay := r.exitDelay
-		go func() {
-			time.Sleep(delay) // the answer goes out first
-			r.exit(75)
-		}()
-	}
+	r.restart()
 	return pl, nil
 }
 
@@ -308,53 +353,90 @@ func (r *restorer) restore(ctx context.Context, name, by string, confirm, tell b
 const restoreExitDelay = 2 * time.Second
 
 // mark records the restore and points the install at the plan's release: the next start
-// is that release's, and its database step puts the dump back.
-func (r *restorer) mark(pl restorePlan, by string) error {
+// is that release's, and its database step puts the dump back. A restore that is not done
+// is replaced by it (the same backup again, or another), whatever the data is; what was
+// there before that one stays the way back.
+func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutCopy bool) error {
 	p := filepath.Join(r.db.Backups, pl.Backup)
 	held := r.running()
 	old, had, err := apppayload.ReadDatabase(r.stateDir)
 	if err != nil {
 		return err
 	}
+	var orig *apppayload.Database
+	was := &apppayload.Database{Version: held, State: apppayload.DatabaseMigrated}
+	data := apppayload.Database{Data: apppayload.DataUntouched}
 	if had {
-		if old.State == apppayload.DatabaseRestoring {
-			return refuse("restore_under_way", "the library database is being put back from %s already: its next "+
-				"start finishes that", old.Dump)
-		}
-		if old.Ran() != "" {
-			held = old.Ran()
-		}
-	}
-	var target updater.KeptRelease
-	if k, ok := r.inst.(updater.Keeper); ok {
-		for _, kr := range k.Kept() {
-			if kr.Version == pl.Release && (target.Version == "" || kr.Running) {
-				target = kr
+		o := old
+		orig = &o
+		switch {
+		case asked(old):
+			held, was, data = old.Version, old.Before, old
+		default:
+			b := old
+			if b.State == apppayload.DatabaseRestoring { // no person asked: held, as its next start makes it
+				b.State = apppayload.DatabaseHeld
+				if b.Held == "" {
+					b.Held = "db_held_unasked"
+				}
+			}
+			was = &b
+			if old.Ran() != "" {
+				held = old.Ran()
 			}
 		}
 	}
-	if target.Version == "" {
+	target, ok := r.keptRelease(pl.Release)
+	if !ok {
 		return refuse("restore_no_release", "%s is no longer kept", pl.Release)
 	}
 	if err := sameMajorRelease(r.stateDir, target.Version, held); err != nil {
 		return err
 	}
+	if settled, serr := settleData(ctx, data, r.probe()); serr == nil {
+		data = settled
+	}
+	var maybe []int64
+	if data.Data == apppayload.DataUnknown && asked(old) {
+		// what was asked before may be what is there, in part or whole
+		maybe = append(append(maybe, data.MaybeSchemas...), r.probe().backupSchema(ctx, old))
+	}
+	older := newerThan(r.running(), pl.Release)
+	if data.Data == apppayload.DataUntouched && data.DataID == "" && older {
+		// the database does not run now (offline), and the release that tries is an older one,
+		// which may keep no track of the data
+		data.Data = apppayload.DataUnknown
+	}
 	rec := apppayload.Database{Version: held, State: apppayload.DatabaseRestoring, From: pl.Release, Dump: p, By: by,
-		Error: "restore asked by " + by}
-	if err := apppayload.WriteDatabase(r.stateDir, rec); err != nil {
-		return err
+		Error: "restore asked by " + by, Before: was, Data: data.Data, DataID: data.DataID}
+	if asideThere(data) {
+		rec.Aside, rec.AsideBytes = data.Aside, data.AsideBytes
 	}
-	if err := r.inst.(updater.Keeper).RunKept(context.Background(), target); err != nil {
-		// nothing is restarted: the record goes back to how it was, so no start puts the
-		// dump back on a release that cannot run it
-		if had {
-			_ = apppayload.WriteDatabase(r.stateDir, old)
-		} else {
-			_ = os.Remove(apppayload.DatabasePath(r.stateDir))
+	if withoutCopy && !older { // an older release keeps one whatever it is told
+		// what was said when it was confirmed, and no more
+		switch {
+		case pl.NoCopy != "":
+			rec.NoCopy = apppayload.NoCopyRoom
+		case data.CopyError != "":
+			rec.NoCopy = apppayload.NoCopyAny
 		}
-		return refuse("restore_switch_failed", "%s cannot be made the release that starts: %v", pl.Release, err)
 	}
-	return nil
+	slices.Sort(maybe)
+	rec.MaybeSchemas = slices.Compact(maybe)
+	for _, o := range []*apppayload.Database{orig, was} {
+		if o != nil && pgbundle.OriginalPath(o.Dump) == p && o.DumpKeptFor != "" && sameRelease(o.DumpKeptFor, pl.Release) {
+			// the dump of a schema kept for the release it goes back for (a held update from a
+			// kept schema): put back, it is that schema again, kept for it
+			rec.DumpKeptFor = o.DumpKeptFor
+		}
+	}
+	if older {
+		if rec.Dump, err = r.protect(pl, rec); err != nil {
+			_ = r.holdFor(old) // as it was
+			return err
+		}
+	}
+	return r.leaveFor(ctx, rec, orig, pl.Release)
 }
 
 func orDiscardW(w io.Writer) io.Writer {
@@ -376,10 +458,10 @@ func restoreCode(err error) string {
 // newRestorer is the home's restorer over its database (nil db: none to put a dump into).
 func newRestorer(cfg config.Config, db *dbsafe.Target, inst updater.Installer, exit func(int)) *restorer {
 	r := &restorer{stateDir: cfg.StateDir(), db: db, inst: inst, exit: exit, log: os.Stderr,
-		exitDelay: restoreExitDelay, tell: apiRestoreNotice(cfg)}
+		exitDelay: restoreExitDelay, tell: apiRestoreNotice(cfg), room: roomOf(cfg)}
 	if db != nil {
 		t := *db
-		r.schema = t.DumpSchema
+		r.schema, r.identity = t.DumpSchema, t.Identity
 	}
 	return r
 }
@@ -389,6 +471,9 @@ type restoreRequest struct {
 	Backup  string `json:"backup"`
 	By      string `json:"by"`
 	Confirm bool   `json:"confirm"`
+	// WithoutCopy: confirmed too that no copy is kept of the database it replaces, when there
+	// is no room for one
+	WithoutCopy bool `json:"without_copy,omitempty"`
 	// Page: the Updates page asks (through the API, which audits it and tells the
 	// machines itself); otherwise the command line, recorded through the API here
 	Page bool `json:"page,omitempty"`
@@ -421,6 +506,21 @@ func (u *updates) serveRestore(w http.ResponseWriter, r *http.Request, name stri
 			return
 		}
 		answer(http.StatusOK, map[string]any{"plan": pl})
+	case name == "restore-abandon" && r.Method == http.MethodPost:
+		var req restoreRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil || !req.Confirm {
+			answer(http.StatusBadRequest, map[string]any{"code": "bad_request", "error": "confirm it"})
+			return
+		}
+		by := strings.TrimSpace(req.By)
+		if by == "" {
+			by = "an admin"
+		}
+		if err := u.r.abandon(r.Context(), by); err != nil {
+			refused(restorePlan{}, err)
+			return
+		}
+		answer(http.StatusAccepted, map[string]any{"abandoned": true})
 	case name == "restore" && r.Method == http.MethodPost:
 		var req restoreRequest
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
@@ -431,7 +531,7 @@ func (u *updates) serveRestore(w http.ResponseWriter, r *http.Request, name stri
 		if by == "" {
 			by = "an admin"
 		}
-		pl, err := u.r.restore(r.Context(), req.Backup, by, req.Confirm, !req.Page)
+		pl, err := u.r.restoreAs(r.Context(), req.Backup, by, restoreAsk{confirm: req.Confirm, withoutCopy: req.WithoutCopy, tell: !req.Page})
 		if err != nil {
 			refused(pl, err)
 			return

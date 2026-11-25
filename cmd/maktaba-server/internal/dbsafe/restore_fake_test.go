@@ -30,6 +30,11 @@ func fakeProgram(args []string) {
 			os.Exit(3)
 		}
 	}
+	for _, a := range args {
+		if a == "-l" {
+			return // a dump with nothing in it
+		}
+	}
 	line := []byte("INSERT INTO videos VALUES (1, 'x');\n")
 	for {
 		if _, err := os.Stdout.Write(line); err != nil {
@@ -50,7 +55,10 @@ func TestRestoreAtomicPsqlStopsFirst(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	began := time.Now()
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", io.Discard)
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", func(step string) error {
+		t.Errorf("told %q of a script that never ended", step)
+		return nil
+	}, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "already exists") || !strings.Contains(err.Error(), "psql stopped") {
 		t.Fatalf("the error: %v", err)
 	}

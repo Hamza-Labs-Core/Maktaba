@@ -237,6 +237,89 @@ func Chunks(dump string) map[string][]string {
 	return out
 }
 
+// CheckChunks refuses a dump whose chunks are not whole, before a restore changes anything: one
+// cut short (psql takes a binary COPY that ends between two rows for whole), one gone from
+// among them, or none of a chunked table's rows, which list (the dump's table of contents)
+// says are not pg_dump's either. A last one gone is seen by the rows' counts alone.
+func CheckChunks(dump, list string) error {
+	chunks := Chunks(dump)
+	for table, files := range chunks {
+		for i, f := range files {
+			if want := fmt.Sprintf("%s%s.%03d%s", chunkPrefix, table, i, chunkExt); filepath.Base(f) != want {
+				return fmt.Errorf("the dump is damaged: %s is not there", want)
+			}
+			if err := checkChunk(f); err != nil {
+				return fmt.Errorf("the dump is damaged: %s: %w", filepath.Base(f), err)
+			}
+		}
+	}
+	made, data := map[string]bool{}, map[string]bool{}
+	for _, e := range ParseTOC(list) {
+		switch e.Desc {
+		case "TABLE":
+			made[e.Schema+"."+e.Name] = true
+		case "TABLE DATA":
+			data[e.Schema+"."+e.Name] = true
+		}
+	}
+	for _, t := range Chunked {
+		if made[t.Name] && !data[t.Name] && len(chunks[t.Name]) == 0 {
+			return fmt.Errorf("the dump is damaged: no rows of %s are in it", t.Name)
+		}
+	}
+	return nil
+}
+
+// checkChunk checks a binary COPY's signature and its trailer (a row of -1 fields).
+func checkChunk(path string) error {
+	f, err := os.Open(path) //nolint:gosec // a dump's own chunk
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	st, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	const signature = "PGCOPY\n\xff\r\n\x00"
+	head, end := make([]byte, len(signature)), make([]byte, 2)
+	if st.Size() < chunkHeader {
+		return fmt.Errorf("%d bytes: it is cut short", st.Size())
+	}
+	if _, err := f.ReadAt(head, 0); err != nil {
+		return err
+	}
+	if _, err := f.ReadAt(end, st.Size()-2); err != nil {
+		return err
+	}
+	if string(head) != signature || end[0] != 0xff || end[1] != 0xff {
+		return fmt.Errorf("it is cut short, or no binary COPY")
+	}
+	return nil
+}
+
+// CountsScript is SQL that fails when a table restored from dump (list: its table of
+// contents) does not hold the rows it had when the dump was taken ("": the dump has no counts).
+func CountsScript(dump, list string) (string, error) {
+	want, err := wantRows(dump, list)
+	if err != nil {
+		return "", err
+	}
+	tables := make([]string, 0, len(want))
+	for t := range want {
+		tables = append(tables, t)
+	}
+	sort.Strings(tables)
+	var sb strings.Builder
+	for _, t := range tables {
+		schema, name, _ := strings.Cut(t, ".")
+		fmt.Fprintf(&sb, "DO $mk$ DECLARE n bigint; BEGIN SELECT count(*) INTO n FROM %s.%s;\nIF n <> %d THEN RAISE EXCEPTION "+
+			"'the dump is damaged: %%: %% of %d rows', '%s', n; END IF; END $mk$;\n", quoteIdent(schema), quoteIdent(name),
+			want[t], want[t], strings.ReplaceAll(t, "'", "''"))
+	}
+	return sb.String(), nil
+}
+
 // LoadChunks copies a dump's chunks back into their tables (made by the dump's pre-data,
 // empty), jobs psql sessions at once, with psql's connection arguments conn.
 func LoadChunks(ctx context.Context, psql string, conn, env []string, chunks map[string][]string, jobs int) error {

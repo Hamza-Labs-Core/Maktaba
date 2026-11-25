@@ -5,14 +5,14 @@ package updater
 // that restore failed). The migrations only move forward and are additive by rule
 // (shared/db/migrations/README.md, rules 9 and 10; `make compat-prev` runs the previous
 // release's tests on the new schema): the release before runs on the database the new
-// one's migrations made. So a rollback puts the dump back only when a migration since the
-// release before is not rollback-safe: one its MANIFEST row marks "Breaking for the
+// one's migrations made. So a rollback undoes the migrations (their Down scripts:
+// schemadown.go) only when one since the release before is not rollback-safe: one its MANIFEST row marks "Breaking for the
 // previous release" or "Breaking for older nodes", or whose Up section drops, renames,
 // retypes or tightens. Otherwise the database stays as it is (the extra tables, columns and
 // rows in place) and the record says the release before may start on it
 // (layout.MarkRecordKept), when that release says it does (its migrations'
-// meta/schema-keep.json): one from before this rule refuses a newer schema, and its
-// rollback still puts the dump back.
+// meta/schema-keep.json): one from before this rule refuses a newer schema, and the
+// Down scripts undo them for it.
 
 import (
 	"encoding/json"
@@ -70,7 +70,7 @@ func KeepsSchemaFrom(from, to string) (bool, string) {
 	if !keepsNewerSchema(from) {
 		return false, "the release before does not run on a newer schema (it has no " + SchemaKeepFile + ")"
 	}
-	fromSchema, toSchema := newestMigration(from), newestMigration(to)
+	fromSchema, toSchema := NewestMigration(from), NewestMigration(to)
 	if fromSchema == 0 || toSchema == 0 {
 		return false, "the releases' schemas are not known"
 	}

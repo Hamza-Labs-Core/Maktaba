@@ -9884,6 +9884,7 @@
             "in": "query",
             "name": "kind",
             "required": false,
+            "description": "`plex` is still accepted for older clients and always keeps nothing (an empty list): collections are no longer read in from Plex.",
             "schema": {
               "type": "string",
               "enum": [
@@ -23436,8 +23437,7 @@
             "type": "string",
             "enum": [
               "youtube_playlist",
-              "youtube_channel",
-              "plex"
+              "youtube_channel"
             ]
           },
           "source_ref": {
@@ -25802,8 +25802,7 @@
               "clip",
               "curated",
               "smart",
-              "youtube",
-              "plex"
+              "youtube"
             ]
           },
           "subkind": {
@@ -25834,8 +25833,7 @@
             "type": "string",
             "enum": [
               "youtube_playlist",
-              "youtube_channel",
-              "plex"
+              "youtube_channel"
             ]
           },
           "show_on_library": {

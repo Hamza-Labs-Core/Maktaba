@@ -2,7 +2,8 @@
 
 The one list of the cloud's public names: what each points at, its TTL, whether Cloudflare
 proxies it, and who changes it (Epic 50, story 50.01). The owner creates these records when
-the nodes exist (Epic 50 README §12); nothing in the repo calls a DNS API for them.
+the pair's nodes exist (Epic 50 README §12); until then the single node's records are written by
+its deploy (below).
 
 - **maktaba.tv** is for users: Maktaba Cloud and everything people use. **maktaba.dev** is for
   developers: the developer wiki, the source, `security.txt` and staging. No other Maktaba domain
@@ -35,6 +36,22 @@ the nodes exist (Epic 50 README §12); nothing in the repo calls a DNS API for t
 | `*.r<N>.relay.maktaba.tv` | relay N's own primary IPv4 | DNS only | 60 s | relay hints for apps (50.16) | 2 |
 | `relay.maktaba.tv`, `*.relay.maktaba.tv` | round robin over the healthy relays | DNS only | **60 s** | the stable names in Phase 2 | 2 |
 | `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev` | the staging pair (50.14) | DNS only | 60 s | load tests, never users | 1 |
+
+### One node, before the pair
+
+Until the Phase 1 pair exists, QA and production are one machine each
+([`docs/cloud-single-node.md`](cloud-single-node.md)). Their records point at the machine's own
+IPv4, all **DNS only**, TTL 300, and the CI deploy writes them (`cloud-deploy.yml`, with the
+`CLOUDFLARE_DNS_TOKEN` secret: Zone → DNS → Edit on maktaba.tv and maktaba.dev only):
+
+| Names | Points at |
+|---|---|
+| `relay.maktaba.tv`, `*.relay.maktaba.tv`, `api.maktaba.tv`, `app.maktaba.tv` | the production node (`RELAY_HOST`) |
+| `staging.relay.maktaba.dev`, `*.staging.relay.maktaba.dev`, `staging-api.maktaba.dev`, `staging-app.maktaba.dev` | the QA node (`QA_HOST`) |
+
+`api` and `app` are DNS only here, not the Tunnel's proxied names: Caddy on the node serves
+them (the api on a private address, `CF-Connecting-IP` written by Caddy). They move to the
+Tunnel with the pair.
 
 ## The rules
 

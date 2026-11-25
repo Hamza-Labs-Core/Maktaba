@@ -61,8 +61,10 @@ type Collection struct {
 	Videos         *int64   `json:"videos,omitempty"`
 	PosterVideoIDs []string `json:"poster_video_ids,omitempty"`
 	// Epic 56 (slot 0193): a collection a pipeline stage keeps in step with
-	// its source (youtube_playlist, youtube_channel, plex) and an admin's
-	// choices on any collection, kept across the stage's runs.
+	// its source (youtube_playlist, youtube_channel) and an admin's choices on
+	// any collection, kept across the stage's runs. One an older release read
+	// in from Plex (source_kind plex) is no longer synced: it has none here
+	// and is an ordinary collection.
 	SourceKind    *string `json:"source_kind,omitempty"`
 	SourceRef     *string `json:"source_ref,omitempty"`
 	NameOverride  *string `json:"name_override,omitempty"`
@@ -71,6 +73,10 @@ type Collection struct {
 	ShowOnHome    bool    `json:"show_on_home"`
 	SortTitle     *string `json:"sort_title,omitempty"`
 }
+
+// legacySourcePlex is the source_kind of a collection an older release read in
+// from Plex; nothing creates or syncs one any more.
+const legacySourcePlex = "plex"
 
 // Automatic tells a collection its source keeps in step: its members and
 // name are the source's (an admin renames it with name_override).
@@ -906,6 +912,9 @@ func scanCollection(rs rowScanner) (Collection, error) {
 			v := f.from.String
 			*f.to = &v
 		}
+	}
+	if c.SourceKind != nil && *c.SourceKind == legacySourcePlex {
+		c.SourceKind = nil // nothing keeps it in step any more
 	}
 	c.Hidden = !hidden.T.IsZero()
 	c.CreatedAt, c.UpdatedAt = created.T, updated.T

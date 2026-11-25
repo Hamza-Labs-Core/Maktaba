@@ -112,6 +112,17 @@ type Database struct {
 	// migrations (backups/pre-<from>-to-<version>.dump).
 	From string `json:"from,omitempty"`
 	Dump string `json:"dump,omitempty"`
+	// Unconfirmed is how Dump is written until the update's release is confirmed (its
+	// watch passed: Confirmed; ReadDatabase gives it as Dump). The guard of every launcher
+	// and the rollback of every release before 2026-11-24 mark a record whose release they
+	// give up on restoring, and the release before then puts the whole dump back unasked;
+	// all of them leave a record with no dump alone (MarkRecordRestoring, since the first
+	// release with a guard). So a new release under an older launcher, or rolled back to an
+	// older release, names its backup where only the releases that stop and ask read it:
+	// the older release refuses the database as newer than itself and stops
+	// (db_refused_older), with nothing put back.
+	Unconfirmed string `json:"dump_unconfirmed,omitempty"`
+	Confirmed   bool   `json:"confirmed,omitempty"`
 	// Next is the release the running one switches to and NextDump the dump it took
 	// for it while it served, at NextAt (the update's backup step: internal/updater):
 	// Next's start takes it as its pre-update dump instead of taking one.
@@ -127,6 +138,31 @@ type Database struct {
 	// then the release whose database is replaced and From the one the dump is put back
 	// for.
 	By string `json:"by,omitempty"`
+	// Before is the record that restore replaced (nil: asked on a release from before
+	// 2026-11-25), and Data and DataID what is known of the data since: Data one of the
+	// Data* states, written before each step that changes it, DataID the identity of the
+	// database the restore found there (dbsafe's Identity), which proves that it is still
+	// that one, whatever ran since. Every way out of a restore that cannot finish is allowed
+	// or refused by them alone (serve_restore_exits.go). Aside is the dump the replaced
+	// database was set aside in (once for a restore, however often it is tried),
+	// RestoreError why its last try failed and TriedBy the release that tried.
+	Before *Database `json:"before,omitempty"`
+	Data   string    `json:"data,omitempty"`
+	DataID string    `json:"data_id,omitempty"`
+	// MaybeSchemas are the schemas of the backups asked before this one while the data was not
+	// known (0: one whose schema cannot be told): any of them may be what is there.
+	MaybeSchemas []int64 `json:"maybe_schemas,omitempty"`
+	Aside        string  `json:"aside,omitempty"`
+	// AsideBytes is Aside's size: another, or none, is not that copy.
+	AsideBytes int64 `json:"aside_bytes,omitempty"`
+	// NoCopy: the person confirmed a restore with no copy kept of the database it replaces:
+	// when there is no room for one (NoCopyRoom), or whatever the last try said kept it from
+	// being taken (NoCopyAny); CopyError why its last try could not keep one (that try
+	// stopped before it touched anything).
+	NoCopy       string `json:"no_copy,omitempty"`
+	CopyError    string `json:"copy_error,omitempty"`
+	RestoreError string `json:"restore_error,omitempty"`
+	TriedBy      string `json:"tried_by,omitempty"`
 	// KeptFor is the older release a rollback left this database for with nothing put
 	// back (layout.MarkRecordKept): Version's migrations were all rollback-safe, so KeptFor
 	// starts on the newer schema (its api told it may: MAKTABA_SCHEMA_AHEAD_OK), and
@@ -146,12 +182,12 @@ type Database struct {
 	// migrations started (migrating; 0: not known): the slot a failed update's Down
 	// scripts go back to (updater.FailedBack), whichever release ran on it.
 	SchemaBefore int64 `json:"schema_before,omitempty"`
-	// Restore is why a failed update's dump goes back instead of its Down scripts
-	// (restoring; the update attempt's code: db_down_failed, db_restored_lossy,
-	// db_restored_unknown). "": its migrations failed and nothing else was tried (a
-	// release from before 2026-11-24).
-	Restore string    `json:"restore,omitempty"`
-	At      time.Time `json:"at"`
+	// Held is why a failed update stopped instead of going back by itself (held: the
+	// update attempt's code; no release puts a dump back by itself since 2026-11-24: db_down_failed, db_held_lossy, db_held_unknown, or
+	// db_held_unasked for a restore mark no person asked for). "": marked held by a
+	// rollback (the launcher's guard, the update's watch), whose reason is Error.
+	Held string    `json:"held,omitempty"`
+	At   time.Time `json:"at"`
 }
 
 // Ran is the release that last started on the database: Release, else Version.
@@ -172,6 +208,33 @@ const (
 	DatabaseRestoring = "restoring"
 	// DatabaseRestored: the database is as it was before the failed update.
 	DatabaseRestored = "restored"
+	// DatabaseHeld: Failed's migrations failed, or Failed was rolled back after they ran,
+	// and neither keeping its schema nor its Down scripts took the database back. Nothing
+	// is put back by itself: every start stops on it (db_held; a release older than
+	// Version, the releases before this state included, refuses it: db_refused_older)
+	// until a person chooses: put Dump back (`maktaba-server restore`, a restore asked:
+	// restoring, By), or install a release newer than Failed, which goes on from it.
+	DatabaseHeld = "held"
+)
+
+// What the data is while a restore a person asked for is not done (Database.Data).
+const (
+	// DataUnknown: no release that keeps track of it has looked yet, and what can be told
+	// now does not say (the restore may have been tried by an older release).
+	DataUnknown = ""
+	// DataUntouched: the database as it was when the restore was asked.
+	DataUntouched = "untouched"
+	// DataReplaced: the backup's data is in its place, in part or whole, not known to be
+	// whole (pgbundle.StepReplaced).
+	DataReplaced = "replaced"
+	// DataGone: dropped, or empty (pgbundle.StepGone).
+	DataGone = "gone"
+)
+
+// What a person confirmed of the copy a restore keeps (Database.NoCopy).
+const (
+	NoCopyRoom = "space"
+	NoCopyAny  = "error"
 )
 
 // DatabasePath is the database's record: the record of the cluster this install runs on
@@ -269,13 +332,31 @@ func ReadDatabase(stateDir string) (Database, bool, error) {
 	if err := json.Unmarshal(raw, &d); err != nil {
 		return d, false, fmt.Errorf("%s: %w", DatabasePath(stateDir), err)
 	}
-	return d, true, nil
+	return d.named(), true, nil
+}
+
+// named is d with the dump it withholds from older code (Unconfirmed) as its Dump.
+func (d Database) named() Database {
+	if d.Dump == "" {
+		d.Dump = d.Unconfirmed
+	}
+	d.Unconfirmed = ""
+	return d
+}
+
+// withheld is d as it is written: an update's dump not named where older code would put it
+// back unasked (Unconfirmed), while its release is not confirmed.
+func (d Database) withheld() Database {
+	if !d.Confirmed && d.Dump != "" && (d.State == DatabaseMigrating || d.State == DatabaseMigrated) {
+		d.Unconfirmed, d.Dump = d.Dump, ""
+	}
+	return d
 }
 
 // WriteDatabase saves the database's record (whole, atomically), stamped now.
 func WriteDatabase(stateDir string, d Database) error {
 	d.At = time.Now().UTC()
-	raw, err := json.MarshalIndent(d, "", "  ")
+	raw, err := json.MarshalIndent(d.withheld(), "", "  ")
 	if err != nil {
 		return err
 	}

@@ -113,6 +113,16 @@ monitoring) and [cloud/](https://github.com/Hamza-Labs-Core/Maktaba/tree/main/cl
 and the API). The public names and what they point at are in
 [docs/cloud-dns.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/cloud-dns.md).
 
+### Today: one node
+
+Until the pair above exists, the cloud runs on one machine per environment, QA and
+production, each the whole cloud: the relay, the API, the worker, Postgres and the web app
+behind Caddy. A release reaches production only after the same digests pass QA's end-to-end
+test, which links a real home through the relay, signs in through the cloud and plays a video.
+On one machine, a reboot or a deploy stops remote play for a minute or two. The setup, the
+deploy workflow and the tests are in
+[docs/cloud-single-node.md](https://github.com/Hamza-Labs-Core/Maktaba/blob/main/docs/cloud-single-node.md).
+
 ## Signing a TV in with a cloud code
 
 A TV that cannot find its home (a Samsung or LG web app has no mDNS; a TV at a relative's house

@@ -2,8 +2,8 @@ import XCTest
 
 /// The base of the Player's UI tests (Epic 48): a fresh `MockHome` per test, the app launched
 /// in a language with the dark theme, signed in to the mock home by a code, and screenshots
-/// kept as attachments (and written to `MAKTABA_SHOTS`, a folder, when it is set: CI uploads
-/// it).
+/// written to `MAKTABA_SHOTS`, a folder, when it is set (CI uploads it), else kept as
+/// attachments (`keep(_:as:)`).
 ///
 /// A screen's test subclasses it:
 ///
@@ -27,7 +27,26 @@ class PlayerUITestCase: XCTestCase {
 
     var isPad: Bool { UIDevice.current.userInterfaceIdiom == .pad }
 
-    override func setUp() async throws {
+    // Synchronous, not the async ones: with an async hook anywhere in the class, XCTest answers a
+    // failure that interrupts the test by running the tear-down from inside whatever runs, and
+    // waits on the main thread for an async tear-down that needs the main thread ("Preparing to
+    // exit process to interrupt test (… overridesAsyncSetUpOrTearDown=1)"): in a hook neither
+    // ends, until the test's 10 minutes do (PR #1561's run 45302179115, iPad 4/6, in `tearDown`;
+    // run 45495588048's iPhone 4/6, in `setUp`), and in a test's body the runner's process ends
+    // and the next test warms the simulator up again. XCUITest marks its own failures to
+    // interrupt whatever `continueAfterFailure` says. XCTest calls both on the main thread.
+    override nonisolated func setUpWithError() throws {
+        nonisolated(unsafe) let test = self
+        try MainActor.assumeIsolated { try test.begin() }
+    }
+
+    override nonisolated func tearDownWithError() throws {
+        nonisolated(unsafe) let test = self
+        MainActor.assumeIsolated { test.end() }
+    }
+
+    /// Before each test (a subclass that adds to it calls `super.begin()` first).
+    func begin() throws {
         continueAfterFailure = false
         try warmUpOnce()
         home = try MockHome()
@@ -36,6 +55,11 @@ class PlayerUITestCase: XCTestCase {
     }
 
     // MARK: the simulator's first launches
+
+    /// A failure from now on is recorded and what runs goes on, XCUITest's own too
+    /// (`withoutInterrupting(_:)`): in the warm-up, whose failures are expected and which goes on
+    /// to its end, and in the tear-down, which closes the app and the home whatever fails.
+    private var goesOn = false
 
     /// Whether this test process has signed in once already (`warmUpOnce`).
     private static var warmedUp = false
@@ -74,10 +98,13 @@ class PlayerUITestCase: XCTestCase {
         app = XCUIApplication()
         let stops = continueAfterFailure
         continueAfterFailure = true
+        goesOn = true
         defer {
-            continueAfterFailure = stops
             app.terminate()
             home.stop()
+            // last: a failure to end the app is the warm-up's too
+            goesOn = false
+            continueAfterFailure = stops
         }
         let lenient = XCTExpectedFailure.Options()
         lenient.isStrict = false
@@ -144,16 +171,9 @@ class PlayerUITestCase: XCTestCase {
     /// (PlayerWatchTests plays MockHome's stream in this runner) then cannot start its sound
     /// output, and AVPlayer's time, which follows the sound output, stays put: "the time
     /// moves" timed out 14 s in, with the Player still posting progress (CI run 41521240810).
-    override func tearDown() async throws {
-        // a failure from here on is recorded, it does not interrupt the test: with
-        // `continueAfterFailure` false, XCTest answers a failure in an async tearDown (XCUITest's
-        // "Failed to terminate" on `close`) by running the tear-down sequence again from inside
-        // this one, and waits on the main thread for that inner async tearDown, which needs the
-        // main thread: neither ends (PR #1561's run 45302179115, iPad 4/6: the hung test's
-        // spindump has `close` → `terminate` → `record(_:)` → `_interruptTest` →
-        // `_performTearDownSequence…` → `XCTWaiter _synchronouslyWaitForTimeInterval`; twice on
-        // PR #1550, the shard held until the job's 60 minutes ran out)
+    func end() {
         continueAfterFailure = true
+        goesOn = true
         Self.close(app)
         home?.stop()
     }
@@ -175,9 +195,66 @@ class PlayerUITestCase: XCTestCase {
         // on the main thread, so on the main actor, where `app` lives: XCTest records a UI
         // test's issues there (any other thread records the issue as it is)
         nonisolated(unsafe) let test = self
-        let cancelled = MainActor.assumeIsolated { Self.cancelledTouches(in: test.app) }
-        super.record(Self.withLostTaps(issue, cancelled: cancelled))
+        if let pid = Self.unterminated(issue) {
+            if MainActor.assumeIsolated({ Self.endedAfterAll(pid, test.app) }) { return }
+            return super.record(Self.withoutInterrupting(issue))
+        }
+        let (cancelled, goesOn) = MainActor.assumeIsolated { (Self.cancelledTouches(in: test.app), test.goesOn) }
+        let said = Self.withLostTaps(issue, cancelled: cancelled)
+        super.record(goesOn ? Self.withoutInterrupting(said) : said)
     }
+
+    // MARK: an app xcodebuild ended late (#1678)
+
+    /// The process XCTest gave up on ending, when `issue` is its "Failed to terminate".
+    ///
+    /// On a simulator `terminate()` asks xcodebuild, which sends the SIGTERM, and XCTest waits
+    /// 60 s from asking. xcodebuild takes the runner's messages in turn on its main thread, and
+    /// in a new simulator's first minutes it fell 35 to 98 s behind: the request waited in
+    /// line while the app ran on (`exited due to SIGTERM | sent by xcodebuild` in the simulator's
+    /// log, 45, 34 and 93 s after the request: runs 45492257208 iPhone 5/6, 45444285100 iPad
+    /// 2/6, 45495588048 iPad 1/6; its Session log has the request taken 28 s late).
+    nonisolated static func unterminated(_ issue: XCTIssue) -> pid_t? {
+        let said = issue.compactDescription
+        guard let m = said.range(of: #"^Failed to terminate [A-Za-z0-9.-]+:[0-9]+"#, options: .regularExpression),
+              let pid = said[m].split(separator: ":").last.flatMap({ pid_t($0) }), pid > 0
+        else { return nil }
+        return pid
+    }
+
+    /// `issue` as XCTest's own failures are: it interrupts the test only when
+    /// `continueAfterFailure` is false. XCUITest marks its failures to interrupt anyway (a
+    /// private mark of the issue, which a new one does not have).
+    nonisolated static func withoutInterrupting(_ issue: XCTIssue) -> XCTIssue {
+        XCTIssue(type: issue.type, compactDescription: issue.compactDescription,
+                 detailedDescription: issue.detailedDescription, sourceCodeContext: issue.sourceCodeContext,
+                 associatedError: issue.associatedError, attachments: issue.attachments,
+                 severity: issue.severity)
+    }
+
+    /// Whether the app XCTest failed to end did end, and XCTest knows: looked at for
+    /// `patience` more. Nothing is asked again and nothing is run again. Said in the job's log
+    /// either way; an app still running, or one XCTest still takes as running (its next launch
+    /// would wait for it too), is the failure it was.
+    static func endedAfterAll(_ pid: pid_t, _ app: XCUIApplication?, patience: TimeInterval = 60,
+                              say: (String) -> Void = { print($0) }) -> Bool {
+        let start = Date()
+        func waited() -> Int { Int(Date().timeIntervalSince(start)) }
+        while isRunning(pid), Date().timeIntervalSince(start) < patience {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        let gone = !isRunning(pid)
+        let seen = gone && app?.wait(for: .notRunning, timeout: max(5, patience - Date().timeIntervalSince(start))) == true
+        let said = !gone ? "it is still running \(waited()) s later"
+            : !seen ? "it did end, but XCTest still takes it as running \(waited()) s later"
+            : "it did end: seen \(waited()) s later, the test goes on"
+        say("\n::warning::XCTest failed to terminate the app (pid \(pid)) in its 60 s; \(said) (#1678)")
+        return seen
+    }
+
+    /// Whether the process is running, as the kernel says (a simulator's processes are the
+    /// host's: signal 0 asks only whether it is there).
+    nonisolated static func isRunning(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 || errno != ESRCH }
 
     /// How many touches the system cancelled in `app` since it launched; nil when it is not
     /// running or does not answer (launched without the hook).
@@ -515,14 +592,24 @@ class PlayerUITestCase: XCTestCase {
     func shot(_ name: String, wholeScreen: Bool = false) {
         let full = "player-\(isPad ? "ipad" : "iphone")-\(language)-\(name)"
         let png = (wholeScreen ? XCUIScreen.main.screenshot() : app.screenshot()).pngRepresentation
-        let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
-        a.name = full
-        a.lifetime = .keepAlways
-        add(a)
+        keep(png, as: full)
+    }
+
+    /// Keeps a screenshot: in `MAKTABA_SHOTS` when it is set (CI uploads it with the results),
+    /// else, or when it could not be written, as an attachment. Not both: an attachment goes
+    /// through xcodebuild, whose main thread stood still 6 to 62 s taking one in on a new
+    /// simulator's busy runner, with every other request of the test waiting behind it
+    /// (`unterminated(_:)`): 7 of its 8 stalls over 5 s in the three runs, 69 attachments among
+    /// 2,328 messages.
+    func keep(_ png: Data, as name: String) {
         if let dir = ProcessInfo.processInfo.environment["MAKTABA_SHOTS"], !dir.isEmpty {
             try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-            try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(full).png"))
+            if (try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))) != nil { return }
         }
+        let a = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
+        a.name = name
+        a.lifetime = .keepAlways
+        add(a)
     }
 
     /// The player opened `video` at `start` seconds: what the last stream session asked the

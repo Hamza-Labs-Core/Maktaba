@@ -55,6 +55,11 @@ func (b Bundle) DumpBeforeUpdate(ctx context.Context, from, to string, keep int)
 // afresh and the dump restored as Restore does. The desktop app's server does
 // this when an update's migrations failed, before any other role started.
 func (b Bundle) RestoreRunning(ctx context.Context, dump string, log io.Writer) error {
+	return b.RestoreRunningWith(ctx, dump, RestoreOptions{}, log)
+}
+
+// RestoreRunningWith is RestoreRunning with opts.
+func (b Bundle) RestoreRunningWith(ctx context.Context, dump string, opts RestoreOptions, log io.Writer) error {
 	if _, err := os.Stat(dump); err != nil {
 		return err
 	}
@@ -62,7 +67,7 @@ func (b Bundle) RestoreRunning(ctx context.Context, dump string, log io.Writer) 
 	if err != nil {
 		return err
 	}
-	return b.restoreInto(ctx, q, dump, RestoreOptions{}, log)
+	return b.restoreInto(ctx, q, dump, opts, log)
 }
 
 // ClusterMajor is the Postgres major version that made the cluster (its

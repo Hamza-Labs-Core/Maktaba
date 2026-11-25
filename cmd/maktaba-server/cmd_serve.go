@@ -21,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/ffmpeg"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/homemirror"
@@ -30,6 +31,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/recovery"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/webui"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/mediaaccess"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/pagetheme"
@@ -546,6 +548,8 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 		// what the cluster's machines may reach of it follows the cluster: it listens
 		// beyond this machine only while one may connect (a start again to change that)
 		go pg.WatchReach(ctx, pgbundle.ReachEvery, func() error { return sup.Restart(supervisor.RolePostgres, "") }, os.Stderr)
+		// and no machine's copy stays kept out of it once its schema is settled
+		go pg.WatchCopies(ctx, pgbundle.CopiesEvery, func() bool { return schemaSettled(cfg.StateDir()) }, os.Stderr)
 	}
 	var stopCopy func()
 	if cp != nil {
@@ -587,7 +591,12 @@ func runServe(cfg config.Config, opts serveOptions) (err error) {
 	if adminSrv := startSupervisorAdmin(policy.AdminAddr, admin); adminSrv != nil {
 		defer func() { _ = shutdownWeb(adminSrv) }()
 	}
-	confirmPending(ctx, sup, releaseDir)
+	startConfirms(ctx, sup, apppayload.DatabasePath(cfg.StateDir()), bundle, releaseDir, func() *updater.Journal {
+		if u := upd.Load(); u != nil && u.m != nil {
+			return u.m.Status().Journal
+		}
+		return nil
+	})
 	if bundle != "" {
 		go confirmAppPayload(ctx, sup, cfg.StateDir(), bundle)
 		go finishMove(ctx, sup, cfg)

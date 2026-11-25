@@ -32,7 +32,7 @@ The library page's tabs (Home, Browse, Series, Collections) gain **Playlists** (
 ### 4. Admin collection settings
 
 From 56.08: the library settings' collection mode; the collection page's Show on Recommended, Show
-on Home, Rename, Hide, Duplicate as curated; badges for YouTube and Plex collections.
+on Home, Rename, Hide, Duplicate as curated; a badge for YouTube playlist collections.
 
 ### 5. `/big`
 

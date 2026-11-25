@@ -86,6 +86,10 @@
     <string name="w_updates_code_check_failed">تعذّر على التطبيق البحث عن التحديث</string>
     <string name="w_updates_code_db_dump_failed">تعذّر حفظ قاعدة بيانات المكتبة قبل التحديث، فلم يتغيّر شيء</string>
     <string name="w_updates_code_db_migrate_failed">تعذّر تحديث قاعدة بيانات المكتبة للإصدار الجديد</string>
+    <string name="w_updates_code_db_down_failed">تعذّر على نصوص التراجع الخاصة بالتحديث إلغاء تغييراته في قاعدة البيانات. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك</string>
+    <string name="w_updates_code_db_held_lossy">كان أحد تغييرات التحديث في قاعدة البيانات قد حذف بيانات أو غيّرها بما لا يستطيع نص التراجع الخاص به إرجاعه. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك</string>
+    <string name="w_updates_code_db_held_unknown">تعذّر تحديد طريقة إلغاء تغييرات التحديث في قاعدة البيانات. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك</string>
+    <string name="w_updates_code_db_held_unasked">وُسمت قاعدة بيانات المكتبة لتُعاد من النسخة الاحتياطية دون أن يطلب ذلك أحد. لم يُرجَع شيء تلقائيًا: توقفت مكتبة وتنتظر اختيارك</string>
     <string name="w_updates_code_db_restore_failed">تعذّرت إعادة قاعدة بيانات المكتبة كما كانت قبل التحديث</string>
     <string name="w_updates_code_db_ahead">غيّرت قاعدةَ بيانات المكتبة نسخةٌ أحدث من مكتبة من هذه</string>
     <string name="w_updates_code_db_refused_older">هذا الإصدار أقدم من قاعدة بيانات المكتبة: ثبّت الإصدار الأحدث مجدداً</string>
@@ -136,6 +140,7 @@
     <string name="w_updates_code_no_app_update">لا يتضمن الإصدار تحديثاً لتطبيق سطح المكتب لهذا الجهاز</string>
     <string name="w_updates_code_app_install_failed">تعذّر على تطبيق سطح المكتب تثبيت التحديث</string>
     <string name="w_updates_code_app_order_gone">سُحب طلب التثبيت من تطبيق سطح المكتب أو استُبدل</string>
+    <string name="w_updates_code_app_no_answer">لم يأخذ تطبيق سطح المكتب التحديث في الوقت المحدد: فهو لا يعمل على هذا الجهاز، أو تعذّر تشغيله، أو لم يكتمل تنزيله للتحديث</string>
     <string name="w_updates_code_app_request_failed">تعذّر الوصول إلى تطبيق سطح المكتب</string>
     <string name="w_updates_code_app_not_started">تعذّر تشغيل تطبيق سطح المكتب</string>
     <string name="w_updates_code_app_did_not_install">لم يثبّت تطبيق سطح المكتب التحديث في الوقت المحدد</string>
@@ -198,6 +203,7 @@
     <string name="w_updates_waiting_retry_backoff">فشلت المحاولة الأخيرة: المحاولة التالية بعد دقائق.</string>
     <string name="w_updates_waiting_retry_next_window">جُرّب بما يكفي في هذه النافذة: النافذة التالية تحاول مجدداً.</string>
     <string name="w_updates_waiting_needs_person">المحاولة الأخيرة تحتاجك (انظر سببها): النافذة التالية تحاول مجدداً، أو «حدّث الآن».</string>
+    <string name="w_updates_waiting_catalog_stale">تعذّرت قراءة قائمة الإصدارات منذ أكثر من 12 ساعة: لا يُثبَّت شيء تلقائيًا حتى يقرأها تحقق جديد (و«حدّث الآن» يثبّت مع ذلك).</string>
     <string name="w_updates_plan_waiting_auto_install_off">الإصدار %1$s متاح؛ التثبيت التلقائي متوقف.</string>
     <string name="w_updates_plan_waiting_automatic_installs_not_built">الإصدار %1$s متاح.</string>
     <string name="w_updates_plan_waiting_deferred">الإصدار %1$s مؤجَّل.</string>
@@ -215,6 +221,7 @@
     <string name="w_updates_blocker_recent_crash">تعطّل جزء من خادم المنزل خلال الدقائق العشر الأخيرة</string>
     <string name="w_updates_blocker_supervisor_unreachable">مشرف المنزل لا يجيب</string>
     <string name="w_updates_blocker_switchover_open">يجري نقل المنزل إلى جهاز آخر</string>
+    <string name="w_updates_blocker_machine_copying">جهاز ينسخ قاعدة بيانات الجهاز الرئيسي: يبدأ التحديث حين تنتهي نسخته</string>
     <string name="w_queue_waiting_paused">متوقف مؤقتًا</string>
     <string name="w_queue_waiting_paused_all">كل شيء متوقف مؤقتًا</string>
     <string name="w_queue_waiting_pool_full">بانتظار عامل متاح</string>
@@ -274,6 +281,7 @@
     <string name="w_setup_starting_detail_db_restored">لم يتمكن التحديث إلى %1$s من تعديل قاعدة بيانات المكتبة. أُعيدت كما كانت قبل التحديث (استُعيدت من %2$s)، وتبقى مكتبة متوقفة: ثبّت %3$s مجددًا لتتابع كما كنت، أو تحديثًا يصلح هذا؛ وتشغيل مكتبة مجددًا يعيد محاولة التحديث.</string>
     <string name="w_setup_starting_detail_db_kept">لم يتمكن التحديث إلى %1$s من تعديل قاعدة بيانات المكتبة. لم يلزم إرجاع شيء: ما غيّره حتى الآن إضافات فقط، ويعمل %2$s على قاعدة البيانات كما هي. وتبقى مكتبة متوقفة: ثبّت %2$s مجددًا لتتابع كما كنت، أو تحديثًا يصلح هذا؛ وتشغيل مكتبة مجددًا يعيد محاولة التحديث.</string>
     <string name="w_setup_starting_detail_db_undone">لم يتمكن التحديث إلى %1$s من تعديل قاعدة بيانات المكتبة. أُلغيت تغييراته بنصوص التراجع الخاصة به، فلم يلزم إرجاع شيء من النسخة الاحتياطية، وقاعدة البيانات كما يعرفها %2$s. وتبقى مكتبة متوقفة: ثبّت %2$s مجددًا لتتابع كما كنت، أو تحديثًا يصلح هذا؛ وتشغيل مكتبة مجددًا يعيد محاولة التحديث.</string>
+    <string name="w_setup_starting_detail_db_held">توقف التحديث إلى %1$s: لم يتمكن من تعديل قاعدة بيانات المكتبة، ولم تستطع نصوص التراجع الخاصة به إرجاعها. لم يُرجَع شيء تلقائيًا، وتبقى مكتبة متوقفة حتى تختار: أعِد النسخة الاحتياطية المأخوذة قبل التحديث (%2$s) من صفحة الاستعادة، فيعود %3$s وتضيع التغييرات التي جرت بعد تلك النسخة؛ أو ثبّت إصدارًا أحدث من %1$s يصلح هذا، فيُكمل من هنا.</string>
     <string name="w_setup_starting_detail_db_refused_older">هذه النسخة من مكتبة (%1$s) أقدم من النسخة التي تحمل قاعدة بيانات المكتبة تغييراتها (%2$s): ثبّت %2$s أو أحدث.</string>
     <string name="w_setup_starting_detail_db_ahead">عدّلت قاعدةَ بيانات المكتبة نسخةٌ من مكتبة أحدث من هذه (%1$s): ثبّت تلك النسخة الأحدث مجددًا.</string>
     <string name="w_setup_starting_detail_db_dump_failed">تعذّر حفظ قاعدة بيانات المكتبة قبل التحديث إلى %1$s، لذا ينتظر التحديث (لم يتغير شيء).</string>
@@ -281,7 +289,10 @@
     <string name="w_setup_starting_detail_db_restore_failed">لم يتمكن التحديث إلى %1$s من تعديل قاعدة بيانات المكتبة، وفشلت إعادتها من %2$s أيضًا. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة.</string>
     <string name="w_setup_starting_detail_db_restore_unfinished">جارٍ إعادة قاعدة بيانات المكتبة كما كانت قبل التحديث إلى %1$s (من %2$s): شغّل الخادم كاملًا لإتمام ذلك.</string>
     <string name="w_setup_starting_detail_db_restoring_backup">جارٍ إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s، بطلب من %2$s.</string>
-    <string name="w_setup_starting_detail_db_restore_backup_failed">فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s. لم يتغيّر شيء؛ تبقى مكتبة متوقفة ويعيد تشغيلها التالي المحاولة.</string>
+    <string name="w_setup_starting_detail_db_restore_backup_failed">فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s. لم يتغيّر شيء. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة. وتعرض صفحة الاستعادة ما يمكنك فعله غير ذلك.</string>
+    <string name="w_setup_starting_detail_db_restore_backup_part">فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s، وقد تحوي القاعدة جزءًا منها. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة. ويمكنك في صفحة الاستعادة إعادة نسخة احتياطية أخرى.</string>
+    <string name="w_setup_starting_detail_db_restore_backup_gone">فشلت إعادة قاعدة بيانات المكتبة من النسخة الاحتياطية %1$s، ولم تعد القاعدة موجودة. تبقى مكتبة متوقفة، ويعيد تشغيلها التالي المحاولة. ويمكنك في صفحة الاستعادة إعادة نسخة احتياطية أخرى.</string>
+    <string name="w_setup_starting_detail_db_restore_no_copy">توقفت إعادة النسخة الاحتياطية %1$s: تعذّر الاحتفاظ بنسخة من المكتبة كما هي الآن. لم تغيّر هذه المحاولة شيئًا. وتبيّن صفحة الاستعادة السبب وما يمكنك فعله.</string>
     <string name="w_setup_starting_detail_db_no_cluster">لم يتمكن التحديث إلى %1$s من تعديل قاعدة بيانات المكتبة، ولا تشغّل هذه النسخة من مكتبة قاعدة بيانات خاصة بها لإعادة %2$s إليها.</string>
     <string name="w_setup_starting_detail_db_record_failed">تتعذّر قراءة سجل قاعدة بيانات المكتبة (%1$s) أو حفظه.</string>
     <string name="w_setup_starting_detail_pg_unreadable">تتعذّر قراءة قاعدة بيانات المكتبة (%1$s).</string>

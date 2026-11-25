@@ -5,7 +5,7 @@
 ## Why
 
 Collections exist on the server (admin-made manual and smart ones, topic and clip groups, and now
-YouTube and Plex ones) and on the web, but not on the TVs. Plex shows them in a Collections tab,
+YouTube ones) and on the web, but not on the TVs. Plex shows them in a Collections tab,
 lets an admin choose whether they also show in the library grid (collection mode), and lets an
 admin promote one to a row on Recommended and on Home.
 
@@ -16,9 +16,10 @@ admin promote one to a row on Recommended and on Home.
 A grid of collection cards from `GET /api/libraries/{id}/collections` (all kinds; hidden ones
 left out for everyone, shown to admins on the web only). A card shows the art (the collection's
 poster, else a collage of its first four videos' posters), the name (`name_override` first), the
-count and a badge: YouTube playlist, YouTube channel, Plex, Smart, Topic, Clips. A **Kind**
-button filters by kind (All, YouTube, Plex, Curated, Topics, Clips). Order: `sort_title`, else
-name.
+count and a badge: YouTube playlist, Smart, Topic, Clips. A YouTube channel's collection has no
+badge, and there is no Plex badge or kind: collections are not read in from Plex, and one an older
+release read in is a curated one. A **Kind** button filters by kind (All, YouTube, Curated, Topics,
+Clips). Order: `sort_title`, else name.
 
 ### 2. A collection page (TVs)
 
@@ -29,7 +30,7 @@ the collection's order (a smart one: its saved sort); focus starts on Play.
 
 `libraries.collection_mode` (slot 0193): `tab_only` (default: collections only in their tab),
 `hide_items` (the Library grid shows a collection's card in place of its items), `show_both`
-(cards and items). Only admin-made and Plex collections take part (YouTube channel collections
+(cards and items). Only admin-made collections take part (YouTube channel collections
 never replace items: they would hide most of a library). `GET /api/videos` honours it when
 `library` is set and no filter other than sort is active; with a filter the grid shows items.
 Set on the web's library settings (admin), `PATCH /api/libraries/{id}`.
@@ -48,8 +49,9 @@ Every change above is admin-only in the API (403 for viewers, with role tests); 
 
 ## Acceptance criteria
 
-- **Given** a library with 2 YouTube, 1 Plex and 1 curated collection, **when** its Collections
-  tab opens on either TV, **then** 4 cards show with their badges, and Kind → Plex leaves 1.
+- **Given** a library with a YouTube playlist's, a YouTube channel's and 1 curated
+  collection, **when** its Collections tab opens on either TV, **then** 3 cards show, a badge on the
+  playlist's only, and Kind → YouTube leaves 2.
 - **Given** `collection_mode = hide_items` and a curated collection of 5 videos, **then** the Library
   grid shows the collection's card once and none of the 5; with the Unwatched filter, the items
   show and the card does not.
@@ -66,7 +68,7 @@ Every change above is admin-only in the API (403 for viewers, with role tests); 
 | T02 | Go unit | API | promoted | hub, home | rows present, ordered |
 | T03 | Go role test | API | viewer, no session | PATCH collection, library | 403, 401 |
 | T04 | unit (web) | web | library settings, collection page | change mode, flags | PATCH bodies; en/ar |
-| T05 | Compose UI test | Android TV | collections mock | open tab; Kind → Plex | 4 cards; 1 |
+| T05 | Compose UI test | Android TV | collections mock | open tab; Kind → YouTube | 3 cards; 2 |
 | T06 | Compose UI test | Android TV | collection page | initial focus | Play |
 | T07 | Compose UI test | Android TV | hub with promoted row | Recommended | row shown |
 | T08 | XCUITest (`XCUIRemote`) | Apple TV | `MockHome` collections | open tab, select a card | collection page, Play focused |

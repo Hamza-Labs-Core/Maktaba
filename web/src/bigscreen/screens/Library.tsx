@@ -10,8 +10,8 @@
 //   collections an admin promoted to it.
 // - Library: Show [Videos | Series], Sort, Filter, a grid (GET /api/videos, or
 //   ?group=series) and the letter rail at its end side (GET /api/videos/facets).
-// - Collections: the library's collections with a badge per kind (YouTube,
-//   Plex, Smart); Playlists: the user's lists with videos here; Categories:
+// - Collections: the library's collections with a badge (a YouTube
+//   playlist's, Smart); Playlists: the user's lists with videos here; Categories:
 //   speakers, topics, languages and years, each opening the filtered grid.
 //
 // Remote (Epic 56 §6.5): opening a library lands on its tab row; Left and Right
@@ -856,15 +856,13 @@ function FilterPanel({
 
 // ---- Collections ------------------------------------------------------------
 
-/** The badge of a collection's kind (YouTube, Plex, Smart), or none. */
+/** The badge of a collection's kind (a YouTube playlist, Smart), or none: a channel's has none. */
 export function collectionBadge(
   c: Pick<LibraryCollection, "kind" | "source_kind">,
   t: (k: string) => string
 ): string | null {
   if (c.source_kind === "youtube_playlist") return t("collections.badge.youtubePlaylist");
-  if (c.source_kind === "youtube_channel") return t("collections.badge.youtubeChannel");
-  if (c.source_kind === "plex" || c.kind === "plex") return t("collections.badge.plex");
-  if (c.kind === "youtube") return t("collections.badge.youtubePlaylist");
+  if (c.kind === "youtube" && !c.source_kind) return t("collections.badge.youtubePlaylist");
   if (c.kind === "smart") return t("collections.badge.smart");
   return null;
 }
@@ -885,7 +883,6 @@ function CollectionsTab({ libraryId }: { libraryId: string }) {
   const { go } = useBigNav();
   const play = usePlay();
   const youtube = useFeature("youtube");
-  const plex = useFeature("plex");
   const [items, setItems] = useState<LibraryCollection[] | null>(
     () => keptNow(`collections:${libraryId}`) ?? null
   );
@@ -916,9 +913,7 @@ function CollectionsTab({ libraryId }: { libraryId: string }) {
   if (!items) return <Loading />;
   // a source switched off on this home (story 51.11): its collections are not shown
   const shown = items.filter(
-    (c) =>
-      !(youtube === "off" && (c.kind === "youtube" || c.source_kind?.startsWith("youtube"))) &&
-      !(plex === "off" && (c.kind === "plex" || c.source_kind === "plex"))
+    (c) => !(youtube === "off" && (c.kind === "youtube" || c.source_kind?.startsWith("youtube")))
   );
   if (shown.length === 0) return <Empty>{t("collections.empty")}</Empty>;
   return (

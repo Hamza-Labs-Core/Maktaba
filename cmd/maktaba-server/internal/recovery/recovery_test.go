@@ -152,7 +152,7 @@ func newHandler(t *testing.T, k *rsa.PrivateKey) (*Handler, *fakeActions) {
 			RestartComponent: func(id string) int { fa.restarted = append(fa.restarted, id); return 1 },
 			RestartAll:       func() { fa.all++ },
 			SafeMode:         func(on bool) error { fa.safe = append(fa.safe, on); return nil },
-			Restore:          func(name, _ string) error { fa.restored = name; return nil },
+			Restore:          func(name, _ string, _ bool) error { fa.restored = name; return nil },
 			Backups: func() ([]Backup, error) {
 				return []Backup{{Name: "maktaba-20261106-030000.dump", At: t0.Add(-24 * time.Hour), Size: 73400320}}, nil
 			},
@@ -378,3 +378,128 @@ func TestEveryStatusGroupHasItsWords(t *testing.T) {
 		}
 	}
 }
+
+// An update that stopped and asks (its database record held: nothing was put back by
+// itself): the console's state names it, the backup to put back among the choices, and
+// the page carries the words for it in both languages.
+func TestHeldUpdateIsShownWithTheChoices(t *testing.T) {
+	k := newKey(t)
+	h, _ := newHandler(t, k)
+	h.Actions.Held = func() *Held {
+		return &Held{Failed: "0.3.158", From: "0.3.153", Backup: "pre-0.3.153-to-0.3.158.dump", Why: "db_down_failed: boom"}
+	}
+	admin := &http.Cookie{Name: CookiePass, Value: sign(t, k, pass("a1", true, AudienceRecovery, t0, t0.Add(time.Hour)))}
+	rec := do(h, http.MethodGet, "/recovery/api/state", "", admin, nil)
+	var st State
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Held == nil || st.Held.Failed != "0.3.158" || st.Held.Backup != "pre-0.3.153-to-0.3.158.dump" {
+		t.Fatalf("held: %+v", st.Held)
+	}
+	for _, lang := range []string{"en", "ar"} {
+		page := do(h, http.MethodGet, "/recovery", "", admin, map[string]string{"Accept-Language": lang}).Body.String()
+		for _, k := range []string{"recovery.held", "recovery.held.restore", "recovery.held.newer"} {
+			if !strings.Contains(page, `"`+k+`":`) || !strings.Contains(page, jsonText(T(lang, k))) {
+				t.Errorf("%s: the page lacks %s", lang, k)
+			}
+		}
+		if !strings.Contains(page, `id="held"`) {
+			t.Errorf("%s: no place for the held update", lang)
+		}
+	}
+	// none held: nothing said
+	h.Actions.Held = func() *Held { return nil }
+	rec = do(h, http.MethodGet, "/recovery/api/state", "", admin, nil)
+	if strings.Contains(rec.Body.String(), `"held":`) {
+		t.Fatalf("a state with no held update: %s", rec.Body.String())
+	}
+}
+
+// jsonText is s as the page's words carry it (JSON, < escaped).
+func jsonText(s string) string {
+	b, _ := json.Marshal(s)
+	return strings.Trim(jsonForScript(b), `"`)
+}
+
+// A restore that is not done: the console names it, says what the database is, and offers the
+// ways out there are (the same backup again, another, giving it up, asked twice), in both
+// languages.
+func TestARestoreThatIsNotDoneIsShownWithItsWaysOut(t *testing.T) {
+	k := newKey(t)
+	h, _ := newHandler(t, k)
+	h.Actions.Stuck = func() *Stuck {
+		return &Stuck{Backup: "pre-0.3.153-to-0.3.158.dump", Why: "pg_restore: no space left", Data: "untouched", CanGiveUp: true,
+			Release: "0.3.158"}
+	}
+	var by string
+	h.Actions.GiveUp = func(b string) error { by = b; return nil }
+	admin := &http.Cookie{Name: CookiePass, Value: sign(t, k, pass("a1", true, AudienceRecovery, t0, t0.Add(time.Hour)))}
+	var st State
+	if err := json.Unmarshal(do(h, http.MethodGet, "/recovery/api/state", "", admin, nil).Body.Bytes(), &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Stuck == nil || st.Stuck.Backup != "pre-0.3.153-to-0.3.158.dump" || !st.Stuck.CanGiveUp || st.Stuck.Data != "untouched" {
+		t.Fatalf("stuck: %+v", st.Stuck)
+	}
+	for _, lang := range []string{"en", "ar"} {
+		page := do(h, http.MethodGet, "/recovery", "", admin, map[string]string{"Accept-Language": lang}).Body.String()
+		for _, k := range []string{"running", "untouched", "replaced", "gone", "retry", "other", "giveUp", "giveUpHeld", "stop", "newer",
+			"noCopy", "withoutCopy"} {
+			k = "recovery.stuck." + k
+			if !strings.Contains(page, `"`+k+`":`) || !strings.Contains(page, jsonText(T(lang, k))) {
+				t.Errorf("%s: the page lacks %s", lang, k)
+			}
+		}
+	}
+	hdr := map[string]string{"X-Maktaba-Recovery": "1"}
+	if c := do(h, http.MethodPost, "/recovery/api/action", `{"action":"give_up_restore","confirm":1}`, admin, hdr).Code; c != http.StatusPreconditionRequired || by != "" {
+		t.Fatalf("given up with one confirmation: %d %q", c, by)
+	}
+	if c := do(h, http.MethodPost, "/recovery/api/action", `{"action":"give_up_restore","confirm":2}`, admin, hdr).Code; c != http.StatusOK ||
+		!strings.Contains(by, "a1") {
+		t.Fatalf("given up: %d %q", c, by)
+	}
+	h.Actions.Stuck = func() *Stuck { return nil }
+	if strings.Contains(do(h, http.MethodGet, "/recovery/api/state", "", admin, nil).Body.String(), `"stuck":`) {
+		t.Fatal("a state with no restore")
+	}
+}
+
+// A restore with no room for a copy of the library as it is now: refused with its code, and
+// done only when that is asked too.
+func TestRestoreWithoutACopyIsAskedFor(t *testing.T) {
+	k := newKey(t)
+	h, _ := newHandler(t, k)
+	var got []string
+	h.Actions.Restore = func(name, _ string, withoutCopy bool) error {
+		if !withoutCopy {
+			return codedError("restore_no_copy")
+		}
+		got = append(got, name)
+		return nil
+	}
+	admin := &http.Cookie{Name: CookiePass, Value: sign(t, k, pass("a1", true, AudienceRecovery, t0, t0.Add(time.Hour)))}
+	hdr := map[string]string{"X-Maktaba-Recovery": "1"}
+	w := do(h, http.MethodPost, "/recovery/api/action", `{"action":"restore","backup":"a.dump","confirm":2}`, admin, hdr)
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), `"code":"restore_no_copy"`) || len(got) != 0 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if w := do(h, http.MethodPost, "/recovery/api/action", `{"action":"restore","backup":"a.dump","without_copy":true,"confirm":1}`, admin, hdr); w.Code != http.StatusPreconditionRequired {
+		t.Fatalf("with one confirmation: %d", w.Code)
+	}
+	if w := do(h, http.MethodPost, "/recovery/api/action", `{"action":"restore","backup":"a.dump","without_copy":true,"confirm":2}`, admin, hdr); w.Code != http.StatusOK || len(got) != 1 {
+		t.Fatalf("%d %s %v", w.Code, w.Body, got)
+	}
+	for _, lang := range []string{"en", "ar"} {
+		page := do(h, http.MethodGet, "/recovery", "", admin, map[string]string{"Accept-Language": lang}).Body.String()
+		if !strings.Contains(page, jsonText(T(lang, "recovery.restore.noCopy"))) {
+			t.Errorf("%s: the page does not say it", lang)
+		}
+	}
+}
+
+type codedError string
+
+func (e codedError) Error() string       { return "refused: " + string(e) }
+func (e codedError) RestoreCode() string { return string(e) }

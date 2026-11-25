@@ -84,7 +84,16 @@ func stallLimit(j *Journal) time.Duration {
 	return d
 }
 
-// extendGuard pushes the launcher's guard to until (best effort).
+// RollbackGuarder is an installer that can tell the launcher's guard a rollback is under way
+// (it has its own time: the Down scripts are not stopped part way).
+type RollbackGuarder interface {
+	RollingBack(j *Journal) error
+}
+
+// extendGuard pushes the launcher's guard to until (best effort), while this release has not
+// run longer than the launcher gives it (guardRun; a rollback under way has more): a launcher
+// from before 2026-11-24 counts no time of its own, and pushed without limit it would never
+// give up on a release that hung with its watch alive (research P5).
 func (m *Machine) extendGuard(until time.Time) {
 	e, ok := m.Installer.(Extender)
 	if !ok {
@@ -92,6 +101,10 @@ func (m *Machine) extendGuard(until time.Time) {
 	}
 	j := m.Status().Journal
 	if j == nil {
+		return
+	}
+	budget := layout.GuardBudget(int64(guardRun(j)/time.Second), j.State == StateRollingBack)
+	if started := m.startedAt(); !started.IsZero() && m.now().Sub(started) >= budget {
 		return
 	}
 	if err := e.Extend(j, until); err != nil {
@@ -103,6 +116,13 @@ func (m *Machine) extendGuard(until time.Time) {
 // once a minute, checked every checkEvery) until the returned stop is called; stop
 // returns once nothing pushes it any more.
 func (m *Machine) keepGuard() (stop func()) {
+	if g, ok := m.Installer.(RollbackGuarder); ok {
+		if j := m.Status().Journal; j != nil && j.State == StateRollingBack {
+			if err := g.RollingBack(j); err != nil {
+				m.logf("the launcher cannot be told the rollback is under way: %v", err)
+			}
+		}
+	}
 	done, finished := make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(finished)
@@ -151,13 +171,14 @@ type Health interface {
 }
 
 // Records is the home's database record (state/database.json, the database step of
-// serve_appbundle.go): a rollback after the new release's migrations ran marks the dump
-// taken before them to be put back by the next start, before any role runs.
+// serve_appbundle.go): a rollback after the new release's migrations ran, when neither
+// keeping its schema nor its Down scripts take the database back, marks the record held:
+// nothing is put back by itself, and a person decides (db_held).
 type Records interface {
-	// MarkRestore marks the record restoring when it says version's migrations ran over
-	// from's database with a dump; it reports whether it did.
-	MarkRestore(version, from, reason string) (bool, error)
-	// Unmark undoes MarkRestore (the switch back failed: version stays, and its database).
+	// MarkHeld marks the record held when it says version's migrations ran over from's
+	// database with a dump; it reports whether it did.
+	MarkHeld(version, from, reason string) (bool, error)
+	// Unmark undoes MarkHeld (the switch back failed: version stays, and its database).
 	Unmark(version string) error
 	// Migrated reports whether the database holds version's migrations.
 	Migrated(version string) bool
@@ -214,6 +235,9 @@ type Machine struct {
 	// Now and CheckEvery are test seams (time.Now, 5 s).
 	Now        func() time.Time
 	CheckEvery time.Duration
+	// AnswerCheckEvery is how often (wall time) an order's wait looks whether the app is
+	// past answerBy (0: a minute; negative: at every check, a test seam).
+	AnswerCheckEvery time.Duration
 	// MaxStarts is how many starts of the new release a watch tolerates (3).
 	MaxStarts int
 	// OnChange is called after every change of the journal (a node's machine agent
@@ -240,17 +264,9 @@ type Machine struct {
 	// TV moves the home's TV to the new release's streaming binary before the commit
 	// (story 35.6, tv.go); nil: no TV slots here (a node, a SQLite home), nothing to move.
 	TV TVSwapper
-	// RestoreBack puts the dump taken before the new release's migrations back with this
-	// release's own code before its rollback switches back (the record is marked restoring
-	// first): the database's roles stopped, the dump put back whole and checked, the record
-	// restored for the release before, which then starts on a finished database. The
-	// release before's own restore (code from before 2026-10-28: no lockout, its grants in
-	// parallel, nothing checked) is what failed on 2026-10-28. An error leaves the record
-	// restoring, and the release before puts it back at its start, as before (nil: always so).
-	RestoreBack func(ctx context.Context, j *Journal, reason string) error
 	// MigrateDown runs the new release's Down scripts back to schema (the release before's
 	// newest migration) with the database's other users stopped (schemadown.go): a rollback
-	// whose migrations lose no data undoes only them. nil: the dump goes back, as before.
+	// whose migrations lose no data undoes only them. nil: the record is held (MarkHeld).
 	MigrateDown func(ctx context.Context, j *Journal, schema int64) error
 	// Packs fetches the new release's packs before the switch, and prunes those of
 	// releases no longer kept (story 51.18, packs.go); nil: no packs step.
@@ -261,6 +277,7 @@ type Machine struct {
 	cancel  context.CancelFunc
 	running sync.WaitGroup
 	base    context.Context
+	began   time.Time // when Start was called
 	// saveErr is the last journal write failure logged (one line per distinct one)
 	saveErr string
 }
@@ -287,6 +304,9 @@ func (m *Machine) maxStarts() int {
 }
 
 func (m *Machine) logf(format string, args ...any) { m.leveledf("", format, args...) }
+
+// Warnf writes a warning to the server's log and the run's log (an installer's note).
+func (m *Machine) Warnf(format string, args ...any) { m.warnf(format, args...) }
 
 // errorf and warnf are logf for a failure: the server log's line names its level first
 // ("[update] level=error …", what the logs page reads a plain line's level from); the
@@ -444,8 +464,15 @@ func ordered(state string) bool { return state == StateOrdered || state == State
 // life). Resume reads the journal of a run the last start left.
 func (m *Machine) Start(ctx context.Context) {
 	m.mu.Lock()
-	m.base = ctx
+	m.base, m.began = ctx, m.now()
 	m.mu.Unlock()
+}
+
+// startedAt is when this server started the machine (zero: not started).
+func (m *Machine) startedAt() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.began
 }
 
 func (m *Machine) ctx() context.Context {
@@ -935,9 +962,72 @@ func (m *Machine) SetInstallBy(runID string, at time.Time) {
 	})
 }
 
+// appAnswerLimit is how long an order waits for the app to stage it when the run
+// names no time to install by (an Update now): the app is started with the order's link
+// every NudgeAfter meanwhile. appAnswerAtLeast is the least it waits: more than the app's
+// own limit on its download (45 minutes: shell.rs, agent_orders.rs DOWNLOAD_TIMEOUT).
+const (
+	appAnswerLimit   = 3 * time.Hour
+	appAnswerAtLeast = 50 * time.Minute
+)
+
+// answerGap is the longest two looks of await are apart while the machine is awake.
+const answerGap = 5 * time.Minute
+
+// appWait is how long the app had, awake, to take its order: since the server began to wait,
+// or the machine woke (a gap between two looks by the wall clock, which goes on while it
+// sleeps). A laptop that slept past the order's time is given appAnswerAtLeast when it wakes.
+type appWait struct{ awake, looked time.Time }
+
+func (a *appWait) look(now time.Time) {
+	now = now.Round(0) // the wall clock
+	if a.looked.IsZero() || now.Sub(a.looked) > answerGap || now.Before(a.looked) {
+		a.awake = now
+	}
+	a.looked = now
+}
+
+// over reports whether the order is given up on: by passed, and the app had its time.
+func (a *appWait) over(by time.Time) bool {
+	return a.looked.After(by) && a.looked.Sub(a.awake) >= appAnswerAtLeast
+}
+
+// answerCheckEvery is how often (wall time) await looks at answerBy: a minute
+// (AnswerCheckEvery; negative: at every check).
+func (m *Machine) answerCheckEvery() time.Duration {
+	switch {
+	case m.AnswerCheckEvery < 0:
+		return 0
+	case m.AnswerCheckEvery == 0:
+		return time.Minute
+	}
+	return m.AnswerCheckEvery
+}
+
+// answerBy is when an order the app has not staged is given up (research P10:
+// an app that is not running, or whose start failed, left the run waiting forever): the
+// time the run installs by (its window's end), else appAnswerLimit after the order;
+// never sooner than appAnswerAtLeast after it.
+func answerBy(j *Journal) time.Time {
+	var since time.Time
+	for _, s := range j.Steps {
+		if s.Step == StepOrder {
+			since = s.StartedAt
+		}
+	}
+	by := since.Add(appAnswerLimit)
+	if j.InstallBy != nil {
+		by = *j.InstallBy
+	}
+	if least := since.Add(appAnswerAtLeast); by.Before(least) {
+		by = least
+	}
+	return by
+}
+
 // await orders the release from the app and follows its answer until the app staged it
 // (app_staged: the home's go switches; no click on this machine) or it fails (nothing
-// changed).
+// changed), or the app never answered by answerBy (app_no_answer).
 func (m *Machine) await(ctx context.Context, runID string) {
 	a := m.orderer()
 	j := m.Status().Journal
@@ -949,6 +1039,8 @@ func (m *Machine) await(ctx context.Context, runID string) {
 		return
 	}
 	m.logf("ordered %s from the app: it stages it, then installs it at the home's go", j.Job.Version)
+	var lastLooked time.Time // when answerBy was last looked at (wall time)
+	wait := appWait{}
 	t := time.NewTicker(m.checkEvery())
 	defer t.Stop()
 	for {
@@ -960,6 +1052,17 @@ func (m *Machine) await(ctx context.Context, runID string) {
 		if err != nil {
 			m.orderFailed(runID, err)
 			return
+		}
+		wait.look(m.now())
+		if state == RequestOrdered && time.Since(lastLooked) >= m.answerCheckEvery() {
+			lastLooked = time.Now()
+			if wait.over(answerBy(cur)) {
+				m.orderFailed(runID, Fail("app_no_answer", "the app did not stage the order of %s by %s: it is not "+
+					"running on this machine, could not be started, or had not downloaded it yet (the update waits for "+
+					"the next try)",
+					cur.Job.Version, answerBy(cur).Format(time.RFC3339)))
+				return
+			}
 		}
 		switch {
 		case state == RequestStaged:
@@ -1156,9 +1259,10 @@ func (m *Machine) undoSwitch(after string) {
 }
 
 // cameBackOld records a run whose new release did not stay running: the launcher's
-// guard (or the app) brought back the previous one, and the record was marked for the
-// dump to be put back where the migrations ran (by the launcher, or here when it could
-// not: the database step runs after this). The switch is undone too (the guard, the
+// guard (or the app) brought back the previous one, and the record was marked held where
+// the migrations ran (by the launcher, or here when it could not: the database step runs
+// after this), so the previous release stops on it and a person decides; nothing is put
+// back by itself. The switch is undone too (the guard, the
 // order, the override): nothing is left that would take the new release for one being
 // tried, should it come later (the app's install finishing after all).
 func (m *Machine) cameBackOld(running, why string) {
@@ -1167,11 +1271,12 @@ func (m *Machine) cameBackOld(running, why string) {
 	}
 	j := m.Status().Journal
 	if m.Records != nil && j.Job.Home {
-		if marked, err := m.Records.MarkRestore(j.Job.Version, j.From, why); err != nil {
-			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
+		if marked, err := m.Records.MarkHeld(j.Job.Version, j.From, why); err != nil {
+			m.errorf("cannot mark the database record held: %v", err)
 		} else if marked {
-			m.errorf("the whole dump taken before %s's migrations goes back: %s came back on its own (%s), and its "+
-				"start puts the dump back", j.Job.Version, orNone(j.From), why)
+			m.errorf("the update to %s stopped after its migrations ran: %s came back on its own (%s) and stops on "+
+				"the database as they left it; nothing is put back by itself, a person decides (db_held)",
+				j.Job.Version, orNone(j.From), why)
 		}
 	}
 	_ = m.mutate(func(j *Journal) {
@@ -1367,6 +1472,7 @@ func (m *Machine) commit() bool {
 		m.logf("cannot keep %s yet (tried again): %v", j.Job.Version, err)
 		return false
 	}
+	m.confirmRecord(j)
 	// the dump the new release's start took before its migrations is the run's backup
 	if f, ok := m.Rehearser.(BackupFinder); ok && j.Job.Home {
 		if b := f.UpdateDump(j.From, j.Job.Version); b != nil {
@@ -1389,6 +1495,25 @@ func (m *Machine) commit() bool {
 	m.logf("committed %s", j.Job.Version)
 	m.replaceLauncher()
 	return true
+}
+
+// ConfirmRecords is a Records that can be told the release is confirmed: the backup its
+// update took is named where every release reads it (layout.ConfirmRecord).
+type ConfirmRecords interface {
+	Confirm(version string) error
+}
+
+// confirmRecord tells the database's record that j's release is kept, at the commit. Best
+// effort: the server does it too once the release runs healthy (serve's confirmRecord), a
+// commit cut short included.
+func (m *Machine) confirmRecord(j *Journal) {
+	c, ok := m.Records.(ConfirmRecords)
+	if !ok || j == nil || !j.Job.Home {
+		return
+	}
+	if err := c.Confirm(j.Job.Version); err != nil {
+		m.logf("the database's record cannot say %s is kept: %v", j.Job.Version, err)
+	}
 }
 
 // replaceLauncher hands over to the release's launcher when it needs a newer one (story
@@ -1440,11 +1565,12 @@ func (m *Machine) replaceLauncher() {
 }
 
 // rollback switches back to the release that ran before and restarts on it at once:
-// nothing is dumped first. Where the new release's migrations ran, the record is marked
-// for the dump taken before them to be put back by that start, before any role runs,
-// unless every one of them is rollback-safe and the release before runs on such a schema:
-// then the database stays as it is (keepSchema). A release that added no migration left
-// the database as the one before knows it.
+// nothing is dumped first. Where the new release's migrations ran, the database stays as
+// they left it when every one of them is rollback-safe and the release before runs on
+// such a schema (keepSchema), else their Down scripts undo them (migrateDown); when
+// neither does, the record is marked held: nothing is put back by itself, the release
+// before stops on it and a person decides (db_held). A release that added no migration
+// left the database as the one before knows it.
 func (m *Machine) rollback(reason string) {
 	j := m.Status().Journal
 	if j.FromRef == "" && j.From == "" {
@@ -1480,24 +1606,15 @@ func (m *Machine) rollback(reason string) {
 	m.withdrawTV(reason)
 	migrated := j.Job.Home && m.Records != nil && m.Records.Migrated(j.Job.Version)
 	if migrated && !m.keepSchema(j, reason) && !m.migrateDown(j, reason) {
-		// not the way back (the Down scripts are): said loudly, the Updates page shows it
-		m.errorf("neither keeping %s's schema nor its Down scripts take the database back: the whole dump taken "+
-			"before its migrations goes back", j.Job.Version)
-		marked, err := m.Records.MarkRestore(j.Job.Version, j.From, reason)
-		if err != nil {
-			m.errorf("cannot mark the database record for the dump to be put back: %v", err)
-		}
-		if marked && m.RestoreBack != nil {
-			// this release puts it back now, with its own code (review of #433)
-			m.logf("putting the database back as it was before %s's migrations, before switching back to %s",
-				j.Job.Version, orNone(j.From))
-			if err := m.RestoreBack(m.ctx(), j, reason); err != nil {
-				m.errorf("this release could not put the database back (%v): %s puts it back at its start", err,
-					orNone(j.From))
-			} else {
-				m.logf("the database is back as it was before %s's migrations: %s starts on it", j.Job.Version,
-					orNone(j.From))
-			}
+		// no automatic restore: the update stops and a person decides (put the backup
+		// taken before the migrations back, or install a release that fixes this). The
+		// release before refuses the held database and stops; the Updates page and the
+		// start's detail say what happened and the choices (db_held).
+		m.errorf("neither keeping %s's schema nor its Down scripts take the database back: the update stops "+
+			"and waits for a person (nothing is put back by itself; %s stops on the database as it is)",
+			j.Job.Version, orNone(j.From))
+		if _, err := m.Records.MarkHeld(j.Job.Version, j.From, reason); err != nil {
+			m.errorf("cannot mark the database record held: %v", err)
 		}
 	}
 	// stopped before the switch back: a push after it would write back the guard the
@@ -1507,7 +1624,8 @@ func (m *Machine) rollback(reason string) {
 	if err := m.withJournal(func(j *Journal) error { return m.Installer.Revert(context.Background(), j) }); err != nil {
 		if migrated {
 			// the new release stays, and so does its database: no start may put the dump
-			// back under it
+			// back under it. A held record stays held (recordFile.Unmark): its Down scripts may
+			// have run in part, so no start of it may migrate and run by itself
 			if uerr := m.Records.Unmark(j.Job.Version); uerr != nil {
 				m.errorf("cannot take the restore mark back: %v", uerr)
 			}
@@ -1527,7 +1645,8 @@ func (m *Machine) rollback(reason string) {
 // keepSchema marks the database's record kept for the release before when the rollback
 // may leave the database as the new release's migrations made it (schemakeep.go): every
 // one of them rollback-safe, and the release before runs on such a schema. It reports
-// whether it did; otherwise the dump goes back (MarkRestore), as before.
+// whether it did; otherwise its Down scripts are tried (migrateDown), then the record is
+// held (MarkHeld).
 func (m *Machine) keepSchema(j *Journal, reason string) bool {
 	k, ok := m.Installer.(SchemaKeeper)
 	kr, ok2 := m.Records.(KeptRecords)
@@ -1541,7 +1660,7 @@ func (m *Machine) keepSchema(j *Journal, reason string) bool {
 	}
 	marked, err := kr.MarkKept(j.Job.Version, j.From, reason)
 	if err != nil {
-		m.errorf("cannot mark the database record kept for %s (the dump goes back instead): %v", j.From, err)
+		m.errorf("cannot mark the database record kept for %s (its Down scripts are tried, else it is held): %v", j.From, err)
 		return false
 	}
 	if marked {

@@ -402,6 +402,7 @@ type CollectionRowRef struct {
 // promotedRows is the promoted collections of lib (its Recommended tab), or
 // with lib "" those shown on Home of every library in s, by sort title; a
 // smart collection and one with no visible video the caller may see make no row.
+// One an older release read in from Plex has no source (groups.go).
 func (h *Handler) promotedRows(ctx context.Context, uid string, s scope, lib string) ([]CollectionRow, error) {
 	args := []any{}
 	where := "c.show_on_home"
@@ -410,7 +411,7 @@ func (h *Handler) promotedRows(ctx context.Context, uid string, s scope, lib str
 		where = "c.show_on_library AND c.library_id = " + pidx(len(args))
 	}
 	where = and(where, s.cond("c.library_id", &args))
-	rows, err := h.DB.QueryContext(ctx, `SELECT c.id, COALESCE(c.name_override, c.name), c.library_id, l.name, COALESCE(c.source_kind, '')
+	rows, err := h.DB.QueryContext(ctx, `SELECT c.id, COALESCE(c.name_override, c.name), c.library_id, l.name, COALESCE(NULLIF(c.source_kind, 'plex'), '')
 		FROM collections c JOIN libraries l ON l.id = c.library_id
 		WHERE `+where+` AND c.hidden_at IS NULL AND c.dismissed_at IS NULL AND c.is_smart = `+falseLit(h.DB)+`
 		ORDER BY COALESCE(c.sort_title, c.name_override, c.name), c.id LIMIT 20`, args...)

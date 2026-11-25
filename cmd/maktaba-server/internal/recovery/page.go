@@ -44,12 +44,31 @@ function act(body,need){
    .then(function(r){return r.json().then(function(j){return {r:r,j:j}})})
    .then(function(x){
      if(x.r.status===428){body.confirm=0;return act(body,x.j.confirm)}
+     if(x.j.code==='restore_no_copy'&&!body.without_copy){say(x.j.error);
+       if(confirm(t('recovery.restore.noCopy',{reason:x.j.error})))act({action:'restore',backup:body.backup,without_copy:true},2);return}
      say(x.r.ok?t('recovery.action.done'):t('recovery.action.failed',{reason:x.j.error||x.r.status}));load()})
    .catch(function(e){say(t('recovery.action.failed',{reason:String(e)}))})}
 function load(){
   fetch('/recovery/api/state',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(s){
     var st=s.status||{},g=st.components||{};
     document.getElementById('safe').hidden=!s.safe_mode;
+    var hd=document.getElementById('held');hd.textContent='';hd.hidden=!s.held;
+    if(s.held){var hv={failed:s.held.failed,from:s.held.from||'?',backup:s.held.backup||'?',why:s.held.why||''};
+      hd.appendChild(el('p',t('recovery.held',hv)));
+      if(s.held.backup){var hb=el('button',t('recovery.held.restore',hv));
+        hb.onclick=function(){act({action:'restore',backup:s.held.backup},2)};hd.appendChild(hb)}
+      hd.appendChild(el('p',t('recovery.held.newer',hv)))}
+    var sd=document.getElementById('stuck');sd.textContent='';sd.hidden=!s.stuck;
+    if(s.stuck){var k=s.stuck,sv={backup:k.backup,why:k.why||'?',release:k.release||''};
+      sd.appendChild(el('p',t(k.running?'recovery.stuck.running':'recovery.stuck.'+(k.no_copy?'noCopy':k.data),sv)));
+      var sa=el('div',null,'actions');sd.appendChild(sa);
+      function sb(key,f){var b=el('button',t(key,sv));b.onclick=f;sa.appendChild(b)}
+      if(!k.running){sb('recovery.stuck.retry',function(){act({action:'restore',backup:k.backup},2)});
+        sb('recovery.stuck.other',restore);
+        if(k.without_copy)sb('recovery.stuck.withoutCopy',function(){act({action:'restore',backup:k.backup,without_copy:true},2)})}
+      if(k.can_give_up)sb(k.running?'recovery.stuck.stop':(k.release?'recovery.stuck.giveUp':'recovery.stuck.giveUpHeld'),
+        function(){act({action:'give_up_restore'},2)});
+      if(k.data==='untouched'&&!k.running)sd.appendChild(el('p',t('recovery.stuck.newer',sv)))}
     document.getElementById('well').hidden=st.overall!=='ok';
     var gl=document.getElementById('groups');gl.textContent='';
     Object.keys(g).forEach(function(k){var li=el('li');li.appendChild(el('span',t('status.group.'+k)+': '));
@@ -124,6 +143,8 @@ func (h *Handler) page(w http.ResponseWriter, lang string) {
 	_, _ = io.WriteString(w, head(lang, T(lang, "recovery.title"))+
 		"<h1>"+e(T(lang, "recovery.title"))+"</h1><p class=\"intro\">"+e(T(lang, "recovery.intro"))+"</p>"+
 		"<div id=\"safe\" class=\"strip\" hidden>"+e(T(lang, "safe.strip"))+"</div>"+
+		"<div id=\"held\" class=\"strip\" hidden></div>"+
+		"<div id=\"stuck\" class=\"strip\" hidden></div>"+
 		"<p id=\"well\" class=\"ok\" hidden>"+e(T(lang, "recovery.allWell"))+"</p>"+
 		"<ul id=\"groups\"></ul><div id=\"acts\" class=\"actions\"></div><div id=\"msg\"></div>"+
 		"<h2>"+e(T(lang, "recovery.components"))+"</h2><table><tbody id=\"comps\"></tbody></table>"+
