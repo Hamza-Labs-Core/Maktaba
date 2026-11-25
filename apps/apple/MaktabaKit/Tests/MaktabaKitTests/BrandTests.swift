@@ -155,7 +155,7 @@ import Testing
     }
 
     @Test func launchScreenIsInkWithTheLogo() throws {
-        for plist in ["Player/Info-iPhone.plist", "Player/Info-iPad.plist", "Remote/Info-iPhone.plist", "Remote/Info-iPad.plist"] {
+        for plist in ["Player/Info-iOS.plist", "Remote/Info-iOS.plist"] {
             let data = try Data(contentsOf: appleDir.appendingPathComponent(plist))
             let info = try #require(try PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any])
             let launch = try #require(info["UILaunchScreen"] as? [String: Any], "\(plist) declares its launch screen")

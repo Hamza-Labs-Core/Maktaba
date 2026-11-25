@@ -25,8 +25,10 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 DURATIONS = os.path.join(HERE, "ui-durations.json")
 TEST = re.compile(r"^\s*(?:@\w+\s+)*func (test\w*)\s*\(\s*\)", re.M)
-# xcodebuild's line for a finished test: its module names the device
-CASE = re.compile(r"Test Case '-\[Maktaba_Player_(iPad_)?UITests\.(\w+) (\w+)\]' (?:passed|failed) \(([\d.]+) seconds\)")
+# xcodebuild's line for a finished test. Its module is the same on both devices (one app for
+# iPhone and iPad), so the job's name, near the top of its log, says which one it ran on
+CASE = re.compile(r"Test Case '-\[Maktaba_Player_UITests\.(\w+) (\w+)\]' (?:passed|failed) \(([\d.]+) seconds\)")
+JOB = re.compile(r"Complete job name: .*\bPlayer UI tests \((iphone|ipad) \w+/\d+\)")
 
 
 def tests_in(files: list[str]) -> list[str]:
@@ -54,9 +56,14 @@ def measure(logs: list[str]) -> dict[str, dict[str, float]]:
     out: dict[str, dict[str, float]] = {"iphone": {}, "ipad": {}}
     for log in logs:
         with open(log, encoding="utf-8", errors="replace") as fh:
-            for m in CASE.finditer(fh.read()):
-                device = "ipad" if m.group(1) else "iphone"
-                out[device][f"{m.group(2)}/{m.group(3)}"] = round(float(m.group(4)), 1)
+            text = fh.read()
+        devices = set(JOB.findall(text))
+        if len(devices) != 1:
+            raise SystemExit(f"{log}: not the log of one 'Player UI tests (iphone|ipad N/M)' job: download each job's "
+                             "log on its own")
+        device = devices.pop()
+        for m in CASE.finditer(text):
+            out[device][f"{m.group(1)}/{m.group(2)}"] = round(float(m.group(3)), 1)
     return {d: dict(sorted(v.items())) for d, v in out.items()}
 
 
@@ -76,11 +83,30 @@ def self_test() -> None:
         # the long test alone; the rest (the new one at the median, 20 s) on the other shard
         assert got == [["PlayerBUITests/testLong"], ["PlayerAUITests/testTwo", "PlayerBUITests/testNew", "PlayerAUITests/testOne"]], got
         assert sorted(sum(shards(tests, {}, 3), [])) == sorted(tests), "every test in one shard"
-        log = os.path.join(d, "x.log")
-        with open(log, "w") as fh:
-            fh.write("2026Z Test Case '-[Maktaba_Player_iPad_UITests.PlayerAUITests testOne]' passed (12.345 seconds).\n"
-                     "2026Z Test Case '-[Maktaba_Player_UITests.PlayerBUITests testLong]' failed (99.0 seconds).\n")
-        assert measure([log]) == {"iphone": {"PlayerBUITests/testLong": 99.0}, "ipad": {"PlayerAUITests/testOne": 12.3}}
+        # the same module on both devices: the job says which device a log is of
+        def log(name: str, job: str, *cases: str) -> str:
+            path = os.path.join(d, name)
+            with open(path, "w") as fh:
+                fh.write(f"2026Z Complete job name: {job}\n" if job else "")
+                fh.writelines(f"2026Z Test Case '-[Maktaba_Player_UITests.{c} seconds).\n" for c in cases)
+            return path
+
+        ipad = log("a.log", "apple-apps / Player UI tests (ipad 2/6)", "PlayerAUITests testOne]' passed (12.345")
+        phone = log("b.log", "ci / apple-apps / Player UI tests (iphone 2/6)",
+                    "PlayerAUITests testOne]' passed (5.0", "PlayerBUITests testLong]' failed (99.0")
+        shots = log("c.log", "apple-apps / Player UI tests (ipad shots/6)", "PlayerDemoShots testShots]' passed (300.0")
+        assert measure([ipad, phone, shots]) == {
+            "iphone": {"PlayerAUITests/testOne": 5.0, "PlayerBUITests/testLong": 99.0},
+            "ipad": {"PlayerAUITests/testOne": 12.3, "PlayerDemoShots/testShots": 300.0},
+        }
+        # a log that names no device, or another job's, is refused rather than counted as an iPhone's
+        for other in (log("d.log", "", "PlayerAUITests testOne]' passed (5.0"),
+                      log("e.log", "apple-apps / Player UI tests (mac)", "PlayerAUITests testOne]' passed (5.0")):
+            try:
+                measure([other])
+            except SystemExit:
+                continue
+            raise AssertionError(f"{other} measured")
     print("ui-shard.py: self-test passed")
 
 

@@ -67,9 +67,7 @@ test("a capture key names the surface, the Remote and the screen's language", ()
 test("every listing's images go where fastlane and the store folders expect them", () => {
   const paths = plan().map(pathOf);
   assert.ok(
-    paths.includes(
-      join("apple", "apple-player-iphone", "screenshots", "ar-SA", "01_iphone-6.3_library")
-    )
+    paths.includes(join("apple", "apple-player", "screenshots", "ar-SA", "01_iphone-6.3_library"))
   );
   assert.ok(
     paths.includes(
@@ -103,7 +101,7 @@ test(
   async () => {
     const root = mkdtempSync(join(tmpdir(), "compose-test-"));
     try {
-      const only = ["google-tv", "samsung", "apple-player-iphone"];
+      const only = ["google-tv", "samsung", "apple-player"];
       await fakeCaptures(join(root, "in"), only);
       const r = await compose({
         captureDirs: [join(root, "in")],
@@ -120,8 +118,12 @@ test(
       for (const x of samsungTv) assert.equal(x.format, "jpeg");
       const logo = r.report.find((x) => x.listing === "samsung" && x.asset === "logo");
       assert.ok(logo.hasAlpha, "Samsung's logo layer keeps its transparency");
-      const iphone = r.report.filter((x) => x.listing === "apple-player-iphone");
+      // one universal app: its listing carries the iPhone sets and the iPad's
+      const player = r.report.filter((x) => x.listing === "apple-player");
+      const iphone = player.filter((x) => x.asset.startsWith("iphone-"));
       assert.equal(iphone.length, 2 * 2 * 7, "two sizes, two languages, seven beats");
+      const ipad = player.filter((x) => x.asset === "ipad-13");
+      assert.equal(ipad.length, 2 * 7, "the iPad's 13-inch set, two languages, seven beats");
       for (const x of iphone) assert.ok(!x.hasAlpha && [1206, 1320].includes(x.width));
       assert.ok(existsSync(join(root, "out", "contact", "google-tv.png")));
       const checklist = readFileSync(join(root, "out", "checklist.md"), "utf8");

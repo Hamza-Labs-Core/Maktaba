@@ -4,16 +4,18 @@
 # apps/apple/Maktaba.xcodeproj are archived, signed and uploaded to App Store Connect, where
 # they show up in TestFlight for the team's internal testers:
 #
-#   Maktaba Player        com.hamzalabs.maktaba.player          iOS (iPhone)
-#   Maktaba Player iPad   com.hamzalabs.maktaba.player.tablet   iOS (iPad)
+#   Maktaba Player        com.hamzalabs.maktaba.player          iOS (iPhone and iPad)
 #   Maktaba Player Mac    com.hamzalabs.maktaba.player.mac      macOS (Mac App Store)
-#   Maktaba Remote        com.hamzalabs.maktaba.remote          iOS (iPhone)
-#   Maktaba Remote iPad   com.hamzalabs.maktaba.remote.tablet   iOS (iPad)
+#   Maktaba Remote        com.hamzalabs.maktaba.remote          iOS (iPhone and iPad)
 #   Maktaba TV            com.hamzalabs.maktaba.tv              tvOS
+#
+# The Player and the Remote are each one universal app (App Review 4.3(a)). The iPad-only
+# apps they replace (com.hamzalabs.maktaba.player.tablet, com.hamzalabs.maktaba.remote.tablet)
+# are no longer uploaded; their App Store Connect records stay unreleased (docs/testflight.md).
 #
 # Each app is its own matrix leg (fail-fast off): one app's failed upload (say, its App Store
 # Connect record is not made yet) leaves the others' uploads alone.
-# tools/ci/tests/test_testflight.py keeps the six apps in the matrix.
+# tools/ci/tests/test_testflight.py keeps the four apps in the matrix.
 #
 # SIGNING: Xcode's automatic, cloud-managed signing with the App Store Connect API key
 # (APPLE_API_KEY_P8 / APPLE_API_KEY_ID / APPLE_API_ISSUER, the key desktop-release.yml
@@ -42,7 +44,7 @@
 # uploads nothing; a failed upload is a warning, never a failed leg (the app is in TestFlight
 # by then), and the tables are kept as the run's artifact to upload by hand.
 #
-# One-time, by the owner: the six apps' records in App Store Connect (an app record cannot be
+# One-time, by the owner: the four apps' records in App Store Connect (an app record cannot be
 # made through the API), and the owner as an internal tester. See docs/testflight.md.
 name: TestFlight
 
@@ -91,14 +93,12 @@ jobs:
       matrix:
         include:
           - { scheme: Maktaba Player, destination: generic/platform=iOS, sdk: iphoneos }
-          - { scheme: Maktaba Player iPad, destination: generic/platform=iOS, sdk: iphoneos }
           # the Mac App Store app: sandboxed, its entitlements signed into the archive (above)
           - scheme: Maktaba Player Mac
             destination: generic/platform=macOS
             sdk: macosx
             entitlements: apps/apple/Player/Player-Mac.entitlements
           - { scheme: Maktaba Remote, destination: generic/platform=iOS, sdk: iphoneos }
-          - { scheme: Maktaba Remote iPad, destination: generic/platform=iOS, sdk: iphoneos }
           # the Apple TV app (apps/tv/tvos/MaktabaTV): the same archive, export and upload
           - { scheme: Maktaba TV, destination: generic/platform=tvOS, sdk: appletvos }
     env:
@@ -175,6 +175,13 @@ jobs:
       # its Info.plist): SDK 27 or later and Xcode 27 or later, or nothing is uploaded.
       - name: The archive was built with the 27 SDK
         run: python3 tools/apple/xcode.py check-sdk --min 27 "$RUNNER_TEMP/app.xcarchive"
+
+      # The iPhone and iPad Player's Cast receiver and Bonjour services in the archive are
+      # shared/cast/app.json's: with none there, no Cast service. CI's UI-test build alone names
+      # Google's test receiver (_apple-apps.yml), and it must not reach an upload.
+      - name: The archive's Cast receiver is shared/cast/app.json's
+        if: matrix.scheme == 'Maktaba Player'
+        run: python3 tools/apple/cast-app-id.py --built "$RUNNER_TEMP/app.xcarchive/Products/Applications/$SCHEME.app"
 
       # The Mac app's sandbox and keychain group: signed into the archived app ad hoc, for the
       # export to keep (an unsigned app has none). $(AppIdentifierPrefix) is the team's.
