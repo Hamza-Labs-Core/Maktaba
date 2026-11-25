@@ -912,7 +912,7 @@ def a_crash_while_restoring() -> str:
     psql("INSERT INTO rehearsal_new VALUES (1)")  # the schema is kept
     subprocess.Popen(["bash", "-c", f"{ROLLOUT} job {ID} rollback 0 >/dev/null 2>&1"])
     wait_for("the rollback settles the migrations", lambda: (STATE / "pending/settled").exists(), 120)
-    sh("systemctl stop maktaba-rollout-watch.timer")
+    sh("systemctl stop maktaba-rollout-watch.timer maktaba-rollout-watch.service")
     sh(f"systemctl kill -s KILL maktaba-rollout-rollback-{ID}")
     sh(f"rm -rf {DEPLOY}/.env {DEPLOY}/Caddyfile && mkdir -p {DEPLOY}/secrets.restore")
     sh("systemctl start maktaba-rollout-watch.timer")
@@ -1105,7 +1105,7 @@ def commit_of_a_deploy_being_restored() -> str:
     for mark in ("restoring", "applying"):
         code, out = deploy("b", "app b")
         assert code == 0, out[-3000:]
-        sh("systemctl stop maktaba-rollout-watch.timer")
+        sh("systemctl stop maktaba-rollout-watch.timer maktaba-rollout-watch.service")
         (STATE / f"pending/{mark}").touch()
         code, out = job("commit")
         assert code != 0 and pending(), f"{mark}: committed: {out}"
