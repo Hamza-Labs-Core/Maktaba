@@ -42,6 +42,7 @@ func (t *Tunnel) Draining() bool { return t.draining.Load() }
 // for the home ("" when tickets are off).
 func (t *Tunnel) Drain(o DrainOptions, ticket string) {
 	t.drainOnce.Do(func() {
+		t.cutFrom(o.Deadline) // before DRAIN: the home times its deadline from that
 		t.draining.Store(true)
 		stats.drain(o.Reason)
 		if t.canDrain {
@@ -64,9 +65,26 @@ func (t *Tunnel) Drain(o DrainOptions, ticket string) {
 // its next standby by its assignment.
 func (t *Tunnel) Retire(deadline time.Duration) {
 	t.drainOnce.Do(func() {
+		t.cutFrom(deadline)
 		t.draining.Store(true)
 		go t.drainWatch(deadline, true)
 	})
+}
+
+// cutFrom sets when a close of t cuts off the streams it still carries: at the drain's deadline,
+// in whole milliseconds as DRAIN says it.
+func (t *Tunnel) cutFrom(deadline time.Duration) {
+	at := time.Now().Add(deadline.Truncate(time.Millisecond))
+	t.cutAt.Store(&at)
+}
+
+// countCut counts a drained tunnel closed at its deadline with streams still open. From Close,
+// so whoever closes it: the relay and the home time the same deadline, and a relay a moment
+// late finds the tunnel closed by the home.
+func (t *Tunnel) countCut() {
+	if at := t.cutAt.Load(); at != nil && !time.Now().Before(*at) && t.Busy() {
+		stats.drainForced.Add(1)
+	}
 }
 
 // drainWatch closes the tunnel at the deadline, and before it once the tunnel
@@ -94,9 +112,6 @@ func (t *Tunnel) drainWatch(deadline time.Duration, closeWhenIdle bool) {
 				return
 			}
 		case <-timer.C:
-			if t.Busy() {
-				stats.drainForced.Add(1)
-			}
 			t.Close()
 			return
 		}
