@@ -34,6 +34,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -163,9 +164,10 @@ func settleData(ctx context.Context, rec apppayload.Database, p dataProbe) (appp
 	if err != nil {
 		return rec, err
 	}
+	id, table, _ := strings.Cut(id, "#")
 	switch {
-	case id != "" && rec.DataID == id:
-		rec.Data = apppayload.DataUntouched
+	case id != "" && rec.DataID == id && (rec.DataTable == "" || rec.DataTable == table):
+		rec.Data, rec.DataTable = apppayload.DataUntouched, table
 	case schema < 0:
 		return rec, errors.New("its schema cannot be read")
 	case id == "" || schema == 0:
@@ -173,7 +175,7 @@ func settleData(ctx context.Context, rec apppayload.Database, p dataProbe) (appp
 	case rec.DataID != "":
 		rec.Data = apppayload.DataReplaced
 	case rec.Data == apppayload.DataUntouched: // asked while the database did not run
-		rec.DataID = id
+		rec.DataID, rec.DataTable = id, table
 	case rec.Data == apppayload.DataUnknown && p.backupSchema != nil:
 		// asked on a release that kept no track of it: every release's restore makes the
 		// database (or its schema) afresh, so one with another schema than every backup's that
@@ -183,7 +185,7 @@ func settleData(ctx context.Context, rec apppayload.Database, p dataProbe) (appp
 			other = other && want > 0 && want != schema
 		}
 		if other {
-			rec.Data, rec.DataID = apppayload.DataUntouched, id
+			rec.Data, rec.DataID, rec.DataTable = apppayload.DataUntouched, id, table
 		}
 	}
 	if rec.Data != apppayload.DataUnknown {
@@ -352,7 +354,7 @@ func (r *restorer) abandon(ctx context.Context, by string) error {
 			return false, refuse("restore_database_unanswered", "the library database does not answer, so it cannot be told "+
 				"that it is as it was before the restore: %v", err)
 		}
-		if settled.Data != rec.Data || settled.DataID != rec.DataID {
+		if settled.Data != rec.Data || settled.DataID != rec.DataID || settled.DataTable != rec.DataTable {
 			rec = settled
 			if err := writeRecord(r.stateDir, rec); err != nil {
 				return false, err

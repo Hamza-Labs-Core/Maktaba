@@ -66,9 +66,9 @@ func (s *copyScan) whole(tables int) error {
 	return nil
 }
 
-// withoutThere is list (pg_restore -l's) without the items that make the schemas and the
-// extensions named, their grants and comments: commented out, as pg_restore's --use-list wants.
-func withoutThere(list string, schemas, extensions map[string]bool) string {
+// withoutItems is list (pg_restore -l's) without the items named (their kind, schema and name:
+// "EXTENSION - vector"): commented out, as pg_restore's --use-list wants.
+func withoutItems(list string, skip map[string]bool) string {
 	lines := strings.Split(list, "\n")
 	for i, line := range lines {
 		_, rest, ok := strings.Cut(line, "; ")
@@ -76,19 +76,9 @@ func withoutThere(list string, schemas, extensions map[string]bool) string {
 		if !ok || strings.HasPrefix(line, ";") || len(f) < 3 {
 			continue
 		}
-		there := func(kind string, names map[string]bool) bool {
-			name, ok := strings.CutPrefix(f[2], kind)
-			if !ok {
-				return false
-			}
-			if names[strings.TrimSpace(name)] {
-				return true
-			}
-			at := strings.LastIndex(strings.TrimRight(name, " \r"), " ") // its owner last, when it has one
-			return at > 0 && names[name[:at]]
-		}
-		if there("SCHEMA - ", schemas) || there("ACL - SCHEMA ", schemas) || there("COMMENT - SCHEMA ", schemas) ||
-			there("EXTENSION - ", extensions) || there("COMMENT - EXTENSION ", extensions) {
+		item := strings.TrimRight(f[2], " \r")
+		at := strings.LastIndex(item, " ") // its owner last, when it has one
+		if skip[item] || (at > 0 && skip[item[:at]]) {
 			lines[i] = ";" + line
 		}
 	}

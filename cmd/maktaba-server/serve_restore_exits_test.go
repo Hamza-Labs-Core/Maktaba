@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/dbsafe"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/supervisor"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/updater"
@@ -1325,6 +1326,73 @@ func TestThePlanSaysAnOlderRelease(t *testing.T) {
 		if strings.Contains(out.String(), "its own rules") != older {
 			t.Errorf("on %s:\n%s", running, out.String())
 		}
+	}
+}
+
+// A backup the database's user could not put back, on the release that would, is refused when it
+// is asked: nothing restarts for it. A database that does not answer is no reason.
+func TestARestoreTheUserCouldNotDoIsRefused(t *testing.T) {
+	const why = "the public schema is not the database user maktaba's to make again"
+	for name, c := range map[string]struct {
+		running string
+		inside  bool // of the kept release
+		check   func(context.Context, string) (bool, error)
+		want    string
+	}{
+		"not a Postgres of the person's own": {"0.3.0", false, nil, ""},
+		"made again":                         {"0.3.0", false, func(context.Context, string) (bool, error) { return false, nil }, ""},
+		"inside, by a release that can":      {"0.3.0", true, func(context.Context, string) (bool, error) { return true, nil }, ""},
+		"inside, by one from before":         {"0.3.0", false, func(context.Context, string) (bool, error) { return true, nil }, "0.2.0, the release that puts this backup back, cannot"},
+		"inside, by the one running":         {"0.2.0", false, func(context.Context, string) (bool, error) { return true, nil }, ""},
+		"not at all":                         {"0.2.0", true, func(context.Context, string) (bool, error) { return false, dbsafe.Cannot(why) }, why},
+		"no answer":                          {"0.3.0", false, func(context.Context, string) (bool, error) { return false, errors.New("connection refused") }, ""},
+	} {
+		e := newExitsRig(t)
+		e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
+		e.inst.running, e.inst.kept[0].Inside, e.r.check = c.running, c.inside, c.check
+		_, err := e.r.restore(context.Background(), firstBackup, "admin", true, false)
+		if (c.want == "") != (err == nil) || err != nil && (restoreCode(err) != "restore_database_user" || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("%s: %v", name, err)
+		}
+		if c.want != "" && (e.rec().State != apppayload.DatabaseMigrated || len(e.inst.ran) != 0) {
+			t.Errorf("%s: %+v", name, e.rec())
+		}
+	}
+}
+
+// A restore inside public leaves the schema where it is: the table of the migrations tells the
+// database it left from the one before. A record from a release that did not look at the table
+// goes by the rest, and has it from then on.
+func TestTheTableTellsTheDataApart(t *testing.T) {
+	ctx := context.Background()
+	at := func(id string) dataProbe {
+		return dataProbe{identity: func(context.Context) (string, int64, error) { return id, 140, nil }}
+	}
+	for name, c := range map[string]struct {
+		rec       apppayload.Database
+		id        string
+		data, tbl string
+	}{
+		"the same":                  {apppayload.Database{DataID: "1/2/3", DataTable: "77"}, "1/2/3#77", apppayload.DataUntouched, "77"},
+		"put back inside public":    {apppayload.Database{DataID: "1/2/3", DataTable: "77", Data: apppayload.DataUntouched}, "1/2/3#99", apppayload.DataReplaced, "77"},
+		"another schema":            {apppayload.Database{DataID: "1/2/3", DataTable: "77"}, "1/2/4#77", apppayload.DataReplaced, "77"},
+		"a record with no table":    {apppayload.Database{DataID: "1/2/3"}, "1/2/3#77", apppayload.DataUntouched, "77"},
+		"asked with no database up": {apppayload.Database{Data: apppayload.DataUntouched}, "1/2/3#77", apppayload.DataUntouched, "77"},
+	} {
+		rec, err := settleData(ctx, c.rec, at(c.id))
+		if err != nil || rec.Data != c.data || rec.DataTable != c.tbl || rec.DataID != "1/2/3" {
+			t.Errorf("%s: %+v %v", name, rec, err)
+		}
+	}
+	// and the record keeps it
+	e := newExitsRig(t)
+	e.write(apppayload.Database{Version: "0.3.0", State: apppayload.DatabaseMigrated})
+	e.f.id, e.f.schema = "1/2/3#77", 149
+	if _, err := e.r.restore(ctx, firstBackup, "admin", true, false); err != nil {
+		t.Fatal(err)
+	}
+	if rec := e.rec(); rec.DataID != "1/2/3" || rec.DataTable != "77" {
+		t.Fatalf("%+v", rec)
 	}
 }
 

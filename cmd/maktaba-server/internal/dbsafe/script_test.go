@@ -70,7 +70,7 @@ func TestMayMake(t *testing.T) {
 
 // What makes a schema or an extension that is there, its grants and comments, is left out of the
 // list; all else stays, what is commented out already too.
-func TestWithoutThere(t *testing.T) {
+func TestWithoutItems(t *testing.T) {
 	lines := []string{
 		";",
 		"; Selected TOC Entries:",
@@ -90,7 +90,8 @@ func TestWithoutThere(t *testing.T) {
 		"4800; 0 0 COMMENT public TABLE textsearch maktaba",
 		"",
 	}
-	out := strings.Split(withoutThere(strings.Join(lines, "\n"), map[string]bool{"textsearch": true}, map[string]bool{"pg_textsearch": true}), "\n")
+	out := strings.Split(withoutItems(strings.Join(lines, "\n"), map[string]bool{"SCHEMA - textsearch": true, "ACL - SCHEMA textsearch": true,
+		"COMMENT - SCHEMA textsearch": true, "EXTENSION - pg_textsearch": true, "COMMENT - EXTENSION pg_textsearch": true, "ACL - SCHEMA public": false}), "\n")
 	left := map[int]bool{2: true, 5: true, 6: true, 7: true, 9: true}
 	for i, l := range lines {
 		want := l
@@ -102,7 +103,7 @@ func TestWithoutThere(t *testing.T) {
 		}
 	}
 	whole := strings.Join(lines, "\n")
-	if withoutThere(whole, nil, map[string]bool{"plpgsql": true}) != whole {
+	if withoutItems(whole, map[string]bool{"EXTENSION - plpgsql": true}) != whole {
 		t.Error("changed though nothing of it is there")
 	}
 }

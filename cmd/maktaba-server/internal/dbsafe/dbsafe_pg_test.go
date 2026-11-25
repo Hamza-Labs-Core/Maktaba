@@ -1433,7 +1433,7 @@ func TestChunksWithoutPsqlTouchNothing(t *testing.T) {
 		}
 		return r.t.bin(n)
 	}
-	if err := tg.Restore(ctx, dump, nil); err == nil || !strings.Contains(err.Error(), "nothing was changed") {
+	if err := tg.Restore(ctx, dump, nil); err == nil || !strings.Contains(err.Error(), "(nothing changed)") || !CannotRestore(err) {
 		t.Fatal(err)
 	}
 	if err := conn.QueryRowContext(ctx, `SELECT pg_backend_pid()`).Scan(&now); err != nil || now != pid {
@@ -1442,8 +1442,8 @@ func TestChunksWithoutPsqlTouchNothing(t *testing.T) {
 }
 
 // An extension in public that the database user may not make again (pgvector, made by a
-// superuser): without psql it is refused before anything is touched; with psql the server says it
-// and nothing is committed. A superuser's goes on.
+// superuser): without psql it is refused before anything is touched; with psql the backup is put
+// back inside public, and the extension is the one it was. A superuser's is made again.
 func TestRestoreOfAnExtensionItMayNotMakeTouchesNothing(t *testing.T) {
 	r := newPGRig(t)
 	ctx := context.Background()
@@ -1517,8 +1517,21 @@ func TestRestoreOfAnExtensionItMayNotMakeTouchesNothing(t *testing.T) {
 	if !havePSQL(r.t.bin("psql")) {
 		return
 	}
-	if err := tg.Restore(ctx, dump, nil); err == nil || !strings.Contains(err.Error(), `permission denied to create extension "pageinspect"`) {
-		t.Fatalf("with psql: %v", err)
+	ext := func() (oid string) {
+		t.Helper()
+		x, err := super.open(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer x.Close()
+		if err := x.QueryRow(`SELECT oid::text FROM pg_extension WHERE extname = 'pageinspect'`).Scan(&oid); err != nil {
+			t.Fatal(err)
+		}
+		return oid
+	}
+	was := ext()
+	if err := tg.Restore(ctx, dump, nil); err != nil || ext() != was {
+		t.Fatalf("with psql: %v, the extension %s, was %s", err, ext(), was)
 	}
 	if d, err = tg.open(ctx, ""); err != nil {
 		t.Fatal(err)
@@ -1531,8 +1544,8 @@ func TestRestoreOfAnExtensionItMayNotMakeTouchesNothing(t *testing.T) {
 	if err := without.Restore(ctx, earlier, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := super.Restore(ctx, dump, nil); err != nil {
-		t.Fatal(err)
+	if err := super.Restore(ctx, dump, nil); err != nil || ext() == was {
+		t.Fatalf("a superuser's: %v, the extension %s, was %s", err, ext(), was)
 	}
 }
 

@@ -3734,6 +3734,7 @@
   "updates.backups.refused.restore_no_copy": "No copy of the library as it is now can be kept.",
   "updates.backups.refused.restore_unprotected": "The version that puts this backup back may remove it first, and this disk cannot keep it from that: put back the newest backup an update took, or move the backups to another disk.",
   "updates.backups.refused.restore_older_no_room": "The older version that puts this backup back first takes a copy of the library as it is now, and there is no room for it. Nothing was changed. Free some space, or delete backups you no longer need (on the home: maktaba-server backups delete), and try again.",
+  "updates.backups.refused.restore_database_user": "The library database's user may not put this backup back as it is set up now. Nothing was changed.",
   "updates.backups.refused.restore_update_under_way": "An update is under way: cancel it, or wait until it ends.",
   "updates.backups.refused.restore_unreadable": "This backup cannot be read.",
   "updates.backups.refused.restore_no_backup": "This backup is gone.",
