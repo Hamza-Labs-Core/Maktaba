@@ -27,7 +27,6 @@ agent: claude-code
 - A migration that lands below the database's version (the README allows it) is a case only an updated
   database shows. A test of "up to date" must start from the release before, not from nothing.
 - A rollback that works also hides what failed: keep the failed side's words before it goes.
-
 - "The previous release runs on the kept schema" is a claim about the previous release's own checks: it is
   tested with that release, not with this one.
 
