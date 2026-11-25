@@ -1419,9 +1419,10 @@ fn install_update_from(app: AppHandle, source: Source) {
                 }
                 // no room for it: said before anything stops (the installer would refuse too,
                 // once the server has stopped and this app has closed)
-                let size = bytes.len() as u64;
-                let short =
-                    tauri::async_runtime::spawn_blocking(move || crate::room::short_here(size));
+                let (file, unpacked) = (bytes.len() as u64, crate::room::unpacked_kb(&bytes));
+                let short = tauri::async_runtime::spawn_blocking(move || {
+                    crate::room::short_here(file, unpacked?)
+                });
                 if let Ok(Some(why)) = short.await {
                     return Err(failed(Failure::new(
                         attempts::STEP_INSTALL,
@@ -2358,7 +2359,9 @@ mod tests {
     fn an_update_looks_for_room_before_it_stops_the_server() {
         let src = include_str!("shell.rs");
         let run = &src[src.find("step(attempts::STEP_VERIFY)").expect("the verify")..];
-        let room = run.find("room::short_here(size)").expect("the look");
+        let room = run
+            .find("room::short_here(file, unpacked?)")
+            .expect("the look");
         let stop = run
             .find("spawn_blocking(agent::stop_for_install)")
             .expect("the stop");

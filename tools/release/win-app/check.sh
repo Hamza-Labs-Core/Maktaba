@@ -735,18 +735,31 @@ if [ -n "$SETUP" ]; then
             fi
         }
         WATCH_DIR="${SMALL}Maktaba"
+        # what the agent and the app read as they settle the update (attempts.rs REFUSED_FILE)
+        left="$SCRATCH/localappdata/Maktaba/updates/installer-no-room"
+        rm -f "$left"
         # an update as the app's updater runs it (the app stopped the server before): started again
         watched "$SETUP" "/S /UPDATE /NS /D=${SMALL}Maktaba" 20 120
         refused "a silent update with no room"
+        # (the agent that starts then may have read it: there was no attempt to settle, so it stays)
+        version="$(reg_value "$UNINSTALL_KEY" DisplayVersion)"
+        if [ -f "$left" ] && [ "$(cat "$left")" = "$version" ]; then
+            ok "a silent update with no room: says so beside the update record, for $version"
+        else
+            fail "a silent update with no room left '$(cat "$left" 2>&1)' beside the update record, want $version"
+        fi
+        rm -f "$left"
         hooks "a silent update with no room" --server-start
         # as the agent's orders run it: no window may wait for somebody
         watched "$SETUP" "/P /UPDATE /D=${SMALL}Maktaba" 20 120
         refused "the agent's update (/P /UPDATE) with no room"
+        rm -f "$left"
         hooks "the agent's update with no room" --server-start
         # not an update: nothing was stopped, so nothing is started
         watched "$SETUP" "/S /NS /D=${SMALL}Maktaba" 20 120
         refused "a silent install with no room"
         if [ -z "$WATCHED_RAN" ]; then ok "a silent install with no room: no hook ran Maktaba.exe"; else fail "a silent install with no room ran: $WATCHED_RAN"; fi
+        if [ ! -e "$left" ]; then ok "a silent install with no room says nothing of an update"; else fail "a silent install with no room left $(win "$left")"; fi
         WATCH_DIR="$(win "$INST")"
         # room in the folder, none in %TEMP%, where a solid installer unpacks
         rc=0
@@ -761,6 +774,20 @@ if [ -n "$SETUP" ]; then
         if [ "${loc//\"/}" = "$(win "$INST")" ]; then ok "the registration is the install's still"; else fail "a refused install registered itself: '$loc'"; fi
     fi
     detach_small
+
+    # what the installer unpacks, in its version information, where the app reads it (room.rs)
+    said="$(KEY="$(sed -n 's/.*pub const UNPACKED_KEY: &str = "\(.*\)";.*/\1/p' "$REPO_ROOT/apps/desktop/src-tauri/src/room.rs")" \
+        "$PY" -I -c 'import os, re, sys
+b = open(sys.argv[1], "rb").read(8 << 20)
+k = (os.environ["KEY"] + "\0").encode("utf-16-le")
+i = b.find(k)
+m = re.match(r"\0*(\d+)\0", b[i + len(k):i + len(k) + 64].decode("utf-16-le", "replace")) if i >= 0 else None
+print(m.group(1) if m else "")' "$(win "$SETUP")" | tr -d '\r')"
+    if [ -n "$said" ] && [ "$said" -gt 100000 ] && [ "$said" -le "$(($(reg_value "$UNINSTALL_KEY" EstimatedSize)))" ]; then
+        ok "the installer says what it unpacks: $said KB"
+    else
+        fail "the installer says it unpacks '$said' KB, and the install is $(($(reg_value "$UNINSTALL_KEY" EstimatedSize))) KB"
+    fi
 
     # Room because the old payload goes first: an update that fits today is never refused. A disk
     # with a whole install on it (this one's payload) and %TEMP%, with room for the new payload
@@ -827,6 +854,23 @@ if [ -n "$SETUP" ]; then
             fail "the payload on the small disk differs: $(sed -n '1,4p' "$SCRATCH/payload.diff" | paste -sd'|' -)"
         fi
         hooks "an update with room once the old payload is gone" --server-stop --server-start
+        # an upgrade that stopped half way (a kill, a power cut): some of the new files, no
+        # payload.json. The hook deletes nothing then, and what is there is written over: the
+        # retry needs one payload and what is missing, not two
+        rm -f "$small/server/payload.json"
+        missing_mb=$(du -sm "$small/server/python" | cut -f1)
+        rm -rf "$small/server/python"
+        leave_free $((payload_mb + missing_mb + 160))
+        free="$(small_free_mb)"
+        echo "        half copied, $missing_mb MB missing, $free MB free"
+        TMP="${SMALL}t" TEMP="${SMALL}t" watched "$SETUP" "/S /UPDATE /NS /D=${SMALL}Maktaba"
+        if [ "$WATCHED_EXIT" = 0 ] && cmp -s "$small/server/payload.json" "$INST/server/payload.json" &&
+            [ -f "$small/server/python/python.exe" ] && [ "$free" -lt $((payload_mb * 2)) ]; then
+            ok "a retry over a half-copied payload with $free MB free installs: what is written over counts"
+        else
+            fail "a retry over a half-copied payload with $free MB free: exit $WATCHED_EXIT"
+        fi
+        hooks "a retry over a half-copied payload" --server-stop --server-start
         WATCH_DIR="$(win "$INST")"
         for i in "${!keys[@]}"; do
             wincmd reg.exe delete "${keys[$i]}" /f >/dev/null 2>&1 || true

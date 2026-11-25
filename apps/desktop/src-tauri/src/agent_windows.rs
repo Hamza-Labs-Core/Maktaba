@@ -446,14 +446,15 @@ fn release_stale_hold() {
     let rec = crate::attempts::path(&root);
     if let Some(a) = crate::attempts::newest(&rec).filter(|a| a.outcome == crate::attempts::RUNNING)
     {
+        let code = if crate::attempts::refused_for_room(&rec, &a) {
+            crate::attempts::DISK_FULL
+        } else {
+            crate::attempts::INSTALLER_NOT_FINISHED
+        };
         crate::attempts::fail(
             &rec,
             &a.id,
-            &crate::attempts::Failure::new(
-                crate::attempts::STEP_INSTALL,
-                crate::attempts::INSTALLER_NOT_FINISHED,
-                detail.clone(),
-            ),
+            &crate::attempts::Failure::new(crate::attempts::STEP_INSTALL, code, detail.clone()),
         );
     }
     let order = crate::autoinstall::request_path(&root);

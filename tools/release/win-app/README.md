@@ -196,17 +196,21 @@ that runs out of room half way would leave a home with no server. The installer 
 (`MaktabaRoom`), before anything is stopped, deleted or downloaded:
 
 - **What it asks for:** tauri's `ESTIMATEDSIZE` (every file it copies) and 64 MB on the install
-  folder's drive, less what the old payload takes there when the hooks will delete it first
-  (`MaktabaOld`: the installed app takes the flags, and `server\payload.json` is there; the files'
-  size on the disk, links left out); and the new files' size again on `%TEMP%`'s drive, where a solid
+  folder's drive, less what of the install there makes room (`MaktabaOld`): the app, which is written
+  over; and the old payload when the hooks will delete it first (the installed app takes the flags,
+  and `server\payload.json` is there), else the files in it that are written over in place, so a retry
+  of an upgrade that stopped half way is not asked for two payloads. Sizes are on the disk, links
+  left out, a `server\` that is a link too; and the new files' size again on `%TEMP%`'s drive, where a solid
   installer unpacks all it holds as it goes (NSIS's `fileform.c`), in one sum when that is the same
   volume. So an update needs about one payload free on one drive, as it did before the look. 64-bit,
   in KB; a folder not there yet is judged by its nearest parent; a drive or a share that does not
   say (an error, a total of 0) refuses nothing.
-- **The app's own update** looks before it stops the server (`room.rs`): the installer's file and
-  nine tenths of the payload installed now, on the temporary folder's drive. Its attempt says the
-  disk is full. The installer decides exactly; one it refuses after that opens the app again with
-  `--update-no-room`, and the attempt says the same.
+- **The app's own update** looks before it stops the server (`room.rs`), for what its installer will
+  ask, never more: what that unpacks is in its version information (`MaktabaUnpackedKB`). Its attempt
+  says the disk is full. One the installer refuses after that leaves
+  `%LOCALAPPDATA%\Maktaba\updates\installer-no-room` (the release it would have installed) before it
+  starts the home again: the agent and the app both settle the attempt, whichever starts first, and
+  both read it there; the app tells the person, once (`attempts.rs` `REFUSED_FILE`).
 - **A person at the window:** the welcome page's leave (and the reinstall page's, before it runs
   the old uninstaller) says where, how much it needs and how much is free, in English or Arabic,
   and stays on the page.

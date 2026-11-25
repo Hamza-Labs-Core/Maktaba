@@ -424,7 +424,10 @@ impl<I: Io> Orders<I> {
                 ),
             )
         };
-        attempts::fail(&attempts::path(&self.root), &id, &f);
+        let record = attempts::path(&self.root);
+        attempts::fail(&record, &id, &f);
+        // said here: not the app's to say at its next start
+        attempts::forget_refusal(&record);
         self.failed(path, req, &f);
     }
 
@@ -561,7 +564,7 @@ fn clean_installers(root: &Path) {
 /// its release or newer (the installer it started took), failed otherwise.
 pub fn settle(root: &Path, build: &Build) {
     let rec = attempts::path(root);
-    let _ = attempts::settle_newest(&rec, &build.version, &attempts::Ctx::here(), None);
+    attempts::settle_newest_for_agent(&rec, &build.version, &attempts::Ctx::here());
 }
 
 /// The network and the installer's start, for real. own_job: this agent holds its own

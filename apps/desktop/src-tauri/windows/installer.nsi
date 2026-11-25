@@ -161,9 +161,7 @@ Var MkRoomText
 Var MkRoomOn       ; the words' drive, what it takes there and what is free
 Var MkRoomNeed
 Var MkRoomFree
-!ifdef MK_SERVER
-  Var MkRoomOld    ; what the old payload takes, in bytes (MaktabaOld)
-!endif
+Var MkRoomOld      ; what of the install there goes first or is written over, in bytes (MaktabaOld)
 ; the room kept beside what the install copies (64 MB, in KB: clusters, the uninstaller, the
 ; pages' art), and the exit code of an installer that found too little and changed nothing
 ; (Windows' ERROR_DISK_FULL; attempts.rs INSTALLER_NO_ROOM)
@@ -187,6 +185,9 @@ VIAddVersionKey "FileDescription" "${PRODUCTNAME}"
 VIAddVersionKey "LegalCopyright" "${COPYRIGHT}"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "ProductVersion" "${VERSION}"
+; Maktaba (13.14): what this installer unpacks, in KB, for the app that is about to run it
+; (room.rs reads it from the file, which it holds in memory)
+VIAddVersionKey "MaktabaUnpackedKB" "${ESTIMATEDSIZE}"
 
 # additional plugins
 !addplugindir "${ADDITIONALPLUGINSPATH}"
@@ -801,8 +802,9 @@ FunctionEnd
 ; Section Install right before the hooks. GetInstDirError answers only on NSIS's own directory
 ; page, which is not here.
 ;
-; It asks for the size of the new files, less what the old payload takes when this install will
-; delete it first (MaktabaOld): a home that has room for an update has it here too. A solid
+; It asks for the size of the new files, less what goes first or is written over in place
+; (MaktabaOld): a home that has room for an update has it here too, and one whose last update
+; stopped half way has it for the next try. A solid
 ; installer asks for the new files' size again in %TEMP%, where it unpacks (one sum when that is
 ; the same volume).
 
@@ -856,10 +858,33 @@ Function MaktabaFree
   ${EndIf}
 FunctionEnd
 
+; MaktabaCount: adds to $MkRoomOld the bytes the file on the stack takes on the disk (as Windows
+; counts them: a compressed or a sparse file frees only what it takes). Nothing for none, a
+; folder or a link (what it points to is not what goes), or for 2 GB or more, which NSIS's numbers
+; do not hold.
+Function MaktabaCount
+  Exch $0
+  Push $1
+  Push $2
+  System::Call 'kernel32::GetFileAttributesW(w r0) i .r1'
+  IntOp $2 $1 & 0x410 ; a folder, a link
+  ${If} $1 <> -1
+  ${AndIf} $2 = 0
+    System::Call 'kernel32::GetCompressedFileSizeW(w r0, *i .r2) i .r1'
+    ${If} $1 > 0
+    ${AndIf} $2 = 0
+      System::Int64Op $MkRoomOld + $1
+      Pop $MkRoomOld
+    ${EndIf}
+  ${EndIf}
+  Pop $2
+  Pop $1
+  Pop $0
+FunctionEnd
+
 !ifdef MK_SERVER
-; MaktabaTake: adds to $MkRoomOld the bytes the files in the folder on the stack take on the disk
-; (as Windows counts them: a compressed or a sparse file frees only what it takes). A folder that
-; is a link is left out: deleting it frees nothing of what it points to.
+; MaktabaTake: MaktabaCount of every file in the folder on the stack. A folder that is a link is
+; left out: deleting it frees nothing of what it points to.
 Function MaktabaTake
   Exch $0
   Push $1
@@ -874,19 +899,14 @@ Function MaktabaTake
       IntOp $4 $3 & 0x10 ; a folder
       ${If} $3 = -1
         ; gone meanwhile
-      ${ElseIf} $4 <> 0
+      ${ElseIf} $4 = 0
+        Push "$0\$2"
+        Call MaktabaCount
+      ${Else}
         IntOp $4 $3 & 0x400 ; a link
         ${If} $4 = 0
           Push "$0\$2"
           Call MaktabaTake
-        ${EndIf}
-      ${Else}
-        ; (4 GB or more, or past 2 GB, which NSIS's numbers do not hold: not counted)
-        System::Call 'kernel32::GetCompressedFileSizeW(w "$0\$2", *i .r4) i .r3'
-        ${If} $3 > 0
-        ${AndIf} $4 = 0
-          System::Int64Op $MkRoomOld + $3
-          Pop $MkRoomOld
         ${EndIf}
       ${EndIf}
     ${EndIf}
@@ -899,27 +919,54 @@ Function MaktabaTake
   Pop $1
   Pop $0
 FunctionEnd
+
+; MaktabaOver: MaktabaCount of every file this install writes over in place
+Function MaktabaOver
+  {{#each resources}}
+    Push "$INSTDIR\\{{this.[1]}}"
+    Call MaktabaCount
+  {{/each}}
+  {{#each binaries}}
+    Push "$INSTDIR\\{{this}}"
+    Call MaktabaCount
+  {{/each}}
+FunctionEnd
 !endif
 
-; MaktabaOld: $1 = what the old payload frees, in KB: 0 unless the hooks will delete it (their
-; conditions: the installed app takes the flags, and the folder is a payload)
+; MaktabaOld: $1 = what of the install there makes room for the new files, in KB: the app, which
+; is written over; and the old payload, when the hooks will delete it (their conditions: the
+; installed app takes the flags, and the folder is a payload), else the files in it that are
+; written over in place: an upgrade that stopped half way left the new release's files with no
+; record of them, or no payload.json.
 Function MaktabaOld
-  StrCpy $1 0
+  Push $0
+  StrCpy $MkRoomOld 0
+  Push "$INSTDIR\${MAINBINARYNAME}.exe"
+  Call MaktabaCount
   !ifdef MK_SERVER
     Push $R8
     Push $R9
-    !insertmacro MAKTABA_INSTALLED_TAKES_FLAGS
-    ${If} $R8 = 1
-    ${AndIf} ${FileExists} "$INSTDIR\server\payload.json"
-      StrCpy $MkRoomOld 0
-      Push "$INSTDIR\server"
-      Call MaktabaTake
-      System::Int64Op $MkRoomOld / 1024
-      Pop $1
+    System::Call 'kernel32::GetFileAttributesW(w "$INSTDIR\server") i .r0'
+    IntOp $1 $0 & 0x400
+    ; a server\ that is a link to another place frees nothing here, and the hook takes the link
+    ; away: the new payload is written whole
+    ${If} $0 <> -1
+    ${AndIf} $1 = 0
+      !insertmacro MAKTABA_INSTALLED_TAKES_FLAGS
+      ${If} $R8 = 1
+      ${AndIf} ${FileExists} "$INSTDIR\server\payload.json"
+        Push "$INSTDIR\server"
+        Call MaktabaTake
+      ${Else}
+        Call MaktabaOver
+      ${EndIf}
     ${EndIf}
     Pop $R9
     Pop $R8
   !endif
+  System::Int64Op $MkRoomOld / 1024
+  Pop $1
+  Pop $0
 FunctionEnd
 
 ; MaktabaShort: whether $1 KB ("" unknown) is less than $0 KB; $MkRoomOn is $2 when it is
@@ -1018,12 +1065,25 @@ FunctionEnd
 ; room. It changed nothing, and says so with its exit code (the agent's orders read it). The app
 ; stopped the server for its own update and closed (shell.rs), and nothing after this would
 ; start them: so the server starts again on the release it has, and the app when the updater
-; asked for it (/R), told why (attempts.rs NO_ROOM_FLAG: its attempt says the disk is full). Then
-; the words, for a person at a window or the console that ran it, in front of that app; none for
-; the agent's update (/P /UPDATE, no /R), where nobody is there to close them.
+; asked for it (/R). Before either, the file both read as they start (attempts.rs REFUSED_FILE):
+; the update's attempt says the disk is full, whichever settles it. Then the words, for a person
+; at a window or the console that ran it, in front of that app; none for the agent's update (/P
+; /UPDATE, no /R), where nobody is there to close them.
 Function MaktabaNoRoom
   SetErrorLevel ${MK_ROOM_EXIT}
   ${If} $UpdateMode = 1
+    ; the app's state folder, where it looks (agent.rs state_root: the variable, not the shell's
+    ; folder)
+    ReadEnvStr $R0 "LOCALAPPDATA"
+    ${If} $R0 != ""
+      CreateDirectory "$R0\Maktaba\updates"
+      ClearErrors
+      FileOpen $R1 "$R0\Maktaba\updates\installer-no-room" w
+      ${IfNot} ${Errors}
+        FileWrite $R1 "${VERSION}"
+        FileClose $R1
+      ${EndIf}
+    ${EndIf}
     !ifdef MK_SERVER
       !insertmacro MAKTABA_START_AGAIN
     !endif
@@ -1034,7 +1094,7 @@ Function MaktabaNoRoom
     StrCpy $R1 1
     ${If} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
       ${GetOptions} $CMDLINE "/ARGS" $R0
-      nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0 --update-no-room"
+      nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
     ${EndIf}
   ${EndIf}
   ${If} ${Silent}

@@ -412,28 +412,62 @@ def test_the_old_payload_the_hooks_delete_counts_as_room(script: str) -> None:
     assert room.index("Call MaktabaShort") < old or room.count("Call MaktabaShort") == 1
     # and never below the margin
     assert "${If} $0 < ${MK_ROOM_MARGIN}\n      StrCpy $0 ${MK_ROOM_MARGIN}" in room[old:last]
+    # the install drive's numbers, not %TEMP%'s
+    assert "StrCpy $1 $7\n    StrCpy $2 $8\n    Call MaktabaShort" in room[old:]
     fn = function(script, "MaktabaOld")
-    if "!define MK_SERVER" not in script:
-        return
+    # the app is written over in every build; $0, the caller's need, is put back
+    assert fn.splitlines()[1].strip() == "Push $0" and fn.rstrip().splitlines()[-2].strip() == "Pop $0"
+    assert fn.index("StrCpy $MkRoomOld 0") < fn.index('Push "$INSTDIR\\${MAINBINARYNAME}.exe"\n  Call MaktabaCount')
+    assert "System::Int64Op $MkRoomOld / 1024\n  Pop $1" in fn
     hooks = (SRC_TAURI / "windows" / "installer-hooks.nsh").read_text(encoding="utf-8")
     pre = re.search(r"^!macro NSIS_HOOK_PREINSTALL.*?^!macroend", hooks, re.M | re.S).group(0)
     # its conditions are the hook's own
     for what in ("!insertmacro MAKTABA_INSTALLED_TAKES_FLAGS", "${If} $R8 = 1", '${FileExists} "$INSTDIR\\server\\payload.json"'):
         assert what in fn and what in pre, what
-    assert 'RMDir /r "$INSTDIR\\server"' in pre and 'Push "$INSTDIR\\server"' in fn
-    assert fn.index("StrCpy $MkRoomOld 0") < fn.index("Call MaktabaTake")
+    assert 'RMDir /r "$INSTDIR\\server"' in pre
+    take = fn.index('Push "$INSTDIR\\server"\n        Call MaktabaTake')
+    over = fn.index("Call MaktabaOver")
+    assert blocks_at(fn, take)[-1] == '${If} $R8 = 1 ${AndIf} ${FileExists} "$INSTDIR\\server\\payload.json"'
+    # a server\\ that is a link: the hook removes the link, and nothing of it is freed here
+    for at in (take, over):
+        assert "${If} $0 <> -1 ${AndIf} $1 = 0" in blocks_at(fn, at)
+    assert "IntOp $1 $0 & 0x400" in fn
 
 
-def test_what_the_old_payload_frees_is_what_it_takes_on_the_disk(script: str) -> None:
-    if "!define MK_SERVER" not in script:
-        return
+def test_a_retry_of_an_upgrade_that_stopped_half_way_counts_what_it_writes_over(script: str) -> None:
+    # no record of the new Maktaba.exe yet, or no payload.json: the hook deletes nothing, and the
+    # new release's own files there are written over in place. Two payloads would be asked of a
+    # home that has no server
+    over = function(script, "MaktabaOver")
+    counted = re.findall(r'^\s*Push "\$INSTDIR\\\\?(.+)"\n\s*Call MaktabaCount$', over, re.M)
+    written = re.findall(r'^\s*File /a "/oname=(.+?)" ', install_section(script), re.M)
+    assert bool(counted) == ("server" in "".join(written))
+    assert [c.replace("\\\\", "\\") for c in counted] == [w.replace("\\\\", "\\") for w in written]
+    fn = function(script, "MaktabaOld")
+    assert "${Else}" in fn[: fn.index("Call MaktabaOver")].splitlines()[-2]
+
+
+def test_what_goes_is_what_it_takes_on_the_disk(script: str) -> None:
+    count = function(script, "MaktabaCount")
+    # a link's target is not freed; a file past NSIS's numbers is not counted
+    assert "IntOp $2 $1 & 0x410" in count and "${If} $1 <> -1\n  ${AndIf} $2 = 0" in count
+    assert "GetCompressedFileSizeW(w r0, *i .r2) i .r1" in count
+    assert "${If} $1 > 0\n    ${AndIf} $2 = 0\n      System::Int64Op $MkRoomOld + $1\n      Pop $MkRoomOld" in count
     take = function(script, "MaktabaTake")
-    assert "GetCompressedFileSizeW" in take
-    assert "System::Int64Op $MkRoomOld + $3" in take
-    # a link's target is not freed, and is not walked
     link = take.index("IntOp $4 $3 & 0x400")
-    assert link < take.index("Call MaktabaTake")
-    assert take.count("Push $") == 4 and re.findall(r"^  Pop (\$\d)$", take, re.M) == ["$4", "$3", "$2", "$1", "$0"]
+    assert link < take.index("Call MaktabaTake") and "${If} $4 = 0" in blocks_at(take, take.index("Call MaktabaTake"))
+    for fn, regs in ((count, ["$1", "$2"]), (take, ["$1", "$2", "$3", "$4"])):
+        assert re.findall(r"^  Push (\$\d)$", fn, re.M) == regs
+        assert re.findall(r"^  Pop (\$\d)$", fn, re.M) == regs[::-1] + ["$0"]
+
+
+def test_the_app_can_read_what_the_installer_unpacks(script: str) -> None:
+    # its version information, which is not compressed: room.rs looks for the key in the file
+    key = re.search(r'pub const UNPACKED_KEY: &str = "(\w+)";', (SRC_TAURI / "src" / "room.rs").read_text(encoding="utf-8")).group(1)
+    assert f'VIAddVersionKey "{key}" "${{ESTIMATEDSIZE}}"' in script
+    margin = int(re.search(r"^!define MK_ROOM_MARGIN (\d+)$", script, re.M).group(1))
+    room = (SRC_TAURI / "src" / "room.rs").read_text(encoding="utf-8")
+    assert int(re.search(r"const MARGIN_KB: u64 = ([\d_]+);", room).group(1).replace("_", "")) == margin
 
 
 def test_the_free_space_is_counted_past_32_bits_and_never_guessed(script: str) -> None:
@@ -458,9 +492,11 @@ def test_a_refused_update_starts_the_home_and_the_app_again(script: str) -> None
     assert "${If} $UpdateMode = 1" in blocks_at(refused, start)
     app = refused.index("nsis_tauri_utils::RunAsUser")
     assert refused.index('${GetOptions} $CMDLINE "/R" $R0') < app
-    # the app is told why, so its attempt says the disk is full, not that the installer failed
-    flag = re.search(r'pub const NO_ROOM_FLAG: &str = "(--[\w-]+)";', (SRC_TAURI / "src" / "attempts.rs").read_text(encoding="utf-8")).group(1)
-    assert f'"$R0 {flag}"' in refused[app:].splitlines()[0]
+    # what the agent and the app read as they start is there before either starts
+    name = re.search(r'pub const REFUSED_FILE: &str = "([\w-]+)";', (SRC_TAURI / "src" / "attempts.rs").read_text(encoding="utf-8")).group(1)
+    left = refused.index(f'FileOpen $R1 "$R0\\Maktaba\\updates\\{name}" w')
+    assert refused.index('ReadEnvStr $R0 "LOCALAPPDATA"') < left < refused.index('FileWrite $R1 "${VERSION}"') < start < app
+    assert "${If} $UpdateMode = 1" in blocks_at(refused, left)
     # both before a window that waits for a person, and none where nobody is (the agent's /P /UPDATE)
     box = refused.index("MessageBox")
     assert start < app < box
