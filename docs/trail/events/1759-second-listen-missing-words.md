@@ -17,10 +17,12 @@ agent: claude-code
 - **A producer:** `stt/align.py` `place` keeps Whisper's bookkeeping, which counts each sentence's
   tokens from its first word. A "." decoded as a sentence of its own moves the later sentences'
   words along, and the window's last sentence is left with none.
-- **#1759:** the second listen corrects the sentences that have words; the videos it left out get
-  their tries again once a home (`relisten_seen`); a transcript with no words at all is transcribed
-  again, and one Whisper gives none for is recorded so; `place` gives a word to the sentence its
-  first token is in.
+- **#1759, first version,** let the second listen correct the sentences that had words. Its review
+  found, on real data, that the old placement damaged their neighbours too: a word stored under the
+  wrong sentence has no slot where it belongs, and rebuilding the sentence from its slots loses it.
+- **#1759, as it is:** the videos left out are transcribed again, once a home, when no older worker
+  serves the stages; `refine` leaves out a sentence whose words do not cover its text and no stretch
+  runs over it; `place` splits a word over two sentences between them.
 
 ## What we learned
 - **A mark that says what was asked is not what was stored.** The sweep chose its stage by the mark,
@@ -28,6 +30,12 @@ agent: claude-code
 - **A skip is not a stop of the later stages:** `_skipped` ends its job done, so by the code the
   subtitles, index and tags ran on Whisper's words; what those videos lacked is the correction.
 
+- **Check that stored words cover their text before rebuilding the text from them.** That some
+  sentence has words says nothing of which words they are.
+- **The pipeline's `__version__` is stamped in the node wheel only,** so it cannot say which worker
+  is older. A capability a worker reports can.
+
 ## Open
+- Transcripts corrected before the fix can have lost words the same way; none is looked for.
 - On the home after the update: `transcribe.relisten_reset` (why "sentences without words"), then
-  the skipped transcripts draining, 20 every 10 minutes.
+  the skipped transcripts draining, 20 every 10 minutes, as `transcribe` jobs.
