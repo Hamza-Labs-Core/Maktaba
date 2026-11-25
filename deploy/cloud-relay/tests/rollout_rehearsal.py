@@ -749,6 +749,9 @@ def unhealthy() -> str:
     before = snapshot()
     code, out = deploy("bad", "app bad")
     assert code != 0 and "restored" in out, out[-3000:]
+    assert "the relay's /readyz does not answer 200" in out, "it does not say what was not ready"
+    kept = STATE / "last-logs/maktaba-cloud.log"  # the refused release's own words: its container is gone
+    assert IMAGES["bad"].split("@")[0] in kept.read_text(), "its log was not kept"
     not_pending()
     ready()
     same(before, snapshot())

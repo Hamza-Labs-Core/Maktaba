@@ -348,7 +348,7 @@ cmd_begin() {
 		log "image $ref"
 	done
 
-	rm -rf "$STATE/pending.new"
+	rm -rf "$STATE/pending.new" "$STATE/last-logs" # the last deploy's words
 	(umask 077; mkdir -p "$STATE/pending.new/set")
 	cat /proc/sys/kernel/random/boot_id > "$STATE/pending.new/boot_id"
 	printf '%s\n' "$DEPLOY_ID" > "$STATE/pending.new/id"
@@ -446,17 +446,22 @@ web_to() {
 
 # the relay's and the api's health and readiness, then that they hold (a release can come up and
 # then stop being ready)
-probe() { # probe SERVICE ADDR
-	dc exec -T -e "HEALTHCHECK_URL=http://$2/healthz" "$1" /usr/local/bin/healthcheck </dev/null >/dev/null 2>&1 &&
-		dc exec -T -e "HEALTHCHECK_URL=http://$2/readyz" "$1" /usr/local/bin/healthcheck </dev/null >/dev/null 2>&1
-}
+probe_one() { dc exec -T -e "HEALTHCHECK_URL=http://$2" "$1" /usr/local/bin/healthcheck </dev/null >/dev/null 2>&1; } # probe_one SERVICE ADDR/PATH
+probe() { probe_one "$1" "$2/healthz" && probe_one "$1" "$2/readyz"; } # probe SERVICE ADDR
 verify() {
 	local end=$((SECONDS + WATCH_SECONDS)) ok=0 tries=0
 	while :; do
 		if probe maktaba-cloud 127.0.0.1:8443 && probe api 172.30.77.10:8090 && running worker && running caddy; then
 			ok=1
 		elif [ "$ok" = 1 ] || [ "$tries" -ge 12 ]; then
-			return 1 # it was ready and is not any more, or never was
+			# it was ready and is not any more, or never was: which, for whoever reads the log
+			probe_one maktaba-cloud 127.0.0.1:8443/healthz || err "the relay's /healthz does not answer 200"
+			probe_one maktaba-cloud 127.0.0.1:8443/readyz || err "the relay's /readyz does not answer 200"
+			probe_one api 172.30.77.10:8090/healthz || err "the api's /healthz does not answer 200"
+			probe_one api 172.30.77.10:8090/readyz || err "the api's /readyz does not answer 200"
+			running worker || err "the worker does not run"
+			running caddy || err "caddy does not run"
+			return 1
 		fi
 		tries=$((tries + 1))
 		[ "$ok" = 0 ] || [ "$SECONDS" -lt "$end" ] || return 0
