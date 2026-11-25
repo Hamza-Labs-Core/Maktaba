@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -351,26 +352,28 @@ func (s *Service) Plan(ctx context.Context) (Plan, Policy, string, error) {
 
 // blockedFor runs the blockers for a run of version; the first reason wins: an active run that only waits for desktop apps
 // and that version supersedes does not block it (start supersedes it, once the release's
-// re-check passed).
-func (s *Service) blockedFor(ctx context.Context, version string) (string, error) {
+// re-check passed). A reason in past does not either; those met are passed.
+func (s *Service) blockedFor(ctx context.Context, version string, past ...string) (why string, passed []string, err error) {
 	if a, err := s.Store.ActiveRun(ctx); err != nil {
-		return "", err
+		return "", nil, err
 	} else if a != nil {
 		sp, ok := s.Starter.(superseder)
 		if version == "" || !ok || !sp.Supersedable(ctx, version) {
-			return BlockActiveRun, nil
+			return BlockActiveRun, nil, nil
 		}
 	}
 	for _, b := range s.Blockers {
 		why, err := b.Blocked(ctx)
-		if err != nil {
-			return "", err
-		}
-		if why != "" {
-			return why, nil
+		switch {
+		case err != nil:
+			return "", nil, err
+		case slices.Contains(past, why):
+			passed = append(passed, why) // the next may still hold it
+		case why != "":
+			return why, nil, nil
 		}
 	}
-	return "", nil
+	return "", passed, nil
 }
 
 // Decision is what one scheduler tick did.
@@ -413,7 +416,7 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 	if wait := s.retryWait(ctx, pol, pl.Target.Version); wait != "" {
 		return Decision{Action: "none", Reason: wait, Version: pl.Target.Version}, nil
 	}
-	why, err := s.blockedFor(ctx, pl.Target.Version)
+	why, _, err := s.blockedFor(ctx, pl.Target.Version)
 	if err != nil {
 		return Decision{Action: "none"}, err
 	}
@@ -678,18 +681,21 @@ func (s *Service) RunNow(ctx context.Context, actor, version string) (Run, error
 	if target == nil {
 		return Run{}, ErrNoTarget
 	}
-	why, err := s.blockedFor(ctx, target.Version)
+	// a recent crash is the running release's: it holds an automatic run (the new one
+	// would be judged on a home already failing), not an admin's, whose update may be
+	// the cure; the new release is still judged on its own health and rolled back. A
+	// machine's copy of the database holds an automatic run only, too: it can take hours,
+	// and a machine that makes it again and again would hold the admin for as long (the
+	// update waits for it, 10 minutes at most, before it migrates)
+	why, passed, err := s.blockedFor(ctx, target.Version, BlockRecentCrash, BlockMachineCopying)
 	if err != nil {
 		return Run{}, err
 	}
-	// a recent crash is the running release's: it holds an automatic run (the new one
-	// would be judged on a home already failing), not an admin's, whose update may be
-	// the cure; the new release is still judged on its own health and rolled back
-	if why != "" && why != BlockRecentCrash {
+	if why != "" {
 		return Run{}, &BlockedError{Reason: why}
 	}
-	if why == BlockRecentCrash {
-		s.Store.Audit(ctx, actor, "admin", "update_past_recent_crash", target.Version, nil)
+	for _, p := range passed {
+		s.Store.Audit(ctx, actor, "admin", "update_past_"+p, target.Version, nil)
 	}
 	if target.BreaksPreviousHome() && target.ApprovedAt == nil {
 		if err := s.Store.Approve(ctx, target.Version, actor); err != nil {
