@@ -109,6 +109,13 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 	if err := CheckCounts(dump); err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
 	}
+	toc, err := b.tableOfContents(ctx, dump, q.pw)
+	if err == nil {
+		err = CheckChunks(dump, toc)
+	}
+	if err != nil {
+		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
+	}
 	jobs := opts.Jobs
 	if jobs <= 0 {
 		jobs = max(1, runtime.NumCPU()/2)
@@ -116,7 +123,7 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 	if err := b.makeRoomBeside(ctx, q, dump, log); err != nil {
 		return err
 	}
-	err := b.restoreOnce(ctx, q, dump, opts, jobs, log)
+	err = b.restoreOnce(ctx, q, dump, opts, jobs, log)
 	if err != nil && ctx.Err() == nil && jobs > 1 {
 		_, _ = fmt.Fprintf(log, "[postgres] the restore of %s with %d workers failed (%v): it is done again with one\n",
 			dump, jobs, err)

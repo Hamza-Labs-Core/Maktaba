@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgtest"
@@ -689,5 +690,364 @@ func TestDumpSchema(t *testing.T) {
 	_ = os.WriteFile(bad, []byte("not a dump"), 0o600)
 	if _, err := r.t.DumpSchema(ctx, bad); err == nil || !strings.Contains(err.Error(), "dump_unreadable") {
 		t.Fatalf("not a dump: %v", err)
+	}
+}
+
+// A server killed (kill -9) in the middle of a restore commits nothing: psql's input ends
+// before the script's own COMMIT. (With psql's --single-transaction, which commits at the
+// end of its input wherever that is, the part it had read was committed.)
+func TestRestoreKilledPartWayCommitsNothing(t *testing.T) {
+	if os.Getenv("DBSAFE_RESTORE") != "" { // the server that is killed
+		tg := Target{URL: os.Getenv("DBSAFE_RESTORE"), Bin: func(name string) string {
+			return filepath.Join(os.Getenv("DBSAFE_BIN"), name)
+		}}
+		t.Fatalf("the restore ended: %v", tg.Restore(context.Background(), os.Getenv("DBSAFE_DUMP"), os.Stderr))
+	}
+	r := newPGRig(t)
+	if runtime.GOOS == "windows" || !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql and a shell")
+	}
+	ctx := context.Background()
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('after.update', '1')`); err != nil {
+		t.Fatal(err)
+	}
+	// the programs, with a pg_restore that writes the tables and then hangs (until the server
+	// that runs it is gone)
+	bin := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"psql", "pg_dump"} {
+		if err := os.Symlink(r.t.bin(n), filepath.Join(bin, n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mark := filepath.Join(bin, "wrote")
+	script := "#!/bin/sh\n[ \"$1\" = -l ] && exec '" + r.t.bin("pg_restore") + "' \"$@\"\n'" + r.t.bin("pg_restore") + "' --no-owner --no-publications --section=pre-data --file=- \"$DBSAFE_DUMP\"\n" +
+		"echo \"SELECT pg_notify('x', 'y');\"\n: > '" + mark + "'\nwhile kill -0 $PPID; do sleep 1; done\n"
+	if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRestoreKilledPartWayCommitsNothing$")
+	cmd.Env = append(os.Environ(), "DBSAFE_RESTORE="+r.t.URL, "DBSAFE_BIN="+bin, "DBSAFE_DUMP="+dump)
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	pgtest.WaitFor(t, "the script's tables written", time.Minute, func() bool {
+		_, err := os.Stat(mark)
+		return err == nil
+	})
+	time.Sleep(2 * time.Second) // psql ran what it read
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	db, err := r.t.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	pgtest.WaitFor(t, "psql to end", time.Minute, func() bool {
+		var n int
+		return db.QueryRow(`SELECT count(*) FROM pg_stat_activity WHERE application_name = 'psql'`).Scan(&n) == nil && n == 0
+	})
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("a killed restore changed the database: %d %v\n%s", n, err, out.String())
+	}
+	if !r.has(t, "videos") {
+		t.Fatal("the library's tables are gone")
+	}
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, dump, &log); err != nil { // whole, it is committed
+		t.Fatalf("%v\n%s", err, log.String())
+	}
+	db2, err := r.t.open(ctx, "") // the restore ended the other sessions
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db2.Close()
+	if err := db2.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("not restored: %d %v", n, err)
+	}
+}
+
+// A table's rows cut short where pg_restore does not notice (PostgreSQL 18's ends well): its
+// COPY's end is missing, so psql takes what comes next for rows. Nothing of it is committed,
+// nothing waits for ever, and the restore says why it failed.
+func TestRestoreOfRowsCutShortCommitsNothing(t *testing.T) {
+	r := newPGRig(t)
+	if runtime.GOOS == "windows" || !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql and a shell")
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(context.Background(), dump); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`INSERT INTO app_settings (key, value) VALUES ('after.update', '1')`); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte("#!/bin/sh\ncase \"$*\" in\n"+
+		"*-l*) echo '1; 0 1 TABLE DATA public cut maktaba';;\n"+
+		"*=pre-data*) echo 'CREATE TABLE public.cut (t text);'; echo '-- Data for Name: cut; Type: TABLE DATA; Schema: public; Owner: -'\n"+
+		"echo 'COPY public.cut (t) FROM stdin;'; echo 'a row'; printf 'and half of anot';;\nesac\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tg := r.t
+	tg.Bin = func(name string) string {
+		if name == "pg_restore" {
+			return filepath.Join(bin, name)
+		}
+		return r.t.bin(name)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	var log bytes.Buffer
+	err := tg.Restore(ctx, dump, &log)
+	if err == nil || ctx.Err() != nil || !strings.Contains(err.Error(), "cut short") {
+		t.Fatalf("the restore: %v (%v)", err, ctx.Err())
+	}
+	db, err := r.t.open(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.QueryRow(`SELECT count(*) FROM app_settings WHERE key = 'after.update'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("the database changed: %d %v\n%s", n, err, log.String())
+	}
+}
+
+// A script that fails part way, or a pg_restore that does, commits nothing and says so, though
+// the database it would have checked against is the same (the same rows as the dump's).
+func TestRestoreThatFailsPartWayCommitsNothing(t *testing.T) {
+	r := newPGRig(t)
+	if runtime.GOOS == "windows" || !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql and a shell")
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(context.Background(), dump); err != nil {
+		t.Fatal(err)
+	}
+	var before string
+	if err := r.db.QueryRow(`SELECT oid::text FROM pg_namespace WHERE nspname = 'public'`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string][2]string{
+		"an SQL error":         {"echo 'SELECT nothing FROM nowhere;'", "nowhere"},
+		"pg_restore failing":   {"echo 'pg_restore: error: could not read' >&2; exit 1", "could not read"},
+		"pg_restore, no words": {"exit 1", "exit status 1"},
+	} {
+		bin := t.TempDir()
+		if err := os.WriteFile(filepath.Join(bin, "pg_restore"), []byte("#!/bin/sh\n'"+r.t.bin("pg_restore")+"' \"$@\" || exit 1\n"+
+			"case \"$*\" in *=post-data*) "+c[0]+";; esac\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		tg := r.t
+		tg.Bin = func(n string) string {
+			if n == "pg_restore" {
+				return filepath.Join(bin, n)
+			}
+			return r.t.bin(n)
+		}
+		var log bytes.Buffer
+		if err := tg.Restore(context.Background(), dump, &log); err == nil || !strings.Contains(err.Error(), c[1]) {
+			t.Errorf("%s: %v", name, err)
+		}
+		d, err := r.t.open(context.Background(), "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var now string
+		if err := d.QueryRow(`SELECT oid::text FROM pg_namespace WHERE nspname = 'public'`).Scan(&now); err != nil || now != before {
+			t.Errorf("%s: another schema is there (%v)", name, err)
+		}
+		_ = d.Close()
+	}
+}
+
+// A chunked table's chunks that are damaged are refused before anything is touched (the copy
+// slots too), with the dump's counts or without; a last chunk that is gone, and any table short
+// of its counts, before the commit.
+func TestRestoreOfDamagedChunksChangesNothing(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	if !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql")
+	}
+	prev := pgbundle.Chunked
+	t.Cleanup(func() { pgbundle.Chunked = prev })
+	pgbundle.Chunked = []pgbundle.ChunkedTable{{Name: "public.chunk_t", Key: "id"}}
+	exec := func(q string) {
+		t.Helper()
+		d, err := r.t.open(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer d.Close()
+		if _, err := d.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	one := func(q string) (n int) {
+		t.Helper()
+		d, err := r.t.open(ctx, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer d.Close()
+		if err := d.QueryRow(q).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	exec(`CREATE TABLE chunk_t (id bigint PRIMARY KEY, body text); INSERT INTO chunk_t SELECT g, 'row ' || g FROM generate_series(1, 300) g`)
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := r.t.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	chunks := pgbundle.Chunks(dump)["public.chunk_t"]
+	if len(chunks) < 2 {
+		t.Skipf("%d chunks", len(chunks))
+	}
+	exec(`INSERT INTO chunk_t VALUES (1000, 'since')`)
+	first, err := os.ReadFile(chunks[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the first row's end: 2 bytes of fields, two lengths and their bytes
+	row := 19 + 2 + 4 + 8 + 4 + len("row 1")
+	counts := filepath.Join(dump, pgbundle.CountsFile)
+	whole, err := os.ReadFile(counts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := chunks[len(chunks)-1]
+	for name, c := range map[string]struct {
+		do, undo func() error
+		noCounts bool // refused with no counts too
+		want     string
+	}{
+		"cut between two rows": {func() error { return os.WriteFile(chunks[0], first[:row], 0o600) },
+			func() error { return os.WriteFile(chunks[0], first, 0o600) }, true, "cut short"},
+		"cut in a row": {func() error { return os.WriteFile(chunks[0], first[:row-3], 0o600) },
+			func() error { return os.WriteFile(chunks[0], first, 0o600) }, true, "cut short"},
+		"empty": {func() error { return os.WriteFile(chunks[0], nil, 0o600) },
+			func() error { return os.WriteFile(chunks[0], first, 0o600) }, true, "cut short"},
+		"one gone": {func() error { return os.Rename(chunks[0], chunks[0]+".away") },
+			func() error { return os.Rename(chunks[0]+".away", chunks[0]) }, true, "is not there"},
+		"the last gone": {func() error { return os.Rename(last, last+".away") },
+			func() error { return os.Rename(last+".away", last) }, false, "rows"},
+		"a table short of its counts": {func() error {
+			return os.WriteFile(counts, bytes.Replace(whole, []byte(`"public.app_settings":`), []byte(`"public.app_settings":9`), 1), 0o600)
+		}, func() error { return os.WriteFile(counts, whole, 0o600) }, false, "public.app_settings"},
+	} {
+		for _, with := range []bool{true, false} {
+			if !with && !c.noCounts {
+				continue
+			}
+			if err := c.do(); err != nil {
+				t.Fatal(err)
+			}
+			if !with {
+				if err := os.Remove(counts); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var log bytes.Buffer
+			if err := r.t.Restore(ctx, dump, &log); err == nil || !strings.Contains(err.Error(), c.want) || !strings.Contains(err.Error(), "nothing changed") {
+				t.Errorf("%s, counts %v: %v", name, with, err)
+			}
+			if n := one(`SELECT count(*) FROM chunk_t WHERE id = 1000`); n != 1 {
+				t.Errorf("%s, counts %v: the database changed", name, with)
+			}
+			if c.want == "cut short" || c.want == "is not there" {
+				if err := r.t.restoreInto(ctx, "postgres", dump); err == nil || !strings.Contains(err.Error(), c.want) {
+					t.Errorf("%s: a rehearsal's: %v", name, err)
+				}
+			}
+			if err := c.undo(); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(counts, whole, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, dump, &log); err != nil {
+		t.Fatalf("%v\n%s", err, log.String())
+	}
+	if n := one(`SELECT count(*) FROM chunk_t`); n != 300 {
+		t.Fatalf("%d rows", n)
+	}
+}
+
+// A dump that cannot be listed is refused before anything is touched: the machines' copies keep
+// their slots.
+func TestRestoreOfAnUnreadableDumpTouchesNothing(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	if _, err := r.db.Exec(`SELECT pg_create_logical_replication_slot('mk_kept', 'pgoutput')`); err != nil {
+		t.Skipf("no logical slots here: %v", err)
+	}
+	dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+	if err := os.MkdirAll(dump, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dump, "toc.dat"), []byte("PGDMP cut"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	if err := r.t.Restore(ctx, dump, &log); err == nil || !strings.Contains(err.Error(), "nothing changed") {
+		t.Fatal(err)
+	}
+	var n int
+	if err := r.db.QueryRow(`SELECT count(*) FROM pg_replication_slots WHERE slot_name = 'mk_kept'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("the slot: %d %v", n, err)
+	}
+}
+
+// A table whose owner's own INSERT is revoked restores: pg_restore gives the grants after the
+// rows.
+func TestRestoreGivesTheGrantsAfterTheRows(t *testing.T) {
+	r := newPGRig(t)
+	ctx := context.Background()
+	if !havePSQL(r.t.bin("psql")) {
+		t.Skip("needs psql")
+	}
+	u, err := r.b.URL() // the app role, which owns its database and is no superuser
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.db.Exec(`CREATE DATABASE grants_check OWNER ` + pgbundle.AppRole + ` TEMPLATE template0`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = r.db.Exec(`DROP DATABASE IF EXISTS grants_check WITH (FORCE)`) })
+	tg := r.t
+	if tg.URL, err = (Target{URL: u}).urlFor("grants_check"); err != nil {
+		t.Fatal(err)
+	}
+	d, err := tg.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if _, err := d.Exec(`CREATE TABLE own (id int); INSERT INTO own VALUES (1); REVOKE INSERT ON own FROM ` + pgbundle.AppRole); err != nil {
+		t.Fatal(err)
+	}
+	dump := filepath.Join(r.t.Backups, "grants.dump")
+	if err := tg.Dump(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	if err := tg.Restore(ctx, dump, &log); err != nil {
+		t.Fatalf("%v\n%s", err, log.String())
 	}
 }
