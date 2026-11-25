@@ -45,19 +45,19 @@ func TestRegisterVerifyLogin(t *testing.T) {
 		t.Fatal("existing owner not notified of the duplicate sign-up")
 	}
 
-	// Resend issues a new link and retires the old one.
+	// Resend issues another link. Each is good until one is used, which ends the others: nobody can
+	// end the link in somebody's inbox by asking for another.
 	old := e.mailedToken("verify_email", email)
 	c.mustStatus(c.do("POST", "/v1/auth/verify-email/resend", map[string]string{"email": email}), http.StatusAccepted)
 	fresh := e.mailedToken("verify_email", email)
 	if old == fresh {
 		t.Fatal("resend reused the token")
 	}
-	if r := c.do("POST", "/v1/auth/verify-email", map[string]string{"token": old}); r.code != 400 || r.errCode() != "invalid_token" {
-		t.Fatalf("superseded token: %d %s", r.code, r.body)
-	}
-	c.mustStatus(c.do("POST", "/v1/auth/verify-email", map[string]string{"token": fresh}), http.StatusOK)
-	if r := c.do("POST", "/v1/auth/verify-email", map[string]string{"token": fresh}); r.code != 400 {
-		t.Fatalf("token reuse: %d", r.code)
+	c.mustStatus(c.do("POST", "/v1/auth/verify-email", map[string]string{"token": old}), http.StatusOK)
+	for _, tok := range []string{fresh, old} {
+		if r := c.do("POST", "/v1/auth/verify-email", map[string]string{"token": tok}); r.code != 400 || r.errCode() != "invalid_token" {
+			t.Fatalf("a link outlived the one used: %d %s", r.code, r.body)
+		}
 	}
 	if e.count(`SELECT count(*) FROM audit_log WHERE action = 'auth.email_verified'`) != 1 {
 		t.Fatal("verification not audited")

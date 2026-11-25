@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -386,13 +385,6 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// them, in Postgres (story 50.17 §3): three nodes don't triple a limit.
 		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "auth", 30, 5, logger), authh.RateLimitedPaths))
 		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "mail", 5, 1.0/12, logger), authh.MailPaths))
-		// across addresses, a deployment that really sends: one network's sign-ups, confirmations and
-		// resets together, 10 at once and 10 an hour, 40 a day. Counted as they are asked, whatever
-		// account there is, so it tells nothing.
-		if cfg.Mail.Delivers() {
-			app.Use(netRateLimit(ratelimit.NewPG(pool.DB, "mailnet", 10, 10.0/3600, logger), authh.MailPaths))
-			app.Use(netRateLimit(ratelimit.NewPG(pool.DB, "mailnetday", 40, 40.0/86400, logger), authh.MailPaths))
-		}
 		app.Use(blockedIPs(detector, logger))
 		// a claim code is 8 characters: its redeem is limited per IP too
 		app.Use(authRateLimit(ratelimit.NewPG(pool.DB, "claim", 30, 5, logger), []string{"/v1/servers/claims/redeem"}))
@@ -558,16 +550,6 @@ func authRateLimit(l keyedLimiter, paths []string) func(http.Handler) http.Handl
 	})
 }
 
-// netRateLimit applies l, keyed by the client's network, to the given paths only.
-func netRateLimit(l keyedLimiter, paths []string) func(http.Handler) http.Handler {
-	return l.Middleware(func(req *http.Request) string {
-		if slices.Contains(paths, req.URL.Path) {
-			return ratelimit.NetKey(req)
-		}
-		return ""
-	})
-}
-
 // prefixRateLimit applies l, keyed by client IP, to the paths under the given prefixes.
 func prefixRateLimit(l keyedLimiter, prefixes []string) func(http.Handler) http.Handler {
 	return l.Middleware(func(req *http.Request) string {
@@ -612,7 +594,7 @@ func staffKeys(cfg config.Config) (*staffauth.Signer, *staffauth.Box, error) {
 // staffTurnstile is the bot check on staff sign-in (50.30): the same switch and secret as the
 // user pages', asked of the console's own origin. Off when the user pages' check is off.
 func staffTurnstile(cfg config.Config, user *turnstile.Guard, fake turnstile.Verifier) *turnstile.Guard {
-	if user == nil {
+	if user == nil || !cfg.Turnstile.Staff {
 		return nil
 	}
 	origin := cfg.Server.AdminOriginOrDefault()

@@ -33,19 +33,21 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/sessions"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/auth/token"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail/outbox"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/ratelimit"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/turnstile"
 )
 
 // Mail is the outbox's part the handlers use.
 type Mail interface {
-	// Request asks for a verification link or a password reset for addr, in lang ("": the
-	// account's). It looks no account up.
-	Request(ctx context.Context, kind, addr, lang string) error
+	// Request asks for a verification link or a password reset. It looks no account up; a
+	// *outbox.TooMany refuses it for its network.
+	Request(ctx context.Context, a mailpkg.Ask) error
 	// Register creates the account and asks for its verification mail, or, when the address
-	// has one already, for the notice to its owner.
-	Register(ctx context.Context, email, passwordHash, displayName, lang string) error
+	// has one already, for the notice to its owner; or refuses it for its network.
+	Register(ctx context.Context, a mailpkg.Ask, passwordHash, displayName string) error
 }
 
 // Deps bundles the collaborators each handler needs.
@@ -64,7 +66,7 @@ type Deps struct {
 	WebURL       string
 	CookieDomain string
 	Secure       bool
-	// Turnstile checks the bot-check token on register, login and forgot-password for web
+	// Turnstile checks the bot-check token on register, login, forgot-password and resend for web
 	// origins (story 50.30 §4; nil: off). TurnstileSiteKey is served to the web pages.
 	Turnstile        *turnstile.Guard
 	TurnstileSiteKey string
@@ -200,8 +202,10 @@ func (d *Deps) Register(w http.ResponseWriter, r *http.Request) {
 		d.fail(w, r, "hash", err)
 		return
 	}
-	if err := d.Mail.Register(r.Context(), email, hash, name, requestLang(r)); err != nil {
-		d.fail(w, r, "create user", err)
+	if err := d.Mail.Register(r.Context(), d.ask(r, "", email), hash, name); err != nil {
+		if !tooMany(w, err) {
+			d.fail(w, r, "create user", err)
+		}
 		return
 	}
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "pending_verification"})
@@ -229,11 +233,34 @@ func (d *Deps) signupFlooded(ctx context.Context, ip string) bool {
 	return block
 }
 
-// request asks the outbox for a mail. Its failure is the log's: the answer is the same.
-func (d *Deps) request(r *http.Request, kind, email string) {
-	if err := d.Mail.Request(r.Context(), kind, email, requestLang(r)); err != nil {
-		d.Logger.Error("auth: ask for a mail", "kind", kind, "err", err)
+// ask is a request's mail: its language, its network, and whether it passed the bot check (only
+// the ones asked to could: Require has answered).
+func (d *Deps) ask(r *http.Request, kind, email string) mailpkg.Ask {
+	return mailpkg.Ask{Kind: kind, To: email, Lang: requestLang(r), Net: ratelimit.NetKey(r), Checked: d.Turnstile.Needed(r)}
+}
+
+// request asks the outbox for a mail and answers: 202, or 429 for the network. Any other failure
+// is the log's.
+func (d *Deps) request(w http.ResponseWriter, r *http.Request, kind, email string) {
+	if email != "" {
+		if err := d.Mail.Request(r.Context(), d.ask(r, kind, email)); tooMany(w, err) {
+			return
+		} else if err != nil {
+			d.Logger.Error("auth: ask for a mail", "kind", kind, "err", err)
+		}
 	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// tooMany answers 429 when err is the outbox's refusal of a network, and reports whether it did.
+func tooMany(w http.ResponseWriter, err error) bool {
+	var t *outbox.TooMany
+	if !errors.As(err, &t) {
+		return false
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(int(t.RetryAfter/time.Second)+1))
+	writeError(w, http.StatusTooManyRequests, "rate_limited", "too many requests from this network; try again later")
+	return true
 }
 
 type tokenReq struct {
@@ -275,10 +302,10 @@ func (d *Deps) ResendVerification(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	if email := normalizeEmail(req.Email); email != "" {
-		d.request(r, mailpkg.KindVerifyEmail, email)
+	if !d.Turnstile.Require(w, r, req.TurnstileToken) {
+		return
 	}
-	w.WriteHeader(http.StatusAccepted)
+	d.request(w, r, mailpkg.KindVerifyEmail, normalizeEmail(req.Email))
 }
 
 type loginReq struct {
@@ -473,10 +500,7 @@ func (d *Deps) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	if !d.Turnstile.Require(w, r, req.TurnstileToken) {
 		return
 	}
-	if email := normalizeEmail(req.Email); email != "" {
-		d.request(r, mailpkg.KindPasswordReset, email)
-	}
-	w.WriteHeader(http.StatusAccepted)
+	d.request(w, r, mailpkg.KindPasswordReset, normalizeEmail(req.Email))
 }
 
 type resetReq struct {

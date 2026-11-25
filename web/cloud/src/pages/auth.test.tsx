@@ -67,6 +67,30 @@ describe("sign in", () => {
     expect(await screen.findByText(/a new verification email is on its way/)).toBeInTheDocument();
   });
 
+  for (const [seconds, en] of [
+    ["1500", "Too many requests from your network. Try again in 25 minutes."],
+    ["30000", "Too many requests from your network. Try again in 9 hours."],
+    ["12", "Too many requests. Wait a moment and try again."],
+  ] as const) {
+    it(`a resend refused for ${seconds} s says when, and not that a mail is on its way`, async () => {
+      stubFetch({
+        "POST /v1/auth/refresh": signedOut,
+        "GET /v1/auth/providers": [200, { google: false, apple: false }],
+        "POST /v1/auth/login": [403, { error: "email_not_verified", message: "verify" }],
+        "POST /v1/auth/verify-email/resend": () =>
+          new Response(JSON.stringify({ error: "rate_limited", message: "" }), {
+            status: 429,
+            headers: { "Content-Type": "application/json", "Retry-After": seconds },
+          }),
+      });
+      renderAt("/sign-in");
+      const u = await fillSignIn();
+      await u.click(await screen.findByRole("button", { name: "Resend the verification email" }));
+      expect(await screen.findByText(en)).toBeInTheDocument();
+      expect(screen.queryByText(/a new verification email is on its way/)).toBeNull();
+    });
+  }
+
   it("says the account is suspended", async () => {
     stubFetch({
       "POST /v1/auth/refresh": signedOut,

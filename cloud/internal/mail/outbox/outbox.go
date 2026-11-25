@@ -5,15 +5,20 @@
 // A request only writes one row (Request, Register, Send): the same one whether or not the
 // address has an account. What the row becomes is decided later, by the api role's Run:
 //
-//	resolve  a request → the account is looked up, its link made, the mail written (or the row
-//	         dropped: no account, or too many to this address)
-//	send     a written mail → the mailer, within the day's and the month's limits, with the
-//	         row's id as the idempotency key; tried again later, less and less often, until it
-//	         is too old to be of use
+//	resolve  a request → is there an account that wants it, whose mail is it, is one of its kind
+//	         to this address too recent? A row nothing comes of is dropped (kept a day, without
+//	         its address, for its network's count)
+//	send     within the day's and the month's limits: only now is the link made and the mail
+//	         written, and handed to the mailer, with the row's id as the idempotency key; tried
+//	         again later, less and less often, until it is too old to be of use
+//
+// A link is never ended by a later request or mail: every one sent is good for its own life, until
+// one of them is used (stores.MailTokens.Redeem).
 //
 // Several api nodes may Run at once: each step takes its row under one lock. The worker role
-// only writes rows. A row's contents are sealed, its address kept as a keyed hash, and both
-// the contents and, after Retention, the row go.
+// only writes rows. A row's contents are sealed, its address and its requester's network kept as
+// keyed hashes; the contents go once the mail is sent, the network after a day, the row after
+// Retention.
 package outbox
 
 import (
@@ -37,26 +42,19 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/stores"
 )
 
-// The classes of mail, by whom it goes to. A request's class is decided when it is worked on,
-// never when it is written.
+// The classes of mail, by whom it goes to.
 //
-//	signup   an address nobody has proved is theirs (a confirmation, a reset of an account never
+//	stranger an address nobody has proved is theirs (a confirmation, a reset of an account never
 //	         confirmed), and what a stranger's sign-up alone causes (already registered)
-//	repeat   a confirmed account's reset, past the day's first resetsFirst
-//	account  a confirmed account's reset
+//	repeat   a confirmed account's reset, when one was sent to it in the last hour
+//	account  a confirmed account's reset, the first of the hour
 //	notice   an account's notice
-//
-// signup and repeat may each use only a share of the day's and the month's limits: the rest is
-// kept for the mails of confirmed accounts, whatever strangers ask for.
 const (
-	ClassSignup  = "signup"
-	ClassRepeat  = "repeat"
-	ClassAccount = "account"
-	ClassNotice  = "notice"
+	ClassStranger = "stranger"
+	ClassRepeat   = "repeat"
+	ClassAccount  = "account"
+	ClassNotice   = "notice"
 )
-
-// resetsFirst is how many resets a day a confirmed account gets before they count as repeats.
-const resetsFirst = 3
 
 // The states of a row.
 const (
@@ -68,7 +66,7 @@ const (
 	StateFailed     = "failed"
 	StateExpired    = "expired"
 	StateSuppressed = "suppressed"
-	StateSuperseded = "superseded"
+	StateDropped    = "dropped" // no account wants it, or one was sent a moment ago
 )
 
 // Retention is how long a finished row stays, for the month's limit.
@@ -81,23 +79,23 @@ const MaxQueued = 5000
 // advisory lock of resolve and claim: the limits are counted and taken one at a time
 const lockID = 8472620
 
-// How long each kind waits before it is too old to be of use, and the link's own life from when
-// the mail is written. A link is always good for at least half its life once the mail arrives.
+// How long a mail may wait to be sent: a reset is of use for an hour; no mail is tried past 23
+// hours, as the provider forgets an idempotency key after 24. Once its link is made it is sent
+// within half the link's life, or not.
 const (
-	waitRequest = 23 * time.Hour // a request, before its mail is written
-	waitReset   = time.Hour
-	waitNotice  = 23 * time.Hour
-	// no mail is tried again past 23 hours: the provider forgets an idempotency key after 24
+	waitReset = time.Hour
+	waitOther = 23 * time.Hour
 )
 
-// Rate is how many mails of one kind one address gets: Burst in an hour, then one each Gap, and
-// Day in a day (0: no limit by day). So a mail is refused for its rate only when one of its kind
-// was made less than Gap ago (or, with Day, less than a day ago), whose link is the newest one.
+// Rate is how often one address gets a mail of one kind: one each Gap, and Day in 24 hours (0: no
+// limit by day).
 type Rate struct {
-	Burst int
-	Gap   time.Duration
-	Day   int
+	Gap time.Duration
+	Day int
 }
+
+// Window is how many asks one network makes in any hour, and in any day.
+type Window struct{ Hour, Day int }
 
 // kindResetUnproved is a reset's rate for an account whose address nobody has confirmed.
 const kindResetUnproved = mail.KindPasswordReset + "/unproved"
@@ -105,25 +103,26 @@ const kindResetUnproved = mail.KindPasswordReset + "/unproved"
 // Limits are the outbox's limits. A zero is no limit.
 type Limits struct {
 	Day, Month int
-	// SignupShare and RepeatShare are the parts of Day and Month the signup class, and it and the
-	// repeat class together, may use, in percent.
-	SignupShare, RepeatShare int
-	Address                  map[string]Rate // by kind; "" is any other kind
+	// What of Day and Month, in percent, strangers' mails asked for without the bot check may use
+	// (Unchecked), strangers' mails in all (Strangers), and they and the repeats (Repeats). The
+	// rest is kept for confirmed accounts: of 85 a day, 26, a reset an hour for one of them.
+	Unchecked, Strangers, Repeats int
+	// One network's asks, without the bot check and with it; each counts its own.
+	Net, NetChecked Window
+	Address         map[string]Rate // by kind
 }
 
 // DefaultLimits are a sending deployment's, with the day's and the month's given.
 func DefaultLimits(day, month int) Limits {
-	return Limits{Day: day, Month: month, SignupShare: 60, RepeatShare: 80, Address: map[string]Rate{
-		// its link is good for a day: the sixth's refusal leaves one of that day's
-		mail.KindVerifyEmail: {Burst: 3, Gap: 15 * time.Minute, Day: 6},
-		// its link is good for an hour. No limit by day: whoever asked before, the newest link in
-		// the inbox has 45 minutes left, or a fresh one is sent
-		mail.KindPasswordReset: {Burst: 3, Gap: 15 * time.Minute},
-		kindResetUnproved:      {Burst: 2, Gap: time.Hour},
-		// asked for by whoever types the address, never by its owner's own click
-		mail.KindAlreadyRegistered: {Burst: 1, Gap: time.Hour, Day: 3},
-		"":                         {Burst: 20, Gap: time.Hour, Day: 40},
-	}}
+	return Limits{Day: day, Month: month, Unchecked: 40, Strangers: 60, Repeats: 70,
+		Net: Window{Hour: 10, Day: 20}, NetChecked: Window{Hour: 40, Day: 60},
+		Address: map[string]Rate{
+			mail.KindVerifyEmail:   {Gap: 15 * time.Minute, Day: 6},
+			mail.KindPasswordReset: {Gap: 15 * time.Minute},
+			kindResetUnproved:      {Gap: time.Hour},
+			// asked for by whoever types the address, never by its owner's own click
+			mail.KindAlreadyRegistered: {Gap: 8 * time.Hour},
+		}}
 }
 
 // Outbox writes and sends the mails.
@@ -168,51 +167,90 @@ func New(db *sql.DB, secret string, m mail.Mailer, t mail.Templates, l Limits, l
 		wake: make(chan struct{}, 8), now: time.Now, lastLog: map[string]time.Time{}}, nil
 }
 
-// request is what a queued row holds.
-type request struct {
-	To string `json:"to"`
+// item is what a row holds, sealed: whom to, and the mail once it is written.
+type item struct {
+	To  string        `json:"to"`
+	Msg *mail.Message `json:"msg,omitempty"`
+}
+
+func (o *Outbox) keyed(v string) string {
+	m := hmac.New(sha256.New, o.hash)
+	_, _ = m.Write([]byte(v))
+	return hex.EncodeToString(m.Sum(nil))
 }
 
 func (o *Outbox) toHash(addr string) string {
-	m := hmac.New(sha256.New, o.hash)
-	_, _ = m.Write([]byte(strings.ToLower(strings.TrimSpace(addr))))
-	return hex.EncodeToString(m.Sum(nil))
+	return o.keyed(strings.ToLower(strings.TrimSpace(addr)))
 }
 
 type execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
 }
 
-type rower interface {
-	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
-}
-
-func classOf(kind string) string {
-	switch kind {
-	case mail.KindVerifyEmail, mail.KindAlreadyRegistered:
-		return ClassSignup
-	case mail.KindPasswordReset:
-		return ClassAccount
+func (o *Outbox) seal(id string, it item) (string, error) {
+	raw, err := json.Marshal(it)
+	if err != nil {
+		return "", err
 	}
-	return ClassNotice
+	return o.box.Seal(string(raw), id)
 }
 
-// put writes one row. A queued one past MaxQueued is dropped.
-func (o *Outbox) put(ctx context.Context, q execer, id, kind, to, lang, state string, payload any, wait time.Duration) error {
-	raw, err := json.Marshal(payload)
+func (o *Outbox) open(id, sealed string) (item, bool) {
+	var it item
+	plain, err := o.box.Open(sealed, id)
+	return it, err == nil && json.Unmarshal([]byte(plain), &it) == nil
+}
+
+// TooMany refuses an ask: its network has made its share. It says nothing of the address.
+type TooMany struct{ RetryAfter time.Duration }
+
+func (t *TooMany) Error() string { return "mail: too many asks from one network" }
+
+// ask writes an ask's row in tx, or refuses it (*TooMany) for its network, whose asks are counted
+// one at a time, whatever came of them.
+func (o *Outbox) ask(ctx context.Context, tx *sql.Tx, a mail.Ask) error {
+	now := o.now().UTC()
+	net := ""
+	if a.Net != "" {
+		net = o.keyed("net " + a.Net)
+	}
+	w := o.Limits.Net
+	if a.Checked {
+		w = o.Limits.NetChecked
+	}
+	if net != "" && w.Day > 0 {
+		if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, net); err != nil {
+			return err
+		}
+		var hour, day int
+		var oldHour, oldDay sql.NullTime
+		if err := tx.QueryRowContext(ctx, `
+            SELECT count(*) FILTER (WHERE created_at > $3), count(*), min(created_at) FILTER (WHERE created_at > $3), min(created_at)
+              FROM mail_outbox WHERE net_hash = $1 AND checked = $2 AND created_at > $4`,
+			net, a.Checked, now.Add(-time.Hour), now.Add(-24*time.Hour)).Scan(&hour, &day, &oldHour, &oldDay); err != nil {
+			return err
+		}
+		switch {
+		case day >= w.Day:
+			return &TooMany{RetryAfter: oldDay.Time.Add(24 * time.Hour).Sub(now)}
+		case hour >= w.Hour:
+			return &TooMany{RetryAfter: oldHour.Time.Add(time.Hour).Sub(now)}
+		}
+	}
+	wait := waitOther
+	if a.Kind == mail.KindPasswordReset {
+		wait = waitReset
+	}
+	id := uuid.NewString()
+	sealed, err := o.seal(id, item{To: a.To})
 	if err != nil {
 		return err
 	}
-	sealed, err := o.box.Seal(string(raw), id)
-	if err != nil {
-		return err
-	}
-	res, err := q.ExecContext(ctx, `
-        INSERT INTO mail_outbox (id, kind, class, to_hash, lang, state, sealed, created_at, next_at, expires_at)
-        SELECT $1::uuid, $2::text, $3::text, $4::text, $5::text, $6::text, $7::text, $8::timestamptz, $8::timestamptz, $9::timestamptz
-         WHERE $6::text <> 'queued'
-            OR (SELECT count(*) FROM (SELECT 1 FROM mail_outbox WHERE state = 'queued' LIMIT $10::int) x) < $10::int`,
-		id, kind, classOf(kind), o.toHash(to), lang, state, sealed, o.now().UTC(), o.now().UTC().Add(wait), MaxQueued)
+	res, err := tx.ExecContext(ctx, `
+        INSERT INTO mail_outbox (id, kind, to_hash, net_hash, checked, lang, state, sealed, created_at, next_at, expires_at)
+        SELECT $1::uuid, $2::text, $3::text, $4::text, $5::boolean, $6::text, 'queued', $7::text, $8::timestamptz, $8::timestamptz, $9::timestamptz
+         WHERE (SELECT count(*) FROM (SELECT 1 FROM mail_outbox WHERE state = 'queued' LIMIT $10::int) x) < $10::int`,
+		id, a.Kind, o.toHash(a.To), net, a.Checked, a.Lang, sealed, now, now.Add(wait), MaxQueued)
 	if err != nil {
 		return err
 	}
@@ -222,38 +260,36 @@ func (o *Outbox) put(ctx context.Context, q execer, id, kind, to, lang, state st
 	return nil
 }
 
-// Request asks for a verification link or a password reset for addr, in lang ("" is the
-// account's). It does the same whether or not addr has an account.
-func (o *Outbox) Request(ctx context.Context, kind, addr, lang string) error {
-	wait := waitRequest
-	if kind == mail.KindPasswordReset {
-		wait = waitReset
-	}
-	if err := o.put(ctx, o.DB, uuid.NewString(), kind, addr, lang, StateQueued, request{To: addr}, wait); err != nil {
-		return err
-	}
-	o.Wake()
-	return nil
+// Request asks for a verification link or a password reset (a.Lang "" is the account's). It does
+// the same whether or not a.To has an account.
+func (o *Outbox) Request(ctx context.Context, a mail.Ask) error {
+	return o.asking(ctx, func(tx *sql.Tx) error { return o.ask(ctx, tx, a) })
 }
 
 // Register creates an unverified password account and asks for its verification mail, or for
-// the notice to the account the address already has: the same two statements and one commit
-// either way.
-func (o *Outbox) Register(ctx context.Context, email, passwordHash, displayName, lang string) error {
+// the notice to the account the address already has: the same statements and one commit either
+// way.
+func (o *Outbox) Register(ctx context.Context, a mail.Ask, passwordHash, displayName string) error {
+	return o.asking(ctx, func(tx *sql.Tx) error {
+		created, err := o.users.RegisterTx(ctx, tx, a.To, passwordHash, displayName, mail.Pick(a.Lang))
+		if err != nil {
+			return err
+		}
+		a.Kind = mail.KindVerifyEmail
+		if !created {
+			a.Kind, a.Lang = mail.KindAlreadyRegistered, ""
+		}
+		return o.ask(ctx, tx, a)
+	})
+}
+
+func (o *Outbox) asking(ctx context.Context, f func(*sql.Tx) error) error {
 	tx, err := o.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	created, err := o.users.RegisterTx(ctx, tx, email, passwordHash, displayName, mail.Pick(lang))
-	if err != nil {
-		return err
-	}
-	kind := mail.KindVerifyEmail
-	if !created {
-		kind, lang = mail.KindAlreadyRegistered, ""
-	}
-	if err := o.put(ctx, tx, uuid.NewString(), kind, email, lang, StateQueued, request{To: email}, waitRequest); err != nil {
+	if err := f(tx); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
@@ -263,31 +299,24 @@ func (o *Outbox) Register(ctx context.Context, email, passwordHash, displayName,
 	return nil
 }
 
-// ErrLimited: the address has had its share of mails of that kind.
-var ErrLimited = errors.New("mail: too many to one address")
-
-// Send keeps a written mail (a notice) for sending: the outbox is the roles' mail.Mailer. One
-// past its address's share is dropped, with a warning.
+// Send keeps a written mail (a notice) for sending: the outbox is the roles' mail.Mailer.
 func (o *Outbox) Send(ctx context.Context, m mail.Message) error {
 	_, err := o.Keep(ctx, m)
-	if errors.Is(err, ErrLimited) {
-		o.Logger.Warn("mail: too many to one address; not sent", "kind", m.Kind, "event", "mail_address_limit")
-		return nil
-	}
 	return err
 }
 
-// Keep is Send, with the row's id, and ErrLimited.
+// Keep is Send, with the row's id.
 func (o *Outbox) Keep(ctx context.Context, m mail.Message) (string, error) {
-	over, err := o.tooMany(ctx, o.DB, o.toHash(m.To), m.Kind, m.Kind)
+	m.ID = uuid.NewString()
+	sealed, err := o.seal(m.ID, item{To: m.To, Msg: &m})
 	if err != nil {
 		return "", err
 	}
-	if over {
-		return "", ErrLimited
-	}
-	m.ID = uuid.NewString()
-	if err := o.put(ctx, o.DB, m.ID, m.Kind, m.To, m.Lang, StateReady, m, waitNotice); err != nil {
+	now := o.now().UTC()
+	if _, err := o.DB.ExecContext(ctx, `
+        INSERT INTO mail_outbox (id, kind, class, to_hash, lang, state, sealed, created_at, next_at, expires_at)
+        VALUES ($1::uuid, $2, 'notice', $3, $4, 'ready', $5, $6, $6, $7)`,
+		m.ID, m.Kind, o.toHash(m.To), m.Lang, sealed, now, now.Add(waitOther)); err != nil {
 		return "", err
 	}
 	o.Wake()
@@ -353,16 +382,26 @@ func (o *Outbox) Run(ctx context.Context) {
 	wg.Wait()
 }
 
-// Sweep deletes the rows finished longer than Retention ago, and closes the ones past their time.
+// Sweep deletes the rows finished longer than Retention ago and the dropped ones after a day,
+// forgets a day-old row's network, and closes the mails past their time.
 func (o *Outbox) Sweep(ctx context.Context) error {
 	now := o.now().UTC()
-	if _, err := o.DB.ExecContext(ctx, `
-        UPDATE mail_outbox SET state = 'expired', sealed = NULL, finished_at = $1
-         WHERE expires_at <= $1 AND (state IN ('queued', 'ready') OR (state = 'sending' AND lease_until < $1))`, now); err != nil {
-		return err
+	day := now.Add(-24 * time.Hour)
+	for _, q := range []struct {
+		sql  string
+		args []any
+	}{
+		{`UPDATE mail_outbox SET state = 'expired', sealed = NULL, finished_at = $1
+           WHERE expires_at <= $1 AND (state IN ('queued', 'ready') OR (state = 'sending' AND lease_until < $1))`, []any{now}},
+		{`DELETE FROM mail_outbox WHERE state = 'dropped' AND created_at <= $1`, []any{day}},
+		{`UPDATE mail_outbox SET net_hash = '' WHERE net_hash <> '' AND created_at <= $1`, []any{day}},
+		{`DELETE FROM mail_outbox WHERE finished_at < $1`, []any{now.Add(-Retention)}},
+	} {
+		if _, err := o.DB.ExecContext(ctx, q.sql, q.args...); err != nil {
+			return err
+		}
 	}
-	_, err := o.DB.ExecContext(ctx, `DELETE FROM mail_outbox WHERE finished_at < $1`, now.Add(-Retention))
-	return err
+	return nil
 }
 
 // locked runs f in a transaction holding the outbox's lock.
@@ -381,38 +420,31 @@ func (o *Outbox) locked(ctx context.Context, f func(tx *sql.Tx) error) error {
 	return tx.Commit()
 }
 
-// tooMany reports whether the address behind hash has had its share of kind's mails, at rate's
-// name. Only mails written count: a request refused for its rate is dropped and leaves nothing.
-func (o *Outbox) tooMany(ctx context.Context, q rower, hash, kind, rateOf string) (bool, error) {
-	rate, ok := o.Limits.Address[rateOf]
-	if !ok {
-		rate = o.Limits.Address[""]
-	}
-	if rate.Burst == 0 {
+// tooSoon reports whether the address behind hash had a mail of kind less than rate's gap ago, or
+// its day's. One still waiting counts (it is sent when there is room); one given up does not.
+func (o *Outbox) tooSoon(ctx context.Context, tx *sql.Tx, hash, kind string, rate Rate) (bool, error) {
+	if rate.Gap == 0 && rate.Day == 0 {
 		return false, nil
 	}
 	now := o.now().UTC()
-	var hour, day int
+	var day int
 	var last sql.NullTime
-	if err := q.QueryRowContext(ctx, `
-        SELECT count(*) FILTER (WHERE created_at > $3), count(*), max(created_at)
-          FROM mail_outbox WHERE to_hash = $1 AND kind = $2 AND created_at > $4 AND state IN ('ready', 'sending', 'sent', 'logged', 'suppressed', 'superseded')`,
-		hash, kind, now.Add(-time.Hour), now.Add(-24*time.Hour)).Scan(&hour, &day, &last); err != nil {
-		return false, err
-	}
-	soon := hour >= rate.Burst && last.Valid && now.Sub(last.Time) < rate.Gap
-	return soon || (rate.Day > 0 && day >= rate.Day), nil
+	err := tx.QueryRowContext(ctx, `
+        SELECT count(*), max(created_at) FROM mail_outbox
+         WHERE to_hash = $1 AND kind = $2 AND created_at > $3 AND state IN ('ready', 'sending', 'sent', 'logged', 'suppressed')`,
+		hash, kind, now.Add(-24*time.Hour)).Scan(&day, &last)
+	return (last.Valid && now.Sub(last.Time) < rate.Gap) || (rate.Day > 0 && day >= rate.Day), err
 }
 
 func finish(ctx context.Context, q execer, id, state, why string, now time.Time) error {
-	_, err := q.ExecContext(ctx, `UPDATE mail_outbox SET state = $2, sealed = NULL, finished_at = $3, lease_until = NULL, last_error = $4 WHERE id = $1::uuid`,
-		id, state, now, why)
+	_, err := q.ExecContext(ctx, `UPDATE mail_outbox SET state = $2, sealed = NULL, finished_at = $3, lease_until = NULL, last_error = $4,
+        to_hash = CASE WHEN $2 = 'dropped' THEN '' ELSE to_hash END WHERE id = $1::uuid`, id, state, now, why)
 	return err
 }
 
 // Resolve works one request, oldest first, and reports whether there was one.
 func (o *Outbox) Resolve(ctx context.Context) (bool, error) {
-	found, wrote := false, false
+	found, ready := false, false
 	err := o.locked(ctx, func(tx *sql.Tx) error {
 		now := o.now().UTC()
 		var id, kind, hash, lang, sealed string
@@ -427,61 +459,38 @@ func (o *Outbox) Resolve(ctx context.Context) (bool, error) {
 			return err
 		}
 		found = true
-		var req request
-		if plain, err := o.box.Open(sealed, id); err != nil || json.Unmarshal([]byte(plain), &req) != nil {
+		it, ok := o.open(id, sealed)
+		if !ok {
 			o.Logger.Error("mail: a request does not open (was the token secret changed?)", "mail", id, "kind", kind, "event", "mail_failed")
 			return finish(ctx, tx, id, StateFailed, "unreadable", now)
 		}
-		drop := func() error {
-			_, err := tx.ExecContext(ctx, `DELETE FROM mail_outbox WHERE id = $1::uuid`, id)
-			return err
-		}
-		u, ok, err := o.wants(ctx, kind, req.To)
+		u, ok, err := o.wants(ctx, kind, it.To)
 		if err != nil {
 			return err
 		}
 		if !ok {
-			return drop()
+			return finish(ctx, tx, id, StateDropped, "", now)
 		}
-		class, rateOf := ClassSignup, kind
+		class, rate := ClassStranger, o.Limits.Address[kind]
 		if kind == mail.KindPasswordReset {
-			if !u.EmailVerified {
-				rateOf = kindResetUnproved
-			} else if class, err = o.resetClass(ctx, tx, hash); err != nil {
-				return err
+			if u.EmailVerified {
+				class = ClassAccount
+			} else if o.Limits.Address != nil {
+				rate = o.Limits.Address[kindResetUnproved]
 			}
 		}
-		// before the link is made: the one sent last stays good
-		if over, err := o.tooMany(ctx, tx, hash, kind, rateOf); err != nil {
+		if soon, err := o.tooSoon(ctx, tx, hash, kind, rate); err != nil {
 			return err
-		} else if over {
-			o.seldom("address", "mail: too many to one address; not sent", "mail", id, "kind", kind, "event", "mail_address_limit")
-			return drop()
+		} else if soon {
+			o.seldom("address", "mail: one was sent to this address a moment ago; not sent", "mail", id, "kind", kind, "event", "mail_address_limit")
+			return finish(ctx, tx, id, StateDropped, "", now)
 		}
-		lang = mail.Pick(lang, u.Locale)
-		m, wait, err := o.write(ctx, tx, kind, lang, u)
-		if err != nil {
-			return err
-		}
-		m.ID = id
-		raw, err := json.Marshal(m)
-		if err != nil {
-			return err
-		}
-		if sealed, err = o.box.Seal(string(raw), id); err != nil {
-			return err
-		}
-		// its link is the only good one now: one written before and not yet sent is not sent
-		if _, err := tx.ExecContext(ctx, `UPDATE mail_outbox SET state = 'superseded', sealed = NULL, finished_at = $3
-             WHERE to_hash = $1 AND kind = $2 AND state = 'ready'`, hash, kind, now); err != nil {
-			return err
-		}
-		wrote = true
-		_, err = tx.ExecContext(ctx, `UPDATE mail_outbox SET state = 'ready', class = $6, written = nextval(pg_get_serial_sequence('mail_outbox', 'written')), sealed = $2, lang = $3, next_at = $4, expires_at = $5 WHERE id = $1::uuid`,
-			id, sealed, lang, now, now.Add(wait), class)
+		ready = true
+		_, err = tx.ExecContext(ctx, `UPDATE mail_outbox SET state = 'ready', class = $2, lang = $3, next_at = $4 WHERE id = $1::uuid`,
+			id, class, mail.Pick(lang, u.Locale), now)
 		return err
 	})
-	if err == nil && wrote {
+	if err == nil && ready {
 		o.Wake()
 	}
 	return found, err
@@ -503,24 +512,7 @@ func (o *Outbox) wants(ctx context.Context, kind, addr string) (stores.User, boo
 	return u, true, nil
 }
 
-// resetClass is a confirmed account's reset's class: account for the day's first few, then repeat.
-func (o *Outbox) resetClass(ctx context.Context, tx *sql.Tx, hash string) (string, error) {
-	var n int
-	err := tx.QueryRowContext(ctx, `SELECT count(*) FROM mail_outbox WHERE to_hash = $1 AND kind = $2 AND created_at > $3 AND state NOT IN ('queued', 'failed', 'expired')`,
-		hash, mail.KindPasswordReset, o.now().UTC().Add(-24*time.Hour)).Scan(&n)
-	if n >= resetsFirst {
-		return ClassRepeat, err
-	}
-	return ClassAccount, err
-}
-
-// asked reports whether kind is one a person asks for (its mail is about the account's state and
-// may go stale while it waits).
-func asked(kind string) bool {
-	return kind == mail.KindVerifyEmail || kind == mail.KindPasswordReset || kind == mail.KindAlreadyRegistered
-}
-
-// write makes the mail of a request, and how long it may wait to be sent.
+// write makes the mail of a request, with its link, and how long it may still wait.
 func (o *Outbox) write(ctx context.Context, tx *sql.Tx, kind, lang string, u stores.User) (mail.Message, time.Duration, error) {
 	switch kind {
 	case mail.KindVerifyEmail:
@@ -530,89 +522,120 @@ func (o *Outbox) write(ctx context.Context, tx *sql.Tx, kind, lang string, u sto
 		tok, err := o.tokens.IssueTx(ctx, tx, u.ID, stores.PurposePasswordReset, stores.PasswordResetTTL)
 		return o.Templates.PasswordReset(lang, u.Email, tok), stores.PasswordResetTTL / 2, err
 	case mail.KindAlreadyRegistered:
-		return o.Templates.AlreadyRegistered(lang, u.Email), waitRequest, nil
+		return o.Templates.AlreadyRegistered(lang, u.Email), waitOther, nil
 	}
 	return mail.Message{}, 0, fmt.Errorf("mail: a request of an unknown kind %q", kind)
 }
 
 // claimed is a row being sent.
 type claimed struct {
-	id, kind, lang, sealed string
-	attempts               int
-	stale                  bool // a newer one took its place: closed, not to be sent
+	id, kind, lang string
+	attempts       int
+	msg            *mail.Message // nil: closed, there is nothing to send
 }
 
-// claim takes the next mail within the limits, or nil.
+// asked reports whether kind is one a person asks for (its account may be gone by the time it goes).
+func asked(kind string) bool {
+	return kind == mail.KindVerifyEmail || kind == mail.KindPasswordReset || kind == mail.KindAlreadyRegistered
+}
+
+// claim takes the next mail within the limits, its link made and its words written, or nil.
 func (o *Outbox) claim(ctx context.Context) (*claimed, error) {
 	var c *claimed
 	err := o.locked(ctx, func(tx *sql.Tx) error {
 		now := o.now().UTC()
-		var day, month, signupDay, signupMonth, strangeDay, strangeMonth int
+		type count struct{ day, month int }
+		var all, unchecked, strangers, repeats count
 		if err := tx.QueryRowContext(ctx, `
             SELECT count(*) FILTER (WHERE at > $2), count(*),
-                   count(*) FILTER (WHERE at > $2 AND class = 'signup'), count(*) FILTER (WHERE class = 'signup'),
-                   count(*) FILTER (WHERE at > $2 AND class IN ('signup', 'repeat')), count(*) FILTER (WHERE class IN ('signup', 'repeat'))
-              FROM (SELECT class, COALESCE(finished_at, $1) AS at FROM mail_outbox
+                   count(*) FILTER (WHERE at > $2 AND class = 'stranger' AND NOT checked), count(*) FILTER (WHERE class = 'stranger' AND NOT checked),
+                   count(*) FILTER (WHERE at > $2 AND class = 'stranger'), count(*) FILTER (WHERE class = 'stranger'),
+                   count(*) FILTER (WHERE at > $2 AND class IN ('stranger', 'repeat')), count(*) FILTER (WHERE class IN ('stranger', 'repeat'))
+              FROM (SELECT class, checked, COALESCE(finished_at, $1) AS at FROM mail_outbox
                      WHERE (state = 'sent' AND finished_at > $3) OR (state = 'sending' AND lease_until >= $1)) s`,
-			now, now.Add(-24*time.Hour), now.Add(-30*24*time.Hour)).Scan(&day, &month, &signupDay, &signupMonth, &strangeDay, &strangeMonth); err != nil {
+			now, now.Add(-24*time.Hour), now.Add(-30*24*time.Hour)).Scan(&all.day, &all.month, &unchecked.day, &unchecked.month,
+			&strangers.day, &strangers.month, &repeats.day, &repeats.month); err != nil {
 			return err
 		}
-		over := func(n, limit int) bool { return limit > 0 && n >= limit }
-		if over(day, o.Limits.Day) || over(month, o.Limits.Month) {
-			return o.waits(ctx, tx, now, "", day, month)
+		full := func(n count, percent int) bool {
+			over := func(n, limit int) bool { return limit > 0 && percent > 0 && n >= max(1, limit*percent/100) }
+			return over(n.day, o.Limits.Day) || over(n.month, o.Limits.Month)
 		}
-		share := func(limit, percent int) int {
-			if percent <= 0 || limit <= 0 {
-				return 0
-			}
-			return max(1, limit*percent/100)
+		if full(all, 100) {
+			return o.waits(ctx, tx, now, "", all.day, all.month)
 		}
-		past := func(d, m, percent int) bool {
-			return over(d, share(o.Limits.Day, percent)) || over(m, share(o.Limits.Month, percent))
-		}
-		noRepeat := past(strangeDay, strangeMonth, o.Limits.RepeatShare)
-		noSignup := noRepeat || past(signupDay, signupMonth, o.Limits.SignupShare)
-		var k claimed
-		var hash string
+		noRepeat := full(repeats, o.Limits.Repeats)
+		noStranger := noRepeat || full(strangers, o.Limits.Strangers)
+		noUnchecked := noStranger || full(unchecked, o.Limits.Unchecked)
+		// a reset is the first of its hour, or a repeat: decided now, as one that waited becomes
+		// the first when the hour since the last one passes
+		k := &claimed{}
+		var class, sealed string
 		err := tx.QueryRowContext(ctx, `
-            SELECT id::text, kind, lang, sealed, attempts, to_hash FROM mail_outbox
-             WHERE ((state = 'ready' AND next_at <= $1) OR (state = 'sending' AND lease_until < $1))
-               AND expires_at > $1 AND NOT ($2::boolean AND class = 'signup') AND NOT ($3::boolean AND class = 'repeat')
-             ORDER BY CASE class WHEN 'signup' THEN 2 WHEN 'repeat' THEN 1 ELSE 0 END, next_at, id LIMIT 1 FOR UPDATE`, now, noSignup, noRepeat).
-			Scan(&k.id, &k.kind, &k.lang, &k.sealed, &k.attempts, &hash)
+            SELECT id::text, kind, lang, sealed, attempts, c FROM (
+                SELECT m.*, CASE WHEN m.class NOT IN ('account', 'repeat') THEN m.class
+                    WHEN EXISTS (SELECT 1 FROM mail_outbox s WHERE s.to_hash = m.to_hash AND s.kind = m.kind AND s.id <> m.id
+                         AND ((s.state = 'sent' AND s.finished_at > $2) OR (s.state = 'sending' AND s.lease_until >= $1))) THEN 'repeat'
+                    ELSE 'account' END AS c
+                  FROM mail_outbox m
+                 WHERE ((m.state = 'ready' AND m.next_at <= $1) OR (m.state = 'sending' AND m.lease_until < $1)) AND m.expires_at > $1) q
+             WHERE NOT ($3::boolean AND c = 'stranger' AND NOT checked) AND NOT ($4::boolean AND c = 'stranger') AND NOT ($5::boolean AND c = 'repeat')
+             ORDER BY CASE c WHEN 'stranger' THEN 2 WHEN 'repeat' THEN 1 ELSE 0 END, next_at, id LIMIT 1`,
+			now, now.Add(-time.Hour), noUnchecked, noStranger, noRepeat).Scan(&k.id, &k.kind, &k.lang, &sealed, &k.attempts, &class)
 		if errors.Is(err, sql.ErrNoRows) {
-			if noSignup {
-				return o.waits(ctx, tx, now, ClassSignup, day, month)
+			if noUnchecked {
+				return o.waits(ctx, tx, now, ClassStranger, all.day, all.month)
 			}
 			return nil
 		}
 		if err != nil {
 			return err
 		}
-		// a newer one of its kind made its link dead while it was being sent or waited
+		c = k
+		it, ok := o.open(k.id, sealed)
+		if !ok {
+			o.Logger.Error("mail: a mail does not open (was the token secret changed?)", "mail", k.id, "kind", k.kind, "event", "mail_failed")
+			return finish(ctx, tx, k.id, StateFailed, "unreadable", now)
+		}
+		still := time.Duration(0)
 		if asked(k.kind) {
-			if err := tx.QueryRowContext(ctx, `
-                SELECT EXISTS (SELECT 1 FROM mail_outbox n JOIN mail_outbox m ON m.id = $1::uuid
-                  WHERE n.to_hash = $2 AND n.kind = $3 AND n.state <> 'queued' AND n.written > m.written)`,
-				k.id, hash, k.kind).Scan(&k.stale); err != nil {
+			// the account may have been closed or suspended, or confirmed, while its mail waited
+			u, ok, err := o.wants(ctx, k.kind, it.To)
+			if err != nil {
 				return err
 			}
-			if k.stale {
-				c = &k
-				return finish(ctx, tx, k.id, StateSuperseded, "", now)
+			if !ok {
+				return finish(ctx, tx, k.id, StateDropped, "", now)
+			}
+			if it.Msg == nil {
+				m, wait, err := o.write(ctx, tx, k.kind, k.lang, u)
+				if err != nil {
+					return err
+				}
+				m.ID, it.Msg, still = k.id, &m, wait
+				if sealed, err = o.seal(k.id, it); err != nil {
+					return err
+				}
 			}
 		}
+		if it.Msg == nil {
+			return finish(ctx, tx, k.id, StateFailed, "no mail", now)
+		}
 		k.attempts++
+		expires := now.Add(still)
 		// the send, and time to say so
-		lease := now.Add(o.SendTimeout + 30*time.Second)
-		if _, err := tx.ExecContext(ctx, `UPDATE mail_outbox SET state = 'sending', lease_until = $2, attempts = $3 WHERE id = $1::uuid`,
-			k.id, lease, k.attempts); err != nil {
+		if _, err := tx.ExecContext(ctx, `UPDATE mail_outbox SET state = 'sending', sealed = $2, class = $3, lease_until = $4, attempts = $5,
+            expires_at = CASE WHEN $6::boolean THEN $7 ELSE expires_at END WHERE id = $1::uuid`,
+			k.id, sealed, class, now.Add(o.SendTimeout+30*time.Second), k.attempts, still > 0, expires); err != nil {
 			return err
 		}
-		c = &k
+		k.msg = it.Msg
 		return nil
 	})
-	return c, err
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // waits says, now and then, that mails wait for a limit.
@@ -644,31 +667,15 @@ func (o *Outbox) SendOne(ctx context.Context) (bool, error) {
 	if err != nil || c == nil {
 		return false, err
 	}
-	if c.stale {
+	if c.msg == nil {
 		return true, nil
 	}
 	// what happened to a claimed mail is kept even while the process stops
 	keepCtx, cancelKeep := context.WithTimeout(context.WithoutCancel(ctx), o.SendTimeout+15*time.Second)
 	defer cancelKeep()
 	log := o.Logger.With("mail", c.id, "kind", c.kind, "lang", c.lang, "attempt", c.attempts)
-
-	var m mail.Message
-	if plain, err := o.box.Open(c.sealed, c.id); err != nil || json.Unmarshal([]byte(plain), &m) != nil {
-		log.Error("mail: a mail does not open (was the token secret changed?)", "event", "mail_failed")
-		return true, finish(keepCtx, o.DB, c.id, StateFailed, "unreadable", o.now().UTC())
-	}
-	// the account may have been closed or suspended, or confirmed, while its mail waited
-	if asked(c.kind) {
-		_, ok, err := o.wants(ctx, c.kind, m.To)
-		if err != nil {
-			return false, errors.Join(err, o.again(keepCtx, c.id, o.now().UTC(), ""))
-		}
-		if !ok {
-			return true, finish(keepCtx, o.DB, c.id, StateSuperseded, "", o.now().UTC())
-		}
-	}
 	sendCtx, cancel := context.WithTimeout(ctx, o.SendTimeout)
-	err = o.Mailer.Send(sendCtx, m)
+	err = o.Mailer.Send(sendCtx, *c.msg)
 	cancel()
 	now := o.now().UTC()
 	var se *mail.SendError

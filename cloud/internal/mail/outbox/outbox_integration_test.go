@@ -93,14 +93,14 @@ func (w *world) states() string {
 
 func (w *world) register(email, lang string) {
 	w.t.Helper()
-	if err := w.o.Register(context.Background(), email, "hash", "", lang); err != nil {
+	if err := w.o.Register(context.Background(), mail.Ask{To: email, Lang: lang}, "hash", ""); err != nil {
 		w.t.Fatal(err)
 	}
 }
 
 func (w *world) ask(kind, email, lang string) {
 	w.t.Helper()
-	if err := w.o.Request(context.Background(), kind, email, lang); err != nil {
+	if err := w.o.Request(context.Background(), mail.Ask{Kind: kind, To: email, Lang: lang}); err != nil {
 		w.t.Fatal(err)
 	}
 }
@@ -165,6 +165,7 @@ func TestASignUpIsMailedInItsLanguage(t *testing.T) {
 		if m := w.last(); m.Kind != mail.KindPasswordReset || m.Lang != l.want {
 			t.Fatalf("%+v", m)
 		}
+		w.at = w.at.Add(2 * time.Hour)
 	}
 	// a mail's log lines name no address, link or subject
 	for _, s := range []string{"new@example.test", "token=", m.Subject, "app.example.test"} {
@@ -245,14 +246,20 @@ func TestTheTableHoldsNothingInTheClear(t *testing.T) {
 			t.Errorf("a queued row says %q", s)
 		}
 	}
-	if _, err := w.o.Resolve(context.Background()); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		if _, err := w.o.Resolve(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if c, err := w.o.claim(context.Background()); err != nil || c == nil || c.msg == nil {
+		t.Fatalf("%+v %v", c, err)
 	}
 	for _, s := range []string{"private", "token", "example.test"} {
 		if strings.Contains(dump(), s) {
 			t.Errorf("a written mail's row says %q", s)
 		}
 	}
+	w.at = w.at.Add(5 * time.Minute)
 	w.work()
 	var sealed int
 	if err := w.o.DB.QueryRow(`SELECT count(*) FROM mail_outbox WHERE sealed IS NOT NULL`).Scan(&sealed); err != nil || sealed != 0 {
@@ -264,6 +271,8 @@ func TestTheTableHoldsNothingInTheClear(t *testing.T) {
 		t.Fatal(err)
 	}
 	n := len(w.m.sent)
+	w.at = w.at.Add(2 * time.Hour)
+	other.now = w.o.now
 	w.ask(mail.KindPasswordReset, "private@example.test", "en")
 	if _, err := other.Resolve(context.Background()); err != nil {
 		t.Fatal(err)
@@ -386,7 +395,7 @@ func TestAnOldMailExpires(t *testing.T) {
 	w.m.errs = []error{nil, &mail.SendError{Status: 500, Temporary: true}}
 	w.ask(mail.KindPasswordReset, "a@example.test", "en")
 	w.work()
-	// past half the link's life it would arrive nearly dead: not sent
+	// past half its link's life it would arrive nearly dead: not sent
 	w.at = w.at.Add(stores.PasswordResetTTL/2 + time.Second)
 	w.work()
 	if err := w.o.Sweep(context.Background()); err != nil {
@@ -404,151 +413,294 @@ func TestAnOldMailExpires(t *testing.T) {
 	}
 }
 
-// Whoever asked before, a person can get a reset they can use: one refused for its rate leaves
-// the newest link, good for at least 45 minutes more, in the inbox.
+// Whoever asked before, a confirmed person has a link that works, or is sent one within the hour,
+// with the day's mails strangers and repeats may use all gone: the review's attack.
 func TestAPersonAlwaysGetsAResetWithinTheHour(t *testing.T) {
-	w := newWorld(t, DefaultLimits(1000, 10000))
-	w.verified("owner@example.test")
 	ctx := context.Background()
-	// a stranger asks every two minutes, for half a day
-	var newest time.Time
-	for i := range 12 * 30 {
-		before := len(w.m.sent)
-		w.ask(mail.KindPasswordReset, "owner@example.test", "en")
+	w := newWorld(t, DefaultLimits(85, 2700))
+	w.verified("victim@example.test")
+	w.ask(mail.KindPasswordReset, "victim@example.test", "en")
+	w.work()
+	delivered, at := token(w.last()), w.at
+	// 51 sign-ups, each with the bot check passed, and 20 repeats of another confirmed address
+	for i := range 60 {
+		if err := w.o.Register(ctx, mail.Ask{To: fmt.Sprintf("s%d@example.test", i), Checked: true}, "hash", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.verified("other@example.test")
+	for range 20 {
+		w.ask(mail.KindPasswordReset, "other@example.test", "en")
 		w.work()
-		if len(w.m.sent) > before {
-			newest = w.at
-		} else if left := newest.Add(stores.PasswordResetTTL).Sub(w.at); left < 45*time.Minute {
-			t.Fatalf("after %d asks: refused with %s left of the newest link", i+1, left)
+		w.at = w.at.Add(15 * time.Minute)
+	}
+	// and then the victim, every two minutes, for 16 hours
+	asks := w.at
+	newest := at
+	for w.at.Before(asks.Add(16 * time.Hour)) {
+		n := len(w.m.sent)
+		w.ask(mail.KindPasswordReset, "victim@example.test", "en")
+		w.work()
+		for _, m := range w.m.sent[n:] {
+			if m.To == "victim@example.test" {
+				newest, delivered = w.at, token(m)
+			}
+		}
+		if waited := w.at.Sub(newest); newest != at && waited > time.Hour+4*time.Minute {
+			t.Fatalf("%s without a reset, %s into it", waited, w.at.Sub(asks))
 		}
 		w.at = w.at.Add(2 * time.Minute)
 	}
-	if n := len(w.m.sent); n > 12*5 || n < 12*3 {
-		t.Fatalf("%d resets in half a day", n)
+	if n := w.to("victim@example.test", mail.KindPasswordReset); n < 15 || n > 20 {
+		t.Fatalf("%d resets in 16 hours", n)
 	}
-	// the newest one works, and only it
-	if _, err := w.o.tokens.Redeem(ctx, token(w.m.sent[len(w.m.sent)-2]), stores.PurposePasswordReset); err == nil {
-		t.Error("an older link works")
+	if _, err := w.o.tokens.Redeem(ctx, delivered, stores.PurposePasswordReset); err != nil {
+		t.Errorf("the newest delivered link: %v", err)
 	}
-	if _, err := w.o.tokens.Redeem(ctx, token(w.last()), stores.PurposePasswordReset); err != nil {
-		t.Errorf("the newest link: %v", err)
-	}
-	// the review's own: ten asks at once, then the owner, each of the next 20 hours
-	w = newWorld(t, DefaultLimits(1000, 10000))
-	w.verified("owner@example.test")
-	for range 10 {
-		w.ask(mail.KindPasswordReset, "owner@example.test", "en")
+}
+
+// An ask that gets no mail ends no link: not one refused, not one with no room for it, and not one
+// whose mail the provider does not take. Using one ends the others.
+func TestAnAskNeverEndsADeliveredLink(t *testing.T) {
+	ctx := context.Background()
+	for name, then := range map[string]func(*world){
+		"a moment later": func(w *world) { w.at = w.at.Add(time.Minute) },
+		"no room":        func(w *world) { w.at = w.at.Add(20 * time.Minute); w.o.Limits.Day = 1 },
+		"a 503": func(w *world) {
+			w.at = w.at.Add(20 * time.Minute)
+			w.m.hook = func(context.Context) error { return &mail.SendError{Status: 503, Temporary: true} }
+		},
+		"a delivered one": func(w *world) { w.at = w.at.Add(20 * time.Minute) },
+	} {
+		w := newWorld(t, DefaultLimits(100, 1000))
+		w.verified("a@example.test")
+		w.ask(mail.KindPasswordReset, "a@example.test", "en")
 		w.work()
-	}
-	if len(w.m.sent) != 3 {
-		t.Fatalf("%d of ten at once, want 3", len(w.m.sent))
-	}
-	for h := range 20 {
-		w.at = w.at.Add(time.Hour)
-		w.ask(mail.KindPasswordReset, "owner@example.test", "en")
-		w.work()
-		if len(w.m.sent) != 4+h {
-			t.Fatalf("hour %d: no reset", h+1)
+		link := token(w.last())
+		then(w)
+		for range 3 {
+			w.ask(mail.KindPasswordReset, "a@example.test", "en")
+			w.work()
+		}
+		later := token(w.last())
+		if _, err := w.o.tokens.Redeem(ctx, link, stores.PurposePasswordReset); err != nil {
+			t.Errorf("%s: the delivered link: %v", name, err)
+		}
+		if _, err := w.o.tokens.Redeem(ctx, later, stores.PurposePasswordReset); !errors.Is(err, stores.ErrTokenInvalid) {
+			t.Errorf("%s: a link outlived the one that was used: %v", name, err)
 		}
 	}
 }
 
-// An unproved address gets fewer; a refused request leaves no row; another kind and another
-// address are not touched.
+// One address: a mail of a kind each so often, whatever is asked; another kind and another address
+// are not touched; an ask nothing comes of keeps no address.
 func TestTheLimitsOfOneAddress(t *testing.T) {
-	w := newWorld(t, DefaultLimits(1000, 10000))
+	w := newWorld(t, DefaultLimits(10000, 100000))
 	w.register("a@example.test", "en")
 	w.verified("b@example.test")
 	w.work()
-	for range 300 {
-		w.ask(mail.KindPasswordReset, "A@example.test", "en")
+	// asked every five minutes for five hours
+	for range 60 {
+		for _, k := range []string{mail.KindPasswordReset, mail.KindVerifyEmail} {
+			w.ask(k, "A@example.test", "en")
+		}
+		w.ask(mail.KindPasswordReset, "b@example.test", "en")
+		w.register("b@example.test", "en")
 		w.work()
+		w.at = w.at.Add(5 * time.Minute)
 	}
-	if n := w.to("a@example.test", mail.KindPasswordReset); n != 2 {
-		t.Fatalf("%d resets to an address nobody proved, want 2", n)
-	}
-	var rows int
-	if err := w.o.DB.QueryRow(`SELECT count(*) FROM mail_outbox WHERE kind = 'password_reset'`).Scan(&rows); err != nil || rows != 2 {
-		t.Fatalf("%d rows of 300 asks: %v", rows, err)
+	for _, want := range []struct {
+		to, kind string
+		n        int
+	}{
+		{"a@example.test", mail.KindPasswordReset, 5},     // nobody proved it: one an hour
+		{"a@example.test", mail.KindVerifyEmail, 6},       // one a quarter of an hour, six a day
+		{"b@example.test", mail.KindPasswordReset, 20},    // one a quarter of an hour
+		{"b@example.test", mail.KindAlreadyRegistered, 1}, // one in eight hours
+	} {
+		if n := w.to(want.to, want.kind); n != want.n {
+			t.Errorf("%d %s to %s in five hours, want %d", n, want.kind, want.to, want.n)
+		}
 	}
 	if !strings.Contains(w.logs.String(), "mail_address_limit") {
 		t.Error("nothing says so")
 	}
-	if _, err := w.o.tokens.Redeem(context.Background(), token(w.last()), stores.PurposePasswordReset); err != nil {
-		t.Errorf("the last link it got is dead: %v", err)
+	var kept int
+	if err := w.o.DB.QueryRow(`SELECT count(*) FROM mail_outbox WHERE state = 'dropped' AND (to_hash <> '' OR sealed IS NOT NULL)`).Scan(&kept); err != nil || kept != 0 {
+		t.Errorf("%d asks nothing came of keep their address: %v", kept, err)
 	}
-	w.ask(mail.KindPasswordReset, "b@example.test", "en")
-	w.work()
-	if w.to("b@example.test", mail.KindPasswordReset) != 1 {
-		t.Fatal("another address pays for it")
+	// a day later they, and every network, are gone
+	w.at = w.at.Add(25 * time.Hour)
+	if err := w.o.Sweep(context.Background()); err != nil {
+		t.Fatal(err)
 	}
-	// confirmations: three at once, then one each quarter of an hour, six a day
-	for range 60 {
-		w.ask(mail.KindVerifyEmail, "a@example.test", "en")
-		w.work()
-		w.at = w.at.Add(10 * time.Minute)
-	}
-	if n := w.to("a@example.test", mail.KindVerifyEmail); n != 6 {
-		t.Fatalf("%d confirmations in ten hours, want 6", n)
-	}
-	// the notice to a taken address, which anyone can cause
-	for range 4 {
-		w.register("b@example.test", "en")
-		w.work()
-	}
-	if n := w.to("b@example.test", mail.KindAlreadyRegistered); n != 1 {
-		t.Errorf("%d notices of a taken address in an hour", n)
-	}
-	// notices have their own share
-	over := 0
-	for range 25 {
-		if _, err := w.o.Keep(context.Background(), mail.Message{To: "c@example.test", Kind: "payment_failed"}); errors.Is(err, ErrLimited) {
-			over++
-		} else if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if over != 5 {
-		t.Errorf("%d notices refused, want 5", over)
+	if strings.Contains(w.states(), "dropped") {
+		t.Error(w.states())
 	}
 }
 
-// The review's attack: strangers' addresses signed up, and resets asked for each. They use their
-// share of the day, and no reset of an account whose address is confirmed ever waits for them.
-func TestStrangersCannotUseUpTheDay(t *testing.T) {
-	w := newWorld(t, DefaultLimits(90, 2700))
-	for i := range 4 {
-		w.verified(fmt.Sprintf("known%d@example.test", i))
+// One network: ten asks in any hour and twenty in any day, forty and sixty with the bot check,
+// counted as asked, whether or not there is an account; refused, it is told when to try again.
+func TestTheLimitsOfOneNetwork(t *testing.T) {
+	ctx := context.Background()
+	for _, checked := range []bool{false, true} {
+		l := DefaultLimits(85, 2700)
+		w := newWorld(t, l)
+		w.verified("known@example.test")
+		win := l.Net
+		if checked {
+			win = l.NetChecked
+		}
+		start := w.at
+		var granted []time.Time
+		for i := range 36 * 3 { // each twenty minutes, for a day and a half, a burst at a time
+			for j := range 14 {
+				a := mail.Ask{Kind: mail.KindPasswordReset, To: "known@example.test", Net: "net:203.0.113.0/24", Checked: checked}
+				if j%2 == 0 {
+					a.To = fmt.Sprintf("ghost%d-%d@example.test", i, j)
+				}
+				var err error
+				if j == 3 {
+					err = w.o.Register(ctx, a, "hash", "")
+				} else {
+					err = w.o.Request(ctx, a)
+				}
+				var many *TooMany
+				switch {
+				case err == nil:
+					granted = append(granted, w.at)
+				case !errors.As(err, &many) || many.RetryAfter <= 0 || many.RetryAfter > 24*time.Hour:
+					t.Fatalf("%v", err)
+				}
+			}
+			w.at = w.at.Add(20 * time.Minute)
+		}
+		most := func(span time.Duration) int {
+			n := 0
+			for i := range granted {
+				k := 0
+				for _, g := range granted[i:] {
+					if g.Sub(granted[i]) < span {
+						k++
+					}
+				}
+				n = max(n, k)
+			}
+			return n
+		}
+		if h, d := most(time.Hour), most(24*time.Hour); h != win.Hour || d != win.Day || len(granted) < 2*win.Day {
+			t.Fatalf("checked %v: at most %d an hour and %d a day, %d in all; want %+v", checked, h, d, len(granted), win)
+		}
+		// the two kinds count apart, and another network is not touched
+		for _, a := range []mail.Ask{{Net: "net:203.0.113.0/24", Checked: !checked}, {Net: "net:198.51.100.0/24", Checked: checked}} {
+			a.Kind, a.To = mail.KindPasswordReset, "someone@example.test"
+			if err := w.o.Request(ctx, a); err != nil {
+				t.Errorf("%+v: %v", a, err)
+			}
+		}
+		// told when: the wait it was given is enough
+		w.at = start.Add(100 * 24 * time.Hour)
+		var many *TooMany
+		for !errors.As(w.o.Request(ctx, mail.Ask{Kind: mail.KindPasswordReset, To: "x@example.test", Net: "n", Checked: checked}), &many) {
+			w.at = w.at.Add(time.Second)
+		}
+		w.at = w.at.Add(many.RetryAfter + time.Second)
+		if err := w.o.Request(ctx, mail.Ask{Kind: mail.KindPasswordReset, To: "x@example.test", Net: "n", Checked: checked}); err != nil {
+			t.Errorf("after the wait it was told: %v", err)
+		}
+		// a refused sign-up makes no account, and asks at once are still counted one at a time
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		ok := 0
+		for i := range 60 {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				err := w.o.Register(ctx, mail.Ask{To: fmt.Sprintf("burst%d@example.test", i), Net: "burst", Checked: checked}, "hash", "")
+				mu.Lock()
+				defer mu.Unlock()
+				if err == nil {
+					ok++
+				}
+			}()
+		}
+		wg.Wait()
+		var accounts int
+		if err := w.o.DB.QueryRow(`SELECT count(*) FROM users WHERE email LIKE 'burst%'`).Scan(&accounts); err != nil || ok != win.Hour || accounts != win.Hour {
+			t.Fatalf("checked %v: %d of 60 at once, %d accounts, want %d: %v", checked, ok, accounts, win.Hour, err)
+		}
 	}
-	for i := range 40 {
-		w.register(fmt.Sprintf("stranger%d@example.test", i), "en")
+}
+
+// Strangers use their share of the day and no more, smaller without the bot check; the repeats of
+// confirmed accounts theirs; and the first reset of an hour and a notice go at once. At
+// production's limits, with the second review's own: its sign-ups, then resets of confirmed
+// accounts of the attacker's own, all from one network or two.
+func TestStrangersCannotUseUpTheDay(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t, DefaultLimits(85, 2700))
+	for i := range 12 {
+		w.verified(fmt.Sprintf("mine%d@example.test", i))
+	}
+	w.verified("owner@example.test")
+	attack := func(nets int) {
+		for h := range 24 {
+			for n := range nets {
+				for i := range 12 {
+					a := mail.Ask{Kind: mail.KindPasswordReset, To: fmt.Sprintf("mine%d@example.test", (i+h)%12), Net: fmt.Sprintf("net%d", n)}
+					if i%2 == 0 {
+						a.To = fmt.Sprintf("s%d-%d-%d@example.test", h, n, i)
+						_ = w.o.Register(ctx, a, "hash", "")
+					} else {
+						_ = w.o.Request(ctx, a)
+					}
+				}
+			}
+			w.work()
+			w.at = w.at.Add(time.Hour)
+		}
+	}
+	before := len(w.m.sent)
+	attack(1)
+	if n := len(w.m.sent) - before; n > 20 {
+		t.Fatalf("one network had %d of the day's 85", n)
+	}
+	w.at = w.at.Add(48 * time.Hour)
+	before = len(w.m.sent)
+	attack(2)
+	if n := len(w.m.sent) - before; n > 40 {
+		t.Fatalf("two networks had %d of the day's 85", n)
+	}
+	// many networks: strangers without the bot check stop at 40 percent, with it at 60
+	w.at = w.at.Add(48 * time.Hour)
+	before = len(w.m.sent)
+	for i := range 200 {
+		w.register(fmt.Sprintf("x%d@example.test", i), "en")
 	}
 	w.work()
-	for range 5 {
-		for i := range 40 {
-			w.ask(mail.KindPasswordReset, fmt.Sprintf("stranger%d@example.test", i), "en")
+	if n := len(w.m.sent) - before; n != 34 {
+		t.Fatalf("%d strangers' mails without the bot check, want 34", n)
+	}
+	for i := range 200 {
+		if err := w.o.Register(ctx, mail.Ask{To: fmt.Sprintf("y%d@example.test", i), Checked: true}, "hash", ""); err != nil {
+			t.Fatal(err)
 		}
-		w.work()
-		w.at = w.at.Add(20 * time.Minute)
 	}
-	if n := len(w.m.sent); n != 54 {
-		t.Fatalf("%d mails to addresses nobody proved, want the 54 of their share", n)
+	w.work()
+	if n := len(w.m.sent) - before; n != 51 {
+		t.Fatalf("%d strangers' mails, want 51", n)
 	}
-	// and known addresses asked for all day, by someone else
-	for range 40 {
-		for i := range 4 {
-			w.ask(mail.KindPasswordReset, fmt.Sprintf("known%d@example.test", i), "en")
-		}
-		w.work()
-		w.at = w.at.Add(16 * time.Minute)
+	// resets of accounts never confirmed are strangers' too: none goes
+	for i := range 40 {
+		w.ask(mail.KindPasswordReset, fmt.Sprintf("y%d@example.test", i), "en")
 	}
-	if n := len(w.m.sent); n > 54+4*resetsFirst+18 || n <= 54+4*resetsFirst {
-		t.Fatalf("%d mails of 90", n)
+	w.work()
+	if n := len(w.m.sent) - before; n != 51 {
+		t.Fatalf("%d strangers' mails, want 51", n)
 	}
-	// an account nobody has asked for yet, and a notice, go at once
-	w.verified("owner@example.test")
+	// an account nobody has asked for, and a notice, go at once
 	w.ask(mail.KindPasswordReset, "owner@example.test", "en")
-	if err := w.o.Send(context.Background(), mail.Message{To: "owner@example.test", Kind: "payment_failed"}); err != nil {
+	if err := w.o.Send(ctx, mail.Message{To: "owner@example.test", Kind: "payment_failed"}); err != nil {
 		t.Fatal(err)
 	}
 	w.work()
@@ -560,7 +712,43 @@ func TestStrangersCannotUseUpTheDay(t *testing.T) {
 	}
 }
 
-// What goes first: confirmed accounts' mails, then their repeats, then strangers'.
+// Repeats stop at their share, and the reserve past it is for the first of an hour and notices.
+func TestRepeatsLeaveTheReserve(t *testing.T) {
+	w := newWorld(t, DefaultLimits(20, 1000))
+	w.verified("k@example.test")
+	w.verified("owner@example.test")
+	for i := range 20 {
+		if err := w.o.Register(context.Background(), mail.Ask{To: fmt.Sprintf("s%d@example.test", i), Checked: true}, "hash", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.work() // twelve strangers, 60 percent
+	for range 4 {
+		w.ask(mail.KindPasswordReset, "k@example.test", "en")
+		w.work()
+		w.at = w.at.Add(15 * time.Minute)
+	}
+	// the hour's first, and the two repeats to 70 percent
+	if n := w.to("k@example.test", ""); n != 3 {
+		t.Fatalf("%d resets of one account in an hour, want 3", n)
+	}
+	w.ask(mail.KindPasswordReset, "owner@example.test", "en")
+	if err := w.o.Send(context.Background(), mail.Message{To: "owner@example.test", Kind: "payment_failed"}); err != nil {
+		t.Fatal(err)
+	}
+	w.work()
+	if w.to("owner@example.test", "") != 2 {
+		t.Fatalf("a confirmed account's mails wait: %s", w.states())
+	}
+	// the one that waited becomes an hour's first
+	w.at = w.at.Add(31 * time.Minute)
+	w.work()
+	if n := w.to("k@example.test", ""); n != 4 {
+		t.Fatalf("%d resets, want the fourth once the hour passed", n)
+	}
+}
+
+// What goes first: confirmed accounts' mails, then strangers', whoever asked first.
 func TestConfirmedAccountsGoFirst(t *testing.T) {
 	w := newWorld(t, DefaultLimits(100, 1000))
 	w.verified("known@example.test")
@@ -636,7 +824,7 @@ func TestAnAccountThatNoLongerWantsItsMail(t *testing.T) {
 				w.register("a@example.test", "en")
 				w.work()
 				w.m.sent = nil
-				w.at = w.at.Add(2 * time.Hour)
+				w.at = w.at.Add(9 * time.Hour)
 				w.ask(kind, "a@example.test", "en")
 				if written {
 					if _, err := w.o.Resolve(ctx); err != nil {
@@ -683,76 +871,6 @@ func TestAnAccountThatNoLongerWantsItsMail(t *testing.T) {
 	}
 	if len(w.m.sent) != 1 || w.states() != "map[sent:1]" {
 		t.Fatalf("%d sends, %s", len(w.m.sent), w.states())
-	}
-}
-
-// A mail being sent when a newer one of its kind is written, and not taken, is not sent after it:
-// its link is dead. The same when its process died.
-func TestAnOlderLinkIsNeverTheLastToArrive(t *testing.T) {
-	ctx := context.Background()
-	for _, died := range []bool{false, true} {
-		w := newWorld(t, DefaultLimits(100, 1000))
-		w.verified("a@example.test")
-		w.ask(mail.KindPasswordReset, "a@example.test", "en")
-		if _, err := w.o.Resolve(ctx); err != nil {
-			t.Fatal(err)
-		}
-		if died {
-			if c, err := w.o.claim(ctx); err != nil || c == nil {
-				t.Fatalf("%v %v", c, err)
-			}
-			w.at = w.at.Add(time.Second)
-			w.ask(mail.KindPasswordReset, "a@example.test", "en")
-			if _, err := w.o.Resolve(ctx); err != nil {
-				t.Fatal(err)
-			}
-		} else {
-			w.m.hook = func(context.Context) error {
-				w.m.hook = nil
-				w.at = w.at.Add(time.Second)
-				w.ask(mail.KindPasswordReset, "a@example.test", "en")
-				if _, err := w.o.Resolve(ctx); err != nil {
-					t.Error(err)
-				}
-				return &mail.SendError{Status: 503, Temporary: true}
-			}
-			if _, err := w.o.SendOne(ctx); err != nil {
-				t.Fatal(err)
-			}
-		}
-		for range 4 {
-			w.at = w.at.Add(5 * time.Minute)
-			w.work()
-		}
-		if _, err := w.o.tokens.Redeem(ctx, token(w.last()), stores.PurposePasswordReset); err != nil {
-			t.Errorf("died %v: the last link to arrive is dead", died)
-		}
-		if !strings.Contains(w.states(), "superseded:1") || !strings.Contains(w.states(), "sent:1") {
-			t.Errorf("died %v: %s", died, w.states())
-		}
-	}
-}
-
-// The newest link is the one written last, not the one asked for last: two nodes' clocks differ,
-// and two requests share a moment.
-func TestTheNewestLinkIsTheOneWrittenLast(t *testing.T) {
-	ctx := context.Background()
-	for _, ahead := range []time.Duration{10 * time.Second, 0} {
-		w := newWorld(t, DefaultLimits(100, 1000))
-		w.verified("a@example.test")
-		start := w.at
-		w.at = start.Add(ahead) // asked first, on a node whose clock is ahead
-		w.ask(mail.KindPasswordReset, "a@example.test", "en")
-		w.at = start
-		w.ask(mail.KindPasswordReset, "a@example.test", "en")
-		w.at = start.Add(time.Minute)
-		w.work()
-		if len(w.m.sent) != 1 {
-			t.Fatalf("ahead %s: %d mails, want the newest alone: %s", ahead, len(w.m.sent), w.states())
-		}
-		if _, err := w.o.tokens.Redeem(ctx, token(w.last()), stores.PurposePasswordReset); err != nil {
-			t.Errorf("ahead %s: the mail sent has a dead link", ahead)
-		}
 	}
 }
 
@@ -810,7 +928,7 @@ func TestNoMailOutlivesItsIdempotencyKey(t *testing.T) {
 }
 
 func TestTheLimitOfTheMonth(t *testing.T) {
-	w := newWorld(t, DefaultLimits(100, 3))
+	w := newWorld(t, Limits{Day: 100, Month: 3})
 	for i := range 6 {
 		if err := w.o.Send(context.Background(), mail.Message{To: fmt.Sprintf("u%d@example.test", i), Kind: "payment_failed"}); err != nil {
 			t.Fatal(err)
@@ -862,23 +980,6 @@ func TestTwoNodesShareTheOutbox(t *testing.T) {
 	}
 	if len(seen) != 12 {
 		t.Fatalf("%d mails of a day of 12: %s", len(seen), w.states())
-	}
-}
-
-// A newer request of a kind takes the place of an unsent mail, whose link is dead by then.
-func TestANewerMailTakesAnOlderOnesPlace(t *testing.T) {
-	w := newWorld(t, DefaultLimits(100, 1000))
-	w.m.errs = []error{nil, &mail.SendError{Status: 500, Temporary: true}}
-	w.register("a@example.test", "en")
-	w.work()
-	w.ask(mail.KindPasswordReset, "a@example.test", "en")
-	w.work()
-	w.ask(mail.KindPasswordReset, "a@example.test", "en")
-	w.work()
-	w.at = w.at.Add(20 * time.Minute)
-	w.work()
-	if len(w.m.sent) != 3 || !strings.Contains(w.states(), "superseded:1") || !strings.Contains(w.states(), "sent:2") {
-		t.Fatalf("%d sends, %s", len(w.m.sent), w.states())
 	}
 }
 

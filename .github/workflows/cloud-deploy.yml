@@ -21,7 +21,8 @@
 #   record   QA: the digests and the deploy tree that passed, for production's gate
 #
 # Secrets: RESEND_API_KEY (each environment's own, qa and prod: the key its mails are sent with;
-# without it the node's mail driver stays log), RELAY_SSH_KEY (both nodes), CLOUDFLARE_DNS_TOKEN (Zone → DNS → Edit on maktaba.tv
+# without it the node's mail driver stays log), TURNSTILE_SECRET_KEY and TURNSTILE_SITE_KEY (each
+# environment's own: the bot check on the web app's pages, off without both), RELAY_SSH_KEY (both nodes), CLOUDFLARE_DNS_TOKEN (Zone → DNS → Edit on maktaba.tv
 # and maktaba.dev; without it QA runs on Caddy's own CA and production does not deploy unless
 # the CLOUD_TLS variable is "http" with the records made by hand), MAKTABA_LICENSE_SIGNING_KEY
 # (the licence signing seed whose public half releases embed, docs/licensing.md: without it a
@@ -377,6 +378,8 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_DNS_TOKEN }}
           LICENSE_SIGNING_KEY: ${{ secrets.MAKTABA_LICENSE_SIGNING_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
           CLOUD_REF: ${{ needs.resolve.outputs.cloud_ref }}
           CADDY_REF: ${{ needs.resolve.outputs.caddy_ref }}
         run: |
@@ -384,10 +387,13 @@ jobs:
           # production without it would stop everyone's mail: a warning there
           level=notice; [ "$TARGET" != prod ] || level=warning
           [ -n "${RESEND_API_KEY:-}" ] || echo "::$level::the $TARGET environment has no RESEND_API_KEY: the node's mail driver is log (nothing is delivered)"
+          { [ -n "${TURNSTILE_SECRET_KEY:-}" ] && [ -n "${TURNSTILE_SITE_KEY:-}" ]; } || echo "::$level::the $TARGET environment has not both TURNSTILE_SECRET_KEY and TURNSTILE_SITE_KEY: the bot check is off, and strangers' mails have a smaller share"
           # the token on stdin, never on a command line; the names expand here, on purpose
           # shellcheck disable=SC2029
-          printf '%s\n%s\n%s\n' "${CF_API_TOKEN:-}" "${LICENSE_SIGNING_KEY:-}" "${RESEND_API_KEY:-}" | ssh node "read -r t; read -r k; read -r m; \
+          printf '%s\n' "${CF_API_TOKEN:-}" "${LICENSE_SIGNING_KEY:-}" "${RESEND_API_KEY:-}" "${TURNSTILE_SECRET_KEY:-}" "${TURNSTILE_SITE_KEY:-}" | \
+            ssh node "read -r t; read -r k; read -r m; read -r ts; read -r tk; \
             [ -z \"\$t\" ] || export CF_API_TOKEN=\"\$t\"; [ -z \"\$k\" ] || export LICENSE_SIGNING_KEY=\"\$k\"; export RESEND_API_KEY=\"\$m\"; \
+            export TURNSTILE_SECRET_KEY=\"\$ts\" TURNSTILE_SITE_KEY=\"\$tk\"; \
             MAIL_ALLOW='${MAIL_ALLOW:-}' MAIL_SUBJECT_PREFIX='${MAIL_SUBJECT_PREFIX:-}' MAIL_DAILY_LIMIT='${MAIL_DAILY_LIMIT:-}' MAIL_MONTHLY_LIMIT='${MAIL_MONTHLY_LIMIT:-}' \
             RELAY_DOMAIN='$RELAY_DOMAIN' API_DOMAIN='$API_DOMAIN' \
             APP_DOMAIN='$APP_DOMAIN' ACME_EMAIL='$ACME_EMAIL' RELAY_TLS='$RELAY_TLS' \

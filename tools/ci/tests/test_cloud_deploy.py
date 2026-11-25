@@ -345,7 +345,7 @@ def mail_block(tmp: Path, env: dict[str, str], dotenv: str = "", drivers: str = 
     helpers = text[text.index("# get_env KEY") : text.index("# is_placeholder VALUE")]
     loop = re.search(r"^for k in RELAY_DOMAIN .*?^done$.*?^for k in MAIL_ALLOW .*?^done$", text, re.S | re.M)
     (tmp / "bin").mkdir(exist_ok=True)
-    answer = f'printf "%b\\n" "{drivers}"' if drivers else "echo '--role required' >&2; exit 2"
+    answer = drivers if drivers.startswith("exit") else f'printf "%b\\n" "{drivers}"' if drivers else "echo '--role required' >&2; exit 2"
     (tmp / "bin/docker").write_text(f'#!/bin/sh\necho "$*" >> {tmp}/docker.said\n{answer}\n')
     (tmp / "bin/timeout").write_text('#!/bin/sh\nshift\nexec "$@"\n')
     for f in ("docker", "timeout"):
@@ -395,11 +395,44 @@ def test_the_driver_is_for_a_release_that_knows_it(tmp_path: Path) -> None:
     for drivers in ("", "log", "log\\nresender"):
         code, said, toml = mail_block(tmp_path, given, drivers=drivers)
         assert code == 0 and toml["driver"] == "log" and "no resend driver" in said, drivers
+    # an image that could not be asked is no answer: nothing goes on, and what it said is told
+    for rc in (1, 124, 125, 127):
+        code, said, _ = mail_block(tmp_path, given, drivers=f"exit {rc}")
+        assert code != 0 and f"could not be asked for its mail drivers ({rc})" in said and KEY not in said, rc
+    # and is not asked while there is no key or no list
+    assert mail_block(tmp_path, {"RESEND_API_KEY": "", "MAIL_ALLOW": "everyone"}, drivers="exit 1")[0] == 0
     # the key is there for the release that does
-    code, said, toml = mail_block(tmp_path, {})
+    code, said, toml = mail_block(tmp_path, {"RESEND_API_KEY": KEY})
     assert code == 0 and toml["driver"] == "resend"
     asked = (tmp_path / "docker.said").read_text().splitlines()[-1]
     assert asked == "run --rm --network none ghcr.io/hamza-labs-core/maktaba-cloud:v9.9.9@sha256:abc mail drivers"
+
+
+def test_the_bot_check_is_on_with_both_its_keys_and_says_so(tmp_path: Path) -> None:
+    import tomllib
+
+    both = {"TURNSTILE_SITE_KEY": "0x4AAAAAAA_site-key", "TURNSTILE_SECRET_KEY": "0x4AAAAAAA_the-secret"}
+    for env, drivers, on in ((both, "log\\nresend", True), ({**both, "TURNSTILE_SECRET_KEY": ""}, "log\\nresend", False),
+                             ({**both, "TURNSTILE_SITE_KEY": ""}, "log\\nresend", False), ({}, "log\\nresend", False), (both, "", False)):
+        tmp = tmp_path / str(len(list(tmp_path.iterdir())))
+        tmp.mkdir()
+        code, said, _ = mail_block(tmp, env, drivers=drivers)
+        assert code == 0, said
+        toml = tomllib.loads((tmp / "cloud.toml").read_text())
+        assert toml["turnstile"]["enabled"] is on and toml["turnstile"]["staff"] is False, env
+        assert ("bot check: on" in said) is on and ("it is off" in said) is not on
+        # the secret is .env's, which compose hands the api alone; never said, never in cloud.toml
+        assert "the-secret" not in said + (tmp / "cloud.toml").read_text()
+    compose = yaml.safe_load((NODE / "docker-compose.yml").read_text())["services"]
+    assert [n for n, svc in compose.items() if "MAKTABA_CLOUD_TURNSTILE_SECRET" in (svc.get("environment") or {})] == ["api"]
+    # taken out of the environment, they are taken off the node
+    tmp = tmp_path / "off"
+    tmp.mkdir()
+    mail_block(tmp, both)
+    mail_block(tmp, {"TURNSTILE_SITE_KEY": "", "TURNSTILE_SECRET_KEY": ""})
+    assert "the-secret" not in (tmp / ".env").read_text()
+    for bad in ({**both, "TURNSTILE_SITE_KEY": 'x"'}, {**both, "TURNSTILE_SECRET_KEY": "a|b"}):
+        assert mail_block(tmp, bad)[0] != 0
 
 
 def test_a_mail_setting_taken_out_of_the_target_does_not_stay(tmp_path: Path) -> None:
@@ -450,10 +483,12 @@ def test_the_mail_key_is_the_environments_and_goes_on_stdin_only() -> None:
     step = named("deploy", "Set up the node")
     assert step["env"]["RESEND_API_KEY"] == "${{ secrets.RESEND_API_KEY }}"
     run = step["run"]
-    assert run.count("RESEND_API_KEY:-") == 2 and '"${RESEND_API_KEY:-}" | ssh node' in run
+    assert run.count("RESEND_API_KEY:-") == 2
+    for k in ("RESEND_API_KEY", "TURNSTILE_SECRET_KEY", "TURNSTILE_SITE_KEY"):
+        assert step["env"][k] == "${{ secrets.%s }}" % k and f'"${{{k}:-}}"' in run[: run.index("ssh node")], k
     # on the node it is read from stdin: the remote command holds only the variable's name
     remote = run[run.index('ssh node "') :]
-    assert "$RESEND_API_KEY" not in remote and 'export RESEND_API_KEY=\\"\\$m\\"' in remote
+    assert "$RESEND_API_KEY" not in remote and "$TURNSTILE_SECRET_KEY" not in remote and 'export RESEND_API_KEY=\\"\\$m\\"' in remote
     for k in ("MAIL_ALLOW", "MAIL_SUBJECT_PREFIX", "MAIL_DAILY_LIMIT", "MAIL_MONTHLY_LIMIT"):
         assert k in remote, k
 
@@ -462,7 +497,7 @@ def test_the_remote_setup_hands_the_key_over_whole(tmp_path: Path) -> None:
     """The step itself, with an ssh that runs the remote command here and a setup that says what it got."""
     (tmp_path / "ssh").write_text('#!/bin/sh\nshift\nexec bash -c "$1"\n')
     (tmp_path / "ssh").chmod(0o755)
-    (tmp_path / "rollout").write_text('#!/bin/sh\nprintf "%s|" "$RESEND_API_KEY" "${CF_API_TOKEN-unset}" "$MAIL_ALLOW" "$MAIL_SUBJECT_PREFIX" "$MAIL_DAILY_LIMIT"\n')
+    (tmp_path / "rollout").write_text('#!/bin/sh\nprintf "%s|" "$RESEND_API_KEY" "${CF_API_TOKEN-unset}" "$MAIL_ALLOW" "$MAIL_SUBJECT_PREFIX" "$MAIL_DAILY_LIMIT" "$TURNSTILE_SECRET_KEY" "$TURNSTILE_SITE_KEY"\n')
     (tmp_path / "rollout").chmod(0o755)
     run = named("deploy", "Set up the node")["run"].replace("/usr/local/sbin/maktaba-rollout", str(tmp_path / "rollout"))
     for target in ("qa", "prod"):
@@ -470,12 +505,13 @@ def test_the_remote_setup_hands_the_key_over_whole(tmp_path: Path) -> None:
         for key in (KEY, ""):
             p = subprocess.run(["bash", "-c", run], capture_output=True, text=True, env={
                 "PATH": f"{tmp_path}:{os.environ['PATH']}", "TARGET": target, "DEPLOY_ID": "1", "RELAY_TLS": "dns", "CLOUD_REF": "c", "CADDY_REF": "c",
-                "RESEND_API_KEY": key, **t})
+                "RESEND_API_KEY": key, "TURNSTILE_SECRET_KEY": key and "0xsecret", "TURNSTILE_SITE_KEY": "0xsite", **t})
             assert p.returncode == 0, p.stderr
             said = p.stdout.splitlines()[-1]
-            assert said.endswith(f"{key}|unset|{t['MAIL_ALLOW']}|{t.get('MAIL_SUBJECT_PREFIX', '')}|{t['MAIL_DAILY_LIMIT']}|"), said
+            assert said.endswith(f"{key}|unset|{t['MAIL_ALLOW']}|{t.get('MAIL_SUBJECT_PREFIX', '')}|{t['MAIL_DAILY_LIMIT']}|{key and '0xsecret'}|0xsite|"), said
             level = "::warning::" if target == "prod" else "::notice::"
-            assert (f"{level}the {target} environment has no RESEND_API_KEY" in p.stdout) == (key == "")
+            for missing in ("has no RESEND_API_KEY", "has not both TURNSTILE_SECRET_KEY and TURNSTILE_SITE_KEY"):
+                assert (f"{level}the {target} environment {missing}" in p.stdout) == (key == ""), missing
 
 
 def test_e2e_refuses_a_qa_that_could_mail_a_stranger(e2e: Any) -> None:

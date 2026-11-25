@@ -10,15 +10,21 @@
 1. A request (register, resend, forgot password) writes one sealed row in `mail_outbox` and
    answers. It looks no account up and waits for no mail, so neither the answer nor its time says
    whether the address has an account. A sign-up's account and its row are one transaction.
-2. The api role works the rows: it finds the account, makes the link, writes the mail in the
-   request's language, else the account's (English or Arabic, plain text and HTML, nothing loaded
-   from elsewhere, no tracking).
-3. It hands the mail to the provider: 10 s an attempt, at most three, only a 429, a 5xx or a lost
+2. The api role works the rows: is there an account that wants the mail, and was none of its kind
+   sent to the address a moment ago? A row nothing comes of keeps no address and goes after a day.
+3. When there is room within the limits, and only then, it makes the link and writes the mail, in
+   the request's language, else the account's (English or Arabic, plain text and HTML, nothing
+   loaded from elsewhere, no tracking).
+4. It hands the mail to the provider: 10 s an attempt, at most three, only a 429, a 5xx or a lost
    answer tried again, with the row's id as the idempotency key. A mail not taken stays in the
    outbox and is tried again after 30 s, 2, 10 and 30 minutes, then each hour, until it is too old
    to be of use (half of its link's life: 12 hours for a confirmation, 30 minutes for a reset; 23
    hours for a notice, as Resend forgets the key after 24). A mail whose account was closed,
-   suspended or confirmed meanwhile, or that a newer one of its kind replaced, is not sent.
+   suspended or confirmed meanwhile is not sent.
+
+**Links.** A reset's link is good for an hour, a confirmation's for a day. Asking for another never
+ends one: each sent is good for its own life, until one is used, which ends the others of its
+account and kind. So nobody can end the link in somebody's inbox by asking.
 
 A restart, a deploy or a crash loses no mail: the next process sends the row, with the same
 idempotency key. Several api nodes share the outbox. The worker only writes rows.
@@ -53,10 +59,9 @@ links' pages) and limits above 0, or with `server.env = "staging"` and no `allow
 | Limit | What |
 |---|---|
 | per IP | 5 requests, then one each 12 s (register, resend, forgot password) |
-| per network (IPv4 /24, IPv6 /56), all addresses together | 10 requests at once and 10 an hour, 40 a day; `429`, counted as they are asked (a deployment that sends) |
-| per address: reset | 3, then one each 15 minutes, with no limit by day: one refused leaves a newest link with at least 45 minutes left. An address nobody confirmed: 2, then one an hour |
-| per address: the others | confirmation: 3, then one each 15 minutes, 6 a day; "already registered": 1 an hour, 3 a day; a notice: 20 an hour, 40 a day |
-| per day and 30 days | `daily_limit`, `monthly_limit`. Mails to addresses nobody confirmed (confirmations, "already registered", resets of an account never confirmed) may use 60 % of each; they and the repeats (a confirmed account's fourth reset of the day and on) 80 %. The rest is kept for confirmed accounts |
+| per network (IPv4 /24, IPv6 /56), all addresses together | 10 asks in any hour, 20 in any day; with the bot check passed 40 and 60, counted apart. `429`, with when to come back. A request that asks nothing (no address, a weak password, a failed check) does not count |
+| per address and kind | a reset or a confirmation each 15 minutes (a confirmation 6 a day); a reset of an account nobody confirmed each hour; "already registered" each 8 hours. One asked sooner is dropped: the one sent before still works, but for an account nobody confirmed it may be near its hour |
+| per day and 30 days | `daily_limit`, `monthly_limit`, and of them: mails to addresses nobody confirmed 60 % (40 % for those asked for without the bot check); they and the repeats (a confirmed account's reset within an hour of one sent) 70 %. The rest, 26 of 85 a day, is for the first reset of each hour of confirmed accounts, and notices |
 
 Over the day's or the month's limit, mails wait and then expire; confirmed accounts' go first. Over
 Resend's own quota (429 `daily_quota_exceeded`, `monthly_quota_exceeded`) a mail waits an hour
@@ -68,14 +73,37 @@ mails a day and 3,000 a month for the whole account, QA's included: the two targ
 from Resend's dashboard. A bigger plan is bought at Resend first, then
 the targets' limits go up.
 
+### The bot check, and what is left
+
+With Turnstile's keys the web app's sign-up, reset, resend and sign-in pages ask for its check, and
+a request from a web page without it is refused. A request from no web page (an app, a script) is
+not asked: it gets the smaller shares above. **Without the keys every request does**, so
+strangers' mails stop at 40 % of the day.
+
+What a determined attacker can still do, within a plan of 100 mails a day: with about two networks
+a day, use up the strangers' share without the check (sign-ups from the web pages, with the check,
+go on if it is on; without it, nobody new gets a confirmation that day); with about five networks
+and confirmed accounts of their own, use up the whole day, a confirmed owner's reset included; on a
+shared network (CGNAT, a school), use up its asks, so the others there wait. The notices and links
+already sent are not affected. And someone who fills the day to one below a limit, then asks for an
+address, can tell from their own next mail whether it had an account: one answer a day, and noisy.
+The remedies: the keys, then a bigger plan.
+
+**The keys**: Cloudflare → Turnstile → a widget in managed mode for the web app's name
+(`app.maktaba.tv`; QA's `staging-app.maktaba.dev`), one for each. `gh secret set
+TURNSTILE_SECRET_KEY --env prod` and `TURNSTILE_SITE_KEY` the same, pasted at the prompt (QA's with
+`--env qa`), then deploy. Without both the check is off, and the deploy says so. The node's operator
+console has no public name and is left out (`turnstile.staff = false`).
+
 ## The single node (QA and production)
 
 Each GitHub environment, `qa` and `prod`, has its own `RESEND_API_KEY` secret. The deploy hands it
 to the node on stdin; `setup.sh` writes `secrets/resend.key` (0600, the cloud user's) and turns the
 driver to `resend` when there is a key, the target's `MAIL_ALLOW` says whom the node may write to
 (`everyone`, or a list) **and** the release has the driver (`maktaba-cloud mail drivers`, asked of
-its image). Without any of them the driver stays `log`, and the deploy says so (production without
-the secret: a warning). A deploy after the secret is removed takes the key off the node, and a
+its image; an image that cannot be asked fails the deploy before anything is rolled out). Without
+any of them the driver stays `log`, and the deploy says so (production without the secret: a
+warning). A deploy after the secret is removed takes the key off the node, and a
 `MAIL_` line removed from a target's file is removed there.
 
 - **Production**: `MAIL_ALLOW=everyone`. Like every deployment that sends, it never mails a name
@@ -133,9 +161,8 @@ an address on its list. Then look at the received mail's headers: `dkim=pass` fo
 | `429 rate_limit_exceeded` | more than Resend takes a second; tried again by itself |
 | `429 daily_quota_exceeded`, `monthly_quota_exceeded` | the plan is spent (above) |
 | `422 …` (`mail_failed`) | that one mail is refused; it is not tried again |
-| `mail_address_limit` in the log | too many of one kind to one address: dropped, the last link stays good |
+| state `dropped` | no account wants it, or (`mail_address_limit` in the log) one was sent to the address a moment ago |
 | state `logged` | the log driver took it: not delivered, and not counted |
-| state `superseded` | a newer mail of its kind took its place, or its account no longer wants it |
 | state `suppressed` | the recipient is not on this node's list (QA), or its domain can belong to nobody (`example.com`) |
 | state `failed`, `unreadable` | the token secret changed while the mail waited |
 

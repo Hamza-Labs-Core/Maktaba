@@ -27,7 +27,8 @@
 # ACME_EMAIL, RELAY_TLS, RELAY_PLANS_ENFORCE, MAKTABA_CLOUD_TAG, MAKTABA_CADDY_TAG (and
 # MAKTABA_CLOUD_IMAGE, MAKTABA_CADDY_IMAGE: another registry, the rehearsal's), MAIL_ALLOW,
 # MAIL_SUBJECT_PREFIX, MAIL_DAILY_LIMIT, MAIL_MONTHLY_LIMIT and the secrets CF_API_TOKEN,
-# LICENSE_SIGNING_KEY and RESEND_API_KEY (set but empty: this node has none any more).
+# LICENSE_SIGNING_KEY, RESEND_API_KEY and TURNSTILE_SECRET_KEY (with TURNSTILE_SITE_KEY); the
+# last three set but empty: this node has none any more.
 set -euo pipefail
 
 DEPLOY_DIR=${DEPLOY_DIR:-/opt/maktaba-relay}
@@ -161,8 +162,8 @@ for k in RELAY_DOMAIN API_DOMAIN APP_DOMAIN ACME_EMAIL RELAY_TLS RELAY_PLANS_ENF
 		set_env "$k" "${!k}"
 	fi
 done
-# (a mail setting handed in empty is none: a line taken out of the target's file does not stay)
-for k in MAIL_ALLOW MAIL_SUBJECT_PREFIX MAIL_DAILY_LIMIT MAIL_MONTHLY_LIMIT; do
+# (a setting handed in empty is none: a line taken out of the target's file does not stay)
+for k in MAIL_ALLOW MAIL_SUBJECT_PREFIX MAIL_DAILY_LIMIT MAIL_MONTHLY_LIMIT TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY; do
 	if [ -n "${!k+x}" ]; then
 		set_env "$k" "${!k}"
 	fi
@@ -250,13 +251,20 @@ if [ -n "${RESEND_API_KEY:-}" ]; then
 elif [ -n "${RESEND_API_KEY+x}" ]; then
 	rm -f "$RESEND_KEY"
 fi
-# release_sends: the release's image says it has the driver (one from before the command serves,
-# without a role: it exits)
+# release_sends: the release's image says it has the driver. One from before the question exits 2
+# at once (it serves, and no role is named); anything else is no answer, and nothing goes on.
 release_sends() {
-	local image tag out
+	local image tag out rc=0
 	image="$(get_env MAKTABA_CLOUD_IMAGE)"; tag="$(get_env MAKTABA_CLOUD_TAG)"
-	out="$(timeout 60 docker run --rm --network none "${image:-ghcr.io/hamza-labs-core/maktaba-cloud}:${tag:-latest}" mail drivers 2>/dev/null </dev/null)" || return 1
-	[[ $'\n'"$out"$'\n' == *$'\nresend\n'* ]]
+	image="${image:-ghcr.io/hamza-labs-core/maktaba-cloud}:${tag:-latest}"
+	out="$(timeout 60 docker run --rm --network none "$image" mail drivers </dev/null 2>"$DEPLOY_DIR/.drivers.err")" || rc=$?
+	if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
+		warn "$(head -c 400 "$DEPLOY_DIR/.drivers.err")"
+		rm -f "$DEPLOY_DIR/.drivers.err"
+		die "the release's image could not be asked for its mail drivers ($rc)"
+	fi
+	rm -f "$DEPLOY_DIR/.drivers.err"
+	[ "$rc" = 0 ] && [[ $'\n'"$out"$'\n' == *$'\nresend\n'* ]]
 }
 MAIL_DRIVER=log
 MAIL_ALLOW_TOML=""
@@ -285,6 +293,22 @@ else
 	MAIL_DRIVER=resend
 	log "mail: the driver is resend (recipients: $mail_to; at most $mail_day a day, $mail_month in 30 days)"
 fi
+# The bot check on the web app's sign-up, reset, resend and sign-in pages (Cloudflare Turnstile):
+# on with both its keys, for a release that leaves the node's private console out of it. Without
+# it strangers' mails have a smaller share of the day (docs/cloud-mail.md).
+TURNSTILE_ENABLED=false
+turnstile_site="$(get_env TURNSTILE_SITE_KEY)"
+turnstile_secret="$(get_env TURNSTILE_SECRET_KEY)"
+[[ "$turnstile_site" =~ ^[A-Za-z0-9._-]*$ ]] || die "TURNSTILE_SITE_KEY holds a character it may not"
+[[ "$turnstile_secret" =~ ^[A-Za-z0-9._-]*$ ]] || die "TURNSTILE_SECRET_KEY holds a character it may not"
+if [ -z "$turnstile_site" ] || [ -z "$turnstile_secret" ]; then
+	warn "bot check: TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY are not both set: it is off"
+elif ! release_sends; then
+	warn "bot check: this release is from before it could be used here: it is off"
+else
+	TURNSTILE_ENABLED=true
+	log "bot check: on (Turnstile)"
+fi
 # --- mail: end
 
 # cloud.toml, from its template and .env's names (the compose mounts it read-only into every
@@ -296,6 +320,8 @@ sed -e "s|\${RELAY_DOMAIN}|$(get_env RELAY_DOMAIN)|g" \
 	-e "s|\${APP_DOMAIN}|$(get_env APP_DOMAIN)|g" \
 	-e "s|\${RELAY_PLANS_ENFORCE}|${RELAY_PLANS_ENFORCE_V:-false}|g" \
 	-e "s|\${MAIL_DRIVER}|$MAIL_DRIVER|g" \
+	-e "s|\${TURNSTILE_ENABLED}|$TURNSTILE_ENABLED|g" \
+	-e "s|\${TURNSTILE_SITE_KEY}|$turnstile_site|g" \
 	-e "s|\${MAIL_ALLOW}|$MAIL_ALLOW_TOML|g" \
 	-e "s|\${MAIL_SUBJECT_PREFIX}|$mail_prefix|g" \
 	-e "s|\${MAIL_DAILY_LIMIT}|$mail_day|g" \

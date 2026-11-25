@@ -169,6 +169,7 @@ func newEnvFull(t *testing.T, pay *fakeProvider, ts turnstile.Verifier, adjust f
 	cfg.Entitlement.PrivateKeyPath = e.entPath
 	if ts != nil {
 		cfg.Turnstile.Enabled = true
+		cfg.Turnstile.Staff = true
 		cfg.Turnstile.Secret = "test-turnstile-secret"
 		cfg.Turnstile.SiteKey = "test-site-key"
 		cfg.Turnstile.WebOrigins = []string{strings.TrimSuffix(testWebURL, "/")}

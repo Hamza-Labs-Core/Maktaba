@@ -10,8 +10,8 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/db/dbtest"
 )
 
-// A link made in a transaction that does not commit is none, and leaves the one before it good;
-// one that commits retires it. RegisterTx says whether the address was free, and fails on none.
+// A link made in a transaction that does not commit is none. One that commits leaves the one before
+// it good; using one ends every other of its account and purpose, and no other's. RegisterTx says whether the address was free, and fails on none.
 func TestTokensAndRegistrationAreTheirCallersTransaction(t *testing.T) {
 	pool := dbtest.Migrated(t)
 	ctx := context.Background()
@@ -63,11 +63,27 @@ func TestTokensAndRegistrationAreTheirCallersTransaction(t *testing.T) {
 	if _, err := tokens.Redeem(ctx, gone, PurposePasswordReset); !errors.Is(err, ErrTokenInvalid) {
 		t.Fatalf("a link that was never kept: %v", err)
 	}
-	second := issue(true)
-	if _, err := tokens.Redeem(ctx, first, PurposePasswordReset); !errors.Is(err, ErrTokenInvalid) {
-		t.Fatalf("the link before: %v", err)
+	second, third := issue(true), issue(true)
+	tx, err := pool.DB.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	confirm, err := tokens.IssueTx(ctx, tx, u.ID, PurposeVerifyEmail, VerifyEmailTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
 	}
 	if id, err := tokens.Redeem(ctx, second, PurposePasswordReset); err != nil || id != u.ID {
 		t.Fatalf("%s %v", id, err)
+	}
+	for _, tok := range []string{first, second, third} {
+		if _, err := tokens.Redeem(ctx, tok, PurposePasswordReset); !errors.Is(err, ErrTokenInvalid) {
+			t.Errorf("a link outlived the one that was used: %v", err)
+		}
+	}
+	if _, err := tokens.Redeem(ctx, confirm, PurposeVerifyEmail); err != nil {
+		t.Errorf("another purpose's link: %v", err)
 	}
 }

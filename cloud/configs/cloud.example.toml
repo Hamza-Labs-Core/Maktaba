@@ -226,13 +226,15 @@ eab_kid = ""
 
 [turnstile]
 # The bot check on the web auth pages (Epic 50 story 50.30): Cloudflare Turnstile, verified by
-# the api on register, login and forgot-password for requests from the web origins below.
+# the api on register, login, forgot-password and resend for requests from the web origins below.
 # Native apps (no Origin) are never asked. Off by default; production turns it on. The secret
 # is env-only: MAKTABA_CLOUD_TURNSTILE_SECRET (on without it, the api role refuses to start).
 enabled     = false
 site_key    = ""
 # Defaults to server.web_url.
 web_origins = ["https://app.maktaba.tv"]
+# The operator console's sign-in too (default true).
+staff       = true
 
 [broadcast]
 # Home broadcasting (Epic 50 story 50.20): the broadcasting gate. Off by default: only test

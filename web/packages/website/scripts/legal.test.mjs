@@ -48,9 +48,11 @@ const POLICY = {
   ],
   account_data: [
     "Email address, name, language, password hash, plan and homes: until the account is deleted, 30 days after its owner asks",
+    "A home's public IP address, for direct connections, and how much it relayed, every 5 minutes and every month: until the home is removed",
     "Sign-in sessions, with the device's name and IP address: up to 31 days after they were last used",
-    "Security and abuse records, with IP addresses: with no fixed end yet",
-    "Account email: its content sealed until it is sent; then the address as a keyed hash, with the kind, time and outcome, 35 days",
+    "The cloud's request log, with the IP address and a code for the account: until it is overwritten",
+    "Security and abuse records, with IP addresses and sometimes an email address: with no fixed end yet, after the account is deleted too",
+    "Account email: its content sealed until it is sent; then the address as a keyed hash, with the kind, time and outcome, 35 days; the network that asked for it, as a keyed hash, a day",
     "Backups of the database: 14 days",
   ],
   processors: [
@@ -130,7 +132,10 @@ test("the account's emails: who delivers them, where they are stored and for how
       assert.ok(html.includes(w), `${lang}: ${w}`);
     assert.ok(doc.summary.includes("Resend"), `${lang}: the summary`);
     // what only the relay does is not said of the whole cloud
-    assert.ok(!/Maktaba Cloud keeps only|سحابة «مكتبة» فلا تحتفظ إلا/.test(doc.summary), lang);
+    assert.ok(
+      !/(Maktaba Cloud|relay) keeps only|لا تحتفظ إلا|لا يحتفظ إلا/.test(doc.summary),
+      lang
+    );
   }
 });
 

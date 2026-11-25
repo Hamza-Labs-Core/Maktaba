@@ -35,6 +35,14 @@ type Message struct {
 	Lang string // "en" or "ar"; "" is both (the moderation mails)
 }
 
+// Ask is a person's request that causes a mail: whom to, in which language ("" is the account's),
+// from which network (a key of the requester's network; "" is not counted), and whether it passed
+// the bot check.
+type Ask struct {
+	Kind, To, Lang, Net string
+	Checked             bool
+}
+
 // Mailer delivers messages.
 type Mailer interface {
 	Send(ctx context.Context, m Message) error

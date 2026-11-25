@@ -139,53 +139,71 @@ func TestReadyzSaysHowMailGoes(t *testing.T) {
 	}
 }
 
-// A deployment that really sends: one network's sign-ups, confirmations and resets, across all
-// the addresses it names, are ten at once and forty a day, and refused the same whether or not
-// an address has an account. Another network is not touched.
+// A deployment that really sends: one network's sign-ups, confirmations and resets together are ten
+// an hour, refused the same whether or not an address has an account, and told when to come back.
+// What is not an ask (a weak password) is not counted, and another network is not touched.
 func TestOneNetworkIsOneRequester(t *testing.T) {
 	key := filepath.Join(t.TempDir(), "resend.key")
 	if err := os.WriteFile(key, []byte("re_secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	e := newEnvCfg(t, nil, func(c *config.Config) {
-		c.Mail = config.MailConfig{Driver: "resend", From: "no-reply@example.test", APIKeyPath: key, DailyLimit: 90, MonthlyLimit: 2700}
+		c.Mail = config.MailConfig{Driver: "resend", From: "no-reply@example.test", APIKeyPath: key, DailyLimit: 85, MonthlyLimit: 2700}
 	})
-	ask := func(ip string, i int) int {
+	ask := func(ip string, i int, pw string) resp {
 		c := e.client()
 		c.ip = ip
 		path := []string{"/v1/auth/register", "/v1/auth/password/forgot", "/v1/auth/verify-email/resend"}[i%3]
-		return c.do("POST", path, map[string]string{"email": fmt.Sprintf("x%d-%s@example.test", i, strings.NewReplacer(":", "-", "[", "", "]", "").Replace(ip)), "password": goodPassword}).code
+		return c.do("POST", path, map[string]string{"email": fmt.Sprintf("x%d-%s@example.test", i, strings.NewReplacer(":", "-", "[", "", "]", "").Replace(ip)), "password": pw})
 	}
 	for name, at := range map[string]func(i int) string{
 		"IPv4": func(i int) string { return fmt.Sprintf("203.0.113.%d", 1+i) },
 		"IPv6": func(i int) string { return fmt.Sprintf("[2001:db8:0:12%02x::%x]", i, 1+i) },
 	} {
-		for i := range 12 {
-			code := ask(at(i), i)
-			if want := map[bool]int{true: 202, false: 429}[i < 10]; code != want {
-				t.Fatalf("%s: request %d answers %d, want %d", name, i+1, code, want)
+		for i := range 4 {
+			if r := ask(at(100+i), 0, "short"); r.code != 400 {
+				t.Fatalf("a weak password: %d", r.code)
+			}
+		}
+		for i := range 13 {
+			r := ask(at(i), i, goodPassword)
+			if want := map[bool]int{true: 202, false: 429}[i < 10]; r.code != want {
+				t.Fatalf("%s: request %d answers %d, want %d", name, i+1, r.code, want)
+			}
+			if r.code == 429 && (r.errCode() != "rate_limited" || len(r.header.Get("Retry-After")) != 4) {
+				t.Fatalf("%s: %s, Retry-After %q", name, r.body, r.header.Get("Retry-After"))
 			}
 		}
 	}
-	if code := ask("198.51.100.7", 0); code != 202 {
-		t.Fatalf("another network: %d", code)
+	if r := ask("198.51.100.7", 0, goodPassword); r.code != 202 {
+		t.Fatalf("another network: %d", r.code)
 	}
-	// the hours pass, the day does not: forty
-	ok := 10
-	for h := range 10 {
-		e.exec(`UPDATE cloud_rate_buckets SET updated_at = updated_at - INTERVAL '1 hour' WHERE key LIKE 'mailnet:%'`)
-		for i := range 10 {
-			if ask(fmt.Sprintf("203.0.113.%d", 20+10*h+i), i) == 202 {
-				ok++
-			}
-		}
+	if e.count(`SELECT count(*) FROM mail_outbox WHERE net_hash LIKE '%203.0.113%'`) != 0 {
+		t.Fatal("a network in the clear")
 	}
-	if ok < 38 || ok > 41 {
-		t.Fatalf("%d requests of one network in a day, want about 40", ok)
+}
+
+// The worker's account purge takes the address out of the outbox.
+func TestThePurgeForgetsTheAccountsMail(t *testing.T) {
+	e := newEnv(t)
+	e.registerVerified("gone@example.test")
+	e.lastMail("verify_email", "gone@example.test")
+	if n := e.count(`SELECT count(*) FROM mail_outbox WHERE to_hash <> ''`); n == 0 {
+		t.Fatal("no mail to forget")
 	}
-	// the operator's status and the sign-in are no part of it
-	if code := e.client().do("GET", "/readyz", nil).code; code != 200 {
-		t.Fatal(code)
+	e.exec(`INSERT INTO account_deletions (user_id, requested_at, purge_after) SELECT id, now() - INTERVAL '31 days', now() - INTERVAL '1 day' FROM users`)
+	res, err := accountPurger(e.cfg, e.pool, e.logger).PurgeDue(context.Background())
+	if err != nil || res.Purged != 1 {
+		t.Fatalf("%+v %v", res, err)
+	}
+	if n := e.count(`SELECT count(*) FROM mail_outbox WHERE to_hash <> ''`); n != 0 {
+		t.Fatalf("%d rows still hold the address", n)
+	}
+	// without the token secret there is no outbox to look in: said, not passed over in silence
+	cfg := e.cfg
+	cfg.Auth.TokenSecret = ""
+	if p := accountPurger(cfg, e.pool, e.logger); p.ForgetMail != nil || !strings.Contains(e.logs.String(), "mail_forget_off") {
+		t.Fatal("nothing says the outbox is not cleaned")
 	}
 }
 

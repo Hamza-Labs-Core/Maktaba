@@ -105,6 +105,9 @@ type TurnstileConfig struct {
 	Enabled bool   // turnstile.enabled
 	SiteKey string // turnstile.site_key: public, served to the web pages
 	Secret  string // env MAKTABA_CLOUD_TURNSTILE_SECRET only
+	// Staff is turnstile.staff (default true): the operator console's sign-in is checked too. Off
+	// where the console has no public name (the single node's, on its private network).
+	Staff bool
 	// WebOrigins are the origins asked for a token (turnstile.web_origins; default the web
 	// app's, server.web_url). Native apps send no Origin and are never asked.
 	WebOrigins []string
@@ -424,8 +427,9 @@ func defaultConfig() Config {
 			MaxIdleConns:    5,
 			ConnMaxLifetime: 30 * time.Minute,
 		},
-		Mail:    MailConfig{Driver: MailLog, DailyLimit: 80, MonthlyLimit: 2700},
-		Billing: BillingConfig{Provider: "none"},
+		Turnstile: TurnstileConfig{Staff: true},
+		Mail:      MailConfig{Driver: MailLog, DailyLimit: 80, MonthlyLimit: 2700},
+		Billing:   BillingConfig{Provider: "none"},
 		Telemetry: TelemetryConfig{
 			LogFormat:          "json",
 			LogLevel:           "info",
@@ -764,6 +768,8 @@ func assign(c *Config, section, key, val string) error {
 	case "turnstile.secret":
 		// the secret is never in a file: MAKTABA_CLOUD_TURNSTILE_SECRET only
 		return fmt.Errorf("turnstile.secret: the secret is not read from the file; set MAKTABA_CLOUD_TURNSTILE_SECRET")
+	case "turnstile.staff":
+		return setBool(&c.Turnstile.Staff, val)
 	case "billing.provider":
 		c.Billing.Provider = val
 	case "mail.driver":

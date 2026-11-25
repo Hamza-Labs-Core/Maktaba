@@ -36,19 +36,16 @@ type MailTokens struct {
 
 func NewMailTokens(db *sql.DB) *MailTokens { return &MailTokens{DB: db} }
 
-// IssueTx mints a token for userID and purpose, retiring any earlier
-// unused token of the same purpose so only the newest link works. It is the
-// caller's transaction (the mail outbox): the link and the mail that carries
-// it are kept together or not at all.
+// IssueTx mints a token for userID and purpose in the caller's transaction (the mail
+// outbox): the link and the mail that carries it are kept together or not at all.
+// The links made before stay good for their own life: asking for another never takes
+// one away, so nobody can end the link in somebody's inbox. Redeem ends them all.
 func (s *MailTokens) IssueTx(ctx context.Context, tx *sql.Tx, userID, purpose string, ttl time.Duration) (string, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
 		return "", err
 	}
 	tok := base64.RawURLEncoding.EncodeToString(raw)
-	if _, err := tx.ExecContext(ctx, `UPDATE email_verifications SET used_at = now() WHERE user_id = $1 AND purpose = $2 AND used_at IS NULL`, userID, purpose); err != nil {
-		return "", err
-	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO email_verifications (token_hash, user_id, purpose, expires_at) VALUES ($1,$2,$3,$4)`,
 		hashMailToken(tok), userID, purpose, time.Now().UTC().Add(ttl)); err != nil {
 		return "", err
@@ -56,16 +53,23 @@ func (s *MailTokens) IssueTx(ctx context.Context, tx *sql.Tx, userID, purpose st
 	return tok, nil
 }
 
-// Redeem consumes a token atomically and returns its user id.
+// Redeem consumes a token atomically, with every other one of its account and purpose, and
+// returns its user id.
 func (s *MailTokens) Redeem(ctx context.Context, tok, purpose string) (string, error) {
 	if tok == "" {
 		return "", ErrTokenInvalid
 	}
 	var uid string
 	err := s.DB.QueryRowContext(ctx, `
-        UPDATE email_verifications SET used_at = now()
-        WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()
-        RETURNING user_id
+        WITH used AS (
+            UPDATE email_verifications SET used_at = now()
+            WHERE token_hash = $1 AND purpose = $2 AND used_at IS NULL AND expires_at > now()
+            RETURNING user_id
+        ), others AS (
+            UPDATE email_verifications e SET used_at = now() FROM used
+            WHERE e.user_id = used.user_id AND e.purpose = $2 AND e.token_hash <> $1 AND e.used_at IS NULL
+        )
+        SELECT user_id FROM used
     `, hashMailToken(tok), purpose).Scan(&uid)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", ErrTokenInvalid

@@ -1,6 +1,6 @@
 # Maktaba Cloud, one node: the cloud.toml every role reads (relay, api, worker).
 # setup.sh writes /opt/maktaba-relay/cloud.toml from this file, putting in RELAY_DOMAIN,
-# API_DOMAIN, APP_DOMAIN, RELAY_PLANS_ENFORCE and the MAIL_ settings from .env; edit this template, not the copy.
+# API_DOMAIN, APP_DOMAIN, RELAY_PLANS_ENFORCE, the MAIL_ settings and the bot check's from .env; edit this template, not the copy.
 # Secrets never go here: they come from .env (MAKTABA_CLOUD_*) and the read-only secrets/
 # mount.
 
@@ -32,6 +32,13 @@ allow_recipients     = [${MAIL_ALLOW}]
 subject_prefix       = "${MAIL_SUBJECT_PREFIX}"
 daily_limit          = ${MAIL_DAILY_LIMIT}
 monthly_limit        = ${MAIL_MONTHLY_LIMIT}
+
+[turnstile]
+# the bot check on the web app's auth pages, on with both its keys (setup.sh); its secret is the
+# environment's (MAKTABA_CLOUD_TURNSTILE_SECRET). The operator console has no public name here
+enabled  = ${TURNSTILE_ENABLED}
+site_key = "${TURNSTILE_SITE_KEY}"
+staff    = false
 
 [billing]
 provider = "none"

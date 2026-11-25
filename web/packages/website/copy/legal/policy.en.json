@@ -4,12 +4,12 @@
     "controller": "Who is responsible",
     "contact": "Contact",
     "purpose": "Why",
-    "data_categories": "What the relay keeps",
-    "not_collected": "What the relay never keeps",
+    "data_categories": "What the statistics hold",
+    "not_collected": "What the statistics never hold",
     "account_data": "What an account holds",
     "processors": "Who handles it for us",
     "lawful_basis": "Lawful basis",
-    "retention_days": "How long the relay keeps it",
+    "retention_days": "How long the statistics are kept",
     "rights": "Your rights"
   }
 }

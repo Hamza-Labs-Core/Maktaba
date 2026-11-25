@@ -119,6 +119,11 @@ func TestPolicyAndProcessingRecords(t *testing.T) {
 	if !strings.Contains(strings.Join(p.AccountData, " "), "Email address") || !strings.Contains(strings.Join(p.AccountData, " "), "35 days") {
 		t.Errorf("account data: %v", p.AccountData)
 	}
+	for _, must := range []string{"public IP address", "how much it relayed", "request log", "sometimes an email"} {
+		if !strings.Contains(strings.Join(p.AccountData, "; "), must) {
+			t.Errorf("account data does not say %q", must)
+		}
+	}
 	for _, n := range p.NotCollected {
 		if strings.HasPrefix(n, "IP addresses") && n != "IP addresses in analytics" {
 			t.Errorf("not collected: %q (accounts' sessions hold one)", n)

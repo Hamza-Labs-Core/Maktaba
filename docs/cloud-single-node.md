@@ -48,6 +48,12 @@ without it generates its own key, which no released home trusts: such a home sta
 its `cloud.relay` component off, and it never reports its linked accounts, so signing in through
 the cloud fails (the e2e's `link`).
 
+### The bot check
+
+With the environment's `TURNSTILE_SECRET_KEY` and `TURNSTILE_SITE_KEY` secrets the web app's sign-up,
+reset, resend and sign-in pages ask for Cloudflare Turnstile's check ([`cloud-mail.md`](cloud-mail.md)).
+Without both it is off, and the deploy says so.
+
 ### Certificates
 
 `RELAY_TLS` in `.env`. With the `CLOUDFLARE_DNS_TOKEN` secret (a token with Zone → DNS → Edit on

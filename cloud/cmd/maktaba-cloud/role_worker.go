@@ -202,16 +202,25 @@ func cleanupExpired(ctx context.Context, logger *slog.Logger, pool *db.Pool) {
 	}
 }
 
+// accountPurger is the purge, with the mail outbox's part in it.
+func accountPurger(cfg config.Config, pool *db.Pool, logger *slog.Logger) *privacy.AccountPurger {
+	p := privacy.NewAccountPurger(pool.DB)
+	o, err := mailOutbox(cfg, pool, logger, nil)
+	if err != nil {
+		logger.Warn("worker: a purged account's address stays in the mail outbox until its rows go", "err", err, "event", "mail_forget_off")
+		return p
+	}
+	p.ForgetMail = o.Forget
+	return p
+}
+
 // purgeDeletedAccounts removes users whose deletion hold has elapsed.
 // We run once an hour. Each account first goes through the GDPR erasure
 // (privacy.DataSubjectService, story 30.2) so its push logs, which have
 // no FK to users, go with it; CASCADE on the FK chains then drops
 // sessions, oauth links, servers, etc.
 func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, cfg config.Config, pool *db.Pool) {
-	purger := privacy.NewAccountPurger(pool.DB)
-	if o, err := mailOutbox(cfg, pool, logger, nil); err == nil {
-		purger.ForgetMail = o.Forget
-	}
+	purger := accountPurger(cfg, pool, logger)
 	t := time.NewTicker(1 * time.Hour)
 	defer t.Stop()
 	for {
