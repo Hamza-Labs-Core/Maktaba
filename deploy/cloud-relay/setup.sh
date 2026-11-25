@@ -245,14 +245,18 @@ elif [ -n "${RESEND_API_KEY+x}" ]; then
 fi
 MAIL_DRIVER=log
 MAIL_ALLOW_TOML=""
+mail_to=everyone
 mail_allow="$(get_env MAIL_ALLOW)"
 mail_prefix="$(get_env MAIL_SUBJECT_PREFIX)"
 mail_day="$(get_env MAIL_DAILY_LIMIT)"; mail_day="${mail_day:-80}"
 mail_month="$(get_env MAIL_MONTHLY_LIMIT)"; mail_month="${mail_month:-2700}"
 [[ "$mail_allow" =~ ^[A-Za-z0-9@._+,-]*$ ]] || die "MAIL_ALLOW is everyone, or addresses and @domains with commas"
 [[ "$mail_prefix" =~ ^[][A-Za-z0-9\ ._-]*$ ]] || die "MAIL_SUBJECT_PREFIX holds a character it may not"
-[[ "$mail_day" =~ ^[1-9][0-9]*$ ]] && [[ "$mail_month" =~ ^[1-9][0-9]*$ ]] || die "MAIL_DAILY_LIMIT and MAIL_MONTHLY_LIMIT are numbers above 0"
+for n in "$mail_day" "$mail_month"; do
+	[[ "$n" =~ ^[1-9][0-9]*$ ]] || die "MAIL_DAILY_LIMIT and MAIL_MONTHLY_LIMIT are numbers above 0"
+done
 if [ -n "$mail_allow" ] && [ "$mail_allow" != everyone ]; then
+	mail_to="the listed ones only"
 	MAIL_ALLOW_TOML="\"${mail_allow//,/\", \"}\""
 fi
 if [ ! -s "$RESEND_KEY" ]; then
@@ -261,7 +265,7 @@ elif [ -z "$mail_allow" ]; then
 	warn "mail: MAIL_ALLOW is not set: the mail driver is log (nothing is delivered)"
 else
 	MAIL_DRIVER=resend
-	log "mail: the driver is resend (recipients: $([ "$mail_allow" = everyone ] && echo everyone || echo 'the listed ones only'); at most $mail_day a day, $mail_month in 30 days)"
+	log "mail: the driver is resend (recipients: $mail_to; at most $mail_day a day, $mail_month in 30 days)"
 fi
 # --- mail: end
 

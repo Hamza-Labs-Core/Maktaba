@@ -242,3 +242,20 @@ func TestAdminReadyzDrains(t *testing.T) {
 		t.Fatalf("draining admin readyz: %d %s", rec.Code, rec.Body)
 	}
 }
+
+// How mails go is the user listener's /readyz's to say, on a ready answer only: the console's
+// listener says nothing of it, and neither does one that is down.
+func TestReadyzOfADownDatabaseSaysNothingOfMail(t *testing.T) {
+	user := NewRouter(slog.New(slog.DiscardHandler), nil, nil, BuildInfo{}, nil, WithMail(MailStatus{Driver: "resend", Delivers: true}))
+	admin := NewAdminRouter(slog.New(slog.DiscardHandler), nil, nil, BuildInfo{}, "admin.maktaba.tv", "https://admin.maktaba.tv", nil,
+		WithMail(MailStatus{Driver: "resend", Delivers: true}))
+	for name, h := range map[string]http.Handler{"user": user, "admin": admin} {
+		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		req.Host = "admin.maktaba.tv"
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusServiceUnavailable || strings.Contains(rec.Body.String(), "resend") {
+			t.Errorf("%s: %d %s", name, rec.Code, rec.Body)
+		}
+	}
+}

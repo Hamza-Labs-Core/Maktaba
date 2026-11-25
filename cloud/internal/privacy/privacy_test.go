@@ -94,6 +94,16 @@ func TestPolicyAndProcessingRecords(t *testing.T) {
 			t.Errorf("incomplete processing activity: %+v", a)
 		}
 	}
+	// the account mails' processor is named, and what it is given
+	var mail ProcessingActivity
+	for _, a := range recs {
+		if a.Name == "Account mail" {
+			mail = a
+		}
+	}
+	if !strings.Contains(strings.Join(mail.Recipients, " "), "Resend") || !strings.Contains(strings.Join(mail.Categories, " "), "Email address") {
+		t.Errorf("account mail: %+v", mail)
+	}
 }
 
 func TestPolicyHandler(t *testing.T) {
