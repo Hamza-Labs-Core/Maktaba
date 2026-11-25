@@ -634,9 +634,56 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, sql string, log io.Write
 	})
 }
 
-// withServer runs fn with a server of its own up (the supervisor's is not
-// running), then stops it.
+// withServer runs fn with a server of its own up (the supervisor's is not running), then
+// stops it. As the supervisor's start does, it first clears a lock a postmaster that did not
+// end cleanly left, and waits for the shared memory of one that was killed (a power cut, a
+// hard stop, then a start at once). Where that cannot be seen before (Windows, once a start
+// replaced the lock), Postgres says it, and it is started again until the memory is free:
+// shmWait at most.
 func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
+	b.ClearStaleLock()
+	began := time.Now()
+	for {
+		b.AwaitShmFree(ctx)
+		err := b.runServer(ctx, log, fn)
+		if !errors.Is(err, errShmInUse) || ctx.Err() != nil || time.Since(began) >= shmWait {
+			return err
+		}
+		fmt.Fprintf(os.Stderr, "[postgres] the shared memory of %s is still in use: started again\n", b.Data)
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(shmRetryEvery):
+		}
+	}
+}
+
+// errShmInUse is a server that did not start because processes of a postmaster that was
+// killed still hold the cluster's shared memory.
+var errShmInUse = errors.New("the shared memory is still in use")
+
+// shmRetryEvery is how long after such a start the next one is.
+var shmRetryEvery = time.Second
+
+// startError is why a server exited while it started.
+type startError struct {
+	err  error
+	said string
+}
+
+func (e *startError) Error() string {
+	return fmt.Sprintf("postgres exited while starting: %v%s", e.err, e.said)
+}
+
+func (e *startError) Unwrap() error { return e.err }
+
+// Is: errShmInUse when Postgres said so.
+func (e *startError) Is(target error) bool {
+	return target == errShmInUse && strings.Contains(e.said, "pre-existing shared memory block")
+}
+
+// runServer is withServer's one start.
+func (b Bundle) runServer(ctx context.Context, log io.Writer, fn func() error) error {
 	srv, err := b.serverCommand(b.serverArgs(false))
 	if err != nil {
 		return err
@@ -671,7 +718,7 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 		select {
 		case werr := <-exited:
 			exited <- werr // for the deferred stop
-			return fmt.Errorf("postgres exited while starting: %v%s", werr, tail.said())
+			return &startError{werr, tail.said()}
 		case <-rctx.Done():
 			return fmt.Errorf("postgres did not get ready: %w", err)
 		case <-time.After(200 * time.Millisecond):

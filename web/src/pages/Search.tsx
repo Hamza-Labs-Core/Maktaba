@@ -47,8 +47,10 @@
 import {
   type FormEvent,
   type ReactNode,
+  startTransition,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -241,6 +243,23 @@ export function Search() {
   const { user } = useAuth();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
+  // The URL as this page last wrote it, else as rendered. The router renders a URL change in a
+  // transition, so `params` (and a callback's older one) can still be the URL before a write: a
+  // change to the URL starts from this one. Each write is counted in the same transition: once
+  // that renders, `params` is the URL, even one that looks as it did (Back at once).
+  const url = useRef(params);
+  const [writes, setWrites] = useState(0);
+  useLayoutEffect(() => {
+    url.current = params;
+  }, [params, writes]);
+  const writeUrl = useCallback(
+    (p: URLSearchParams, replace: boolean) => {
+      url.current = p;
+      setParams(p, { replace });
+      startTransition(() => setWrites((w) => w + 1));
+    },
+    [setParams]
+  );
   const urlQ = (params.get("q") ?? "").trim();
   const uMode = urlMode(params.get("mode"));
   const sid = params.get("sid") ?? "";
@@ -528,21 +547,30 @@ export function Search() {
     }
   }, []);
 
-  /** Shows the URL of a saved search; a replace unless `push`. */
+  /**
+   * Shows the URL of a saved search, in the tab the URL is on (one answering after the person
+   * moved to AI mode keeps them there); a replace unless `push`. A replace is of the same
+   * search's URL, as `asked` (its order; the home may answer in another): one that has moved to
+   * another search, or the same in another order, is left alone. Whether it was shown.
+   */
   const showUrl = useCallback(
-    (s: SearchState, push = false) => {
-      if (!alive.current) return;
-      // a search answering after the person moved to AI mode keeps them there
-      setParams(
-        (prev) => {
-          const p = searchParamsOf(s);
-          if (prev.get("tab") === "ai") p.set("tab", "ai");
-          return p;
-        },
-        { replace: !push }
-      );
+    (s: SearchState, push = false, asked: Sort = s.sort ?? "relevance"): boolean => {
+      if (!alive.current) return false;
+      const now = url.current;
+      const p = searchParamsOf(s);
+      if (
+        !push &&
+        ((now.get("q") ?? "").trim() !== s.q ||
+          (urlMode(now.get("mode")) ?? s.mode) !== s.mode ||
+          urlSort(now.get("sort")) !== asked ||
+          JSON.stringify(selOf(now)) !== JSON.stringify(selOf(p)))
+      )
+        return false;
+      if (now.get("tab") === "ai") p.set("tab", "ai");
+      writeUrl(p, !push);
+      return true;
     },
-    [setParams]
+    [writeUrl]
   );
 
   /**
@@ -559,12 +587,13 @@ export function Search() {
       opts: { notice?: boolean; youtube?: boolean } = {}
     ) => {
       const g = ++gen.current;
-      lastSearch.current = {
+      const last = {
         term: query,
         mode: m,
         ask,
         yt: opts.youtube ?? lastSearch.current?.yt ?? false,
       };
+      lastSearch.current = last;
       const withYt =
         opts.youtube === true && ytAvailableRef.current && ytGateRef.current === "show";
       if (opts.youtube !== undefined && !withYt) {
@@ -618,20 +647,27 @@ export function Search() {
           if (b) tItems = listOf(b.items);
         }
         rememberSizes(s.sid, s);
+        // asked again (an import), it is in the order it was answered in, as the URL will say
+        last.ask = { ...ask, sort: s.sort };
         commit(s, vPage, vItems, tPage, tItems);
         setNotice(Boolean(opts.notice));
-        if (s.sid) {
+        if (
+          s.sid &&
+          showUrl(
+            {
+              q: query,
+              mode: m,
+              sort: s.sort,
+              sel: s.sel,
+              sid: s.sid,
+              vp: vPage,
+              tp: tPage,
+            },
+            false,
+            ask.sort
+          )
+        )
           lastRun.current = runKey(query, m, s.sort, s.sel, s.sid);
-          showUrl({
-            q: query,
-            mode: m,
-            sort: s.sort,
-            sel: s.sel,
-            sid: s.sid,
-            vp: vPage,
-            tp: tPage,
-          });
-        }
         void refreshRecent();
       } catch (e) {
         if (g !== gen.current) return;
@@ -659,7 +695,8 @@ export function Search() {
       quiet = false
     ) => {
       const g = ++gen.current;
-      lastSearch.current = { term: query, mode: m, ask, yt };
+      const last = { term: query, mode: m, ask, yt };
+      lastSearch.current = last;
       // the facets and did-you-mean came with the first page: kept per sid
       const help = recallHelp(s);
       if (!quiet) setPending(true);
@@ -696,6 +733,7 @@ export function Search() {
               ? read.did_you_mean.trim()
               : ""),
         };
+        last.ask = { ...ask, sort: snapshot.sort };
         // A page past the end (a hand-made link) shows the last page.
         const vPage = Math.min(want.vp, pageCount(snapshot.titlesTotal, size));
         const tPage = Math.min(want.tp, pageCount(snapshot.transcriptsTotal, size));
@@ -707,28 +745,36 @@ export function Search() {
           if (g !== gen.current) return;
           if (a2) a = a2;
           if (b2) b = b2;
-          showUrl({
-            q: query,
-            mode: m,
-            sort: snapshot.sort,
-            sel: ask.sel,
-            sid: s,
-            vp: vPage,
-            tp: tPage,
-          });
+          showUrl(
+            {
+              q: query,
+              mode: m,
+              sort: snapshot.sort,
+              sel: ask.sel,
+              sid: s,
+              vp: vPage,
+              tp: tPage,
+            },
+            false,
+            ask.sort
+          );
         }
         commit(snapshot, vPage, listOf(a?.items), tPage, listOf(b?.items));
         // a link naming another order than the search's own: the address follows the pages
         if (snapshot.sort !== ask.sort && vPage === want.vp && tPage === want.tp)
-          showUrl({
-            q: query,
-            mode: m,
-            sort: snapshot.sort,
-            sel: ask.sel,
-            sid: s,
-            vp: vPage,
-            tp: tPage,
-          });
+          showUrl(
+            {
+              q: query,
+              mode: m,
+              sort: snapshot.sort,
+              sel: ask.sel,
+              sid: s,
+              vp: vPage,
+              tp: tPage,
+            },
+            false,
+            ask.sort
+          );
         setNotice(false);
         void refreshRecent();
       } catch (e) {
@@ -879,7 +925,7 @@ export function Search() {
     if (!query) {
       if (urlQ) {
         lastRun.current = "";
-        setParams(new URLSearchParams());
+        writeUrl(new URLSearchParams(), false);
       }
       clearResults();
       return;
@@ -894,7 +940,7 @@ export function Search() {
       m === (uMode ?? modeRef.current) &&
       runKey(query, m, next.sort, next.sel, "") === runKey(urlQ, m, uSort, uSel, "");
     lastRun.current = runKey(query, m, next.sort, next.sel, "");
-    setParams(searchParamsOf({ q: query, mode: m, ...next }), { replace: same });
+    writeUrl(searchParamsOf({ q: query, mode: m, ...next }), same);
     void postSearch(query, m, next, { vp: 1, tp: 1 }, { youtube: withYouTube });
   }
 
@@ -1086,10 +1132,10 @@ export function Search() {
 
   /** The tab, in the URL (a replace: a tab is not a page of its own). */
   function selectTab(id: string) {
-    const p = new URLSearchParams(params);
+    const p = new URLSearchParams(url.current);
     if (id === "ai") p.set("tab", "ai");
     else p.delete("tab");
-    setParams(p, { replace: true });
+    writeUrl(p, true);
   }
 
   const results = (

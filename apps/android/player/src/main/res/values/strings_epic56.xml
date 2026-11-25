@@ -12,8 +12,6 @@
     <string name="queue_added">Added to the queue</string>
     <string name="collections_empty">No collections in this library yet.</string>
     <string name="collections_badge_youtube_playlist">YouTube playlist</string>
-    <string name="collections_badge_youtube_channel">YouTube channel</string>
-    <string name="collections_badge_plex">Plex collection</string>
     <string name="collections_badge_smart">Smart</string>
     <string name="playlists_empty_library">None of your playlists has videos from this library.</string>
     <string name="playlists_smart_badge">Smart</string>

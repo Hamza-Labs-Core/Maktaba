@@ -323,3 +323,42 @@ func TestRealRestoreSaysWhatIsMissing(t *testing.T) {
 		}
 	}
 }
+
+// A dump whose chunks are damaged is refused before anything is touched, with its counts or
+// without.
+func TestRealRestoreRefusesDamagedChunks(t *testing.T) {
+	b, q := realServer(t)
+	ctx := context.Background()
+	outageDatabase(t, q, 2)
+	prev := Chunked
+	t.Cleanup(func() { Chunked = prev })
+	if err := q.Exec(ctx, AppDatabase, `SET ROLE `+AppRole+`; CREATE TABLE chunk_t (id bigint PRIMARY KEY); INSERT INTO chunk_t SELECT generate_series(1, 100);`); err != nil {
+		t.Fatal(err)
+	}
+	Chunked = []ChunkedTable{{Name: "public.chunk_t", Key: "id"}}
+	dump, err := b.DumpBeforeUpdate(ctx, "v0.3.41", "v0.3.42", 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := Chunks(dump)["public.chunk_t"]
+	if len(chunks) < 2 {
+		t.Skipf("%d chunks", len(chunks))
+	}
+	oid := one(t, q, `SELECT oid FROM pg_database WHERE datname = '`+AppDatabase+`'`)
+	if err := os.Rename(chunks[0], chunks[0]+".away"); err != nil {
+		t.Fatal(err)
+	}
+	for _, counts := range []bool{true, false} {
+		if !counts {
+			if err := os.Remove(filepath.Join(dump, CountsFile)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := b.RestoreRunning(ctx, dump, io.Discard); err == nil || !strings.Contains(err.Error(), "is not there") {
+			t.Fatalf("counts %v: %v", counts, err)
+		}
+		if now := one(t, q, `SELECT oid FROM pg_database WHERE datname = '`+AppDatabase+`'`); now != oid {
+			t.Fatal("another database is there")
+		}
+	}
+}

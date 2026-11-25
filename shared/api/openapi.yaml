@@ -6221,6 +6221,7 @@ paths:
       - in: query
         name: kind
         required: false
+        description: '`plex` is still accepted for older clients and always keeps nothing (an empty list): collections are no longer read in from Plex.'
         schema:
           type: string
           enum:
@@ -17150,7 +17151,6 @@ components:
           - curated
           - smart
           - youtube
-          - plex
         subkind:
           type: string
         id:
@@ -17172,7 +17172,6 @@ components:
           enum:
           - youtube_playlist
           - youtube_channel
-          - plex
         show_on_library:
           type: boolean
     ParentalSettings:

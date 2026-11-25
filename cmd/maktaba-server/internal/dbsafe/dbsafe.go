@@ -535,6 +535,9 @@ func (t Target) restoreInto(ctx context.Context, db, dump string) error {
 	if len(chunks) == 0 {
 		return restore()
 	}
+	if err := pgbundle.CheckChunks(dump, ""); err != nil {
+		return err
+	}
 	if err := restore("--section=pre-data", "--section=data"); err != nil {
 		return err
 	}
@@ -603,8 +606,15 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	if _, err := os.Stat(dump); err != nil {
 		return err
 	}
-	// a damaged dump is refused before the database is touched
-	if err := pgbundle.CheckCounts(dump); err != nil {
+	// a damaged dump is refused before anything is touched
+	list, err := t.list(ctx, dump)
+	if err == nil {
+		err = pgbundle.CheckCounts(dump)
+	}
+	if err == nil {
+		err = pgbundle.CheckChunks(dump, list)
+	}
+	if err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
 	}
 	d, err := t.open(ctx, "")
@@ -621,7 +631,7 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	_, _ = d.ExecContext(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
 		WHERE datname = current_database() AND pid <> pg_backend_pid()`)
 	if havePSQL(t.bin("psql")) {
-		if err := t.restoreAtomic(ctx, dump, log); err != nil {
+		if err := t.restoreAtomic(ctx, dump, list, log); err != nil {
 			return err
 		}
 		_, _ = d.ExecContext(ctx, `ANALYZE`)
@@ -652,12 +662,9 @@ func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 // every object, grant and default privilege, every table's rows): a restore is recorded
 // done only when it is whole, and one that is not says what it lacks.
 func (t Target) verifyRestore(ctx context.Context, d *sql.DB, dump string) error {
-	cmd := exec.CommandContext(ctx, t.bin("pg_restore"), "-l", dump)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	toc, err := cmd.Output()
+	toc, err := t.list(ctx, dump)
 	if err != nil {
-		return fmt.Errorf("pg_restore -l %s: %v: %s", dump, err, tail(stderr.Bytes()))
+		return err
 	}
 	query := func(ctx context.Context, q string) ([]string, error) {
 		rows, err := d.QueryContext(ctx, q)
@@ -675,10 +682,22 @@ func (t Target) verifyRestore(ctx context.Context, d *sql.DB, dump string) error
 		}
 		return out, rows.Err()
 	}
-	if err := pgbundle.VerifyRestore(ctx, dump, string(toc), query); err != nil {
+	if err := pgbundle.VerifyRestore(ctx, dump, toc, query); err != nil {
 		return fmt.Errorf("restore %s: %w", dump, err)
 	}
 	return nil
+}
+
+// list is a dump's table of contents (pg_restore -l).
+func (t Target) list(ctx context.Context, dump string) (string, error) {
+	cmd := exec.CommandContext(ctx, t.bin("pg_restore"), "-l", dump)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("pg_restore -l %s: %v: %s", dump, err, tail(stderr.Bytes()))
+	}
+	return string(out), nil
 }
 
 // havePSQL reports whether psql runs.
@@ -688,25 +707,36 @@ var havePSQL = func(psql string) bool {
 
 // restoreAtomic makes the public schema afresh and restores the dump in it in one
 // transaction: pg_restore's script (no publications, no owners) streams into psql, which
-// runs it after the schema's drop and creation with --single-transaction, stopping at the
-// first error (the transaction rolls back: the database stays as it was). Nothing is
-// written to disk (a plain script is several times the dump's size, which the space check
-// does not count). psql commits only at the end of its input: its input is closed once
-// pg_restore wrote the whole script; a pg_restore that fails part way (a cut dump) ends
-// psql before that, so the server rolls the transaction back. A psql that stops first (an
+// runs it after BEGIN and the schema's drop and creation, stopping at the first error (the
+// transaction rolls back: the database stays as it was). Nothing is written to disk (a plain
+// script is several times the dump's size, which the space check does not count). COMMIT is
+// the script's own last line, written once pg_restore wrote all of it: an end of psql's input
+// before that (a pg_restore that fails part way, this process killed) commits nothing. Until
+// 2026-11-24 it was psql's --single-transaction, which commits at the end of its input,
+// wherever that is: a server killed in the middle of a restore left a part of the dump
+// committed in place of the library. A psql that stops first (an
 // SQL error, ON_ERROR_STOP) stops pg_restore too (it would write into a pipe nobody reads
-// for ever), and its own words are the error. A dump with chunked tables (pgbundle.Chunked)
-// is streamed in three parts: its tables and their data, a \copy of each chunk, then its
-// indexes and constraints.
-func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) error {
+// for ever), and its own words are the error. The dump is streamed
+// in three parts: its tables and their rows (copyScan reads them too: one whose rows are cut
+// short goes no further), a \copy of each chunk of its chunked tables (pgbundle.Chunked;
+// CheckChunks refused a damaged one before), with every table's rows counted, and its indexes
+// and constraints.
+func (t Target) restoreAtomic(ctx context.Context, dump, list string, log io.Writer) error {
 	pctx, kill := context.WithCancel(ctx)
 	defer kill()
-	parts := [][]string{nil} // pg_restore's sections (nil: all of it); a "" marks the chunks
-	if chunks := pgbundle.Chunks(dump); len(chunks) > 0 {
-		parts = [][]string{{"--section=pre-data", "--section=data"}, {""}, {"--section=post-data"}}
+	counts, err := pgbundle.CountsScript(dump, list)
+	if err != nil {
+		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
 	}
-	cmd, err := t.command(pctx, "psql", "", "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1", "--single-transaction",
-		"--command=DROP SCHEMA public CASCADE; CREATE SCHEMA public;", "--file=-")
+	tables := 0
+	for _, e := range pgbundle.ParseTOC(list) {
+		if e.Desc == "TABLE DATA" {
+			tables++
+		}
+	}
+	// one run of the tables and their rows: pg_restore gives their grants after them both
+	const dataPart, chunkPart, postPart = 0, 1, 2
+	cmd, err := t.command(pctx, "psql", "", "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1", "--file=-")
 	if err != nil {
 		return err
 	}
@@ -717,6 +747,7 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) e
 	var out bytes.Buffer
 	cmd.Stdout = io.MultiWriter(&out, orDiscard(log))
 	cmd.Stderr = cmd.Stdout
+	cmd.WaitDelay = 10 * time.Second // its output pipe, should a child outlive it
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("psql: %w", err)
 	}
@@ -730,14 +761,21 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) e
 		}
 		return fmt.Errorf("restore %s (nothing changed: one transaction): psql stopped: %v: %s", dump, werr, tail(out.Bytes()))
 	}
-	for _, sections := range parts {
-		if len(sections) == 1 && sections[0] == "" {
-			if _, err := io.WriteString(in, pgbundle.CopyScript(pgbundle.Chunks(dump))); err != nil {
+	if _, err := io.WriteString(in, "BEGIN;\nDROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n"); err != nil {
+		return stopped(err)
+	}
+	for part := dataPart; part <= postPart; part++ {
+		args := []string{"--no-owner", "--no-publications", "--section=post-data", "--file=-", dump}
+		switch part {
+		case chunkPart:
+			// the chunks, then every table's rows counted, before the indexes are built
+			if _, err := io.WriteString(in, pgbundle.CopyScript(pgbundle.Chunks(dump))+counts); err != nil {
 				return stopped(err)
 			}
 			continue
+		case dataPart:
+			args = []string{"--no-owner", "--no-publications", "--section=pre-data", "--section=data", "--file=-", dump}
 		}
-		args := append(append([]string{"--no-owner", "--no-publications"}, sections...), "--file=-", dump)
 		gen := exec.CommandContext(pctx, t.bin("pg_restore"), args...)
 		script, err := gen.StdoutPipe()
 		if err != nil {
@@ -747,14 +785,17 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) e
 		}
 		var genErr bytes.Buffer
 		gen.Stderr = &genErr
+		gen.WaitDelay = 10 * time.Second // as psql's
 		if err := gen.Start(); err != nil {
 			kill()
 			_ = cmd.Wait()
 			return fmt.Errorf("pg_restore: %w", err)
 		}
-		if _, copyErr := io.Copy(in, script); copyErr != nil {
+		var scan copyScan
+		if _, copyErr := io.Copy(io.MultiWriter(in, &scan), script); copyErr != nil {
 			// pg_restore would wait on the pipe for ever: stopped with psql
 			err := stopped(copyErr)
+			_ = script.Close() // what is left of it is written nowhere
 			_ = gen.Wait()
 			return err
 		}
@@ -764,8 +805,20 @@ func (t Target) restoreAtomic(ctx context.Context, dump string, log io.Writer) e
 			_ = cmd.Wait()
 			return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
 		}
+		if part == dataPart {
+			if err := scan.whole(tables); err != nil {
+				// psql takes what comes next for rows: nothing more goes to it
+				kill()
+				_ = cmd.Wait()
+				return fmt.Errorf("restore %s (nothing changed: one transaction): %w", dump, err)
+			}
+		}
 	}
-	_ = in.Close() // the whole script: psql commits at its end
+	// the whole script: its last line
+	if _, err := io.WriteString(in, "\nCOMMIT;\n"); err != nil {
+		return stopped(err)
+	}
+	_ = in.Close()
 	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(out.Bytes()))
 	}
