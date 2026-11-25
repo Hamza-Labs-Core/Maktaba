@@ -4,7 +4,10 @@ These notes are for any coding agent working here: Codex, Cursor, Claude Code an
 [`CLAUDE.md`](CLAUDE.md) holds the repository's rules, and they apply to every agent:
 - never write secrets;
 - never quote the owner's words in repo text;
-- a spec change ships its Arabic.
+- a spec change ships its Arabic;
+- a changelog entry is a pair of files in [`changelog.d/`](changelog.d/README.md), English and
+  Arabic, never a line in `CHANGELOG.md` (the lint job refuses it);
+  `python3 tools/dev/changelog_fragment.py convert` moves a branch's lines there.
 
 **Decisions for the owner (every agent, every provider):** never ask the owner to decide anything
 in chat, in a pull request or on a page of your own. File it with
