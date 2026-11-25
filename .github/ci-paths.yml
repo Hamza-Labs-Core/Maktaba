@@ -526,6 +526,8 @@ integration:
   - 'tools/ci/apt-install.sh'
   - 'tools/ci/integration-go.sh'
   - '.github/workflows/_integration.yml'
+  # the last release's cloud migrations, which the cloud's tests start from
+  - 'tools/ci/last_release_migrations.sh'
 
 # the previous release's api tests on this build's migrations
 compat_prev:

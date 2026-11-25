@@ -20,3 +20,11 @@ func TestSessionURL(t *testing.T) {
 		t.Error("a bad session URL was accepted")
 	}
 }
+
+// Empty is a database of its own that nothing has migrated.
+func TestEmptyHasNoTables(t *testing.T) {
+	var tables int
+	if err := Empty(t).DB.QueryRow(`SELECT count(*) FROM pg_tables WHERE schemaname = 'public'`).Scan(&tables); err != nil || tables != 0 {
+		t.Fatalf("%d tables, %v", tables, err)
+	}
+}

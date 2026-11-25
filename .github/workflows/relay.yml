@@ -44,6 +44,7 @@ on:
       - 'tools/ci/golangci-lint.sh'
       # the test job's PgBouncer (story 50.18)
       - 'tools/ci/pgbouncer-ci.sh'
+      - 'tools/ci/last_release_migrations.sh'
       - 'tools/release/fetch-pinned.sh'
     tags:
       - 'v*'
@@ -66,6 +67,7 @@ on:
       - 'tools/ci/golangci-lint.sh'
       # the test job's PgBouncer (story 50.18)
       - 'tools/ci/pgbouncer-ci.sh'
+      - 'tools/ci/last_release_migrations.sh'
       - 'tools/release/fetch-pinned.sh'
   # A tag's run by hand, as a pushed tag's (`--ref vX.Y.Z -f tag=vX.Y.Z`), when its push run
   # is missing (the release session's tag push starts the push run).
