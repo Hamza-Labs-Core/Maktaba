@@ -23,4 +23,4 @@ agent: claude-code
   not this: #1741.
 - For a failure seen once in 200, a structural check says more than a count: which thread an effect
   runs on was 60 of 60 against 0 of 400.
-- A deprecation warning can name the cause: the build had printed this one 88 times.
+- A deprecation warning can name the cause: the build had printed this one 72 times.
