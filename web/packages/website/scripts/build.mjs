@@ -11,9 +11,7 @@
 //      home page (scripts/home.mjs, story 60.10), the install chooser (/install/, story 60.05) and the 404 page; and the
 //      legal pages (story 60.07) from their copy and sources (scripts/legal.mjs: the privacy
 //      page reads privacy.CurrentPolicy() through `go run ./cmd/privacy-json`, so the build
-//      needs Go), with the copyright notice form only when WEBSITE_NOTICE_ENDPOINT and
-//      WEBSITE_TURNSTILE_SITEKEY are set (src/copyright-form.ts; neither is, until Epic 50's
-//      endpoint is live);
+//      needs Go);
 //   4. the copied files: the shell's (shell.mjs's shellAssets: one stylesheet, two scripts, the
 //      fonts and the mark, under content-hashed names in /assets/), static/ (its fonts only as
 //      the shell publishes them), the icons and manifest (icons.mjs), the log schema at its
@@ -48,7 +46,6 @@ import { LEGAL, legalPages, readSources } from "./legal.mjs";
 import { PROBLEMS } from "./problems.mjs";
 import { HELP } from "./help.mjs";
 import { DOWNLOAD } from "./download.mjs";
-import { noticeConfig } from "../src/copyright-form.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const PKG = path.resolve(HERE, "..");
@@ -273,7 +270,7 @@ export function shotExists(
   return roots.some((r) => fs.existsSync(path.join(r, shot)));
 }
 
-// ---- the copyright notice form's script (story 60.07) ---------------------------------------
+// ---- the scripts of src/ ---------------------------------------------------------------------
 
 /** A script of src/ (TypeScript that imports nothing) with its types stripped, under a
  * content-hashed name: { file: "assets/<name>-<hash>.js", js }. */
@@ -295,9 +292,6 @@ export function classicScriptFile(src) {
   const hash = crypto.createHash("sha256").update(js).digest("base64url").slice(0, 10);
   return { file: `assets/${src.replace(/\.ts$/, "")}-${hash}.js`, js };
 }
-
-/** src/copyright-form.ts with its types stripped, under a content-hashed name. */
-export const noticeScriptFile = () => scriptFile("copyright-form.ts");
 
 /** Whether a site path (/x/, /ar/x/#id) opens a page of dist/ as built so far, with the
  * Worker's auto-trailing-slash rule, and its #fragment names an id on that page. */
@@ -329,7 +323,6 @@ export async function build({
   install = true,
   dist = DIST,
   log = console.log,
-  notice = noticeConfig(process.env),
 } = {}) {
   fs.rmSync(dist, { recursive: true, force: true });
   fs.mkdirSync(dist, { recursive: true });
@@ -368,16 +361,8 @@ export async function build({
 
   // 3. the hand-made pages, and the legal pages from their copy (legal.mjs), every one in part
   // B's shell (Epic 60 Phase 3: the 404 and the legal pages moved with
-  // 60.05, 60.07). The copyright page's notice form is there only when its endpoint is
-  // configured (copyright-form.ts).
-  let noticeScript = "";
-  if (notice) {
-    const s = noticeScriptFile();
-    write(s.file, s.js);
-    noticeScript = `/${s.file}`;
-    log(`the copyright notice form posts to ${notice.endpoint}`);
-  }
-  const legal = legalPages({ sources: readSources(), notice, noticeScript });
+  // 60.05, 60.07).
+  const legal = legalPages({ sources: readSources() });
   // part B's shell links Download and Help once their pages are built (bLinks); the home page's
   // one script runs in the <head> (scripts/home.mjs)
   const links = bLinks(resolves);

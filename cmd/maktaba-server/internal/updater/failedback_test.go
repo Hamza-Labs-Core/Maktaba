@@ -172,7 +172,7 @@ func TestFailedBackRepositoryMigrations(t *testing.T) {
 		}
 	}
 	// the decision of 0.3.153's own rollback (schemadown.go): the same Down scripts
-	if schema, ok, why := DownToFrom(v153, v157); !ok || schema != 230 {
+	if schema, ok, why := DownToFrom(v153, v157, 0, false); !ok || schema != 230 {
 		t.Fatalf("DownToFrom 0.3.153 -> 0.3.157: %d %v (%s)", schema, ok, why)
 	}
 }

@@ -26,6 +26,8 @@ routes = [
 
 [vars]
 BROADCAST_ENV = "staging"
+# Broadcasting is off (2026-11-24): the edge answers 404 to everything but the revocation list until this is "1"
+BROADCAST_ENABLED = "0"
 BROADCAST_DELIVERY = "r2"
 BROADCAST_GLOBAL_OFF = "0"
 # break-glass per channel (story 50.25 §3): comma-separated channel ids, empty when unused
@@ -117,6 +119,7 @@ routes = [
 
 [env.production.vars]
 BROADCAST_ENV = "production"
+BROADCAST_ENABLED = "0"
 BROADCAST_DELIVERY = "r2"
 BROADCAST_GLOBAL_OFF = "0"
 BROADCAST_OFF_CHANNELS = ""

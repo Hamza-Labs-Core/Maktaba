@@ -56,6 +56,7 @@ import {
   reasonText,
   titleFinder,
 } from "./componentWords";
+import { useFlag } from "../../lib/flags";
 import "./components.css";
 
 /** How often the open page reads the list. */
@@ -151,7 +152,13 @@ function ComponentsInner({ pollMs }: { pollMs: number }) {
 
   const views = useMemo(() => list?.components ?? [], [list]);
   const titleOf = useMemo(() => titleFinder(t, views, locale), [t, views, locale]);
-  const groups = useMemo(() => groupRows(views), [views]);
+  // broadcasting's components only while the licence carries the broadcast flag (off by
+  // default, 2026-11-24): no locked row for a feature that isn't offered
+  const broadcastOn = useFlag("broadcast");
+  const groups = useMemo(
+    () => groupRows(views.filter((v) => broadcastOn || v.licence !== "broadcast")),
+    [views, broadcastOn]
+  );
   const offline = error !== null && list !== null;
   const byId = useMemo(() => new Map(views.map((v) => [v.id, v])), [views]);
 

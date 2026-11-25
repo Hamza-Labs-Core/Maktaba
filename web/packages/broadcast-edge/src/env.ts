@@ -53,6 +53,14 @@ export interface Env {
   VIEWER_TOKEN_KEY: string;
   /** base64url Ed25519 seed: the edge's signature on its posts to api.maktaba.tv (50.20 usage). */
   EDGE_SIGNING_KEY?: string;
+  /**
+   * "1" or "true": broadcasting is on: the edge takes uploads and serves viewers. Anything else
+   * (the default, and wrangler.toml's value while broadcasting is off): ingest, watch and live
+   * answer 404 to every request, a valid token or signature included, so nothing is taken, stored
+   * or served. Only the revocation list still arrives (/v1/control/revocations and the cron's
+   * pull): it only takes access away.
+   */
+  BROADCAST_ENABLED?: string;
   /** "1" stops every broadcast at the edge (break-glass, 50.25). */
   BROADCAST_GLOBAL_OFF?: string;
   /** Comma-separated channel ids taken off air at the edge (break-glass, 50.25). */

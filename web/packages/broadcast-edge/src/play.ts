@@ -79,9 +79,10 @@ function withServerTime(res: Response): Response {
   const out = new Response(res.body, res);
   out.headers.set("X-Server-Time", String(now()));
   if (!out.headers.has("Cache-Control")) out.headers.set("Cache-Control", "no-store");
-  // a channel the publisher lets search engines index (50.26 §2) says so; nothing else is
-  if (out.headers.get("X-Maktaba-Indexable") === "1") out.headers.delete("X-Maktaba-Indexable");
-  else out.headers.set("X-Robots-Tag", "noindex");
+  // invitation only (README §14): nothing on watch is ever indexed, whatever a channel's old
+  // indexable setting said
+  out.headers.delete("X-Maktaba-Indexable");
+  out.headers.set("X-Robots-Tag", "noindex");
   out.headers.set("X-Content-Type-Options", "nosniff");
   return out;
 }

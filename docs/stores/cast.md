@@ -68,6 +68,54 @@ bandwidth), and the finding goes in research.md with the device's firmware versi
 
 **Result:** not run yet.
 
+## Turning Cast on in the Apple apps
+
+Cast is on in the iPhone and iPad Player once a build names Maktaba's receiver; the Mac and
+Apple TV apps have no Cast (Google's iOS sender SDK is iOS and iPadOS only). The order, each
+step done before the next:
+
+1. **Register the receiver** (Console registration, above) and put its application ID in
+   `shared/cast/app.json` (`receiver_app_id`), then `python3 tools/apple/cast-app-id.py` to
+   write `apps/apple/Config/Cast.xcconfig`. CI's `cast-app-id.py --check` fails while the two
+   differ. The same file turns Cast on in the Android and web senders.
+2. **Deploy the receiver** to `https://cast.maktaba.tv/r/` (`CAST_RECEIVER_LIVE` set to `true`,
+   the `cast.maktaba.tv` name live) and pass the real-device checklist below on the registered
+   test devices.
+3. **Publish** the receiver in the Cast console. An unpublished receiver loads only on the
+   devices registered there (https://developers.google.com/cast/docs/registration), so App
+   Review's devices would see nothing: publish before the Player goes to review.
+4. **App Store Connect:** the App Privacy answers gain what the Google Cast SDK's own privacy
+   manifest declares (Device ID, Product Interaction, Other Diagnostic Data: not linked, not
+   tracking, for Analytics and App Functionality), and the review notes say that Cast needs a
+   Chromecast or a TV with Google Cast on the same Wi-Fi network as the iPhone or iPad, signed
+   in to the review home.
+
+No multicast entitlement is needed: Google's iOS sender (4.8.x) asks only for the two Bonjour
+services (`_googlecast._tcp`, `_<app id>._googlecast._tcp`) and the local network prompt
+(https://developers.google.com/cast/docs/ios_sender), and `Config/Cast.xcconfig` declares both
+services once the ID is set.
+
+**What CI tests.** No runner has a Cast device, so `apps/apple/UITests/PlayerCastUITests.swift`
+drives the Player's Cast screens against a fake Cast context (the cast, the grant, the custom
+data, the mini controller, English and Arabic), and `testTheGoogleCastSDKFindsATVOnTheNetwork`
+runs the **real** Google Cast SDK on the iPhone and the iPad:
+
+- CI's UI-test build names Google's public Default Media Receiver
+  (`MAKTABA_CAST_APP_ID=CC1AD845 MAKTABA_CAST_ENABLED=YES`, `_apple-apps.yml`), and
+  `cast-app-id.py --built` checks the built Info.plist: that receiver, `_googlecast._tcp` and
+  `_CC1AD845._googlecast._tcp`. No other build does; the plain build is checked to have no Cast
+  while `shared/cast/app.json` is empty. The other UI tests start with `-maktaba-cast off`.
+- The test starts the app with `-maktaba-cast real` (Debug builds only) and reads the SDK's own
+  state (`CastSDKState`): set up with the build's receiver, not searching before the local
+  network screen's Continue, then searching with no Bonjour error.
+- It advertises a Cast device with Bonjour from the test runner, under a new id each run, and
+  the SDK must find it. Nothing else shows that the search works: in a build without the two
+  services the SDK says that discovery runs and the picker says no TV was found, while iOS
+  refuses each search (`NSNetServicesErrorCode -72008`). The test fails on such a build.
+
+iOS asks for local network access on a device only, so a denied prompt is covered by the state's
+own check (`-65570`), not by a run. Casting to a real TV is the checklist's.
+
 ## Submission notes
 
 The store's reviewers sign in to the project's review home, review.maktaba.tv (story 58.04).

@@ -65,6 +65,7 @@ export const STRINGS = {
 
     "doc.source": "View the source of this page on GitHub",
     "changelog.title": "Changelog",
+    "changelog.earlier": "Earlier entries, not listed by release",
     "api.title": "API reference",
     "api.loading": "Loading the API reference…",
     "api.lang":
@@ -158,6 +159,7 @@ export const STRINGS = {
 
     "doc.source": "اعرض مصدر هذه الصفحة على GitHub",
     "changelog.title": "سجل التغييرات",
+    "changelog.earlier": "مُدخلات أسبق، غير موزّعة على الإصدارات",
     "api.title": "مرجع الواجهة البرمجية",
     "api.loading": "جارٍ تحميل مرجع الواجهة البرمجية…",
     "api.lang":

@@ -250,8 +250,9 @@ type fakeDB struct {
 	downErr    error
 	undos      []string // the record's state as each undo of the migration that failed part way began
 	undoErr    error
-	befores    []int64  // the slot before the update, as each was decided
-	drops      []string // the record's state as each drop of the invalid leftovers began
+	befores    []int64     // the slot before the update, as each was decided
+	askedAt    []time.Time // the times the slot the database itself recorded was asked for
+	drops      []string    // the record's state as each drop of the invalid leftovers began
 }
 
 func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
@@ -260,8 +261,9 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 	prevD, prevR, prevM, prevA, prevP := dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations
 	prevG := grantWorkersConnect
 	prevFB, prevSV, prevDI, prevMD, prevEB := failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled
-	prevUF := runMigrateUndoFailed
+	prevUF, prevAt := runMigrateUndoFailed, schemaVersionAt
 	t.Cleanup(func() {
+		schemaVersionAt = prevAt
 		dumpBeforeUpdate, restoreDump, migrateUp, dumpAsideBundled, pendingMigrations = prevD, prevR, prevM, prevA, prevP
 		grantWorkersConnect = prevG
 		failedBack, schemaVersionOf, dropInvalidIndexes, runMigrateDownTo, endBlockersBundled = prevFB, prevSV, prevDI, prevMD, prevEB
@@ -296,6 +298,12 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 			return f.before, nil
 		}
 		return f.applied, nil
+	}
+	schemaVersionAt = func(_ context.Context, _ *migrationGate, at time.Time) (int64, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		f.askedAt = append(f.askedAt, at)
+		return f.before, nil
 	}
 	dropInvalidIndexes = func(context.Context, *exec.Cmd, io.Writer) error {
 		rec, _, _ := apppayload.ReadDatabase(cfg.StateDir())
@@ -2048,6 +2056,66 @@ func TestAppBundleStartsOnTheSchemaItsDownScriptsLeft(t *testing.T) {
 		t.Fatalf("%d dumps, %d restores", d, r)
 	}
 	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.State != apppayload.DatabaseMigrated {
+		t.Fatalf("record %+v", rec)
+	}
+}
+
+// A database a rollback kept on a newer schema (v0.2.5's) for v0.2.0: v0.3.0's migrations
+// fail and their Down scripts undo them, back to the kept slot. It is still kept for
+// v0.2.0, which starts on it (its own code refuses a schema ahead that is not: db_ahead).
+func TestAppBundleDownScriptsLeaveAKeptSchemaKept(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{Version: "v0.2.5", State: apppayload.DatabaseMigrated, Release: "v0.2.0",
+		KeptFor: "0.2.0", KeptReason: "watch_timeout"})
+	f := installFakeDB(t, cfg)
+	f.pending, f.known = 2, true
+	f.back, f.backSchema, f.before, f.applied = updater.FailedDown, 234, 234, 235
+	f.migrateErr = errors.New("migrate: ERROR 0236_x.sql: boom")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if !supervisor.Halted(err) || supervisor.DetailOf(err).Code != "db_undone" {
+		t.Fatalf("the failed update = %v", err)
+	}
+	if len(f.downs) != 1 || f.downs[0] != "migrating 234" || len(f.befores) != 1 || f.befores[0] != 234 {
+		t.Fatalf("Down scripts %v, decided with the slot before %v", f.downs, f.befores)
+	}
+	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.KeptFor != "0.2.0" || rec.KeptReason == "" {
+		t.Fatalf("record %+v", rec)
+	}
+	newPayload(t, payload, "v0.2.0")
+	f.migrateErr, f.ahead = nil, true // the database is ahead of v0.2.0's own migrations
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("v0.2.0 on the kept schema: %v", err)
+	}
+}
+
+// An update a release from before schema_before began (its record says migrating, with no
+// slot): the database itself says the slot it was at when the migrations started, and a
+// failure goes back to it, not to the release before's newest.
+func TestAppBundleOlderRecordTakesTheSlotTheDatabaseRecorded(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.3.0", "")
+	if err := os.MkdirAll(filepath.Join(updater.KeptPayloadDir(updatesDirOf(cfg, ""), "v0.2.0"), "migrations"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	began := time.Date(2026, 11, 24, 3, 0, 0, 0, time.UTC)
+	record(t, cfg, apppayload.Database{Version: "v0.3.0", State: apppayload.DatabaseMigrating, From: "v0.2.0",
+		Dump: "/b/pre-v0.2.0-to-v0.3.0.dump", DumpKeptFor: "0.2.0", At: began})
+	f := installFakeDB(t, cfg)
+	f.back, f.backSchema, f.before, f.applied = updater.FailedDown, 234, 234, 235
+	f.migrateErr = errors.New("migrate: ERROR 0236_x.sql: boom")
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	_ = prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport)
+	if len(f.befores) != 1 || f.befores[0] != 234 {
+		t.Fatalf("decided with the slot before %v, want 234", f.befores)
+	}
+	if len(f.askedAt) != 1 {
+		t.Fatalf("asked %v", f.askedAt)
+	}
+	if rec := recorded(t, cfg); rec.KeptFor != "0.2.0" {
 		t.Fatalf("record %+v", rec)
 	}
 }

@@ -63,7 +63,7 @@ contents list marks the section in view with CSS alone (`scroll-target-group`), 
 
 ## The legal pages
 
-`/legal/privacy/`, `/legal/terms/` and `/legal/copyright/` (and `/ar/…`) are written in
+`/legal/privacy/` and `/legal/terms/` (and `/ar/…`) are written in
 `copy/legal/<page>.<lang>.md`, each language on its own, and `scripts/legal.mjs` builds them;
 one function (`renderLegal`) draws the layout, so the design changes it and not the copy. The
 privacy page is built from its sources: its cloud section is `privacy.CurrentPolicy()`, read
@@ -73,11 +73,9 @@ and each language's copy records that section's sha256 (`apps-source:`). A chang
 or to that section without the page's copy fails the build, naming the section. The terms page
 names the licence in `LICENSE`.
 
-The copyright page's notice form (`src/copyright-form.ts`) is shown only when the build has
-both `WEBSITE_NOTICE_ENDPOINT` (Epic 50's `POST https://api.maktaba.tv/v1/moderation/notices`)
-and `WEBSITE_TURNSTILE_SITEKEY`. Neither is set until that endpoint is live, so the page gives the
-designated agent's email and what a notice must contain, and no form. Only that page's CSP
-allows Turnstile and the API.
+The site publishes no other legal page. The address `/legal/copyright/` (and
+`/ar/legal/copyright/`) answers a 301 to the terms page in its language (`src/redirects.json`), and
+every path has the same CSP, which names no other origin.
 
 ## The help pages
 
