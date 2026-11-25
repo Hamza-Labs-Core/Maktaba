@@ -53,8 +53,8 @@ A second look, image by image at full size, found more, each fixed in #1593:
 - **Apple TV's sign-in page:** its three buttons were cut to three letters, and its QR code ran
   off the screen. The backdrop's filled picture sized the stack and moved the panel off centre.
   It is a background now.
-- **Samsung and LG:** subtitles were cut by the screen's bottom edge, and the hints named a
-  keyboard's Enter, Esc and /.
+- **Samsung and LG:** the hints named a keyboard's Enter, Esc and /. (Their subtitle shots looked
+  cut at the bottom edge, but that was the browser's own cue: see the delta review below.)
 - **Android TV and Fire TV:** On now's cards cut an Arabic line.
 - **Android in Arabic:** "Code ABCD-1234" read left to right.
 - **The iPad's status bar** showed an English date in the Arabic set. The panel starts under it.
@@ -72,6 +72,19 @@ The review found two majors, fixed in #1593:
 
 Its minors too: the NOAA emblem is out of the demo library's art, the Apple TV's sign-in keeps
 its focus and has room for its lines, and the changelog claims less. The rest is #1709.
+
+The delta review found one more major, in the pictures and the text:
+
+- **The Samsung and LG subtitle shots were not what the TV draws.** They were taken on `/tv/`
+  outside the launcher, where the browser draws the cue. On a TV the launcher plays the film and
+  its own layer draws the line. Both shots are now taken through the launcher (opened from its
+  file, as packaged: `/tv/` talks to no other), and the changelog and the pull request say the
+  raised subtitle is the big screen's in a browser or on the desktop.
+
+Its minors too: a cue already on screen when subtitles are turned on is laid out again (Chromium
+does not by itself), a cue's lines count its size and wide letters, an English line keeps its full
+stop in the Arabic Android apps, and Roku's test emulator scrolls a right-to-left row to its first
+card.
 
 The apps became universal while this was in review (#1616): the iPad sets moved into the
 Player's and the Remote's own listings, and the iPad Remote's shot job runs the one Remote app.
@@ -115,15 +128,20 @@ Two CI failures on the merged branch came from the fixes themselves:
   from a file there carried another session's text for some seconds. Use the session's own
   scratchpad, and read the file before posting it.
 
+- **Take a TV's shot through the app that draws it.** The same page in a browser is not the app:
+  what the launcher draws over it is missing, and what the browser draws instead is not there.
+- **An emulator's picture is evidence of the emulator.** brs-engine does not scroll a row the
+  focus just came to; read its code before calling it the channel's bug.
+
 ## Open
 - The owner's approval of the corrected set (decision `store-gallery-full-set`).
 - **The Mac's Arabic shots:** the Mac app is not mirrored on main. #1632 mirrors it, and the
   Mac shots are taken again after it merges.
-- **Roku's home:** the focus ring touches the row's title.
+- **LG's code screen** shows the next release's version when it is taken: take it again before an
+  upload.
+- **Roku's home:** the focus ring touches the row's title; the Arabic rows' start is to be
+  checked on a Roku (#1709).
 - **A system's own message** ("no space left on device") is English in the Arabic Remote.
-- **`affected-tests`:** its map may not run the Remote's `ServerWordsTest` when
-  a new stage, cause or step lands in `pipeline/` or `api/`, and that test fails until both
-  Remotes have words for it.
 - **No package lint checks the launcher's version:** neither `lint-ipk.mjs` nor `lint_wgt.py`
   checks that the bundle carries it.
 - **Still in English in Arabic, by design:** the Remote's recovery part ids and the
