@@ -743,6 +743,7 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, log io.Wri
 	var out bytes.Buffer
 	cmd.Stdout = io.MultiWriter(&out, orDiscard(log))
 	cmd.Stderr = cmd.Stdout
+	cmd.WaitDelay = 10 * time.Second // its output pipe, should a child outlive it
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("psql: %w", err)
 	}
@@ -780,6 +781,7 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, log io.Wri
 		}
 		var genErr bytes.Buffer
 		gen.Stderr = &genErr
+		gen.WaitDelay = 10 * time.Second // as psql's
 		if err := gen.Start(); err != nil {
 			kill()
 			_ = cmd.Wait()
@@ -789,6 +791,7 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list string, log io.Wri
 		if _, copyErr := io.Copy(io.MultiWriter(in, &scan), script); copyErr != nil {
 			// pg_restore would wait on the pipe for ever: stopped with psql
 			err := stopped(copyErr)
+			_ = script.Close() // what is left of it is written nowhere
 			_ = gen.Wait()
 			return err
 		}

@@ -26,7 +26,7 @@ func TestCopyScan(t *testing.T) {
 		"a row that looks like a COPY":    {head + block("a", "COPY public.b (id) FROM stdin;\n") + end, 1, true},
 		"a row that looks like an end":    {head + block("a", "1\t\\\\.\n") + end, 1, true},
 		"a very long row":                 {head + block("a", "1\t"+strings.Repeat("x", 3<<20)+"\n") + block("b", "2\ty\n") + end, 2, true},
-		"a function that holds a COPY":    {head + "CREATE FUNCTION public.f() RETURNS text LANGUAGE sql AS $$\nSELECT '\nCOPY public.b (id) FROM stdin;\n'\n$$;\n" + block("a", "1\n") + "GRANT SELECT ON TABLE public.a TO r;\n" + end, 1, true},
+		"a function that holds a COPY":    {head + "CREATE FUNCTION public.f() RETURNS text LANGUAGE sql AS $$\nSELECT '\nCOPY public.b (id) FROM stdin;\n\\.\n'\n$$;\n" + block("a", "1\n") + "GRANT SELECT ON TABLE public.a TO r;\n" + end, 1, true},
 		"no rows at all":                  {head + end, 0, true},
 		"the last table cut":              {head + block("a", "1\tx\n") + cut("b", "2"), 2, false},
 		"the last table cut, then SQL":    {head + cut("b", "2\n") + end, 1, false},
