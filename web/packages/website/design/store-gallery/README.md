@@ -158,7 +158,7 @@ gh workflow run store-gallery.yml --ref main -f run_id=<run>     # in CI, as an 
 
 ### Captures
 
-Every screen the 13 listings need is captured on the demo library, in English and Arabic (91
+Every screen the 11 listings need is captured on the demo library, in English and Arabic (91
 screens, 260 images). Each comes from the app's own shot tests:
 
 | Surface                                    | Source                                                                                                                                                                                                                                                           | Screens                                                                                                      |
