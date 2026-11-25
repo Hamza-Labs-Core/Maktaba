@@ -50,8 +50,11 @@ type Driver struct {
 	Viewers func(ctx context.Context) int
 	// QuietMaxViewers is tv_staging.quiet_max_viewers (nil: 0).
 	QuietMaxViewers func(ctx context.Context) int
-	Log             *slog.Logger
-	Now             func() time.Time
+	// Copying is how many tables the joined machines copy from the home's database now
+	// (nil: machinesCopying of the store's).
+	Copying func(ctx context.Context) int
+	Log     *slog.Logger
+	Now     func() time.Time
 	// Tick is how often the run is looked at (3 s).
 	Tick time.Duration
 	// Getenv reads the watch overrides (tests; nil: os.Getenv).
@@ -881,6 +884,48 @@ func (d *Driver) tvSwapWait(ctx context.Context, run Run, det *RunDetail) bool {
 	return false
 }
 
+// CopyWait is how long the home's restart waits for a joined machine's copy of a table
+// (machinesCopying), from when it first saw one: the restart ends the COPY, and that
+// machine starts that table again. Here, before the bundled Postgres is stopped and while
+// the library serves: the new release's own start has nothing left to wait for.
+const CopyWait = 10 * time.Minute
+
+// WaitMachineCopying is the restart's wait for a machine's copy.
+const WaitMachineCopying = BlockMachineCopying
+
+// copyWait reports whether the restart waits (true: the next tick asks again) for a
+// machine's copy, CopyWait in all for the run whatever begins meanwhile.
+func (d *Driver) copyWait(ctx context.Context, run Run, det *RunDetail) bool {
+	n, now := 0, d.now()
+	if d.Copying != nil {
+		n = d.Copying(ctx)
+	} else {
+		n = machinesCopying(ctx, d.Store.DB)
+	}
+	if n > 0 && det.CopySince == nil {
+		det.CopySince = &now
+		d.log().Info("update restart waits for a machine's copy of the home's database", "event", "update_machine_copying",
+			"run_id", run.ID, "copies", n, "max_wait", CopyWait.String())
+	}
+	wait := n > 0 && now.Sub(*det.CopySince) < CopyWait
+	if wait == (det.Waiting == WaitMachineCopying) {
+		return wait
+	}
+	if wait {
+		det.Waiting = WaitMachineCopying
+	} else {
+		det.Waiting = ""
+	}
+	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
+	if n > 0 && !wait {
+		waited := now.Sub(*det.CopySince)
+		d.log().Warn("update restart goes on: a machine still copies the home's database and starts that table again",
+			"event", "update_copy_wait_over", "run_id", run.ID, "copies", n, "waited", waited.String())
+		d.audit(ctx, run, "copy_wait_over", map[string]any{"copies": n, "waited_sec": int(waited.Seconds())})
+	}
+	return wait
+}
+
 // homeGates waits for the window and the TV (an automatic run restarts the home only
 // inside its window, with nobody watching beyond tv_staging.quiet_max_viewers: the
 // spec's fallback while TV processes are not handed over across a restart), then drains
@@ -1012,6 +1057,9 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 	if d.withdrawn(ctx, run.Version, true) {
 		return nil // the next step ends the run (stopWithdrawn)
 	}
+	if d.copyWait(ctx, run, &det) {
+		return nil // a machine copies a table: the restart would end it
+	}
 	if d.tvSwapWait(ctx, run, &det) {
 		return nil // a TV change switches channels: the restart waits for it, briefly
 	}
@@ -1112,7 +1160,7 @@ func (d *Driver) homeStaged(ctx context.Context, run Run, det RunDetail) error {
 			return nil
 		}
 	}
-	if det.Waiting != "" {
+	if det.Waiting != "" && det.Waiting != WaitMachineCopying && det.Waiting != WaitTVSwapping { // the restart's own waits end themselves
 		det.Waiting = ""
 		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 	}
@@ -1136,7 +1184,7 @@ func (d *Driver) homeStaged(ctx context.Context, run Run, det RunDetail) error {
 	if d.withdrawn(ctx, run.Version, true) {
 		return nil // the next step ends the run and takes the order back (stopWithdrawn)
 	}
-	if d.tvSwapWait(ctx, run, &det) {
+	if d.copyWait(ctx, run, &det) || d.tvSwapWait(ctx, run, &det) {
 		return nil // as for any home (draining)
 	}
 	apply := map[string]any{"run_id": run.ID}

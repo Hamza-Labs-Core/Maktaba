@@ -24,6 +24,7 @@ import { ToastProvider } from "@ds/components/Toast/Toast";
 import en from "../../i18n/en.json";
 import ar from "../../i18n/ar.json";
 import { AdminUpdates, stateTone } from "./Updates";
+import { ApiError } from "../../lib/api";
 
 const target = { version: "1.5.0", tag: "v1.5.0", channel: "stable", verify_state: "verified" };
 
@@ -642,6 +643,39 @@ describe("Admin Updates", () => {
         confirm: true,
       })
     );
+  });
+
+  it.each(["en", "ar"] as const)("says why Update now was refused (%s)", async (locale) => {
+    const cat = (locale === "ar" ? ar : en) as Record<string, string>;
+    routes(overview(), null);
+    const user = userEvent.setup();
+    renderPage(locale);
+    const refuse = async (code: string, detail: string) => {
+      post.mockRejectedValueOnce(
+        new ApiError({ type: "about:blank#x", title: "conflict", status: 409, detail, code })
+      );
+      const now = { name: cat["updates.page.updateNow"] };
+      await user.click(await screen.findByRole("button", now));
+      await user.click(within(screen.getByRole("dialog")).getByRole("button", now));
+    };
+    for (const code of [
+      "run_active",
+      "role_not_running",
+      "supervisor_unreachable",
+      "switchover_open",
+    ]) {
+      await refuse(code, `an update cannot start now: ${code}`);
+      const words = cat["update.blocked"].replace("{reason}", cat[`updates.blocker.${code}`]);
+      expect(await screen.findByText(words)).toBeInTheDocument();
+    }
+    for (const code of ["no_update", "release_withdrawn", "orchestrator_unavailable"]) {
+      await refuse(code, "the server's English");
+      expect(await screen.findByText(cat[`updates.refused.${code}`])).toBeInTheDocument();
+    }
+    expect(screen.queryByText(/an update cannot start now|the server's English/)).toBeNull();
+    // a newer server's code: what it said
+    await refuse("a_new_reason", "said by the server");
+    expect(await screen.findByText(/said by the server/)).toBeInTheDocument();
   });
 
   it("pauses and resumes automatic updates", async () => {

@@ -217,6 +217,7 @@ public enum StatusWords {
 
     /// Why a run waits now (`updates.waiting.*`)
     public static let waiting: [String: String] = [
+        "machine_copying": "The restart waits for a machine to finish copying a table of the home's database (ten minutes at most).",
         "needs_person": "The last try needs you (see its reason): the next window tries again, or Update now.",
         "catalog_stale": "The list of releases could not be read for over 12 hours: nothing installs by itself until a check reads it again (Update now still installs).",
         "outside_window": "Waiting for the quiet window.",

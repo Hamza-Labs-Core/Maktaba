@@ -46,6 +46,7 @@ import (
 
 	_ "github.com/lib/pq"
 
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/releaseverify/releaseverifytest"
 )
 
@@ -1140,8 +1141,8 @@ func (a *ownerSession) updateNow(version string) string {
 		}
 		// v0.3.163's Update now is refused while a machine copies the home's database (its
 		// scheduler's gate, met by an admin too): a person asks again once the copy is done.
-		// This commit's is not (RunNow)
-		if strings.Contains(string(body), "machine_copying") && a.m.selfVersion() == a.m.r.kit.prev && time.Now().Before(deadline) {
+		// No later release's is (RunNow)
+		if strings.Contains(string(body), "machine_copying") && layout.CompareVersions(a.m.selfVersion(), "0.3.163") <= 0 && time.Now().Before(deadline) {
 			if copying.IsZero() {
 				copying = time.Now()
 				a.m.r.logf("update now %s: refused while a machine copies: %s", version, body)

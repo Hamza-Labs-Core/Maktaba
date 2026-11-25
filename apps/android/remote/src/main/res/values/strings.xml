@@ -204,6 +204,7 @@
     <string name="w_updates_code_previous_app_not_restored">The update failed and the app could not be put back in its folder</string>
     <string name="w_updates_waiting_tv_busy">Waiting until nobody watches TV.</string>
     <string name="w_updates_waiting_tv_swapping">The restart waits for a TV change to finish switching channels (two minutes at most).</string>
+    <string name="w_updates_waiting_machine_copying">The restart waits for a machine to finish copying a table of the home\'s database (ten minutes at most).</string>
     <string name="w_updates_waiting_outside_window">Waiting for the quiet window.</string>
     <string name="w_updates_waiting_retry_backoff">The last try failed: the next one in a few minutes.</string>
     <string name="w_updates_waiting_retry_next_window">Tried enough in this window: the next window tries again.</string>
@@ -226,7 +227,7 @@
     <string name="w_updates_blocker_recent_crash">a part of the home\'s server crashed in the last ten minutes</string>
     <string name="w_updates_blocker_supervisor_unreachable">the home\'s supervisor does not answer</string>
     <string name="w_updates_blocker_switchover_open">the home is being switched to another machine</string>
-    <string name="w_updates_blocker_machine_copying">a machine is copying the home\'s database: the update starts once its copy is done</string>
+    <string name="w_updates_blocker_machine_copying">a machine is copying the home\'s database: the update waits for its copy, a day at most. Update now waits ten minutes at most, and then that machine copies the table it was on again</string>
     <string name="w_queue_waiting_paused">Paused</string>
     <string name="w_queue_waiting_paused_all">Everything is paused</string>
     <string name="w_queue_waiting_pool_full">Waiting for a free worker</string>

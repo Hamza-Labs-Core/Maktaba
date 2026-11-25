@@ -416,6 +416,14 @@ import Testing
         #expect(ar.contains("تعذّرت قراءة قائمة الإصدارات"), "\(ar)")
     }
 
+    /// Research item 5: a run whose restart waits for a machine's copy says so in both languages.
+    @Test func aMachineCopyingHasWords() {
+        let en = words(StatusWords.waiting, "updates.waiting.", "machine_copying", Locale(identifier: "en"))
+        let ar = words(StatusWords.waiting, "updates.waiting.", "machine_copying", Locale(identifier: "ar"))
+        #expect(en.contains("ten minutes at most"), "\(en)")
+        #expect(ar.contains("عشر دقائق على الأكثر"), "\(ar)")
+    }
+
     /// Research P10: an update that stopped waiting for a desktop app that never took it says
     /// so in both languages.
     @Test func anAppThatNeverAnswersHasWords() {

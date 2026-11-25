@@ -26,20 +26,18 @@ import (
 // the upgrade is made again (the 16 cluster moved on while it ran), the home serves it on 18
 // with every row, pg_textsearch can be created, and the 16 cluster is still there as it was.
 //
-// The home is set up as the owner's was when it moved to 18 on 2026-11-20: a machine's copy
-// published, and its tables with a primary key at REPLICA IDENTITY FULL, transcript_segments
-// with its generated search_tsv among them. On 18 the second listen's writes to it must go
+// The home has a machine's copy published; on a release from before slot 0237 also its tables
+// with a primary key at REPLICA IDENTITY FULL, transcript_segments with its generated search_tsv
+// among them, as the home that moved to 18 on 2026-11-20. On 18 the second listen's writes to it must go
 // through (slot 0237): PostgreSQL 18 refused them, and every second_listen job failed, until
 // then. And every table with a primary key has it as its identity again (slot 0238), while
 // one without keeps FULL.
 //
-// From the kit's old release (guard/, v0.3.162, slot 0236), not the previous one: v0.3.163 and
-// later have 0237 and 0238, which do not run again, and nothing in the product makes a table
+// A release with 0237 and 0238 does not run them again, and nothing in the product makes a table
 // with a primary key FULL (a machine's publication and a switchover's do it only where there is
-// none), so the state set up here by hand is not one a later home can be in.
+// none): a home on one cannot be in that state, so it is not set up there.
 func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	r := newRehearsal(t)
-	r.onGuardRelease()
 	k := r.kit
 	if k.pg18Home == "" {
 		t.Fatal("MAKTABA_REHEARSAL_PG18_HOME is unset (tools/rehearsal/postgres18.sh)")
@@ -47,7 +45,7 @@ func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	home, _ := r.homeOnPrev(profile("small"))
 	db := home.superDB("maktaba")
 	before := seedCounts(t, db)
-	pub := publishedAsTheHomeWas(t, db)
+	pub := publishedAsTheHomeWas(t, db, newestSlot(filepath.Join(k.dir, k.prevVariant, "migrations")) < 237)
 	_ = db.Close()
 	old := filepath.Join(home.root, "postgres")
 	if got := pgVersionOf(t, old); got != "16" {
@@ -147,13 +145,16 @@ func serverMajor(t *testing.T, db interface {
 
 // publishedAsTheHomeWas makes the seeded home's database what the owner's was when it moved
 // to PostgreSQL 18: a machine's copy published (cluster_copy_publication, slot 0147, which
-// makes the tables without a primary key FULL) and every table with a primary key at REPLICA
-// IDENTITY FULL, transcript_segments among them. The publication's name.
-func publishedAsTheHomeWas(t *testing.T, db *sql.DB) string {
+// makes the tables without a primary key FULL) and, with keyed, every table with a primary
+// key at REPLICA IDENTITY FULL, transcript_segments among them. The publication's name.
+func publishedAsTheHomeWas(t *testing.T, db *sql.DB, keyed bool) string {
 	t.Helper()
 	var pub string
 	if err := db.QueryRow(`SELECT cluster_copy_publication('00000000-0000-0000-0000-0000000c0b1e'::uuid)`).Scan(&pub); err != nil {
 		t.Fatalf("a machine's publication: %v", err)
+	}
+	if !keyed {
+		return pub
 	}
 	if _, err := db.Exec(`DO $$ DECLARE t regclass; BEGIN
 	    FOR t IN SELECT c.oid::regclass FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace

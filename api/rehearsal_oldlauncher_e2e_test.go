@@ -34,21 +34,35 @@ func (r *rehearsal) onGuardRelease() {
 	if r.kit.guard == "" {
 		r.t.Fatal("the kit has no guard/ (tools/rehearsal/build.sh --guard-src, --guard-version)")
 	}
+	if layout.CompareVersions(r.kit.cur, r.kit.guard) <= 0 { // a run by hand from an older prev_tag
+		r.t.Skipf("the kit's %s is no update of %s", r.kit.cur, r.kit.guard)
+	}
 	k := *r.kit
 	k.prev, k.prevVariant = k.guard, "guard"
 	r.kit = &k
 }
 
-// TestUpdateRehearsal21OldLauncher: the home on the old release updates to this commit,
-// whose server is killed each time it starts once its migrations ran (a crash loop). The old
-// release's launcher runs it all along, gives up on it and runs the old release's kept server
-// again. Nothing is put back by itself: the record is this commit's as it wrote it, the old
-// release stops on it as older than the database, and its own `restore` puts the backup back
-// when a person asks.
+// TestUpdateRehearsal21OldLauncher: a home on an earlier release updates to this commit,
+// whose server is killed each time it starts once its migrations ran (a crash loop). The
+// earlier release's launcher runs it all along, gives up on it and runs the earlier release's
+// kept server again. Nothing is put back by itself, and its own `restore` puts the backup
+// back when a person asks. From two releases:
+//   - the old one (the kit's guard/), whose launcher put a backup back by itself: this
+//     commit's record is as it wrote it, and the old server stops on it as older than the
+//     database (db_refused_older);
+//   - the previous one, when it is newer than that: the same, or held (db_held) when its
+//     launcher holds an update it gave up on.
 func TestUpdateRehearsal21OldLauncher(t *testing.T) {
-	r := newRehearsal(t)
-	r.onGuardRelease()
-	k := r.kit
+	k := loadKit(t)
+	t.Run("old", func(t *testing.T) { r := newRehearsal(t); r.onGuardRelease(); oldLauncher(r, false) })
+	if layout.CompareVersions(k.prev, k.guard) > 0 {
+		t.Run("previous", func(t *testing.T) { oldLauncher(newRehearsal(t), true) })
+	}
+}
+
+// oldLauncher is it on the rehearsal's previous release; mayHold: whose launcher may hold it.
+func oldLauncher(r *rehearsal, mayHold bool) {
+	t, k := r.t, r.kit
 	home, _ := r.homeOnPrev(profile("small"))
 	db := home.superDB("maktaba")
 	before := seedCounts(t, db)
@@ -70,12 +84,14 @@ func TestUpdateRehearsal21OldLauncher(t *testing.T) {
 		t.Fatalf("the record does not withhold its backup: %v", all)
 	}
 	// the crash loop: its server ends whenever it runs, until the guard gives up on it
-	waitFor(t, "the old release's launcher giving up on it", 10*time.Minute, func() bool {
+	waitFor(t, "the earlier release's launcher giving up on it", 10*time.Minute, func() bool {
 		_ = exec.Command("pkill", "-9", "-f", filepath.Join(home.payload, "bin", "maktaba-server")+" serve").Run()
 		return strings.TrimSpace(home.readFile(filepath.Join("updates", "payload-override"))) != ""
 	})
-	waitFor(t, "the old release stopped on the database", 5*time.Minute, func() bool {
-		return strings.Contains(home.log.String(), "is older than the one whose changes the library database holds")
+	const refused, stopped = "is older than the one whose changes the library database holds", "it could not change the library database"
+	waitFor(t, "the earlier release stopped on the database", 5*time.Minute, func() bool {
+		log := home.log.String()
+		return strings.Contains(log, refused) || mayHold && strings.Contains(log, stopped)
 	})
 	time.Sleep(30 * time.Second) // what it would put back by itself, it would by now
 	states.end()
@@ -89,9 +105,12 @@ func TestUpdateRehearsal21OldLauncher(t *testing.T) {
 		}
 	}
 	now, allNow := home.record()
-	if layoutVersion(now.Version) != layoutVersion(k.cur) || now.State != "migrated" || allNow["dump_unconfirmed"] != backup {
+	asWritten := now.State == "migrated" && allNow["dump_unconfirmed"] == backup
+	held := mayHold && now.State == "held" && layoutVersion(now.Failed) == layoutVersion(k.cur) && now.Dump == backup
+	if layoutVersion(now.Version) != layoutVersion(k.cur) || !asWritten && !held {
 		t.Errorf("the record changed: %v", allNow)
 	}
+	r.logf("the record after the launcher gave up: %s", now.State)
 	if strings.Contains(home.log.String(), "restoring the whole dump") {
 		t.Error("the whole dump was put back by itself")
 	}
@@ -99,7 +118,7 @@ func TestUpdateRehearsal21OldLauncher(t *testing.T) {
 		t.Errorf("the schema is at %d, want this commit's %d", n, k.rev+1)
 	}
 	r.countsUnchanged(before, seedCounts(t, db))
-	// a person asks: the old release's own command puts it back
+	// a person asks: the earlier release's own command puts it back
 	home.restoreByHand(filepath.Base(backup))
 	home.waitServing(k.prev, 10*time.Minute)
 	db = home.superDB("maktaba")
