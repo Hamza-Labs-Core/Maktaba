@@ -9019,6 +9019,23 @@
         }
       }
     },
+    "updates.waiting.catalog_stale" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The list of releases could not be read for over 12 hours: nothing installs by itself until a check reads it again (Update now still installs)."
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّرت قراءة قائمة الإصدارات منذ أكثر من 12 ساعة: لا يُثبَّت شيء تلقائيًا حتى يقرأها تحقق جديد (و«حدّث الآن» يثبّت مع ذلك)."
+          }
+        }
+      }
+    },
     "updates.waiting.needs_person" : {
       "extractionState" : "manual",
       "localizations" : {

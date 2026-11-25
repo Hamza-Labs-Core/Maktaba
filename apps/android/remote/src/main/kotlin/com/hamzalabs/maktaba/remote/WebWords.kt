@@ -222,6 +222,7 @@ internal object WebWords {
         "retry_backoff" to R.string.w_updates_waiting_retry_backoff,
         "retry_next_window" to R.string.w_updates_waiting_retry_next_window,
         "needs_person" to R.string.w_updates_waiting_needs_person,
+        "catalog_stale" to R.string.w_updates_waiting_catalog_stale,
     )
 
     /** `updates.plan.waiting.*` */

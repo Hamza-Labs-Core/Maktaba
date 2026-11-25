@@ -218,6 +218,7 @@ public enum StatusWords {
     /// Why a run waits now (`updates.waiting.*`)
     public static let waiting: [String: String] = [
         "needs_person": "The last try needs you (see its reason): the next window tries again, or Update now.",
+        "catalog_stale": "The list of releases could not be read for over 12 hours: nothing installs by itself until a check reads it again (Update now still installs).",
         "outside_window": "Waiting for the quiet window.",
         "retry_backoff": "The last try failed: the next one in a few minutes.",
         "retry_next_window": "Tried enough in this window: the next window tries again.",

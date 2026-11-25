@@ -393,6 +393,15 @@ import Testing
         #expect(shortDuration(secs) == want)
     }
 
+    /// Research B3: an automatic update that waits for a fresh read of the list of releases
+    /// says why in both languages.
+    @Test func aStaleListOfReleasesHasWords() {
+        let en = words(StatusWords.waiting, "updates.waiting.", "catalog_stale", Locale(identifier: "en"))
+        let ar = words(StatusWords.waiting, "updates.waiting.", "catalog_stale", Locale(identifier: "ar"))
+        #expect(en.contains("could not be read for over 12 hours"), "\(en)")
+        #expect(ar.contains("تعذّرت قراءة قائمة الإصدارات"), "\(ar)")
+    }
+
     /// Research P10: an update that stopped waiting for a desktop app that never took it says
     /// so in both languages.
     @Test func anAppThatNeverAnswersHasWords() {

@@ -322,6 +322,14 @@ class SayTest {
         assertEquals("solar flare", ar.trigger("solar_flare"))
     }
 
+    // research B3: an automatic update that waits for a fresh read of the list of releases
+    @Test
+    fun aStaleListOfReleasesIsSaid() {
+        val id = WebWords.updateWaiting.getValue("catalog_stale")
+        assertTrue(XmlLookup.english.text(id).contains("could not be read for over 12 hours"))
+        assertTrue(XmlLookup.arabic.text(id).contains("تعذّرت قراءة قائمة الإصدارات"))
+    }
+
     // research P10: an update that stopped waiting for a desktop app that never took it
     @Test
     fun anAppThatNeverAnswersIsSaid() {

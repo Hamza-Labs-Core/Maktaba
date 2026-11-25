@@ -203,6 +203,7 @@
     <string name="w_updates_waiting_retry_backoff">فشلت المحاولة الأخيرة: المحاولة التالية بعد دقائق.</string>
     <string name="w_updates_waiting_retry_next_window">جُرّب بما يكفي في هذه النافذة: النافذة التالية تحاول مجدداً.</string>
     <string name="w_updates_waiting_needs_person">المحاولة الأخيرة تحتاجك (انظر سببها): النافذة التالية تحاول مجدداً، أو «حدّث الآن».</string>
+    <string name="w_updates_waiting_catalog_stale">تعذّرت قراءة قائمة الإصدارات منذ أكثر من 12 ساعة: لا يُثبَّت شيء تلقائيًا حتى يقرأها تحقق جديد (و«حدّث الآن» يثبّت مع ذلك).</string>
     <string name="w_updates_plan_waiting_auto_install_off">الإصدار %1$s متاح؛ التثبيت التلقائي متوقف.</string>
     <string name="w_updates_plan_waiting_automatic_installs_not_built">الإصدار %1$s متاح.</string>
     <string name="w_updates_plan_waiting_deferred">الإصدار %1$s مؤجَّل.</string>

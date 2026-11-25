@@ -208,6 +208,7 @@
     <string name="w_updates_waiting_retry_backoff">The last try failed: the next one in a few minutes.</string>
     <string name="w_updates_waiting_retry_next_window">Tried enough in this window: the next window tries again.</string>
     <string name="w_updates_waiting_needs_person">The last try needs you (see its reason): the next window tries again, or Update now.</string>
+    <string name="w_updates_waiting_catalog_stale">The list of releases could not be read for over 12 hours: nothing installs by itself until a check reads it again (Update now still installs).</string>
     <string name="w_updates_plan_waiting_auto_install_off">Version %1$s is available; automatic install is off.</string>
     <string name="w_updates_plan_waiting_automatic_installs_not_built">Version %1$s is available.</string>
     <string name="w_updates_plan_waiting_deferred">Version %1$s is deferred.</string>
