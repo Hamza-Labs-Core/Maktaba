@@ -156,9 +156,14 @@ is_placeholder() {
 # The settings a deploy hands in (see the header): each one set in this script's environment
 # replaces its line in .env. CF_API_TOKEN is a secret: written, never echoed.
 for k in RELAY_DOMAIN API_DOMAIN APP_DOMAIN ACME_EMAIL RELAY_TLS RELAY_PLANS_ENFORCE \
-	MAKTABA_CLOUD_TAG MAKTABA_CADDY_TAG MAKTABA_CLOUD_IMAGE MAKTABA_CADDY_IMAGE CF_API_TOKEN \
-	MAIL_ALLOW MAIL_SUBJECT_PREFIX MAIL_DAILY_LIMIT MAIL_MONTHLY_LIMIT; do
+	MAKTABA_CLOUD_TAG MAKTABA_CADDY_TAG MAKTABA_CLOUD_IMAGE MAKTABA_CADDY_IMAGE CF_API_TOKEN; do
 	if [ -n "${!k:-}" ]; then
+		set_env "$k" "${!k}"
+	fi
+done
+# (a mail setting handed in empty is none: a line taken out of the target's file does not stay)
+for k in MAIL_ALLOW MAIL_SUBJECT_PREFIX MAIL_DAILY_LIMIT MAIL_MONTHLY_LIMIT; do
+	if [ -n "${!k+x}" ]; then
 		set_env "$k" "${!k}"
 	fi
 done
@@ -234,15 +239,25 @@ fi
 
 # --- mail: begin (tools/ci/tests/test_cloud_deploy.py runs this block)
 # The mail provider's key (docs/cloud-mail.md), never printed: the api reads the file at each
-# send. The node sends mail only with a key and a stated MAIL_ALLOW ("everyone", or the
-# addresses and @domains it may write to); else its driver stays log, and this says so.
+# send. The node sends mail only with a key, a stated MAIL_ALLOW ("everyone", or the addresses
+# and @domains it may write to) and a release that can (asked of its image: an older one refuses
+# to start on a driver it does not know); else its driver stays log, and this says so.
 RESEND_KEY="$DEPLOY_DIR/secrets/resend.key"
 if [ -n "${RESEND_API_KEY:-}" ]; then
+	[[ "$RESEND_API_KEY" == re_* ]] || die "RESEND_API_KEY is not a Resend key (it begins with re_)"
 	( umask 077; printf '%s' "$RESEND_API_KEY" > "$RESEND_KEY.new" )
 	mv "$RESEND_KEY.new" "$RESEND_KEY"
 elif [ -n "${RESEND_API_KEY+x}" ]; then
 	rm -f "$RESEND_KEY"
 fi
+# release_sends: the release's image says it has the driver (one from before the command serves,
+# without a role: it exits)
+release_sends() {
+	local image tag out
+	image="$(get_env MAKTABA_CLOUD_IMAGE)"; tag="$(get_env MAKTABA_CLOUD_TAG)"
+	out="$(timeout 60 docker run --rm --network none "${image:-ghcr.io/hamza-labs-core/maktaba-cloud}:${tag:-latest}" mail drivers 2>/dev/null </dev/null)" || return 1
+	[[ $'\n'"$out"$'\n' == *$'\nresend\n'* ]]
+}
 MAIL_DRIVER=log
 MAIL_ALLOW_TOML=""
 mail_to=everyone
@@ -250,7 +265,8 @@ mail_allow="$(get_env MAIL_ALLOW)"
 mail_prefix="$(get_env MAIL_SUBJECT_PREFIX)"
 mail_day="$(get_env MAIL_DAILY_LIMIT)"; mail_day="${mail_day:-80}"
 mail_month="$(get_env MAIL_MONTHLY_LIMIT)"; mail_month="${mail_month:-2700}"
-[[ "$mail_allow" =~ ^[A-Za-z0-9@._+,-]*$ ]] || die "MAIL_ALLOW is everyone, or addresses and @domains with commas"
+mail_entry='[A-Za-z0-9._+-]*@[A-Za-z0-9-]+([.][A-Za-z0-9-]+)+'
+[ -z "$mail_allow" ] || [[ "$mail_allow" =~ ^(everyone|$mail_entry(,$mail_entry)*)$ ]] || die "MAIL_ALLOW is everyone, or addresses and @domains with commas"
 [[ "$mail_prefix" =~ ^[][A-Za-z0-9\ ._-]*$ ]] || die "MAIL_SUBJECT_PREFIX holds a character it may not"
 for n in "$mail_day" "$mail_month"; do
 	[[ "$n" =~ ^[1-9][0-9]*$ ]] || die "MAIL_DAILY_LIMIT and MAIL_MONTHLY_LIMIT are numbers above 0"
@@ -263,6 +279,8 @@ if [ ! -s "$RESEND_KEY" ]; then
 	warn "mail: no RESEND_API_KEY for this node: the mail driver is log (mails go to the api's log, nothing is delivered)"
 elif [ -z "$mail_allow" ]; then
 	warn "mail: MAIL_ALLOW is not set: the mail driver is log (nothing is delivered)"
+elif ! release_sends; then
+	warn "mail: this release has no resend driver: the mail driver is log (nothing is delivered)"
 else
 	MAIL_DRIVER=resend
 	log "mail: the driver is resend (recipients: $mail_to; at most $mail_day a day, $mail_month in 30 days)"

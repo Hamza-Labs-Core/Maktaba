@@ -104,6 +104,26 @@ func TestPolicyAndProcessingRecords(t *testing.T) {
 	if !strings.Contains(strings.Join(mail.Recipients, " "), "Resend") || !strings.Contains(strings.Join(mail.Categories, " "), "Email address") {
 		t.Errorf("account mail: %+v", mail)
 	}
+	// where it is stored (the sending region is not where) and for how long, in both records
+	for what, s := range map[string]string{"record": strings.Join(mail.Recipients, " ") + mail.Retention, "policy": strings.Join(p.Processors, " ")} {
+		for _, must := range []string{"Resend", "stored in the United States", "30 days", "suppression list"} {
+			if !strings.Contains(s, must) {
+				t.Errorf("the %s does not say %q: %s", what, must, s)
+			}
+		}
+		if strings.Contains(s, "EU region") {
+			t.Errorf("the %s: %s", what, s)
+		}
+	}
+	// what an account holds is said, and "no IP addresses" of the analytics only
+	if !strings.Contains(strings.Join(p.AccountData, " "), "Email address") || !strings.Contains(strings.Join(p.AccountData, " "), "35 days") {
+		t.Errorf("account data: %v", p.AccountData)
+	}
+	for _, n := range p.NotCollected {
+		if strings.HasPrefix(n, "IP addresses") && n != "IP addresses in analytics" {
+			t.Errorf("not collected: %q (accounts' sessions hold one)", n)
+		}
+	}
 }
 
 func TestPolicyHandler(t *testing.T) {

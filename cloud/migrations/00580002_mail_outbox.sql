@@ -8,12 +8,13 @@
 --            link, are decided when it is worked on, never while the person waits for an answer
 --   ready    a mail, written, waiting for its turn
 --   sending  being handed to the provider, until lease_until
---   sent | failed | expired | suppressed (not on this deployment's list) | limited (too many
---            to one address) | superseded (a newer one of its kind took its place)
+--   sent | logged (the log driver: not delivered) | failed | expired | suppressed (this
+--            deployment does not mail the recipient) | superseded (a newer one of its kind took
+--            its place, or its account no longer wants it)
 CREATE TABLE IF NOT EXISTS mail_outbox (
     id          UUID        PRIMARY KEY,
     kind        TEXT        NOT NULL,
-    -- signup (an address nobody has proved is theirs), account or notice
+    -- signup (an address nobody has proved is theirs), repeat, account or notice (outbox.go)
     class       TEXT        NOT NULL,
     to_hash     TEXT        NOT NULL,
     lang        TEXT        NOT NULL DEFAULT '',
@@ -25,6 +26,9 @@ CREATE TABLE IF NOT EXISTS mail_outbox (
     lease_until TIMESTAMPTZ,
     expires_at  TIMESTAMPTZ NOT NULL,
     finished_at TIMESTAMPTZ,
+    -- the order the mails were written in (a request takes a new number when its mail is): of one
+    -- address and kind, the highest has the one good link
+    written     BIGSERIAL   NOT NULL,
     -- the last refusal, as the provider's status and short error name
     last_error  TEXT        NOT NULL DEFAULT ''
 );

@@ -335,14 +335,21 @@ def target_env(name: str) -> dict[str, str]:
     return dict(line.split("=", 1) for line in (NODE / f"targets/{name}.env").read_text().splitlines() if re.match(r"[A-Z_]+=", line))
 
 
-def mail_block(tmp: Path, env: dict[str, str], dotenv: str = "") -> tuple[int, str, dict[str, Any]]:
-    """setup.sh's mail block, then its cloud.toml: (exit, what it said, [mail])."""
+def mail_block(tmp: Path, env: dict[str, str], dotenv: str = "", drivers: str = "log\\nresend") -> tuple[int, str, dict[str, Any]]:
+    """setup.sh's mail block, then its cloud.toml: (exit, what it said, [mail]). The release's image
+    says drivers; "" is one from before the command (it exits 2)."""
     import tomllib
 
     text = (NODE / "setup.sh").read_text()
     block = text[text.index("# --- mail: begin") : text.index("# --- mail: end")]
     helpers = text[text.index("# get_env KEY") : text.index("# is_placeholder VALUE")]
-    loop = re.search(r"^for k in RELAY_DOMAIN .*?^done$", text, re.S | re.M)
+    loop = re.search(r"^for k in RELAY_DOMAIN .*?^done$.*?^for k in MAIL_ALLOW .*?^done$", text, re.S | re.M)
+    (tmp / "bin").mkdir(exist_ok=True)
+    answer = f'printf "%b\\n" "{drivers}"' if drivers else "echo '--role required' >&2; exit 2"
+    (tmp / "bin/docker").write_text(f'#!/bin/sh\necho "$*" >> {tmp}/docker.said\n{answer}\n')
+    (tmp / "bin/timeout").write_text('#!/bin/sh\nshift\nexec "$@"\n')
+    for f in ("docker", "timeout"):
+        (tmp / "bin" / f).chmod(0o755)
     render = re.search(r"^sed -e .*?cloud\.toml\.new\"$", text, re.S | re.M)
     assert loop and render
     (tmp / "secrets").mkdir(exist_ok=True)
@@ -353,7 +360,7 @@ def mail_block(tmp: Path, env: dict[str, str], dotenv: str = "") -> tuple[int, s
         "set -euo pipefail", f"DEPLOY_DIR={tmp}", 'ENV_FILE="$DEPLOY_DIR/.env"',
         'log() { echo "$*"; }', 'warn() { echo "!! $*" >&2; }', 'die() { echo "xx $*" >&2; exit 1; }',
         helpers, loop[0], block, 'RELAY_PLANS_ENFORCE_V=false', render[0], 'mv "$DEPLOY_DIR/cloud.toml.new" "$DEPLOY_DIR/cloud.toml"'])
-    p = subprocess.run(["bash", "-c", script], env={"PATH": os.environ["PATH"], **env}, capture_output=True, text=True)
+    p = subprocess.run(["bash", "-c", script], env={"PATH": f"{tmp}/bin:{os.environ['PATH']}", **env}, capture_output=True, text=True)
     said = p.stdout + p.stderr
     toml = tomllib.loads((tmp / "cloud.toml").read_text())["mail"] if p.returncode == 0 else {}
     return p.returncode, said, toml
@@ -383,6 +390,27 @@ def test_a_node_with_the_key_sends_mail_to_whom_its_target_says(tmp_path: Path) 
         assert code == 0 and toml["driver"] == "log" and not key.exists() and "no RESEND_API_KEY" in said
 
 
+def test_the_driver_is_for_a_release_that_knows_it(tmp_path: Path) -> None:
+    given = {"RESEND_API_KEY": KEY, "MAIL_ALLOW": "everyone", "MAKTABA_CLOUD_TAG": "v9.9.9@sha256:abc"}
+    for drivers in ("", "log", "log\\nresender"):
+        code, said, toml = mail_block(tmp_path, given, drivers=drivers)
+        assert code == 0 and toml["driver"] == "log" and "no resend driver" in said, drivers
+    # the key is there for the release that does
+    code, said, toml = mail_block(tmp_path, {})
+    assert code == 0 and toml["driver"] == "resend"
+    asked = (tmp_path / "docker.said").read_text().splitlines()[-1]
+    assert asked == "run --rm --network none ghcr.io/hamza-labs-core/maktaba-cloud:v9.9.9@sha256:abc mail drivers"
+
+
+def test_a_mail_setting_taken_out_of_the_target_does_not_stay(tmp_path: Path) -> None:
+    given = {"RESEND_API_KEY": KEY, "MAIL_ALLOW": "@maktaba.tv", "MAIL_SUBJECT_PREFIX": "[QA]", "MAIL_DAILY_LIMIT": "10", "MAIL_MONTHLY_LIMIT": "200"}
+    assert mail_block(tmp_path, given)[2]["subject_prefix"] == "[QA]"
+    code, _, toml = mail_block(tmp_path, {"MAIL_ALLOW": "@maktaba.tv", "MAIL_SUBJECT_PREFIX": "", "MAIL_DAILY_LIMIT": "", "MAIL_MONTHLY_LIMIT": ""})
+    assert code == 0 and toml["subject_prefix"] == "" and toml["daily_limit"] == 80 and toml["driver"] == "resend"
+    code, said, toml = mail_block(tmp_path, {"MAIL_ALLOW": ""})
+    assert code == 0 and toml["driver"] == "log" and "MAIL_ALLOW is not set" in said
+
+
 def test_a_node_without_the_key_or_a_list_keeps_the_log_and_says_so(tmp_path: Path) -> None:
     code, said, toml = mail_block(tmp_path, {"MAIL_ALLOW": "everyone"})
     assert code == 0 and toml["driver"] == "log" and "driver is log" in said
@@ -392,11 +420,12 @@ def test_a_node_without_the_key_or_a_list_keeps_the_log_and_says_so(tmp_path: Pa
     assert code == 0 and toml["driver"] == "log" and "MAIL_ALLOW is not set" in said
 
 
-@pytest.mark.parametrize("bad", [{"MAIL_ALLOW": 'a@b.test"] #'}, {"MAIL_ALLOW": "a|b"}, {"MAIL_SUBJECT_PREFIX": "x|y"},
+@pytest.mark.parametrize("bad", [{"MAIL_ALLOW": 'a@b.test"] #'}, {"MAIL_ALLOW": "a|b"}, {"MAIL_ALLOW": ","}, {"MAIL_ALLOW": "@maktaba.tv,"}, {"MAIL_ALLOW": "@maktaba.tv,everyone"},
+                                 {"MAIL_ALLOW": "@"}, {"MAIL_ALLOW": "*"}, {"RESEND_API_KEY": "sk_live_1"}, {"MAIL_SUBJECT_PREFIX": "x|y"},
                                  {"MAIL_SUBJECT_PREFIX": "a&b"}, {"MAIL_DAILY_LIMIT": "0"}, {"MAIL_MONTHLY_LIMIT": "lots"}])
 def test_a_setting_that_is_none_is_refused(tmp_path: Path, bad: dict[str, str]) -> None:
     code, said, _ = mail_block(tmp_path, {"RESEND_API_KEY": KEY, "MAIL_ALLOW": "everyone", **bad})
-    assert code != 0 and "MAIL_" in said and KEY not in said
+    assert code != 0 and re.search("MAIL_|RESEND_API_KEY is not", said) and KEY not in said and "sk_live" not in said
 
 
 def test_qa_mails_no_stranger_and_both_targets_fit_the_plan() -> None:
@@ -406,8 +435,8 @@ def test_qa_mails_no_stranger_and_both_targets_fit_the_plan() -> None:
         assert e.endswith(("@maktaba.tv", "@resend.dev")) and e != "@resend.dev", e
     assert prod["MAIL_ALLOW"] == "everyone"
     # one provider account: 100 mails a day, 3,000 a month (docs/cloud-mail.md)
-    assert int(qa["MAIL_DAILY_LIMIT"]) + int(prod["MAIL_DAILY_LIMIT"]) <= 100
-    assert int(qa["MAIL_MONTHLY_LIMIT"]) + int(prod["MAIL_MONTHLY_LIMIT"]) <= 3000
+    assert int(qa["MAIL_DAILY_LIMIT"]) + int(prod["MAIL_DAILY_LIMIT"]) <= 95, "room for the dashboard's own"
+    assert int(qa["MAIL_MONTHLY_LIMIT"]) + int(prod["MAIL_MONTHLY_LIMIT"]) <= 2900
 
 
 def test_the_mail_key_is_the_environments_and_goes_on_stdin_only() -> None:
@@ -445,7 +474,8 @@ def test_the_remote_setup_hands_the_key_over_whole(tmp_path: Path) -> None:
             assert p.returncode == 0, p.stderr
             said = p.stdout.splitlines()[-1]
             assert said.endswith(f"{key}|unset|{t['MAIL_ALLOW']}|{t.get('MAIL_SUBJECT_PREFIX', '')}|{t['MAIL_DAILY_LIMIT']}|"), said
-            assert ("::notice::" in p.stdout) == (key == "")
+            level = "::warning::" if target == "prod" else "::notice::"
+            assert (f"{level}the {target} environment has no RESEND_API_KEY" in p.stdout) == (key == "")
 
 
 def test_e2e_refuses_a_qa_that_could_mail_a_stranger(e2e: Any) -> None:

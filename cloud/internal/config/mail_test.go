@@ -80,9 +80,9 @@ func TestMailResend(t *testing.T) {
 		t.Fatalf("%q", k)
 	}
 	// an empty, missing or malformed one
-	for _, bad := range []string{keyFile(t, " \n"), keyFile(t, "re_a b"), keyFile(t, "re_a\nX: y"), "/nonexistent/resend.key"} {
+	for _, bad := range []string{keyFile(t, " \n"), keyFile(t, "re_a b"), keyFile(t, "sk_live_1"), keyFile(t, "re_a\nX: y"), "/nonexistent/resend.key"} {
 		c.Mail.APIKeyPath = bad
-		if err := Validate(c, RoleAPI); err == nil || strings.Contains(err.Error(), "re_a") {
+		if err := Validate(c, RoleAPI); err == nil || strings.Contains(err.Error(), "re_a") || err != nil && strings.Contains(err.Error(), "sk_live") {
 			t.Errorf("%s: %v", bad, err)
 		}
 	}

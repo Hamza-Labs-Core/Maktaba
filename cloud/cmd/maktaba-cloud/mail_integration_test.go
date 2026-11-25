@@ -139,6 +139,56 @@ func TestReadyzSaysHowMailGoes(t *testing.T) {
 	}
 }
 
+// A deployment that really sends: one network's sign-ups, confirmations and resets, across all
+// the addresses it names, are ten at once and forty a day, and refused the same whether or not
+// an address has an account. Another network is not touched.
+func TestOneNetworkIsOneRequester(t *testing.T) {
+	key := filepath.Join(t.TempDir(), "resend.key")
+	if err := os.WriteFile(key, []byte("re_secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e := newEnvCfg(t, nil, func(c *config.Config) {
+		c.Mail = config.MailConfig{Driver: "resend", From: "no-reply@example.test", APIKeyPath: key, DailyLimit: 90, MonthlyLimit: 2700}
+	})
+	ask := func(ip string, i int) int {
+		c := e.client()
+		c.ip = ip
+		path := []string{"/v1/auth/register", "/v1/auth/password/forgot", "/v1/auth/verify-email/resend"}[i%3]
+		return c.do("POST", path, map[string]string{"email": fmt.Sprintf("x%d-%s@example.test", i, strings.NewReplacer(":", "-", "[", "", "]", "").Replace(ip)), "password": goodPassword}).code
+	}
+	for name, at := range map[string]func(i int) string{
+		"IPv4": func(i int) string { return fmt.Sprintf("203.0.113.%d", 1+i) },
+		"IPv6": func(i int) string { return fmt.Sprintf("[2001:db8:0:12%02x::%x]", i, 1+i) },
+	} {
+		for i := range 12 {
+			code := ask(at(i), i)
+			if want := map[bool]int{true: 202, false: 429}[i < 10]; code != want {
+				t.Fatalf("%s: request %d answers %d, want %d", name, i+1, code, want)
+			}
+		}
+	}
+	if code := ask("198.51.100.7", 0); code != 202 {
+		t.Fatalf("another network: %d", code)
+	}
+	// the hours pass, the day does not: forty
+	ok := 10
+	for h := range 10 {
+		e.exec(`UPDATE cloud_rate_buckets SET updated_at = updated_at - INTERVAL '1 hour' WHERE key LIKE 'mailnet:%'`)
+		for i := range 10 {
+			if ask(fmt.Sprintf("203.0.113.%d", 20+10*h+i), i) == 202 {
+				ok++
+			}
+		}
+	}
+	if ok < 38 || ok > 41 {
+		t.Fatalf("%d requests of one network in a day, want about 40", ok)
+	}
+	// the operator's status and the sign-in are no part of it
+	if code := e.client().do("GET", "/readyz", nil).code; code != 200 {
+		t.Fatal(code)
+	}
+}
+
 // The operator's commands: a status without a key or an address, and a test mail through the
 // running api role.
 func TestMailCommands(t *testing.T) {
@@ -171,7 +221,7 @@ func TestMailCommands(t *testing.T) {
 			Sent   int            `json:"sent_24h"`
 		} `json:"mails"`
 	}
-	if err := json.Unmarshal(out.Bytes(), &st); err != nil || st.Driver != "log" || st.Delivers || st.Mails.States["sent"] != 2 || st.Mails.Sent != 2 {
+	if err := json.Unmarshal(out.Bytes(), &st); err != nil || st.Driver != "log" || st.Delivers || st.Mails.States["logged"] != 2 || st.Mails.Sent != 0 {
 		t.Fatalf("%v: %s", err, out.String())
 	}
 	if strings.Contains(out.String(), "@") {

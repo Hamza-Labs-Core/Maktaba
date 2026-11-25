@@ -289,6 +289,9 @@ func (m MailConfig) ResendKey() (string, error) {
 	if key == "" {
 		return "", fmt.Errorf("%w: the Resend API key (MAKTABA_CLOUD_RESEND_API_KEY, or the file at mail.resend_api_key_path)", ErrMissing)
 	}
+	if !strings.HasPrefix(key, "re_") {
+		return "", errors.New("mail: the Resend API key is not one (it begins with re_)")
+	}
 	// it goes in a header
 	if strings.ContainsFunc(key, func(r rune) bool { return r <= ' ' || r > '~' }) {
 		return "", errors.New("mail: the Resend API key holds a space or a character that is not ASCII")

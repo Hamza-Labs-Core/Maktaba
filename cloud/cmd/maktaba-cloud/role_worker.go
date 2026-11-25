@@ -93,7 +93,7 @@ func workerJobs(ctx context.Context, logger *slog.Logger, cfg config.Config, poo
 		go func() { defer wg.Done(); f() }()
 	}
 	run(func() { cleanupExpired(ctx, logger, pool) })
-	run(func() { purgeDeletedAccounts(ctx, logger, pool) })
+	run(func() { purgeDeletedAccounts(ctx, logger, cfg, pool) })
 	// story 50.19: relayed streams silent for 2 minutes stop counting against their plan
 	run(func() { sweepStreams(ctx, logger, &billingpkg.Streams{DB: pool.DB}, time.Minute) })
 	// story 50.19 §6: the hourly pay-as-you-go usage reports, with a payment provider that
@@ -207,8 +207,11 @@ func cleanupExpired(ctx context.Context, logger *slog.Logger, pool *db.Pool) {
 // (privacy.DataSubjectService, story 30.2) so its push logs, which have
 // no FK to users, go with it; CASCADE on the FK chains then drops
 // sessions, oauth links, servers, etc.
-func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, pool *db.Pool) {
+func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, cfg config.Config, pool *db.Pool) {
 	purger := privacy.NewAccountPurger(pool.DB)
+	if o, err := mailOutbox(cfg, pool, logger, nil); err == nil {
+		purger.ForgetMail = o.Forget
+	}
 	t := time.NewTicker(1 * time.Hour)
 	defer t.Stop()
 	for {

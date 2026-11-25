@@ -171,7 +171,8 @@ func (r *Resend) once(ctx context.Context, key, idem string, body []byte) error 
 	}
 	// the answer's message may quote the address: only its short name is kept
 	var a struct {
-		Name string `json:"name"`
+		Name    string `json:"name"`
+		Message string `json:"message"`
 	}
 	_ = json.Unmarshal(raw, &a)
 	se := &SendError{Status: resp.StatusCode, Name: errorName(a.Name), RetryAfter: retryAfter(resp.Header.Get("Retry-After"), time.Now())}
@@ -181,6 +182,10 @@ func (r *Resend) once(ctx context.Context, key, idem string, body []byte) error 
 		se.Quota = strings.HasSuffix(se.Name, "_quota_exceeded")
 	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
 		se.Temporary, se.Refused = true, true
+	case resp.StatusCode == http.StatusBadRequest && strings.HasPrefix(a.Message, "API key is invalid"):
+		// a malformed key: every mail is refused so, and none is at fault
+		se.Temporary, se.Refused = true, true
+		se.Name = "invalid_api_key"
 	case resp.StatusCode == http.StatusConflict && se.Name == "concurrent_idempotent_requests":
 		se.Temporary = true // the first attempt is still being taken
 	case resp.StatusCode >= 500:

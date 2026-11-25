@@ -32,8 +32,13 @@ func mailOutbox(cfg config.Config, pool *db.Pool, logger *slog.Logger, fake mail
 	if cfg.Mail.Delivers() {
 		limits = outbox.DefaultLimits(cfg.Mail.DailyLimit, cfg.Mail.MonthlyLimit)
 	}
-	return outbox.New(pool.DB, cfg.Auth.TokenSecret, mailDriver(cfg, logger, fake),
+	o, err := outbox.New(pool.DB, cfg.Auth.TokenSecret, mailDriver(cfg, logger, fake),
 		mailpkg.Templates{WebURL: cfg.Server.WebURL}, limits, logger)
+	if err != nil {
+		return nil, err
+	}
+	o.Logs = !cfg.Mail.Delivers()
+	return o, nil
 }
 
 // workerMailer puts the worker's notices in the outbox, which the api role sends. Without the

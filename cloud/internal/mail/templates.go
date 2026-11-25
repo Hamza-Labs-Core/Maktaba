@@ -152,7 +152,7 @@ func (t Templates) AlreadyRegistered(lang, to string) Message {
 		after:  []string{"Forgot your password? Choose a new one: " + t.url("/forgot-password"), "If it was not you, there is nothing to do."}}
 	if lang == LangAR {
 		c = content{subject: "حاول أحدهم التسجيل ببريدك", path: "/sign-in", label: "تسجيل الدخول",
-			before: []string{"حاول أحدهم إنشاء حساب في سحابة مكتبة بهذا العنوان، وله حساب من قبل."},
+			before: []string{"حاول أحدهم إنشاء حساب في سحابة مكتبة بهذا العنوان، وله حساب بالفعل."},
 			after:  []string{"نسيت كلمة مرورك؟ اختر كلمة جديدة: " + t.url("/forgot-password"), "إن لم تكن أنت، فلا شيء عليك فعله."}}
 	}
 	return t.message(lang, to, KindAlreadyRegistered, footer, c)
@@ -176,7 +176,7 @@ var billingPage = l2{"Open the billing page", "افتح صفحة الفوترة"
 // notices are the account notices, each with a link to the billing page.
 var notices = map[string]notice{
 	"payment_failed": {
-		l2{"Your Maktaba Cloud payment failed", "لم تتم دفعتك لسحابة مكتبة"},
+		l2{"Your Maktaba Cloud payment failed", "لم تنجح عملية الدفع لسحابة مكتبة"},
 		l2{"We could not take your payment for Maktaba Cloud. Update your payment method on the billing page.",
 			"لم نستطع تحصيل دفعتك لسحابة مكتبة. حدّث طريقة الدفع من صفحة الفوترة."},
 	},

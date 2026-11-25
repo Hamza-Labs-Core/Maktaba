@@ -144,6 +144,7 @@ func TestResendDoesNotTryA4xxAgain(t *testing.T) {
 		{422, "missing_required_field", false, false, false},
 		{401, "missing_api_key", true, true, false},
 		{403, "invalid_api_key", true, true, false},
+		{403, "suspended_api_key", true, true, false},
 		{429, "daily_quota_exceeded", true, false, true},
 		{429, "monthly_quota_exceeded", true, false, true},
 	} {
@@ -157,6 +158,26 @@ func TestResendDoesNotTryA4xxAgain(t *testing.T) {
 			t.Errorf("%d %s: %+v", tc.status, tc.name, se)
 		}
 		clean(t, err)
+	}
+}
+
+// A malformed key answers 400: it is the key that is refused, and the mails wait. Another 400 is
+// the mail's.
+func TestResendMalformedKeyIsNotTheMailsFault(t *testing.T) {
+	f := newFake(t, answer(400, `{"statusCode":400,"name":"validation_error","message":"API key is invalid"}`))
+	var se *SendError
+	if err := f.driver().Send(context.Background(), testMail); !errors.As(err, &se) || !se.Temporary || !se.Refused || f.calls() != 1 {
+		t.Fatalf("%v (%d calls)", err, f.calls())
+	}
+}
+
+// The provider's error name is kept only when it is one.
+func TestResendErrorNames(t *testing.T) {
+	for in, want := range map[string]string{"rate_limit_exceeded": "rate_limit_exceeded", "": "", "Someone@example.test": "",
+		"a b": "", "x\ny": "", strings.Repeat("a", 64): strings.Repeat("a", 64), strings.Repeat("a", 65): ""} {
+		if got := errorName(in); got != want {
+			t.Errorf("%q: %q", in, got)
+		}
 	}
 }
 

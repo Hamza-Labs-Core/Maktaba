@@ -19,6 +19,7 @@ import (
 )
 
 const mailUsage = `usage: maktaba-cloud mail <command> [--config path]
+  drivers             the mail drivers this release has
   status              how mails go (driver, recipients, limits) and the last 30 days' by state
   test [--lang en|ar] send a test mail to the address on stdin, and wait for its outcome`
 
@@ -30,6 +31,12 @@ func runMail(args []string) {
 		os.Exit(2)
 	}
 	sub := args[0]
+	if sub == "drivers" {
+		// what a deploy asks of the release's image before it writes one in cloud.toml (setup.sh)
+		fmt.Fprintln(os.Stdout, config.MailLog)
+		fmt.Fprintln(os.Stdout, config.MailResend)
+		return
+	}
 	fs := flag.NewFlagSet("mail "+sub, flag.ContinueOnError)
 	cfgPath := fs.String("config", "", "path to cloud.toml")
 	lang := fs.String("lang", mailpkg.LangEN, "the test mail's language: en or ar")
@@ -126,11 +133,10 @@ func (c mailCmd) test(ctx context.Context, lang string) error {
 		}
 		switch state {
 		case outbox.StateSent:
-			said := "sent"
-			if !c.Cfg.Mail.Delivers() {
-				said = "written to the api's log (driver log: nothing is delivered)"
-			}
-			_, err = fmt.Fprintln(c.Out, said)
+			_, err = fmt.Fprintln(c.Out, "sent")
+			return err
+		case outbox.StateLogged:
+			_, err = fmt.Fprintln(c.Out, "written to the api's log (driver log: nothing is delivered)")
 			return err
 		case outbox.StateReady, outbox.StateSending:
 			if why != "" {

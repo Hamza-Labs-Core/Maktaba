@@ -46,7 +46,7 @@ End users of Controller-operated home servers; Controller's operators.
 | [Cloud/IaaS provider] | Hosting / compute / database | [region] |
 | Apple Push Notification service (APNs) | iOS push delivery | USA |
 | Firebase Cloud Messaging (FCM) | Android/web push delivery | USA |
-| Resend | Account mail delivery (email address and the mail's content) | EU (eu-west-1) |
+| Resend | Account email delivery: the address and the email's content; 30 days, backups 7 days more, and a suppression list of addresses that bounced or complained ([its GDPR page](https://resend.com/security/gdpr)) | Sent from Ireland (eu-west-1), [stored in the USA](https://resend.com/docs/dashboard/domains/regions), under the EU SCCs and the EU-U.S. Data Privacy Framework |
 | [CDN/edge provider] | TLS termination, edge country derivation | [region] |
 
 ## 7. Security measures (Art. 32)

@@ -81,6 +81,14 @@ func TestTemplatesInEnglishAndArabic(t *testing.T) {
 	}
 }
 
+// A link goes into the HTML escaped, whatever the web app's address holds.
+func TestTheLinkIsEscaped(t *testing.T) {
+	m := Templates{WebURL: `https://app.example.test/"><b>&x=1`}.PasswordReset(LangEN, "a@example.test", "t")
+	if strings.Contains(m.HTML, `"><b>`) || !strings.Contains(m.HTML, `href="https://app.example.test/&#34;&gt;&lt;b&gt;&amp;x=1/reset-password?token=t"`) {
+		t.Errorf("%s", m.HTML)
+	}
+}
+
 // The moderation mails: both languages in one, each in its own direction, and escaped.
 func TestBothLanguages(t *testing.T) {
 	m := Both("a@example.test", "moderation_x", "S", "One <b>\ntwo", "واحد")
