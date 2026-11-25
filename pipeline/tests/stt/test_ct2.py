@@ -609,6 +609,26 @@ async def test_a_file_sent_as_the_failed_thread_ends_is_tried_by_a_new_one() -> 
         await asyncio.wait_for(late, 10)
 
 
+@pytest.mark.asyncio
+async def test_a_load_failure_reaches_the_files_after_one_whose_loop_is_closed() -> None:
+    sent = threading.Event()
+
+    def loader(s: WhisperSettings) -> ct2.Loaded:
+        assert sent.wait(10)
+        raise RuntimeError("no CUDA device")
+
+    t = ct2.CT2Transcriber(WhisperSettings(model="fake/whisper"), loader=loader)
+    gone = asyncio.new_event_loop()
+    left = gone.create_future()
+    gone.close()
+    t._ensure_thread((_audio(1, 30), left, gone, None, None, 1.0, None))
+    waits = asyncio.ensure_future(t.transcribe(_audio(1, 30)))
+    await asyncio.sleep(0)
+    sent.set()
+    with pytest.raises(RuntimeError, match="no CUDA device"):
+        await asyncio.wait_for(waits, 10)
+
+
 @pytest.mark.unit
 def test_the_hooks_shape_windows_and_scores_as_whisper_does() -> None:
     model = FakeWhisper()
