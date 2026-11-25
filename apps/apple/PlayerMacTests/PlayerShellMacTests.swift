@@ -56,6 +56,7 @@ import MaktabaKit
         let home = try MockHome()
         home.clock = PageSnapshots.clock
         try home.start()
+        defer { home.stop() }
         let url = try #require(URL(string: home.url))
         let client = APIClient(home: url, tokens: TokenStore(app: "test.mac.shell", home: url))
         let defaults = try #require(UserDefaults(suiteName: "test.mac.shell"))

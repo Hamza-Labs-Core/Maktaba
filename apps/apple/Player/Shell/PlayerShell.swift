@@ -143,7 +143,7 @@ struct PlayerShell: View {
         .crashReports(session: context.session)
         .reportsProblems(session: context.session)
         // the View menu (⌘1–⌘5, ⌘F) acts on this window's sections (Player/Mac)
-        .playerMenuTarget(sections: menuSections, selection: chosen)
+        .playerMenuTarget(sections: menuSections, offered: shown, selection: chosen)
         // the components' posters and logos: the image cache, with this home's Bearer token
         .environment(\.imageSource, .home(context.client))
         // a cast goes on with the watch screen closed: its mini controller over the sections

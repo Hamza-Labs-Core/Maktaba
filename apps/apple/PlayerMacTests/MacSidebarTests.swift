@@ -7,7 +7,8 @@ import MaktabaKit
 
 /// Story 13.16: the Mac Player's sidebar lists its sections as the apps' side list, in the
 /// person's order, Profile at its bottom; the View menu's ⌘1 … follow it; ↑ and ↓ move through
-/// it; a section keeps what it holds while another is in view, and ⌘F is taken once.
+/// it; a section keeps what it holds while another is in view; ⌘F opens Search, hidden or not;
+/// and an older Player's arrangement carries over.
 @MainActor @Suite struct MacSidebarLogic {
     @Test func profileSitsAtTheBottomAndTheRestKeepTheirOrder() {
         let rows = MacSidebarRows(PlayerSection.allCases)
@@ -70,13 +71,14 @@ import MaktabaKit
         let session = AppSession(app: "test.mac.keeper", defaults: defaults, asksHomes: false)
         let user = try JSONDecoder().decode(User.self, from: Data(#"{"id":"u1","username":"viewer","is_admin":false}"#.utf8))
         let context = PlayerContext(session: session, user: user, client: client)
-        let keeper = SectionKeeper<PlayerSection>(lasting: [.libraries, .profile])
+        let keeper = SectionKeeper<PlayerSection>(lasting: PlayerShell.lasting)
 
         let libraries = keeper.state(.libraries, epoch: 0) { LibrariesState(session: session, client: client) }
         libraries.choice = .library("lib-docs")
         libraries.path = [.series(id: "s-seerah"), .video(id: "v1")]
         let search = keeper.state(.search, epoch: 0) { SearchKept(context) }
         search.model.query = "mecca"
+        let profile = keeper.state(.profile, epoch: 0) { ProfileScreen.model(context) }
         // Home chosen in between
         _ = keeper.state(.home, epoch: 0) { HomeScreen.model(context) }
 
@@ -85,23 +87,88 @@ import MaktabaKit
         #expect(back.choice == .library("lib-docs"))
         #expect(back.path == [.series(id: "s-seerah"), .video(id: "v1")])
         #expect(keeper.state(.search, epoch: 0) { SearchKept(context) }.model.query == "mecca")
-        // a new parental limit: Search reads again, Libraries keeps its stack and reads its lists again itself
+        #expect(keeper.state(.profile, epoch: 0) { ProfileScreen.model(context) } === profile)
+        // a new parental limit: Search and Profile read again, Libraries keeps its stack
         #expect(keeper.state(.search, epoch: 1) { SearchKept(context) }.model.query == "")
+        #expect(keeper.state(.profile, epoch: 1) { ProfileScreen.model(context) } !== profile, "its history and favorites name videos")
         #expect(keeper.state(.libraries, epoch: 1) { LibrariesState(session: session, client: client) }.path.count == 2)
     }
 
-    /// ⌘F: taken once by the search field in view; a Search screen built again later finds
-    /// nothing to take (it does not grab the focus on every visit).
-    @Test func eachFindIsTakenOnce() {
-        let find = FindRequests()
-        #expect(!find.take(), "no ⌘F yet")
-        find.ask()
-        #expect(find.take())
-        #expect(!find.take(), "Search shown again: nothing left")
-        find.ask()
-        find.ask()
-        #expect(find.take())
-        #expect(!find.take())
+    /// Epic 57: the lists Libraries draws are read under the limit it draws under: asked with
+    /// a newer epoch (the limit changed while another section was in view), the first answer is
+    /// already new lists, and the stack and the chosen library stay.
+    @Test func theListsAreNeverThoseOfAnOlderLimit() throws {
+        let url = try #require(URL(string: "http://127.0.0.1:9"))
+        let client = APIClient(home: url, tokens: TokenStore(app: "test.mac.lists", home: url))
+        let defaults = try #require(UserDefaults(suiteName: "test.mac.lists"))
+        let session = AppSession(app: "test.mac.lists", defaults: defaults, asksHomes: false)
+        let state = LibrariesState(session: session, client: client)
+        state.choice = .series
+        state.path = [.series(id: "s-seerah")]
+        let before = state.lists(epoch: 0)
+        #expect(state.lists(epoch: 0) === before)
+        let after = state.lists(epoch: 1)
+        #expect(after !== before)
+        #expect(after.libraries.isEmpty && !after.librariesLoaded, "nothing of the older limit's")
+        #expect(state.lists(epoch: 1) === after)
+        #expect(state.choice == .series && state.path == [.series(id: "s-seerah")])
+    }
+
+    /// The list beside a kept page is on the page's tab when the section is built again.
+    @Test func theListsTabFollowsTheKeptPage() {
+        #expect(LibrariesScreen.tab(beside: .series) == .series)
+        #expect(LibrariesScreen.tab(beside: .library("lib-docs")) == .libraries)
+        #expect(LibrariesScreen.tab(beside: nil) == .libraries)
+    }
+
+    /// A window's chosen section, Home at first.
+    @MainActor final class Window {
+        var chosen = PlayerSection.home
+        var selection: Binding<PlayerSection> { Binding { self.chosen } set: { self.chosen = $0 } }
+    }
+
+    /// ⌘F opens Search with Search hidden from the sidebar, which then lists it while it is in
+    /// view; its field takes the press (`FindRequests`).
+    @Test func findOpensSearchHiddenFromTheSidebar() {
+        var arrangement = SidebarArrangement()
+        arrangement.hide(PlayerSection.search.rawValue)
+        let finds = FindRequests()
+        let window = Window()
+        let offered = PlayerSection.allCases
+        func target() -> PlayerMenuTarget {
+            PlayerMenuTarget(sections: MacSidebarRows(offered, arrangement: arrangement, keep: window.chosen).all,
+                             offered: offered, selection: window.selection, finds: finds)
+        }
+        #expect(!target().sections.contains(.search))
+        target().find()
+        #expect(window.chosen == .search)
+        #expect(target().sections.contains(.search), "the section in view is listed")
+        finds.fieldAppeared()
+        #expect(finds.take(), "Search's field takes it")
+        #expect(!finds.take())
+    }
+
+    /// With no Search section and no field in view, the press is not kept for a later field.
+    @Test func aFindWithNothingToTakeItIsNotKept() {
+        let finds = FindRequests()
+        let window = Window()
+        let offered: [PlayerSection] = [.home, .profile]
+        PlayerMenuTarget(sections: offered, offered: offered, selection: window.selection, finds: finds).find()
+        #expect(window.chosen == .home)
+        finds.fieldAppeared()
+        #expect(!finds.take())
+    }
+
+    /// An older Player's hidden sections carry over under the ids its tabs had.
+    @Test func anOlderPlayersHiddenSectionsCarryOver() throws {
+        let name = "test.mac.carry.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let tabs = #"{"perSectionState":[],"perTabState":[{"base":{"explicit":{"_0":"player.section.live"}}},{"tabBarVisibility":{"automatic":{}},"visibility":{"hidden":{}}}]}"#
+        defaults.set(Data(tabs.utf8), forKey: SidebarArrangement.tabsKey)
+        #expect(SidebarArrangement.carryOver(in: defaults, known: MacSidebarRows.arrangeable.map(\.rawValue)))
+        let arrangement = SidebarArrangement(stored: try #require(defaults.string(forKey: SidebarArrangement.key)))
+        #expect(MacSidebarRows(PlayerSection.allCases, arrangement: arrangement).all == [.home, .libraries, .search, .profile])
     }
 }
 
@@ -236,6 +303,7 @@ private final class MacSnapshotBundle {}
         let home = try MockHome()
         home.clock = PageSnapshots.clock
         try home.start()
+        defer { home.stop() }
         let url = try #require(URL(string: home.url))
         let client = APIClient(home: url, tokens: TokenStore(app: "test.mac.snapshots", home: url))
         let defaults = try #require(UserDefaults(suiteName: "test.mac.snapshots.profile-\(lang)"))
