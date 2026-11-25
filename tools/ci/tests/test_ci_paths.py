@@ -1000,6 +1000,24 @@ def test_linux_downloads_only_on_main_and_release_pushes(event: str, ref: str, w
 
 # ---- maktaba.tv (Epic 60, story 60.03) --------------------------------------------------------
 
+# what web/packages/website/design/mockups/make.mjs reads outside the design folder: a change of one
+# leaves the committed mockups stale, which the unit job's token step sees
+MOCKUP_SOURCES = [
+    "web/src/help/topics.ts",
+    "web/src/help/content/en/search.md",
+    "web/src/help/content/ar/search.md",
+    "web/src/i18n/en.json",
+    "web/src/i18n/ar.json",
+    "web/packages/website/static/icon.svg",
+]
+
+
+@pytest.mark.parametrize("path", MOCKUP_SOURCES)
+def test_the_mockups_check_runs_for_each_source_they_are_drawn_from(path: str) -> None:
+    unit = run(path)["unit"]
+    assert unit is not None and unit.inputs["tokens"], f"{path} does not run the unit job's token step"
+
+
 # T07: the sources the site is built from (story 60.03, "The website filter covers").
 WEBSITE_SOURCES = [
     "web/packages/website/src/worker.ts",
