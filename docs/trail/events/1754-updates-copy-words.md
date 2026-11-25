@@ -16,6 +16,8 @@ prs: [1749, 1732]
 
 ## What we learned
 - **Words for a code are words for every use of the code.** Before wording one, look for every place that answers it.
+- **A test's fake answers what the code expects.** The machine's refusal was tested with a plain sentence; a real machine answers `{"error": …, "status": …}`, and the page showed that JSON. Write the fake from the code that answers.
+- **No answer is not a refusal.** A session that ends with a command under way may have carried it out: say that, and not that the machine refused.
 - **An audit row of something that happens goes after it happened,** and one that says "once" needs a mark of its own: a state other waits write over (`waiting`) does not keep it.
 - **macOS has 32 System V shared-memory segments** (`kern.sysv.shmmni`). A Postgres server killed by a test leaves its own; when all are taken `initdb` fails, and so would the extra servers a home's update starts. `ipcs -m -p` names each one's creator.
 - **A shallow clone makes `trail check` say a snapshot's "Missing events" is wrong,** since the history it reads is cut. CI's check is right.
