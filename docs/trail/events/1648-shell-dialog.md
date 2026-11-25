@@ -21,6 +21,8 @@ The third build story of the approved desktop design (#1556).
 - **A window's state machine must cover "being made".** A second error during the build otherwise asks for a second window with the same label, the build fails, and the fallback box appears beside the first.
 - **Words belong in a command's answer, not in the page's script.** The page asks for the newest words, so the window always shows the latest error.
 - **A window that takes the focus when it opens does so in a layout effect**, not a passive one: the tray panel's test failed on that race in CI, and the dialog had the same code.
+- **A window is made with the app's menu bar, which Linux draws inside it**: take it off each small window.
+- **A closed window says so later than the next one is made**: what it says of its end must name which window it was.
 
 ## Keep doing
 - Every window gets its own capability, held in place by the contract test.
