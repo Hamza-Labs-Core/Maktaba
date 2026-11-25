@@ -264,6 +264,14 @@ func TestRealPostgresOnWindows(t *testing.T) {
 	if _, err := b.Backup(ctx, time.Now()); err != nil {
 		t.Fatal(err)
 	}
+	// its shared memory is found under the name Postgres gives it (AwaitShmFree's look)
+	lock, err := os.ReadFile(filepath.Join(b.Data, "postmaster.pid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !shmInUse(string(lock)) {
+		t.Fatalf("a running postgres's shared memory is not in use; its lock:\n%s", lock)
+	}
 	// the supervisor's Stop on Windows: pg_ctl's fast shutdown, a clean exit
 	if out, err := b.StopCommand().CombinedOutput(); err != nil {
 		t.Fatalf("pg_ctl stop: %v\n%s", err, out)
@@ -277,6 +285,11 @@ func TestRealPostgresOnWindows(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("postgres did not stop")
+	}
+	for end := time.Now().Add(10 * time.Second); shmInUse(string(lock)); time.Sleep(100 * time.Millisecond) {
+		if time.Now().After(end) {
+			t.Fatal("the shared memory of a postgres that stopped is still in use")
+		}
 	}
 	// the next start finds the cluster made and touches nothing
 	if err := b.Prepare(ctx, io.Discard); err != nil {

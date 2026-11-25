@@ -38,11 +38,21 @@
    test data), the Plugins section, or a guide. The `affected-tests` job warns when such a pull
    request leaves the portal alone (`tools/ci/devportal_follows.py`); a `No-Portal-Change:
    <reason>` trailer says it needs nothing.
-8. **Bring main in with `tools/dev/merge-main.sh`:** it merges origin/main and keeps both sides
-   of `CHANGELOG.md` and `CHANGELOG.ar.md` entry by entry (never line by line: two entries that
-   share a line would interleave), and stops, the merge left in progress, on any other conflict
-   or a CHANGELOG change it cannot place. Never resolve a CHANGELOG hunk by hand without reading
-   the lines around it, and never use `merge=union` on them.
+8. **A changelog entry is a pair of files of its own, never a line in `CHANGELOG.md`:**
+   `changelog.d/YYYY-MM-DD-slug.md` and its Arabic `.ar.md`, each a section (`### Fixed` /
+   `### أُصلح`) and its entries ([`changelog.d/README.md`](changelog.d/README.md)); the lint job
+   checks them and refuses a new line under `[Unreleased]`. Nobody folds them at a release:
+   maktaba.dev's changelog reads them and the tags. **Bring main in with
+   `tools/dev/merge-main.sh`** (a branch that has no `tools/dev/changelog_fragment.py` runs its own
+   older script the first time, which keeps both sides; then run `convert`): where a branch begun
+   before the fragments conflicts in
+   `CHANGELOG.md` or `CHANGELOG.ar.md`, it moves the branch's entries to a fragment pair
+   (`python3 tools/dev/changelog_fragment.py convert` does it with no conflict) or, when it
+   cannot, keeps both sides entry by entry, and stops, the merge left in progress, on any other
+   conflict or a CHANGELOG change it cannot place. Never resolve a CHANGELOG hunk by hand without
+   reading the lines around it, and never use `merge=union` on them. A branch
+   that neither conflicts with main nor needs its changes needs no merge: the push would restart
+   its CI.
 9. **Decisions for the owner go through the decisions inbox, never chat** (every agent, every
    provider): file a request with `~/.maktaba/decisions/bin/ask request.json` (title, context,
    2+ options with exactly one recommended, optional images, `from`), write

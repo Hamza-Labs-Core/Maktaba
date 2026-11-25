@@ -51,7 +51,17 @@ protocol CastContexting: AnyObject {
     func seek(to seconds: Double)
     func next()
     func send(_ message: CastMessage)
+    #if DEBUG
+    /// What the real SDK says of itself, for its UI tests (nil: not asked for).
+    var sdk: CastSDKState? { get }
+    #endif
 }
+
+#if DEBUG
+extension CastContexting {
+    var sdk: CastSDKState? { nil }
+}
+#endif
 
 /// The UI tests' Cast context (a Debug build launched with `-maktaba-cast fake`, or
 /// `fake-empty` for a network where no TV is found): one TV, "Living Room TV", that plays
