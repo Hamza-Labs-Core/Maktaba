@@ -500,7 +500,7 @@ def answer_docker_does_not_give() -> str:
     shim = Path("/root/shim")
     shim.mkdir(exist_ok=True)
     docker = sh("command -v docker").strip()
-    (shim / "docker").write_text(f'#!/bin/bash\ncase "$*" in "$SHIM_FAILS"*) echo "context deadline exceeded" >&2; exit 1 ;; esac\nexec {docker} "$@"\n')
+    (shim / "docker").write_text(f'#!/bin/bash\nif [ -n "${{SHIM_FAILS:-}}" ]; then case "$*" in "$SHIM_FAILS"*) echo "context deadline exceeded" >&2; exit 1 ;; esac; fi\nexec {docker} "$@"\n')
     (shim / "docker").chmod(0o755)
     path = {"PATH": f"{shim}:{os.environ['PATH']}"}
     for fails in ("volume ls", "volume inspect"):
