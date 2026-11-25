@@ -46,7 +46,7 @@ func TestPrintsEveryFieldTheBuildReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, k := range []string{"controller", "contact", "purpose", "data_categories",
-		"not_collected", "lawful_basis", "retention_days", "rights", "updated_at"} {
+		"not_collected", "account_data", "processors", "lawful_basis", "retention_days", "rights", "updated_at"} {
 		if _, ok := m[k]; !ok {
 			t.Errorf("no %q in %s", k, out.String())
 		}

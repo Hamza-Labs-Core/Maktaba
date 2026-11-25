@@ -32,8 +32,14 @@ import (
 // through (slot 0237): PostgreSQL 18 refused them, and every second_listen job failed, until
 // then. And every table with a primary key has it as its identity again (slot 0238), while
 // one without keeps FULL.
+//
+// From the kit's old release (guard/, v0.3.162, slot 0236), not the previous one: v0.3.163 and
+// later have 0237 and 0238, which do not run again, and nothing in the product makes a table
+// with a primary key FULL (a machine's publication and a switchover's do it only where there is
+// none), so the state set up here by hand is not one a later home can be in.
 func TestUpdateRehearsal17PostgresMajorUpgrade(t *testing.T) {
 	r := newRehearsal(t)
+	r.onGuardRelease()
 	k := r.kit
 	if k.pg18Home == "" {
 		t.Fatal("MAKTABA_REHEARSAL_PG18_HOME is unset (tools/rehearsal/postgres18.sh)")

@@ -20,7 +20,14 @@ extension XCUIElement {
                      file: StaticString = #filePath, line: UInt = #line) {
         var holds = ""
         for attempt in 1 ... 3 {
-            if attempt > 1 || !hasKeyboardFocus {
+            // (on tvOS a field keeps the keyboard, over the whole screen, until Done: opened again
+            // it has no focus to move to)
+            #if os(tvOS)
+            let hasKeyboard = hasKeyboardFocus
+            #else
+            let hasKeyboard = attempt == 1 && hasKeyboardFocus
+            #endif
+            if !hasKeyboard {
                 guard focus(app, open: open) else {
                     XCTFail("the field never had the keyboard: \(debugDescription)", file: file, line: line)
                     return

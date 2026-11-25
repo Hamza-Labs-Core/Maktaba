@@ -52,7 +52,7 @@ The filter sheet gains **Save as smart playlist** (56.09). Playlists under Profi
 | ID | Type | Platform | Setup | Action | Expected |
 |---|---|---|---|---|---|
 | T01 | XCUITest (`Maktaba Player UITests`) | iPhone | `MockHome` | Shuffle on a library | POST recorded; player shows |
-| T02 | XCUITest (`Maktaba Player iPad UITests`) | iPad | `MockHome` | Collections tab | cards; collection page |
+| T02 | XCUITest (`Maktaba Player UITests`) | iPad | `MockHome` | Collections tab | cards; collection page |
 | T03 | XCUITest | iPhone | Arabic | library tabs | Arabic, mirrored |
 | T04 | XCUITest (`Maktaba Player Mac UITests`, CI only) | Mac | `MockHome` | Play on a playlist | POST recorded |
 | T05 | Robolectric + Compose UI test | Android Player | MockWebServer | Shuffle | POST; player |

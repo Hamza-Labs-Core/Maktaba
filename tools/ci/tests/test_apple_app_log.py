@@ -84,7 +84,8 @@ def test_iphone_and_ipad_keep_info_and_debug() -> None:
     assert f'log config --subsystem "$bundle" {PERSIST}' in boot
     # the bundle id each device's simulator configures is its app's own
     assert f"iphone) bundle={_bundle('Maktaba Player')} ;;" in boot
-    assert f"ipad) bundle={_bundle('Maktaba Player iPad')} ;;" in boot
+    # one universal app: the iPad's simulator configures the same bundle id
+    assert f"ipad) bundle={_bundle('Maktaba Player')} ;;" in boot
     # read once the tests are done (whether they passed or not), then checked
     read = next(s for s in _steps() if s.get("name") == "Read and check the app's log, delete the simulator")
     assert read["if"].startswith("always()")

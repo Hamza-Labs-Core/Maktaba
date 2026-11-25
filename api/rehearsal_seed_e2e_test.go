@@ -139,7 +139,7 @@ func (r *rehearsal) makeSeed(profile, dir string) {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(filepath.Join(m.app, "Contents", "MacOS", "Maktaba"), []byte("#!/bin/sh\nexit 0\n"), 0o755)
-	r.kit.makePayload(t, m.payload, payloadSpec{variant: "prev", version: r.kit.prev})
+	r.kit.makePayload(t, m.payload, payloadSpec{variant: r.kit.prevVariant, version: r.kit.prev})
 	if err := os.MkdirAll(m.root, 0o700); err != nil {
 		t.Fatal(err)
 	}

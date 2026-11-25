@@ -1,6 +1,6 @@
 # Reusable gate for the native Apple apps (Epic 42, `apps/apple` and the Apple TV app in
-# `apps/tv/tvos`): MaktabaKit's tests, a build of each app (Maktaba Remote for iPhone and
-# iPad, Maktaba Player for iPhone and the Mac, Maktaba TV), and their String Catalogs in
+# `apps/tv/tvos`): MaktabaKit's tests, a build of each app (Maktaba Remote and Maktaba
+# Player, each one app for iPhone and iPad; the Mac Player; Maktaba TV), and their String Catalogs in
 # English and Arabic; and, in other jobs, the Player's UI tests on throwaway iPhone and iPad
 # simulators and the Apple TV app's Live TV, Home and Libraries UI tests on a throwaway Apple
 # TV simulator.
@@ -65,6 +65,10 @@ jobs:
       - name: A simulator's settle check reads its own processes
         run: python3 tools/apple/sim-settle.py --self-test
 
+      # how a UI job turns its simulator's own services off, or starts one, and sees that it took
+      - name: A simulator's services are asked for until they are gone, or run
+        run: python3 tools/apple/sim-services.py --self-test
+
       # how a UI job keeps its simulator's logs and the app's crash reports
       - name: A simulator's logs and the app's crash reports are kept
         run: python3 tools/apple/sim-log.py --self-test
@@ -122,7 +126,6 @@ jobs:
             echo "::endgroup::"
           }
           build "Maktaba Remote" "generic/platform=iOS Simulator"
-          build "Maktaba Remote iPad" "generic/platform=iOS Simulator"
           build "Maktaba Player" "generic/platform=iOS Simulator"
           build "Maktaba Player Mac" "platform=macOS"
           build "Maktaba TV" "generic/platform=tvOS Simulator"
@@ -217,7 +220,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - { device: ipad, scheme: "Maktaba Player iPad" }
+          # the same universal app as the iPhone's (one app for iPhone and iPad), built again
+          # here so each device's shards need only their own build
+          - { device: ipad, scheme: "Maktaba Player" }
     env: *player-ui-build-env
     steps: *player-ui-build-steps
 
@@ -289,16 +294,10 @@ jobs:
           #   45495588048, twice; "does not have a process ID" in 45513857454).
           # - apsd retries its push connection 8 to 17 times a second for good: it has no device
           #   identity here. Each try writes some 80 log lines. It and diagnosticd, which reads
-          #   them, held more than one of the three cores, and kept 3 of 8 simulators from ever
-          #   settling below.
-          for service in com.apple.PosterBoard com.apple.apsd; do
-            xcrun simctl spawn "$udid" launchctl disable "user/foreground/$service" || true
-            xcrun simctl spawn "$udid" launchctl bootout "user/foreground/$service" || true
-            running=$(xcrun simctl spawn "$udid" launchctl list || true)
-            if grep -q "[[:space:]]$service\$" <<< "$running"; then
-              echo "::warning::$service still runs in the simulator: its load can fail a test (#1678)"
-            fi
-          done
+          #   them, held up to more than one of the three cores (136 % of one at the most), and
+          #   kept 3 of 8 simulators from ever settling below.
+          # until a list shows neither, in one budget (the calls are slow just after a boot)
+          python3 tools/apple/sim-services.py "$udid" --off com.apple.PosterBoard --off com.apple.apsd
           xcrun simctl ui "$udid" appearance dark
           # the simulator keeps the app's info and debug lines too (its subsystem is its bundle
           # id; a parent's config is not inherited): by default `log show` finds its errors and
@@ -306,7 +305,7 @@ jobs:
           # audits timed out), and the other subsystems stay as they are
           case "$device" in
             iphone) bundle=com.hamzalabs.maktaba.player ;;
-            ipad) bundle=com.hamzalabs.maktaba.player.tablet ;;
+            ipad) bundle=com.hamzalabs.maktaba.player ;;
           esac
           xcrun simctl spawn "$udid" log config --subsystem "$bundle" --mode "level:debug,persist:debug"
           # the keyboard types only what a test types: no suggestions, autocorrection or
@@ -373,7 +372,7 @@ jobs:
           device="${{ matrix.device }}" shard="${{ matrix.shard }}" shards="${{ matrix.shards }}"
           case "$device" in
             iphone) scheme="Maktaba Player" target="Maktaba Player UITests" ;;
-            ipad) scheme="Maktaba Player iPad" target="Maktaba Player iPad UITests" ;;
+            ipad) scheme="Maktaba Player" target="Maktaba Player UITests" ;;
           esac
           tar -xf "$RUNNER_TEMP/player-ui-build.tar" -C "$PRODUCTS"
           only=()
@@ -532,6 +531,12 @@ jobs:
           # (no `simctl ui appearance` here: the tvOS runtime does not support it)
           xcrun simctl bootstatus "$udid" -b > /dev/null
           xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.tv --mode "level:debug,persist:debug"
+          # the keyboard's daemon, which a new simulator starts when a keyboard first opens: in two
+          # jobs' first test the simulator's new processes were all held for 15 and 27 s then, and
+          # the address typed meanwhile came in after the test had failed (jobs 138956933820 and
+          # 139001674314; a new process takes 25 ms, and kbd, once there, stays). So it runs before
+          # the first test.
+          python3 tools/apple/sim-services.py "$udid" --start system/com.apple.TextInput.kbd
           python3 tools/apple/sim-settle.py "$udid" "$RESULTS/tv-settle.log" --max 480
 
       - name: Run the TV UI tests

@@ -430,7 +430,7 @@ describe("the built site (dist/)", () => {
     expect(date >= policy.updated_at).toBe(true);
     // the Arabic page lists as many values as the policy has
     const ar = read("ar/legal/privacy/index.html");
-    for (const f of ["data_categories", "not_collected", "rights"]) {
+    for (const f of ["data_categories", "not_collected", "account_data", "processors", "rights"]) {
       const m = ar.match(new RegExp(`<dd data-field="${f}">([\\s\\S]*?)</dd>`))!;
       expect((m[1].match(/<li>/g) ?? []).length, f).toBe(policy[f].length);
     }

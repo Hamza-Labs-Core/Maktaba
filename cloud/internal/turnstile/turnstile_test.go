@@ -1,9 +1,11 @@
 package turnstile
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,6 +60,50 @@ func TestVerify(t *testing.T) {
 	srv.Close()
 	if err := (&Client{Secret: "s", URL: srv.URL}).Verify(ctx, "x", ""); !errors.Is(err, ErrUnavailable) {
 		t.Fatalf("unreachable: %v", err)
+	}
+}
+
+// A wrong secret, siteverify's own failure and its rate limit are not the person's: the check is
+// unavailable, and said so in the log without the token; a bad token still fails.
+func TestOursAndSiteverifysFailuresAreUnavailable(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status int
+		code   string
+		want   error
+	}{
+		"a wrong secret":     {200, "invalid-input-secret", ErrUnavailable},
+		"no secret":          {200, "missing-input-secret", ErrUnavailable},
+		"a bad request":      {400, "bad-request", ErrUnavailable},
+		"its own failure":    {200, "internal-error", ErrUnavailable},
+		"its rate limit":     {429, "rate-limited", ErrUnavailable},
+		"a bad token":        {200, "invalid-input-response", ErrFailed},
+		"a used token":       {200, "timeout-or-duplicate", ErrFailed},
+		"a token of no page": {400, "missing-input-response", ErrFailed},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.status)
+			_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error-codes": []string{tc.code}})
+		}))
+		var log bytes.Buffer
+		was := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&log, nil)))
+		g := &Guard{Enabled: true, WebOrigins: []string{"https://app.maktaba.tv"}, Verifier: &Client{Secret: "s3cret", URL: srv.URL}}
+		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		r.Header.Set("Origin", "https://app.maktaba.tv")
+		w := httptest.NewRecorder()
+		ok := g.Require(w, r, "the-token")
+		slog.SetDefault(was)
+		srv.Close()
+		code := map[error]int{ErrUnavailable: 503, ErrFailed: 403}[tc.want]
+		if ok || w.Code != code {
+			t.Errorf("%s: %d, want %d", name, w.Code, code)
+		}
+		if said := strings.Contains(log.String(), "turnstile_unavailable"); said != errors.Is(tc.want, ErrUnavailable) {
+			t.Errorf("%s: logged %v", name, said)
+		}
+		if strings.Contains(log.String(), "the-token") || strings.Contains(log.String(), "s3cret") {
+			t.Errorf("%s: %s", name, log.String())
+		}
 	}
 }
 

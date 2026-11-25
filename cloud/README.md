@@ -20,7 +20,7 @@ cloud/
     config/               # cloud.toml loader + role-specific validator
     db/                   # *sql.DB pool + goose migrator
     entitlement/          # Ed25519 signing for offline feature gates
-    mail/                 # account mails (log driver)
+    mail/                 # account mails: templates, the outbox, Resend and log drivers
     handlers/
       account/            # /v1/account/{me,password,sessions,export,deletion}
       admin/              # /v1/admin/* (service-admin console)
@@ -146,12 +146,16 @@ roles or data are in this binary, its admin surface or its backups.
 
 ### Secrets
 
-Two runtime secrets are injected via the environment (never the TOML
+The runtime secrets are injected via the environment (never the TOML
 file), layered into `Config` by [`config.Load`](internal/config/config.go):
 
 - **`MAKTABA_CLOUD_TOKEN_SECRET`** — HMAC secret for access tokens,
   ≥ 32 bytes. Required by the `api` role. Generate with
   `openssl rand -base64 48`.
+- **`MAKTABA_CLOUD_RESEND_API_KEY`** — the mail provider's key, or
+  `MAKTABA_CLOUD_RESEND_API_KEY_FILE` (or `mail.resend_api_key_path`), the
+  file it is in. Required by the `api` role with `mail.driver = "resend"`
+  ([docs/cloud-mail.md](../docs/cloud-mail.md)).
 - **`MAKTABA_CLOUD_RELAY_PUBLIC_HOST`** — the relay's public apex
   domain (drives per-server subdomain routing).
 

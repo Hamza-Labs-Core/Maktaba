@@ -100,9 +100,7 @@ class PlayerUITestCase: XCTestCase {
         continueAfterFailure = true
         goesOn = true
         defer {
-            app.terminate()
             home.stop()
-            // last: a failure to end the app is the warm-up's too
             goesOn = false
             continueAfterFailure = stops
         }
@@ -110,6 +108,7 @@ class PlayerUITestCase: XCTestCase {
         lenient.isStrict = false
         XCTExpectFailure("the simulator's first launch may be slower than any wait", options: lenient) {
             warmUp()
+            app.terminate() // a failure to end it is the warm-up's too
         }
     }
 
@@ -171,6 +170,9 @@ class PlayerUITestCase: XCTestCase {
     /// (PlayerWatchTests plays MockHome's stream in this runner) then cannot start its sound
     /// output, and AVPlayer's time, which follows the sound output, stays put: "the time
     /// moves" timed out 14 s in, with the Player still posting progress (CI run 41521240810).
+    ///
+    /// A subclass that adds to it calls `super.end()` first: what fails before it interrupts the
+    /// tear-down and leaves the app and the home open.
     func end() {
         continueAfterFailure = true
         goesOn = true

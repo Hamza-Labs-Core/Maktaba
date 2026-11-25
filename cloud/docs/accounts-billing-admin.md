@@ -34,7 +34,7 @@ All bodies are JSON. Errors are `{"error": "<code>", "message": "…"}`.
 |---|---|---|---|
 | `POST /v1/auth/register` | `{email, password, display_name?}` | `202 {"status":"pending_verification"}` — a verification mail goes out; the same 202 comes back if the email is already registered (the owner gets a "someone tried to sign up" mail instead), so registration does not reveal which addresses have accounts | `400 invalid_email`, `400 weak_password` |
 | `POST /v1/auth/verify-email` | `{token}` | `200 {"status":"verified"}` | `400 invalid_token` |
-| `POST /v1/auth/verify-email/resend` | `{email}` | `202` always | — |
+| `POST /v1/auth/verify-email/resend` | `{email, turnstile_token}` | `202` for any address | `429 rate_limited` with Retry-After (the network's asks), `403 turnstile_failed` |
 | `POST /v1/auth/login` | `{email, password}` | `200 {access_token, expires_in, user}` + `__Host-maktaba_refresh` cookie | `401 invalid_credentials`, `403 email_not_verified` (with `resend_url`), `403 account_suspended`, `429 too_many_attempts` (`Retry-After: 1800`) |
 | `POST /v1/auth/refresh` | — (cookie) | same as login, the refresh cookie rotates | `401 no_session`; a rotated token presented again revokes every session of the account and records `refresh_token_replay` |
 | `POST /v1/auth/logout` | — (cookie) | `204` | — |
@@ -392,10 +392,11 @@ copied: it is disabled, every session of the account ends, the step fails, and t
 
 ## Mail
 
-Verification, reset and notice mails go through `mail.Mailer`. The only
-driver today is `log` (the default): it writes the message, including the
-link, to the api log. No mail provider is wired; that needs a provider
-account and is a separate decision.
+Verification, reset and notice mails, in English or Arabic, go through the mail outbox
+(`internal/mail/outbox`) and then a `mail.Mailer`: `resend` (resend.com), or `log` (the default),
+which writes the message, including the link, to the api log. A request only writes an outbox row,
+the same whether or not the address has an account. Settings, limits and the runbook:
+[docs/cloud-mail.md](../../docs/cloud-mail.md).
 
 ## Web UI
 
@@ -448,11 +449,10 @@ and the cloud web app.
 - **Payment provider.** Not chosen yet (TBD). It plugs in behind
   `billing.Provider`; until then `[billing] provider = "none"` and plans are
   set by hand.
-- **Mail provider.** Mails go to the log (`mail.driver = "log"`). A real
-  provider needs an account and a decision; until then verification links
-  must be read from the log.
-- **Email change** (25.5): needs the mail provider (verify new address,
-  notify old one).
+- ~~**Mail provider**~~: done: Resend ([docs/cloud-mail.md](../../docs/cloud-mail.md)). Its
+  bounce and complaint webhook is not
+  ([#1714](https://github.com/Hamza-Labs-Core/Maktaba/issues/1714)).
+- **Email change** (25.5): verify the new address, notify the old one.
 - **Avatar upload** (25.5 `413 avatar_too_large`): only an https URL can be
   set.
 - ~~**Staff passkeys**~~ (50.33 part 2): done: passkeys for sign-in, the

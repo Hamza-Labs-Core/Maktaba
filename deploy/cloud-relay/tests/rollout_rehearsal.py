@@ -42,7 +42,9 @@ ROLLOUT = "/usr/local/sbin/maktaba-rollout"
 REGISTRY = "localhost:5000/maktaba-cloud"
 APP = "app.rehearsal.test"
 NAMES = {"RELAY_DOMAIN": "relay.rehearsal.test", "API_DOMAIN": "api.rehearsal.test", "APP_DOMAIN": APP,
-         "ACME_EMAIL": "rehearsal@rehearsal.test", "RELAY_TLS": "internal", "RELAY_PLANS_ENFORCE": "false"}
+         "ACME_EMAIL": "rehearsal@rehearsal.test", "RELAY_TLS": "internal", "RELAY_PLANS_ENFORCE": "false",
+         # the mail driver as production has it, over a key that is none and a list nobody is on
+         "RESEND_API_KEY": "re_rehearsal_not_a_key", "MAIL_ALLOW": "@rehearsal.invalid", "MAIL_SUBJECT_PREFIX": "[rehearsal]"}
 WATCH = "30"
 MUTATE = os.environ.get("MUTATE", "")
 
@@ -442,9 +444,17 @@ def first_deploy() -> str:
     assert code == 0, out[-3000:]
     ready()
     assert "app a" in page()
+    # the mail provider's key: the cloud user's alone, read by the api (which refuses to start on the
+    # resend driver without one), and in no log
+    key = DEPLOY / "secrets/resend.key"
+    assert key.read_text() == NAMES["RESEND_API_KEY"] and key.stat().st_mode & 0o777 == 0o600 and key.owner() == "maktaba"
+    toml = (DEPLOY / "cloud.toml").read_text()
+    assert re.search(r'^driver += "resend"$', toml, re.M) and '["@rehearsal.invalid"]' in toml
+    said = out + dc("logs --no-color")
+    assert NAMES["RESEND_API_KEY"] not in said + toml + (DEPLOY / ".env").read_text(), "the mail key was told"
     commit()
     not_pending()
-    return "release a serves"
+    return "release a serves, with the mail driver's key"
 
 
 def redeploy() -> str:

@@ -155,9 +155,7 @@ func (r *Registry) Shutdown(ctx context.Context, o DrainOptions, rate int, mint 
 		select {
 		case <-ctx.Done():
 			for _, t := range r.All() {
-				if t.Busy() {
-					stats.drainForced.Add(1)
-				}
+				t.cutFrom(0) // now: Close counts it, once
 				t.Close()
 			}
 			return

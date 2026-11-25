@@ -177,34 +177,33 @@ public struct LocalNetworkVerdict: Sendable {
     public var isFinal: Bool { state != nil }
 }
 
-/// Something that browses for `_maktaba._tcp` and reports what happens. The stream ends
-/// (and the browse stops) when the caller stops reading it.
+/// Something that browses for `_maktaba._tcp` and reports what happens.
 public protocol LocalNetworkProbe: Sendable {
-    func signals() -> AsyncStream<BrowseSignal>
+    /// Starts a browse. It reports each signal as it comes, on any thread, until the closure
+    /// this returns is called (which stops the browse).
+    func browse(_ report: @escaping @Sendable (BrowseSignal) -> Void) -> @Sendable () -> Void
 }
 
 /// The real probe: an `NWBrowser` for `_maktaba._tcp` (listed under `NSBonjourServices`).
 public struct BonjourProbe: LocalNetworkProbe {
     public init() {}
 
-    public func signals() -> AsyncStream<BrowseSignal> {
-        AsyncStream { cont in
-            let browser = NWBrowser(for: .bonjour(type: "_maktaba._tcp", domain: nil), using: .tcp)
-            browser.stateUpdateHandler = { state in
-                switch state {
-                case .ready: cont.yield(.ready)
-                case let .waiting(error): cont.yield(.waiting(dnsError: Self.dnsCode(error)))
-                case let .failed(error):
-                    cont.yield(.failed(dnsError: Self.dnsCode(error)))
-                    cont.finish()
-                case .cancelled: cont.finish()
-                default: break
-                }
+    public func browse(_ report: @escaping @Sendable (BrowseSignal) -> Void) -> @Sendable () -> Void {
+        let browser = NWBrowser(for: .bonjour(type: "_maktaba._tcp", domain: nil), using: .tcp)
+        browser.stateUpdateHandler = { state in
+            switch state {
+            case .ready: report(.ready)
+            case let .waiting(error): report(.waiting(dnsError: Self.dnsCode(error)))
+            case let .failed(error):
+                report(.failed(dnsError: Self.dnsCode(error)))
+                report(.ended)
+            case .cancelled: report(.ended)
+            default: break
             }
-            browser.browseResultsChangedHandler = { results, _ in cont.yield(.results(results.count)) }
-            cont.onTermination = { _ in browser.cancel() }
-            browser.start(queue: DispatchQueue(label: "maktaba.permissions.bonjour"))
         }
+        browser.browseResultsChangedHandler = { results, _ in report(.results(results.count)) }
+        browser.start(queue: DispatchQueue(label: "maktaba.permissions.bonjour"))
+        return { browser.cancel() }
     }
 
     static func dnsCode(_ error: NWError) -> Int32? {
@@ -217,7 +216,7 @@ public struct BonjourProbe: LocalNetworkProbe {
 /// privacy, so a refusal can only be shown this way).
 public struct ScriptedProbe: LocalNetworkProbe {
     public let script: [BrowseSignal]
-    /// Keep the stream open after the script, as a real browse does.
+    /// The browse goes on after the script, as a real one does.
     public let staysOpen: Bool
 
     public init(_ script: [BrowseSignal], staysOpen: Bool = true) {
@@ -235,11 +234,10 @@ public struct ScriptedProbe: LocalNetworkProbe {
         }
     }
 
-    public func signals() -> AsyncStream<BrowseSignal> {
-        AsyncStream { cont in
-            for s in script { cont.yield(s) }
-            if !staysOpen { cont.finish() }
-        }
+    public func browse(_ report: @escaping @Sendable (BrowseSignal) -> Void) -> @Sendable () -> Void {
+        for s in script { report(s) }
+        if !staysOpen { report(.ended) }
+        return {}
     }
 }
 
@@ -412,16 +410,13 @@ public final class PermissionsModel {
         busy.insert(.localNetwork)
         defer { busy.remove(.localNetwork) }
         var v = verdict
-        // the clock starts when the probe is being read, not when the browse was asked for:
-        // a busy test run (or device) can hold the reader back past the whole timeout
-        var start: ContinuousClock.Instant?
+        // signals and ticks come in one queue, read in order, and the probe reports into it with
+        // no task between: one that passes signals on is held back on a busy device (or test run)
+        // while ticks go by, and time runs out with the answer behind a tick (CI run 45553400654)
         let (events, cont) = AsyncStream<BrowseEvent>.makeStream()
-        let stream = probe.signals()
-        let feeder = Task {
-            cont.yield(.reading)
-            for await s in stream { cont.yield(.signal(s)) }
-            cont.yield(.signal(.ended))
-        }
+        let stop = probe.browse { cont.yield(.signal($0)) }
+        // the clock starts once the browse has: starting it may be held back too
+        let start = ContinuousClock.now
         let ticker = Task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(100))
@@ -429,22 +424,16 @@ public final class PermissionsModel {
             }
         }
         defer {
-            feeder.cancel()
+            stop()
             ticker.cancel()
             cont.finish()
         }
         for await e in events {
             let signal: BrowseSignal?
             switch e {
-            case .reading:
-                start = .now
-                continue
-            case .tick:
-                signal = nil
-            case let .signal(s):
-                signal = s
+            case .tick: signal = nil
+            case let .signal(s): signal = s
             }
-            guard let start else { continue }
             let now = ContinuousClock.now - start
             let state = signal.map { v.feed($0, at: now) } ?? v.tick(at: now)
             if let state { set(.localNetwork, state) }
@@ -461,7 +450,6 @@ public final class PermissionsModel {
     }
 
     private enum BrowseEvent {
-        case reading
         case signal(BrowseSignal)
         case tick
     }

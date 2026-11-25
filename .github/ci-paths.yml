@@ -1076,6 +1076,7 @@ apple_player_ui:
   - 'tools/apple/ui-durations.json'
   - 'tools/apple/check-app-log.py'
   - 'tools/apple/sim-settle.py'
+  - 'tools/apple/sim-services.py'
   - 'tools/apple/export-shots.py'
   # the Xcode pick and the simulator pick (Xcode 27)
   - 'tools/apple/xcode.py'

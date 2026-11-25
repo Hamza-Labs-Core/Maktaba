@@ -30,9 +30,7 @@ LANGUAGES = ["ar"]
 # needs no change here.
 TARGETS = {
     "Maktaba Remote": ["apps/apple/Remote"],
-    "Maktaba Remote iPad": ["apps/apple/Remote"],
     "Maktaba Player": ["apps/apple/Player"],
-    "Maktaba Player iPad": ["apps/apple/Player"],
     "Maktaba Player Mac": ["apps/apple/Player"],
     "Maktaba TV": ["apps/tv/tvos/MaktabaTV"],
     "MaktabaKit-t": ["apps/apple/MaktabaKit/Sources/MaktabaKit"],

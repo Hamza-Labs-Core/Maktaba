@@ -13,6 +13,13 @@ export function errorMessage(t: I18nState["t"], has: I18nState["has"], err: unkn
     if (err.code === "too_many_attempts" && err.retryAfter) {
       return t("error.too_many_attempts_wait", { minutes: Math.ceil(err.retryAfter / 60) });
     }
+    // a network's share of requests comes back in up to a day: say when
+    if (err.code === "rate_limited" && (err.retryAfter ?? 0) > 60) {
+      const minutes = Math.ceil(err.retryAfter! / 60);
+      const hours = minutes > 120;
+      const key = hours ? "error.rate_limited_hours" : "error.rate_limited_wait";
+      if (has(key)) return t(key, hours ? { hours: Math.ceil(minutes / 60) } : { minutes });
+    }
     if (has(`error.${err.code}`)) return t(`error.${err.code}`);
     if (err.message && err.message !== err.code) return err.message;
     return t("error.generic_code", { code: err.code });

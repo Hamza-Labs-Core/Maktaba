@@ -84,6 +84,25 @@ func (s *Users) Create(ctx context.Context, email, passwordHash, displayName str
 	return u, err
 }
 
+// RegisterTx inserts an unverified password account in the caller's transaction, and reports
+// whether the address was free. A taken address is no error: the statement and the transaction
+// end the same way either way, so a sign-up takes as long for both.
+func (s *Users) RegisterTx(ctx context.Context, tx *sql.Tx, email, passwordHash, displayName, locale string) (bool, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" || passwordHash == "" {
+		return false, errors.New("users: email and password required")
+	}
+	res, err := tx.ExecContext(ctx, `
+        INSERT INTO users (email, password_hash, display_name, email_verified, locale)
+        VALUES ($1, $2, NULLIF($3, ''), false, $4)
+        ON CONFLICT (email) DO NOTHING`, email, passwordHash, displayName, locale)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
 // ByEmail looks up a user by lower-cased email.
 func (s *Users) ByEmail(ctx context.Context, email string) (User, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
