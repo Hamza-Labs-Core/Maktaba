@@ -232,7 +232,10 @@ func (t Target) howTo(ctx context.Context, d *sql.DB, dump, list string, psql bo
 	// another's, and the restore would be found not whole
 	mine := list
 	if !super {
-		if mine, err = t.withoutOthers(ctx, d, list); err != nil {
+		if mine, err = t.withoutOthers(ctx, d, list, func(ext string) bool {
+			// one made again as a superuser (a trusted one) is the first superuser's
+			return again == "" && exts[ext].goes && exts[ext].needsSuper
+		}); err != nil {
 			return h, err
 		}
 	}
@@ -309,12 +312,17 @@ func (t Target) mayAdd(ctx context.Context, d *sql.DB, list string, exts map[str
 		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, `SET LOCAL search_path = public`); err == nil {
+		if _, err = tx.ExecContext(ctx, `SET LOCAL search_path = public; SET LOCAL lock_timeout = '2s'`); err == nil {
 			_, err = tx.ExecContext(ctx, `CREATE EXTENSION `+pq.QuoteIdentifier(e.Name)+` CASCADE`)
 		}
 		_ = tx.Rollback()
 		var pe *pq.Error
 		if errors.As(err, &pe) {
+			switch pe.Code {
+			case "42710", "42723", "42P07", "42P06", // something of its name is in public now, which the restore empties
+				"55P03", "57014", "40P01": // another session in the way, a cancel: it says nothing of what may be made
+				continue
+			}
 			return &cannotRestore{fmt.Sprintf("the backup needs the extension %s, which the database lacks and its user could not "+
 				"make (%s): CREATE EXTENSION %s there first, as one who may", e.Name, pe.Message, e.Name)}
 		} else if err != nil {
@@ -327,27 +335,30 @@ func (t Target) mayAdd(ctx context.Context, d *sql.DB, list string, exts map[str
 // withoutOthers is list without the items a user who is no superuser cannot restore, and that
 // change nothing of what is put back: the grants on an extension's own objects that are another's
 // (the dump defines everything else it grants on), and the default privileges of users it may
-// not act for.
-func (t Target) withoutOthers(ctx context.Context, d *sql.DB, list string) (string, error) {
+// not act for. lost says of an extension that its objects will be another's once it is made again.
+func (t Target) withoutOthers(ctx context.Context, d *sql.DB, list string, lost func(ext string) bool) (string, error) {
 	roles, err := column(ctx, d, `SELECT rolname FROM pg_roles WHERE pg_has_role(current_user, oid, 'USAGE')`)
 	if err != nil {
 		return "", err
 	}
 	// the members of extensions that are the user's own all the same
-	own, err := column(ctx, d, `SELECT n.nspname || ' ' || o.kind || ' ' || o.name FROM (
+	own, err := column(ctx, d, `SELECT e.extname || '/' || n.nspname || ' ' || o.kind || ' ' || o.name FROM (
 			SELECT 'pg_proc'::regclass AS cls, oid, pronamespace AS ns, proowner AS owner, 'FUNCTION' AS kind, proname AS name FROM pg_proc
 			UNION ALL SELECT 'pg_class'::regclass, oid, relnamespace, relowner, 'TABLE', relname FROM pg_class
 			UNION ALL SELECT 'pg_type'::regclass, oid, typnamespace, typowner, 'TYPE', typname FROM pg_type) o
 		JOIN pg_namespace n ON n.oid = o.ns
-		WHERE pg_has_role(current_user, o.owner, 'USAGE')
-		  AND EXISTS (SELECT FROM pg_depend x WHERE x.classid = o.cls AND x.objid = o.oid AND x.deptype = 'e')`)
+		JOIN pg_depend x ON x.classid = o.cls AND x.objid = o.oid AND x.deptype = 'e' AND x.refclassid = 'pg_extension'::regclass
+		JOIN pg_extension e ON e.oid = x.refobjid
+		WHERE pg_has_role(current_user, o.owner, 'USAGE')`)
 	if err != nil {
 		return "", err
 	}
 	toc := pgbundle.ParseTOC(list)
 	known := map[string]bool{}
 	for _, o := range own {
-		known[o] = true
+		if ext, of, _ := strings.Cut(o, "/"); !lost(ext) {
+			known[of] = true
+		}
 	}
 	for _, e := range toc {
 		if kind, name := grantedOn(e.Desc, e.Name); kind != "" {

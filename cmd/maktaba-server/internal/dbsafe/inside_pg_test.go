@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
@@ -326,6 +327,7 @@ func TestRestoreInsidePublicIsRefusedUpFront(t *testing.T) {
 		"another's column of a type there":   {`CREATE TYPE public.mine AS ENUM ('a'); ALTER TYPE public.mine OWNER TO ` + pgbundle.AppRole + `; CREATE SCHEMA rep; CREATE TABLE rep.t (id int, c public.mine)`, `DROP SCHEMA rep CASCADE; DROP TYPE public.mine`, dump, "table column rep.t.c (" + pgbundle.SuperUser + ")"},
 		"another's partition":                {`CREATE TABLE public.parts (id int) PARTITION BY RANGE (id); ALTER TABLE public.parts OWNER TO ` + pgbundle.AppRole + `; CREATE SCHEMA rep; CREATE TABLE rep.p PARTITION OF public.parts FOR VALUES FROM (0) TO (9); INSERT INTO rep.p VALUES (1)`, `DROP TABLE public.parts; DROP SCHEMA rep`, dump, "table rep.p (" + pgbundle.SuperUser + ")"},
 		"another's key to a table there":     {`CREATE SCHEMA rep; CREATE TABLE rep.k (id uuid REFERENCES public.videos (id))`, `DROP SCHEMA rep CASCADE`, dump, "rep.k (" + pgbundle.SuperUser + ")"},
+		"a member of the user's extension":   {`SET ROLE ` + pgbundle.AppRole + `; CREATE EXTENSION hstore SCHEMA public; CREATE FUNCTION public.own_member(a public.mine_t) RETURNS int LANGUAGE sql AS 'SELECT 1'; ALTER EXTENSION hstore ADD FUNCTION public.own_member(public.mine_t); RESET ROLE`, `ALTER EXTENSION hstore DROP FUNCTION public.own_member(public.mine_t); DROP FUNCTION public.own_member(public.mine_t); DROP EXTENSION hstore`, dump, "extension hstore"},
 		"a member of an extension":           {`CREATE FUNCTION public.member(a public.mine_t) RETURNS int LANGUAGE sql AS 'SELECT 1'; ALTER EXTENSION pgcrypto ADD FUNCTION public.member(public.mine_t)`, `ALTER EXTENSION pgcrypto DROP FUNCTION public.member(public.mine_t); DROP FUNCTION public.member(public.mine_t)`, dump, "extension pgcrypto"},
 		"a public it may make nothing in":    {`ALTER SCHEMA public OWNER TO ` + pgbundle.SuperUser + `; REVOKE CREATE ON SCHEMA public FROM PUBLIC, ` + pgbundle.AppRole, `ALTER SCHEMA public OWNER TO pg_database_owner`, dump, "GRANT CREATE ON SCHEMA public TO " + pgbundle.AppRole},
 		"another's with the schema in order": {`CREATE TYPE public.theirs AS ENUM ('a')`, `DROP TYPE public.theirs`, dump, "type public.theirs"},
@@ -459,6 +461,50 @@ func TestRestoreLeavesOthersGrantsOut(t *testing.T) {
 			WHERE n.nspname = 'public' AND e.extname IN ('vector', 'pageinspect')`)
 		r.exec(t, r.t, `DROP EXTENSION `+ext+` CASCADE; CREATE EXTENSION `+ext+` SCHEMA public`)
 		restored(t, r.tg, dump)
+	})
+	t.Run("in place", func(t *testing.T) { // demoted, the extension as the user made it: the grants are its own, and put back
+		r := newInsideRig(t)
+		ext := r.one(t, `SELECT e.extname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+			WHERE n.nspname = 'public' AND e.extname IN ('vector', 'pageinspect')`)
+		r.exec(t, r.t, `ALTER ROLE `+pgbundle.AppRole+` SUPERUSER`)
+		r.exec(t, r.tg, `CREATE EXTENSION pgrowlocks SCHEMA public; `+onAll)
+		r.exec(t, r.t, `ALTER ROLE `+pgbundle.AppRole+` NOSUPERUSER`)
+		dump := filepath.Join(r.t.Backups, "pre-1.4.0-to-1.5.0.dump")
+		if err := r.tg.Dump(ctx, dump); err != nil {
+			t.Fatal(err)
+		}
+		want := r.schema(t)
+		r.exec(t, r.tg, `REVOKE EXECUTE ON FUNCTION pgrowlocks(text) FROM maktaba_worker`)
+		restored(t, r.tg, dump)
+		if got := r.schema(t); got != want {
+			t.Fatalf("with %s: another schema:\n%s", ext, diffLines(want, got))
+		}
+	})
+	t.Run("owned before", func(t *testing.T) { // demoted, in a public made again: a trusted extension the user owned all of is the first superuser's then
+		r := newInsideRig(t)
+		r.exec(t, r.t, `CREATE DATABASE grants_owned OWNER `+pgbundle.AppRole+` TEMPLATE template0`)
+		t.Cleanup(func() {
+			if d, err := r.t.open(ctx, ""); err == nil {
+				_, _ = d.Exec(`DROP DATABASE IF EXISTS grants_owned WITH (FORCE)`)
+				_ = d.Close()
+			}
+		})
+		plain := r.tg
+		var err error
+		if plain.URL, err = r.tg.urlFor("grants_owned"); err != nil {
+			t.Fatal(err)
+		}
+		r.exec(t, r.t, `ALTER ROLE `+pgbundle.AppRole+` SUPERUSER`)
+		r.exec(t, plain, `CREATE EXTENSION hstore; CREATE TABLE own (id int); INSERT INTO own VALUES (1); `+onAll)
+		r.exec(t, r.t, `ALTER ROLE `+pgbundle.AppRole+` NOSUPERUSER`)
+		dump := filepath.Join(r.t.Backups, "owned.dump")
+		if err := plain.Dump(ctx, dump); err != nil {
+			t.Fatal(err)
+		}
+		if inside, err := plain.CheckRestore(ctx, dump); err != nil || inside {
+			t.Fatalf("inside %v, %v", inside, err)
+		}
+		restored(t, plain, dump)
 	})
 	t.Run("new database", func(t *testing.T) {
 		r := newInsideRig(t)
@@ -617,8 +663,41 @@ func TestRestoreRefusesAMissingExtension(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// made there by one who may, with a trusted one the user makes itself, it goes on
+	// made there by one who may, with a trusted one the user makes itself, it goes on; the look
+	// before it makes none
 	r.exec(t, super, `CREATE EXTENSION pageinspect`)
+	if _, err := plain.CheckRestore(ctx, dump); err != nil {
+		t.Fatal(err)
+	}
+	d, err := super.open(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var made int
+	if err := d.QueryRow(`SELECT count(*) FROM pg_extension WHERE extname = 'hstore'`).Scan(&made); err != nil || made != 0 {
+		t.Fatalf("the look made the extension: %d %v", made, err)
+	}
+	// something of its name in public now, which the restore empties, is no reason against it,
+	// nor another session making it: not for long, either
+	r.exec(t, plain, `CREATE TYPE hstore AS ENUM ('mine')`)
+	if _, err := plain.CheckRestore(ctx, dump); err != nil {
+		t.Fatalf("a type of its name: %v", err)
+	}
+	r.exec(t, plain, `DROP TYPE hstore`)
+	tx, err := d.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`CREATE EXTENSION hstore`); err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	if _, err := plain.CheckRestore(ctx, dump); err != nil || time.Since(began) > 20*time.Second {
+		t.Fatalf("another session making it: %v after %s", err, time.Since(began))
+	}
+	_ = tx.Rollback()
+	_ = d.Close()
+	r.exec(t, plain, `CREATE TYPE hstore AS ENUM ('mine')`)
 	if err := plain.Restore(ctx, dump, nil); err != nil {
 		t.Fatal(err)
 	}
