@@ -689,6 +689,13 @@ The tab asks `POST /api/search/ai` (story 49.12) and reads its Server-Sent Event
 - **Covered by existing test?** Yes (`Search.ai.test.tsx`)
 - **Expected:** the person stays in AI mode; back on Results, the results show with no new search.
 
+### SRC-60d — Results shows the search the URL names
+
+- **Priority:** P1
+- **Category:** Navigation
+- **Covered by existing test?** Yes (`Search.ai.test.tsx`, English and Arabic)
+- **Expected:** in AI mode, a recent search opened or Back to another entry, then **Results**, shows that search; AI mode and Back at once leave the next search in Results; new words and AI mode at once ask the new words; a search answering after the URL moved on does not rewrite it.
+
 ### SRC-61 — A link to AI mode does not search until Results opens
 
 - **Priority:** P1

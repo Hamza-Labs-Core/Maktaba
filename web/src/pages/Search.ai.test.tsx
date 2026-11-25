@@ -5,7 +5,7 @@
 // the tab or the page, Arabic, and axe in both languages.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { Route, useLocation } from "react-router-dom";
+import { Route, useLocation, useNavigate, type NavigateFunction } from "react-router-dom";
 
 const { post, get, del } = vi.hoisted(() => ({ post: vi.fn(), get: vi.fn(), del: vi.fn() }));
 vi.mock("../lib/api", async () => {
@@ -25,14 +25,16 @@ import ar from "../i18n/ar.json";
 const E = en as Record<string, string>;
 const A = ar as Record<string, string>;
 
+let go: NavigateFunction;
 function Loc() {
   const { pathname, search, hash } = useLocation();
+  go = useNavigate();
   return <span data-testid="loc">{pathname + search + hash}</span>;
 }
 const loc = () => screen.getByTestId("loc").textContent ?? "";
 const params = () => new URLSearchParams(loc().split("?")[1]?.split("#")[0] ?? "");
 
-function renderSearch(path: string, user = memberUser) {
+function renderSearch(path: string, user = memberUser, history: string[] = []) {
   return renderPage(
     <ToastProvider>
       <Search />
@@ -42,6 +44,7 @@ function renderSearch(path: string, user = memberUser) {
       path,
       route: "/search",
       user,
+      history,
       extraRoutes: (
         <>
           <Route path="/videos/:videoId/watch" element={<p>player page</p>} />
@@ -171,6 +174,46 @@ afterEach(() => {
 });
 
 describe("AI mode tab (story 49.14)", () => {
+  /** A home where "sabr" is a recent search, its results kept. */
+  const withRecentSabr = () =>
+    fakeSearchServer({ post, get, del }, corpus, {
+      recent: [
+        {
+          search_id: "sid-rec",
+          q: "sabr",
+          mode: "hybrid",
+          created_at: "2026-11-24T00:00:00Z",
+          title_count: 1,
+          transcript_count: 0,
+          live: true,
+        },
+      ],
+      existing: {
+        "sid-rec": {
+          q: "sabr",
+          mode: "hybrid",
+          corpus: { titles: [titleVideo("s1", "A lesson on sabr")], transcripts: [] },
+        },
+      },
+    });
+  const recentSabr = () => screen.findByRole("button", { name: /^sabr/ });
+  /** Holds each POST /api/search from here until released. */
+  const holdSearch = () => {
+    const answer = post.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((done) => (release = done));
+    post.mockImplementation(async (url: string, body: unknown) => {
+      if (url === "/api/search") await held;
+      return answer(url, body) as unknown;
+    });
+    return () =>
+      act(async () => {
+        release();
+        await new Promise((r) => setTimeout(r, 20));
+      });
+  };
+  const asked = () => searchCalls().map((c) => (c[1] as { q: string }).q);
+
   it("SRC-60: Results is the default; AI mode rides in the URL and asks the words in the box once", async () => {
     renderSearch("/search?q=patience&mode=hybrid");
     expect(tab(E["search.tab.results"]!)).toHaveAttribute("aria-selected", "true");
@@ -224,26 +267,101 @@ describe("AI mode tab (story 49.14)", () => {
   });
 
   it("SRC-60c: a search that answers after AI mode was opened leaves the person there, and is kept", async () => {
-    const answer = post.getMockImplementation()!;
-    let release!: () => void;
-    const held = new Promise<void>((go) => (release = go));
-    post.mockImplementation(async (url: string, body: unknown) => {
-      if (url === "/api/search") await held;
-      return answer(url, body) as unknown;
-    });
+    const release = holdSearch();
     renderSearch("/search?q=patience&mode=hybrid");
     await waitFor(() => expect(searchCalls()).toHaveLength(1));
     fireEvent.click(tab(E["search.tab.ai"]!));
     await waitFor(() => expect(params().get("tab")).toBe("ai"));
-    await act(async () => {
-      release();
-      await new Promise((r) => setTimeout(r, 20));
-    });
+    await release();
     expect(params().get("tab")).toBe("ai");
     expect(params().get("sid")).not.toBeNull();
     fireEvent.click(tab(E["search.tab.results"]!));
     expect(await screen.findByText("Patience in hardship")).toBeInTheDocument();
     expect(searchCalls()).toHaveLength(1);
+  });
+
+  describe.each([
+    ["en", E],
+    ["ar", A],
+  ])("SRC-60d: Results shows the search the URL names (%s)", (lang, L) => {
+    beforeEach(() => localStorage.setItem("mkt:locale", lang));
+    const results = () => tab(L["search.tab.results"]!);
+    const ai = () => tab(L["search.tab.ai"]!);
+
+    it("a recent search opened from AI mode", async () => {
+      withRecentSabr();
+      renderSearch("/search?q=patience&mode=hybrid");
+      await screen.findByText("Patience in hardship");
+      fireEvent.click(ai());
+      await waitFor(() => expect(params().get("tab")).toBe("ai"));
+      fireEvent.click(await recentSabr());
+      await waitFor(() => expect(params().get("sid")).toBe("sid-rec"));
+      fireEvent.click(results());
+      expect(await screen.findByText("A lesson on sabr")).toBeInTheDocument();
+      expect(params().get("q")).toBe("sabr");
+      expect(params().get("sid")).toBe("sid-rec");
+      expect(document.documentElement.dir || "ltr").toBe(lang === "ar" ? "rtl" : "ltr");
+    });
+
+    it("Back to another entry in AI mode", async () => {
+      renderSearch("/search?q=sabr&tab=ai");
+      await waitFor(() => expect(streams).toHaveLength(1));
+      act(() => void go("/search?q=patience"));
+      await screen.findByText("Patience in hardship");
+      await waitFor(() => expect(params().get("sid")).not.toBeNull());
+      act(() => void go(-1));
+      await waitFor(() => expect(params().get("tab")).toBe("ai"));
+      fireEvent.click(results());
+      await waitFor(() => expect(asked()).toEqual(["patience", "sabr"]));
+      await waitFor(() => expect(params().get("sid")).not.toBeNull());
+      expect(params().get("q")).toBe("sabr");
+    });
+
+    it("AI mode and then Back before it renders: the next search opens in Results", async () => {
+      withRecentSabr();
+      renderSearch("/search?q=patience&mode=hybrid", memberUser, ["/search?q=earlier"]);
+      await screen.findByText("Patience in hardship");
+      await waitFor(() => expect(params().get("sid")).not.toBeNull());
+      act(() => {
+        ai().click();
+        void go(-1);
+      });
+      await waitFor(() => expect(params().get("q")).toBe("earlier"));
+      fireEvent.click(await recentSabr());
+      await waitFor(() => expect(params().get("sid")).toBe("sid-rec"));
+      expect(params().get("tab")).toBeNull();
+    });
+
+    it("new words, then AI mode before they render: it asks the new words", async () => {
+      renderSearch("/search?q=patience&mode=hybrid");
+      await screen.findByText("Patience in hardship");
+      await waitFor(() => expect(params().get("sid")).not.toBeNull());
+      const form = document.querySelector<HTMLFormElement>(".mkt-search__form")!;
+      fireEvent.change(form.querySelector("input")!, { target: { value: "sabr" } });
+      act(() => {
+        form.requestSubmit();
+        ai().click();
+      });
+      await waitFor(() => expect(streams).toHaveLength(1));
+      expect(streams[0]!.body).toEqual({ q: "sabr" });
+      expect(params().get("q")).toBe("sabr");
+    });
+
+    it("a search that answers after the URL moved to another leaves that one be", async () => {
+      const release = holdSearch();
+      renderSearch("/search?q=patience&mode=hybrid");
+      await waitFor(() => expect(asked()).toEqual(["patience"]));
+      fireEvent.click(ai());
+      await waitFor(() => expect(params().get("tab")).toBe("ai"));
+      act(() => void go("/search?q=sabr&tab=ai"));
+      await waitFor(() => expect(params().get("q")).toBe("sabr"));
+      await release();
+      expect(params().get("q")).toBe("sabr");
+      expect(params().get("tab")).toBe("ai");
+      expect(params().get("sid")).toBeNull();
+      fireEvent.click(results());
+      await waitFor(() => expect(asked()).toEqual(["patience", "sabr"]));
+    });
   });
 
   it("SRC-61: a link to the AI tab does not run the Results search until Results is opened", async () => {
