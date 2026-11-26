@@ -8,29 +8,32 @@ the files only. The Postgres tests need ``MAKTABA_TEST_PG_URL`` with pgvector.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import contextlib
 import json
 import os
 import shutil
 import sqlite3
+import time
 import uuid
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 import pytest_asyncio
 
 np = pytest.importorskip("numpy")
 
-from maktaba_pipeline.search import chroma_copy  # noqa: E402
+from maktaba_pipeline.search import chroma_copy, semantic  # noqa: E402
 from maktaba_pipeline.search.chroma_copy import (  # noqa: E402
     ChromaFiles,
     CopyConfig,
     Cursor,
     split_id,
 )
+from maktaba_pipeline.search.pgstore import COPY_LOCK_KEY, copy_lock_held  # noqa: E402
 from tests.search import chroma_fixture  # noqa: E402
 
 MODEL = "intfloat/multilingual-e5-small"
@@ -131,10 +134,10 @@ def test_only_queued_ids_are_inverted() -> None:
 
 
 @pytest.mark.parametrize("damaged", ["sqlite", "header", "header_missing", "data", "metadata"])
+@pytest.mark.parametrize("entrypoint", ["cli", "library"])
 def test_unreadable_chroma_reports_failed_and_exits_78(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, damaged: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, damaged: str, entrypoint: str
 ) -> None:
-    asyncpg = pytest.importorskip("asyncpg")
     b = _build(tmp_path / "chroma")
     files = ChromaFiles.open(b.root, chroma_copy.collection_name(MODEL))
     if damaged == "sqlite":
@@ -147,8 +150,7 @@ def test_unreadable_chroma_reports_failed_and_exits_78(
         (files.segment_dir / "data_level0.bin").write_bytes(b"short data")
     else:
         (files.segment_dir / "index_metadata.pickle").write_bytes(b"broken pickle")
-    monkeypatch.setattr(chroma_copy.time, "sleep", lambda _: None)
-    monkeypatch.setattr(chroma_copy.semantic, "embed_model", lambda: MODEL)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     conn = AsyncMock()
     conn.fetchrow.return_value = {
         "store": "chroma",
@@ -156,28 +158,67 @@ def test_unreadable_chroma_reports_failed_and_exits_78(
         "copied_rows": 0,
         "copy_done_at": None,
     }
-    monkeypatch.setattr(asyncpg, "connect", AsyncMock(return_value=conn))
-    monkeypatch.setattr(chroma_copy, "_drop_index", AsyncMock())
+    drop_index = AsyncMock()
+    save = AsyncMock()
+    monkeypatch.setattr(chroma_copy, "_drop_index", drop_index)
+    monkeypatch.setattr(chroma_copy, "_save", save)
     monkeypatch.setattr(chroma_copy, "_check_disk", AsyncMock(return_value=None))
     progress = tmp_path / "status.json"
     progress.write_text('{"phase": "load"}')
-    args = argparse.Namespace(
-        database_url="postgres://example.invalid/test",
-        chroma_dir=str(b.root),
-        page=30,
-        samples=3,
-        min_recall=0.95,
-        ef_search=400,
-        min_free_gb=0,
-        build_mem="",
-        progress_file=str(progress),
-        done_file=None,
-        no_switch=False,
-    )
-    assert chroma_copy.main(args) == chroma_copy.EXIT_NOT_READY
+    if entrypoint == "cli":
+        asyncpg = pytest.importorskip("asyncpg")
+        monkeypatch.setattr(asyncpg, "connect", AsyncMock(return_value=conn))
+        monkeypatch.setattr(semantic, "embed_model", lambda: MODEL)
+        args = argparse.Namespace(
+            database_url="postgres://example.invalid/test",
+            chroma_dir=str(b.root),
+            page=30,
+            samples=3,
+            min_recall=0.95,
+            ef_search=400,
+            min_free_gb=0,
+            build_mem="",
+            progress_file=str(progress),
+            done_file=None,
+            no_switch=False,
+        )
+        code = chroma_copy.main(args)
+        conn.close.assert_awaited_once()
+    else:
+        cfg = CopyConfig(chroma_dir=b.root, model=MODEL, progress_file=progress)
+        code = asyncio.run(chroma_copy.copy_chroma(conn, cfg))
+        conn.close.assert_not_awaited()
+    assert code == chroma_copy.EXIT_NOT_READY
     status = json.loads(progress.read_text())
     assert status["phase"] == "failed" and status["permanent"] is True and status["reason"]
-    conn.close.assert_awaited_once()
+    assert drop_index.await_count == 0
+    save.assert_not_awaited()
+    conn.fetchval.assert_awaited_with("SELECT pg_advisory_unlock($1::bigint)", COPY_LOCK_KEY)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unlock_fails", [False, True])
+async def test_copy_attempts_unlock_without_masking_an_error(
+    tmp_path: Path, unlock_fails: bool
+) -> None:
+    conn = AsyncMock()
+    conn.fetchval.side_effect = [True, True, ConnectionError("closed") if unlock_fails else True]
+    conn.fetchrow.side_effect = RuntimeError("copy interrupted")
+    with pytest.raises(RuntimeError, match="copy interrupted"):
+        await chroma_copy.copy_chroma(conn, CopyConfig(chroma_dir=tmp_path, model=MODEL))
+    conn.fetchval.assert_awaited_with("SELECT pg_advisory_unlock($1::bigint)", COPY_LOCK_KEY)
+
+
+@pytest.mark.asyncio
+async def test_copy_leaves_another_sessions_lock_alone(tmp_path: Path) -> None:
+    conn = AsyncMock()
+    conn.fetchval.side_effect = [True, False]
+    assert (
+        await chroma_copy.copy_chroma(conn, CopyConfig(chroma_dir=tmp_path, model=MODEL))
+        == chroma_copy.EXIT_FAILED
+    )
+    assert conn.fetchval.await_count == 2
+    conn.fetchval.assert_awaited_with("SELECT pg_try_advisory_lock($1::bigint)", COPY_LOCK_KEY)
 
 
 def test_a_locked_chroma_database_can_be_retried() -> None:
@@ -220,7 +261,7 @@ async def test_verify_counts_only_current_source_rows(
     b = _build(tmp_path / "chroma")
     files = ChromaFiles.open(b.root, chroma_copy.collection_name(MODEL))
     files.load_labels()
-    cur = Cursor(segment=files.segment_id, phase="verify", total=files.elements())
+    cur = Cursor(segment=files.segment_id, phase="verify", total=files.elements() - 1)
     assert cur.total > 150
     conn = AsyncMock()
     conn.transaction = lambda **_: contextlib.nullcontext()
@@ -228,11 +269,14 @@ async def test_verify_counts_only_current_source_rows(
         {"ordinal": i + 1, "id": i + 1, "present": i < present} for i in range(active_count)
     ]
     recall = AsyncMock(return_value=(1.0, 1))
+    sample = Mock(wraps=chroma_copy._sample)
     monkeypatch.setattr(chroma_copy, "_recall", recall)
+    monkeypatch.setattr(chroma_copy, "_sample", sample)
     verdict = await chroma_copy._verify(conn, files, _cfg(b.root, tmp_path), cur)
     assert verdict.expected == active_count and verdict.rows == present
     assert verdict.ok is (active_count == present)
     assert recall.await_count == (2 if active_count and verdict.ok else 0)
+    assert sample.call_args.args[-1] == cur.total
 
 
 # ------------------------------------------------------------------ against Postgres
@@ -398,7 +442,7 @@ async def test_a_killed_copy_continues(
     cfg = _cfg(b.root, tmp_path, page=40)
     with pytest.raises(RuntimeError):
         await chroma_copy.copy_chroma(pg, cfg)
-    await pg.execute("SELECT pg_advisory_unlock_all()")
+    assert not await copy_lock_held(pg)
     cur = Cursor.parse(await pg.fetchval("SELECT copy_cursor FROM semantic_store_state"))
     assert cur is not None and cur.phase == "load" and 0 < cur.next < cur.total
     # the index was dropped for the load
@@ -471,7 +515,7 @@ async def test_verify_accepts_large_deletions_since_load(pg: Any, tmp_path: Path
     assert await pg.fetchval("SELECT copied_rows FROM semantic_store_state") > (
         100 + await pg.fetchval("SELECT count(*) FROM segment_embeddings")
     )
-    await pg.execute("SELECT pg_advisory_unlock_all()")
+    assert not await copy_lock_held(pg)
     cfg.switch = True
     assert await chroma_copy.copy_chroma(pg, cfg) == chroma_copy.EXIT_OK
 

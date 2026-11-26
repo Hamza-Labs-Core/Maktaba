@@ -895,9 +895,10 @@ async def _exact_top(
     return present, expected, truths
 
 
-def _sample(files: ChromaFiles, fd: int, n: int, skip: set[int]) -> npt.NDArray[np.float32]:
-    """``n`` stored vectors at random (live ones)."""
-    total = files.elements()
+def _sample(
+    files: ChromaFiles, fd: int, n: int, skip: set[int], total: int
+) -> npt.NDArray[np.float32]:
+    """Sample up to ``n`` live vectors from the recorded copy range."""
     rng = random.Random()
     picks: list[npt.NDArray[np.float32]] = []
     tries = 0
@@ -921,7 +922,8 @@ async def _verify(conn: Any, files: ChromaFiles, cfg: CopyConfig, cur: Cursor) -
     with _read_store():
         fd = os.open(files.segment_dir / "data_level0.bin", os.O_RDONLY)
     try:
-        picked = await asyncio.to_thread(_sample, files, fd, cfg.samples, set(cur.skip))
+        total = min(cur.total, files.elements())
+        picked = await asyncio.to_thread(_sample, files, fd, cfg.samples, set(cur.skip), total)
         queries = picked.astype(np.float16).astype(np.float32)
         async with conn.transaction(isolation="repeatable_read", readonly=True):
             rows, expected, truths = await _exact_top(conn, files, fd, as_stored(queries), cur)
@@ -1038,6 +1040,21 @@ async def copy_chroma(conn: Any, cfg: CopyConfig) -> int:
     if not await conn.fetchval("SELECT pg_try_advisory_lock($1::bigint)", COPY_LOCK_KEY):
         _log.error("chroma_copy_already_running")
         return EXIT_FAILED
+    progress = Progress(cfg)
+    try:
+        return await _copy_locked(conn, cfg, progress)
+    except CorruptChroma as exc:
+        reason = str(exc)
+        _log.error("chroma_copy_corrupt_store", dir=str(cfg.chroma_dir), error=reason)
+        progress.write({"phase": "failed", "reason": reason, "permanent": True})
+        return EXIT_NOT_READY
+    finally:
+        # A broken connection can no longer release its lock explicitly.
+        with contextlib.suppress(Exception):
+            await conn.fetchval("SELECT pg_advisory_unlock($1::bigint)", COPY_LOCK_KEY)
+
+
+async def _copy_locked(conn: Any, cfg: CopyConfig, progress: Progress) -> int:
     state = await _state(conn)
     if state.done:
         _log.info("chroma_copy_done_already", copied=state.copied, store=state.store)
@@ -1054,21 +1071,23 @@ async def copy_chroma(conn: Any, cfg: CopyConfig) -> int:
         return EXIT_NOT_READY
     cur = state.cursor
     copied = state.copied
-    if cur is None or cur.segment != files.segment_id:
-        cur = Cursor(segment=files.segment_id)
+    starting = cur is None or cur.segment != files.segment_id
+    if starting:
+        cur = Cursor(segment=files.segment_id, total=await asyncio.to_thread(files.elements))
         copied = 0
-        await _drop_index(conn)
-        await _save(conn, cur, copied)
-        _log.info("chroma_copy_starting", collection=name, elements=files.elements())
     else:
+        assert cur is not None
         _log.info("chroma_copy_resuming", phase=cur.phase, element=cur.next, total=cur.total)
-    progress = Progress(cfg)
     if cur.phase in ("tail", "load"):
         problem = await _check_disk(conn, cfg, cur)
         if problem:
             _log.error("chroma_copy_no_room", reason=problem)
             return EXIT_FAILED
         await asyncio.to_thread(files.load_labels)
+        if starting:
+            await _drop_index(conn)
+            await _save(conn, cur, copied)
+            _log.info("chroma_copy_starting", collection=name, elements=cur.total)
         await _temp_table(conn, files.header.dim)
         await conn.execute("SET synchronous_commit = off")
         if cur.phase == "tail":
@@ -1192,11 +1211,6 @@ async def _run(args: argparse.Namespace) -> int:
     conn = await asyncpg.connect(dsn, ssl=tls)
     try:
         return await copy_chroma(conn, cfg)
-    except CorruptChroma as exc:
-        reason = str(exc)
-        _log.error("chroma_copy_corrupt_store", dir=str(cfg.chroma_dir), error=reason)
-        Progress(cfg).write({"phase": "failed", "reason": reason, "permanent": True})
-        return EXIT_NOT_READY
     finally:
         with contextlib.suppress(Exception):
             await asyncio.wait_for(conn.close(), timeout=5)

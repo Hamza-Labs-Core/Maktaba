@@ -347,15 +347,15 @@ func chromaCopyDetail(path, dir string) Detail {
 	case "verify":
 		return Detail{Text: "Checking the copied search index"}
 	case "failed":
+		giveUp := " To give the copy up and index those videos again, remove " + dir + "."
 		if p.Permanent {
 			return Detail{Text: "The Chroma search index could not be read: " + p.Reason +
-				". Search uses the vectors copied so far."}
+				". Search uses the vectors copied so far." + giveUp}
 		}
 		// the copy holds every re-index of the videos it has not brought yet (nothing is
 		// embedded twice): until it passes, or the admin gives it up by removing the folder
 		return Detail{Text: "The copied search index failed its check: " + p.Reason + ". It is tried again at " +
-			"the next start; search uses what is copied so far. To give the copy up and index those videos again, " +
-			"remove " + dir + "."}
+			"the next start; search uses what is copied so far." + giveUp}
 	}
 	return Detail{}
 }
