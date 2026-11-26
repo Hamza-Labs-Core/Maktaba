@@ -18,6 +18,8 @@ import re
 import threading
 import time
 import unicodedata
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from ..log import get_logger
@@ -29,6 +31,7 @@ __all__ = [
     "set_active_path_map",
     "to_db",
     "to_local",
+    "track_unavailable",
 ]
 
 
@@ -111,10 +114,12 @@ def _norm(prefix: str) -> str:
 
 _LISTING_TTL_SEC = 300.0
 _LISTING_MAX = 2048
-_listings: dict[str, tuple[float, dict[str, str], dict[str, str]]] = {}
+_listings: dict[str, tuple[float, dict[str, str], dict[str, str], bool]] = {}
 _listings_lock = threading.Lock()
 #: directories whose listing has not returned yet (a hung share): never listed twice at once
 _listing_now: set[str] = set()
+#: per-thread tracker for callers (healer) that distinguish "unavailable listing" from "missing"
+_unavailable_hit = threading.local()
 _log = get_logger()
 #: (directory, errno) -> when its listing failure was last logged; a failing share is
 #: listed again and again, so each kind of failure is logged once per window
@@ -199,23 +204,53 @@ def _nfc(s: str) -> str:
     return unicodedata.normalize("NFC", s)
 
 
-def _listing(directory: str) -> tuple[dict[str, str], dict[str, str]]:
-    """``({nfc name: name}, {nfc casefolded name: name})`` of one directory, cached."""
+@contextmanager
+def track_unavailable() -> Iterator[list[bool]]:
+    """Record whether any :func:`find_existing` lookup in this thread met an unavailable
+    directory listing (timed out or still hanging)."""
+    prev = getattr(_unavailable_hit, "flag", None)
+    flag = [False]
+    _unavailable_hit.flag = flag
+    try:
+        yield flag
+    finally:
+        if prev is not None and flag[0]:
+            prev[0] = True
+        _unavailable_hit.flag = prev
+
+
+def _note_unavailable() -> None:
+    flag = getattr(_unavailable_hit, "flag", None)
+    if flag is not None:
+        flag[0] = True
+
+
+def _listing_state(directory: str) -> tuple[dict[str, str], dict[str, str], bool]:
+    """``({nfc name: name}, {nfc casefolded name: name}, available)`` of one directory, cached.
+    ``available`` is False when :func:`_bounded_listdir` timed out or a listing of the same
+    directory is still hanging."""
     now = time.monotonic()
     with _listings_lock:
         hit = _listings.get(directory)
         if hit is not None and now - hit[0] < _LISTING_TTL_SEC:
-            return hit[1], hit[2]
+            return hit[1], hit[2], hit[3]
     listed = _bounded_listdir(directory)
     # unavailable: cached empty for the TTL like a real listing, so a hung share costs
     # one timeout per TTL, not one per path under it
+    available = listed is not None
     names = listed if listed is not None else []
     exact = {_nfc(n): n for n in names}
     folded = {_nfc(n).casefold(): n for n in names}
     with _listings_lock:
         if len(_listings) >= _LISTING_MAX:
             _listings.clear()
-        _listings[directory] = (now, exact, folded)
+        _listings[directory] = (now, exact, folded, available)
+    return exact, folded, available
+
+
+def _listing(directory: str) -> tuple[dict[str, str], dict[str, str]]:
+    """``({nfc name: name}, {nfc casefolded name: name})`` of one directory, cached."""
+    exact, folded, _ = _listing_state(directory)
     return exact, folded
 
 
@@ -235,7 +270,10 @@ def _walk(path: str) -> str | None:
         if _exists(nxt):
             cur = nxt
             continue
-        exact, folded = _listing(cur or ".")
+        exact, folded, available = _listing_state(cur or ".")
+        if not available:
+            _note_unavailable()
+            return None
         name = exact.get(_nfc(seg)) or folded.get(_nfc(seg).casefold())
         if name is None:
             return None

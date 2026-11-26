@@ -387,7 +387,6 @@ def refine(
         n += len(s.words or [])
     todo: list[_Stretch] = []
     groups = chunks(sentences)
-    grouped = {i for group in groups for i in group}
     said = [spoken(s.text) for s in sentences]
     for group in groups:
         stats.stretches += 1
@@ -400,11 +399,15 @@ def refine(
         ]
         stats.words += len(whisper)
         stats.quran_words += sum(locked)
-        # a quarter second more, for the last word's end, but none of a sentence left out
+        # a quarter second more, for the last word's end, stopping before the next sentence
+        # starts so neither a left-out sentence nor the next stretch's first word is heard
         after = next((i for i in range(group[-1] + 1, len(sentences)) if said[i]), None)
-        tail = 0 if after is not None and after not in grouped else SAMPLE_RATE // 4
         a = max(0, int(_span(sentences[group[0]])[0] * SAMPLE_RATE))
-        b = min(len(audio), int(_span(sentences[group[-1]])[1] * SAMPLE_RATE) + tail)
+        end_s = int(_span(sentences[group[-1]])[1] * SAMPLE_RATE)
+        b = end_s + SAMPLE_RATE // 4
+        if after is not None:
+            b = max(end_s, min(b, int(_span(sentences[after])[0] * SAMPLE_RATE)))
+        b = min(len(audio), b)
         if b - a >= SAMPLE_RATE // 2:
             todo.append(_Stretch(group, whisper, locked, audio[a:b]))
     for k in range(0, len(todo), BATCH):

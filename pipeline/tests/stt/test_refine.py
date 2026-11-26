@@ -282,6 +282,31 @@ def test_punctuation_beside_a_replaced_word_stays() -> None:
     assert places == [(0, 0), (1, 1), (2, 2), (3, 3)]
 
 
+def test_stretch_tail_stops_before_the_next_stretch_starts() -> None:
+    """Issue #1765 (item 3): the extra quarter second at a stretch's end must not reach into
+    the next stretch and hear its first short word twice, while keeping the full tail when a
+    gap follows."""
+    s1 = sentence("ا ب", 0.0, step=14.0)  # 0..28.0 (fills a stretch)
+    s2 = sentence("ج د", 28.0, step=0.1)  # 28.0..28.2: short first word right at boundary
+    s3 = sentence("ه و", 60.0, step=1.0)  # 60.0..62.0: big gap before it
+    seen: list[tuple[float, float]] = []
+
+    def hear(stretches: list[Any]) -> list[str]:
+        seen.extend((a[0] / SAMPLE_RATE, (a[-1] + 1) / SAMPLE_RATE) for a in stretches)
+        return [""] * len(stretches)
+
+    rf.refine(transcript(s1, s2, s3), range(70 * SAMPLE_RATE), hear, None, "c")
+    # s1 stops at 28.0 (not 28.25) so it never reaches into s2's short first word
+    assert seen[0] == (0.0, 28.0)
+
+    # with s2 long enough to be heard and a 1 s gap before s3, s2 gets its full 0.25 s tail
+    s2b = sentence("ج د ه", 28.0, step=0.2)  # 28.0..28.6
+    s3b = sentence("و ز", 60.0, step=1.0)
+    seen.clear()
+    rf.refine(transcript(s1, s2b, s3b), range(70 * SAMPLE_RATE), hear, None, "c")
+    assert seen == [(0.0, 28.0), (28.0, 28.85), (60.0, 62.25)]
+
+
 # ------------------------------------------------------------------ the stage
 
 

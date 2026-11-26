@@ -122,3 +122,25 @@ def test_a_hung_listing_is_unavailable_not_a_hang(
     paths.forget_listings()
     exact, _ = paths._listing(str(folder))
     assert _nfc(NAMES[0]) in {_nfc(n) for n in exact.values()}
+
+
+def test_track_unavailable_records_hung_listing_and_propagates_nested(tmp_path: Path) -> None:
+    folder = tmp_path / "share"
+    folder.mkdir()
+    missing = (folder / _nfd(NAMES[0])).as_posix()
+    with paths._listings_lock:  # noqa: SLF001
+        paths._listing_now.add(folder.as_posix())  # noqa: SLF001
+    try:
+        with paths.track_unavailable() as outer:
+            with paths.track_unavailable() as inner:
+                assert find_existing(missing) == missing
+                assert inner == [True]
+            assert outer == [True]
+    finally:
+        with paths._listings_lock:  # noqa: SLF001
+            paths._listing_now.discard(folder.as_posix())  # noqa: SLF001
+        paths.forget_listings()
+
+    with paths.track_unavailable() as clean:
+        assert find_existing(missing) == missing
+        assert clean == [False]

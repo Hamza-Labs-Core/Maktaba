@@ -18,9 +18,17 @@ from typing import Any
 __all__ = ["connection_lost", "fallback", "older_schema"]
 
 #: asyncpg's errors for a connection that failed, closed or is refused for now (by name:
-#: no asyncpg import here, SQLite installs do not have it): class 08 and 57P03
+#: no asyncpg import here, SQLite installs do not have it): class 08, 57P01/02/03, and the
+#: plugin API's 503 DatabaseUnavailable
 _CONNECTION_ERRORS = frozenset(
-    {"PostgresConnectionError", "CannotConnectNowError", "ConnectionDoesNotExistError"}
+    {
+        "AdminShutdownError",
+        "CannotConnectNowError",
+        "ConnectionDoesNotExistError",
+        "CrashShutdownError",
+        "DatabaseUnavailable",
+        "PostgresConnectionError",
+    }
 )
 
 
@@ -35,8 +43,20 @@ def older_schema(exc: BaseException) -> bool:
     return "no such table" in text or "no such column" in text
 
 
+#: filesystem errors are subclasses of OSError, never a database outage
+_FILESYSTEM_ERRORS = (
+    FileNotFoundError,
+    PermissionError,
+    IsADirectoryError,
+    NotADirectoryError,
+    FileExistsError,
+)
+
+
 def connection_lost(exc: BaseException) -> bool:
     """The database did not answer (as opposed to answering with an error)."""
+    if isinstance(exc, _FILESYSTEM_ERRORS):
+        return False
     if isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError)):  # noqa: UP041
         return True
     names = {c.__name__ for c in type(exc).__mro__}

@@ -180,3 +180,38 @@ def test_no_word_is_lost_doubled_or_moved_in_random_windows(old: bool, seed: int
         got = [g for s in out if (g := _words_of(s.text))]
         assert got == [w for w in want if w], window
     assert bool(damaged) is old
+
+
+def test_adjacent_stretches_do_not_double_the_next_sentence_s_first_short_word() -> None:
+    """Issue #1765 (item 3): across multiple back-to-back stretches (> CHUNK_SEC) with short
+    words (0.15 s), no word at a stretch boundary is heard twice."""
+    # ~400 words * 0.15 s = 60 s -> at least two back-to-back stretches
+    window = [f" w{i} w{i + 1} w{i + 2} w{i + 3}" for i in range(1, 401, 4)]
+    step = 0.15
+    sentences: list[Sentence] = []
+    said: list[tuple[float, str]] = []
+    t = 0.0
+    for text in window:
+        ws: list[Any] = []
+        for tok in text.split():
+            from maktaba_pipeline.stt.settings import Word
+
+            ws.append(Word(round(t, 3), round(t + step, 3), tok, 0.9))
+            said.append((t + step / 2, tok))
+            t += step
+        sentences.append(Sentence(ws[0].start, ws[-1].end, text.strip(), -0.1, 0.0, ws))
+
+    assert len(rf.chunks(sentences)) >= 2
+
+    def hear(stretches: list[Any]) -> list[str]:
+        out = []
+        for audio in stretches:
+            a, b = audio[0] / SAMPLE_RATE, (audio[-1] + 1) / SAMPLE_RATE
+            words = [w for mid, w in said if a <= mid < b]
+            out.append(" ".join(w.replace("w", "v") if int(w[1:]) % 3 == 0 else w for w in words))
+        return out
+
+    end = int((t + 2) * SAMPLE_RATE)
+    result = Transcript(sentences, end / SAMPLE_RATE, "ar", "turbo", 1.0)
+    rf.refine(result, range(end), hear, None, "cohere")
+    assert [_words_of(s.text) for s in result.sentences] == [_words_of(s) for s in window]

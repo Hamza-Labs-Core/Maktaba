@@ -59,6 +59,41 @@ def test_older_schema_is_only_a_missing_table_or_column() -> None:
 
 
 @pytest.mark.unit
+def test_connection_lost_distinguishes_db_outages_from_query_and_filesystem_errors() -> None:
+    def named(name: str, msg: str = "boom") -> Exception:
+        cls = type(name, (Exception,), {})
+        return cast(Exception, cls(msg))
+
+    lost: tuple[BaseException, ...] = (
+        named("AdminShutdownError", "terminating connection due to administrator command"),
+        named("CrashShutdownError", "terminating connection because of crash of another server"),
+        named("DatabaseUnavailable", "the database did not answer: eof"),
+        named("CannotConnectNowError", "the database system is starting up"),
+        named("ConnectionDoesNotExistError", "connection was closed"),
+        named("PostgresConnectionError", "lost"),
+        named("InterfaceError", "connection is closed"),
+        ConnectionRefusedError("refused"),
+        TimeoutError("timed out"),
+    )
+    not_lost: tuple[BaseException, ...] = (
+        named("UniqueViolationError", "duplicate key"),
+        named("QueryCanceledError", "canceling statement due to statement timeout"),
+        named("UndefinedTableError", "relation does not exist"),
+        named("InterfaceError", "another operation is in progress"),
+        ValueError("bad input"),
+        FileNotFoundError("no such file"),
+        PermissionError("permission denied"),
+        IsADirectoryError("is a directory"),
+        NotADirectoryError("not a directory"),
+        FileExistsError("file exists"),
+    )
+    for exc in lost:
+        assert schema_compat.connection_lost(exc), exc
+    for exc in not_lost:
+        assert not schema_compat.connection_lost(exc), exc
+
+
+@pytest.mark.unit
 def test_fallback_logs_at_the_level_its_cause_deserves() -> None:
     log = get_logger()
     with capture_logs() as logs:
