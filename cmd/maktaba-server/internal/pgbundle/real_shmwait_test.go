@@ -215,7 +215,7 @@ func TestRealPrivateStartAfterAKillWaitsForTheBackendsLeft(t *testing.T) {
 		t.Fatal("the killed postmaster was not reaped in 30 s")
 	}
 	// what it did before: the one start, refused
-	if err := b.runServer(ctx, io.Discard, func() error { return nil }); !errors.Is(err, errShmInUse) {
+	if err := b.runServer(ctx, time.Time{}, io.Discard, func() error { return nil }); !errors.Is(err, errShmInUse) {
 		t.Fatalf("a start beside the killed postmaster's processes: %v", err)
 	}
 	const held = 2 * time.Second

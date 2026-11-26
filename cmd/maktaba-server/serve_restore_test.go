@@ -374,13 +374,26 @@ func TestTheCopyIsAskedForOnlyWhenNeeded(t *testing.T) {
 	roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }
 	for name, set := range map[string]func(rec *apppayload.Database){
 		"kept already": func(rec *apppayload.Database) {
-			rec.Aside, rec.AsideBytes = filepath.Join(e.backups, "replaced-v0.3.0-x.dump"), 4
-			if err := os.WriteFile(rec.Aside, []byte("copy"), 0o600); err != nil {
+			rec.Aside, rec.AsideBytes = filepath.Join(e.backups, "replaced-v0.3.0-x.dump"), 5
+			if err := os.WriteFile(rec.Aside, []byte("PGDMP"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		},
 		"replaced": func(rec *apppayload.Database) { rec.Data = apppayload.DataReplaced },
 		"gone":     func(rec *apppayload.Database) { rec.Data = apppayload.DataGone },
+		"one a release that kept no record of it left": func(rec *apppayload.Database) {
+			// the data not known, and a verified replaced- dump of that version taken since the ask:
+			// it is found and kept as it is, so the room for one is not asked for
+			rec.Data = apppayload.DataUnknown
+			p := filepath.Join(e.backups, "replaced-v0.3.0-20261120T000000.dump")
+			if err := os.WriteFile(p, []byte("PGDMP"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			at := time.Now().Add(time.Minute) // after the record is written
+			if err := os.Chtimes(p, at, at); err != nil {
+				t.Fatal(err)
+			}
+		},
 	} {
 		rec := e.asked()
 		set(&rec)

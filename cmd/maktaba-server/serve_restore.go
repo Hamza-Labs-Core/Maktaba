@@ -60,6 +60,11 @@ type restorer struct {
 	check func(ctx context.Context, path string) (inside bool, err error)
 	// identity looks at the library database (dbsafe's Identity; tests replace it)
 	identity func(ctx context.Context) (string, int64, error)
+	// dbSize reads the live library database's size in bytes (dbsafe's Size; nil/error:
+	// fall back to newest backup size)
+	dbSize func(ctx context.Context) (int64, error)
+	// verifyAside checks a candidate replaced-* dump before copyNeeded reuses it
+	verifyAside func(ctx context.Context, path string) error
 	// tell records a restore the Updates page did not ask for (the command line's) where
 	// the page's is recorded: this machine's API audits it and tells the machines the home
 	// goes away (best effort; nil: nothing to tell)
@@ -111,9 +116,10 @@ type restorePlan struct {
 	// CopyFree bytes are free for one, CopyNeed needed. It is then restored only once the
 	// person confirms that none is (restoreAsk.withoutCopy). Never on an older release, which
 	// is refused instead (olderRoom).
-	NoCopy   string `json:"no_copy,omitempty"`
-	CopyFree uint64 `json:"copy_free,omitempty"`
-	CopyNeed uint64 `json:"copy_need,omitempty"`
+	NoCopy     string `json:"no_copy,omitempty"`
+	CopyFree   uint64 `json:"copy_free,omitempty"`
+	CopyNeed   uint64 `json:"copy_need,omitempty"`
+	noCopyRoom bool   // true only when copyRoom returned *pgbundle.NoRoomError
 }
 
 // restoreError is a refusal with its code (the page says it in its language).
@@ -257,13 +263,14 @@ func (r *restorer) plan(ctx context.Context, name string) (restorePlan, error) {
 	}
 	pl := restorePlan{Backup: name, Schema: schema, Release: rel.Version, Running: r.running(), At: st.ModTime().UTC()}
 	if pl.Older = newerThan(r.running(), pl.Release); pl.Older {
-		if err := r.olderRoom(pl.Release); err != nil {
+		if err := r.olderRoom(ctx, pl.Release); err != nil {
 			return pl, err
 		}
-	} else if err := r.copyRoom(name); err != nil {
+	} else if err := r.copyRoom(ctx, name); err != nil {
 		pl.NoCopy = err.Error()
 		var room *pgbundle.NoRoomError
 		if errors.As(err, &room) {
+			pl.noCopyRoom = true
 			pl.CopyFree, pl.CopyNeed = room.Free, room.Need
 		}
 	}
@@ -449,13 +456,14 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 	}
 	rec := apppayload.Database{Version: held, State: apppayload.DatabaseRestoring, From: pl.Release, Dump: p, By: by,
 		Error: "restore asked by " + by, Before: was, Data: data.Data, DataID: data.DataID, DataTable: data.DataTable}
-	if data.Aside = pgbundle.MovedDump(r.db.Backups, data.Aside); asideThere(data) {
+	if data.Aside = pgbundle.MovedDump(r.db.Backups, data.Aside); asideThere(data) && validAsideCandidate(ctx, data.Aside, r.verifyAside) {
 		rec.Aside, rec.AsideBytes = data.Aside, data.AsideBytes
 	}
 	if withoutCopy && !older { // an older release keeps one whatever it is told
-		// what was said when it was confirmed, and no more
+		// what was said when it was confirmed, and no more: only a real *NoRoomError
+		// records NoCopyRoom; any other failure records NoCopyAny
 		switch {
-		case pl.NoCopy != "" && pl.CopyNeed > 0:
+		case pl.noCopyRoom:
 			rec.NoCopy = apppayload.NoCopyRoom
 		case pl.NoCopy != "" || data.CopyError != "":
 			rec.NoCopy = apppayload.NoCopyAny
@@ -511,7 +519,7 @@ func newRestorer(cfg config.Config, db *dbsafe.Target, inst updater.Installer, e
 		exitDelay: restoreExitDelay, tell: apiRestoreNotice(cfg), room: roomOf(cfg)}
 	if db != nil {
 		t := *db
-		r.schema, r.identity = t.DumpSchema, t.Identity
+		r.schema, r.identity, r.dbSize, r.verifyAside = t.DumpSchema, t.Identity, t.Size, t.VerifyAside
 		if t.Data == "" { // not the bundled one
 			r.check = t.CheckRestore
 		}

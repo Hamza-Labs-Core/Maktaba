@@ -72,3 +72,117 @@ func TestCountsScript(t *testing.T) {
 		t.Fatal("damaged counts")
 	}
 }
+
+// A chunked dump with no counts.json (a dump from v0.3.37 to v0.3.42) cannot tell a last
+// chunk gone: the numbers the folder holds stay whole, and nothing else says the rows. That
+// is the limit CheckChunks documents ("a last one gone is seen by the rows' counts alone"):
+// pinned here, so a change that quietly takes such a dump for a whole one is noticed.
+func TestCheckChunksCannotSeeAGoneLastChunkWithoutCounts(t *testing.T) {
+	const sig = "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	const row = "\x00\x01\x00\x00\x00\x02hi"
+	const end = "\xff\xff"
+	toc := "1; 0 1 TABLE public segment_embeddings maktaba\n2; 0 2 TABLE DATA public segment_embeddings maktaba\n"
+	dir := t.TempDir()
+	// a dump taken with two chunks, its last one gone since: what is left looks whole
+	for n, body := range map[string]string{"000": sig + row + end, "001": sig + row + end} {
+		if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings."+n+".bin"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = os.Remove(filepath.Join(dir, "chunk.public.segment_embeddings.001.bin"))
+	if err := CheckChunks(dir, toc); err != nil {
+		t.Fatalf("a last chunk gone, with no counts to see it: %v", err)
+	}
+	// with the counts the dump's snapshot wrote, the rows it lacks say it
+	if err := os.WriteFile(filepath.Join(dir, CountsFile), []byte(`{"public.segment_embeddings":4}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if sql, err := CountsScript(dir, toc); err != nil || !strings.Contains(sql, "n <> 4") {
+		t.Fatalf("the counts the dump has: %q %v", sql, err)
+	}
+}
+
+// CheckChunks counts actual binary COPY rows across sidecar chunks and rejects a mismatch
+// against counts.json (catching a missing final chunk); CheckAsideChunks additionally
+// refuses any chunked candidate lacking counts.json so a legacy unprovably-complete dump
+// is never reused as the sole safety copy.
+func TestCheckChunksAndAsideCountsRowTotals(t *testing.T) {
+	const sig = "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	const row = "\x00\x01\x00\x00\x00\x02hi"
+	const end = "\xff\xff"
+	toc := "1; 0 1 TABLE public segment_embeddings maktaba\n"
+
+	dir := t.TempDir()
+	for n, body := range map[string]string{"000": sig + row + end, "001": sig + row + end} {
+		if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings."+n+".bin"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Legacy chunked dump with no counts.json: CheckChunks passes, CheckAsideChunks refuses.
+	if err := CheckChunks(dir, toc); err != nil {
+		t.Fatalf("legacy chunked dump without counts rejected by CheckChunks: %v", err)
+	}
+	if err := CheckAsideChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "dump_incomplete") {
+		t.Fatalf("legacy chunked dump without counts accepted by CheckAsideChunks: %v", err)
+	}
+	// Matching counts.json (2 rows across 2 chunks): both pass.
+	if err := os.WriteFile(filepath.Join(dir, CountsFile), []byte(`{"public.segment_embeddings":2}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err != nil {
+		t.Fatalf("complete chunked dump rejected by CheckChunks: %v", err)
+	}
+	if err := CheckAsideChunks(dir, toc); err != nil {
+		t.Fatalf("complete chunked dump rejected by CheckAsideChunks: %v", err)
+	}
+	// Missing final chunk (only 1 of 2 rows present): both reject.
+	_ = os.Remove(filepath.Join(dir, "chunk.public.segment_embeddings.001.bin"))
+	if err := CheckChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "1 of 2 rows") {
+		t.Fatalf("missing final chunk with counts accepted by CheckChunks: %v", err)
+	}
+	if err := CheckAsideChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "1 of 2 rows") {
+		t.Fatalf("missing final chunk with counts accepted by CheckAsideChunks: %v", err)
+	}
+	// Trailing bytes after trailer are rejected.
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(sig+row+end+"junk"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err == nil {
+		t.Fatal("chunk with trailing bytes after trailer accepted")
+	}
+	// Non-zero critical header flag bit (bits 16..31) is rejected as PostgreSQL rejects it.
+	badFlags := "PGCOPY\n\xff\r\n\x00\x00\x01\x00\x00\x00\x00\x00\x00" + row + end
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(badFlags), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "critical flags") {
+		t.Fatalf("chunk with critical header flags accepted: %v", err)
+	}
+	// Negative signed int32 header extension length is rejected.
+	negExt := "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x00\xff\xff\xff\xff" + row + end
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(negExt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "extension length") {
+		t.Fatalf("chunk with negative header extension length accepted: %v", err)
+	}
+	// Truncated header extension area is rejected.
+	truncExt := "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x00\x00\x00\x00\x0a" + "xx"
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(truncExt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err == nil {
+		t.Fatal("chunk with truncated header extension area accepted")
+	}
+	// Non-critical flags (bits 0..15) with valid extension area pass.
+	if err := os.WriteFile(filepath.Join(dir, CountsFile), []byte(`{"public.segment_embeddings":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	okFlagsExt := "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x01\x00\x00\x00\x02ab" + row + end
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(okFlagsExt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckAsideChunks(dir, toc); err != nil {
+		t.Fatalf("chunk with valid non-critical flags and extension rejected: %v", err)
+	}
+}

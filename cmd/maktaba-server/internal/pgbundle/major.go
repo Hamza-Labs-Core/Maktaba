@@ -37,14 +37,26 @@ import (
 // UpgradeMarker is the file in a cluster pg_upgrade made, saying from what.
 const UpgradeMarker = "maktaba-upgraded-from.json"
 
+// RecordSeedPending is written inside the upgraded cluster before UpgradeMarker is
+// finalized so startup knows this upgrade still needs its database record seeded and
+// reconciled from the old cluster's record. Pre-existing upgraded clusters lack this file
+// and their live database record is never overwritten.
+const RecordSeedPending = "maktaba-record-seed-pending"
+
 // UpgradedFrom is UpgradeMarker's content.
 type UpgradedFrom struct {
-	Major      string    `json:"major"`
-	Data       string    `json:"data"`
-	SystemID   string    `json:"system_identifier"`
-	Checkpoint string    `json:"checkpoint"`
-	Mode       string    `json:"mode"` // clone or copy
-	At         time.Time `json:"at"`
+	Major      string `json:"major"`
+	Data       string `json:"data"`
+	SystemID   string `json:"system_identifier"`
+	Checkpoint string `json:"checkpoint"`
+	// Identity and Table are the full live database identity on the old cluster at the
+	// time of the upgrade (<sys>/<db_oid>/<public_ns_oid> and goose_db_version OID),
+	// matching dbsafe.Target.Identity so restore record reconciliation verifies the whole
+	// identity rather than SystemID alone.
+	Identity string    `json:"identity,omitempty"`
+	Table    string    `json:"data_table,omitempty"`
+	Mode     string    `json:"mode"` // clone or copy
+	At       time.Time `json:"at"`
 }
 
 // DataDirFor is the cluster directory of a major under root: <root>/postgres for 16 and
@@ -327,11 +339,19 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 		}
 		defer func() {
 			// back on, then the marker (a failed upgrade too: the old cluster is as it was);
-			// nothing when the run put them back itself
+			// nothing when the run put them back itself. When shutdown/cancellation was
+			// requested, skip restoring grants here so stopping mid-upgrade does not hang:
+			// clusterMarker is already gone, so Prepare restores them on the next start.
 			if marker == nil {
 				return
 			}
-			if gerr := u.oldSQL(context.WithoutCancel(ctx), log, clusterSQL); gerr != nil {
+			if ctx.Err() != nil {
+				fmt.Fprintf(log, "[postgres] level=warn the upgrade stopped (%v): the old cluster's grants are left for its next start\n", ctx.Err())
+				return
+			}
+			dctx, cancel := context.WithTimeout(ctx, oldSQLBound)
+			defer cancel()
+			if gerr := u.oldSQL(dctx, log, clusterSQL); gerr != nil {
 				fmt.Fprintf(log, "[postgres] level=warn the old cluster's grants are not back (%v): its next start makes them again\n", gerr)
 				return
 			}
@@ -407,22 +427,38 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 		return err
 	}
 	// the marker, last: what the old cluster is once its grants are back (their server's
-	// stop moves its checkpoint on)
+	// stop moves its checkpoint on). While the old cluster is up, also read the full
+	// database/schema/table identity of AppDatabase for UpgradeMarker.
+	var oldDBNS, oldTable string
 	if len(marker) > 0 {
-		if err := u.oldSQL(ctx, log, clusterSQL); err != nil {
+		var err error
+		oldDBNS, oldTable, err = u.oldSQLWithIdentity(ctx, log, clusterSQL)
+		if err != nil {
 			return fmt.Errorf("the old cluster's grants, after the upgrade: %w", err)
 		}
 		if err := os.WriteFile(filepath.Join(u.Old.Data, clusterMarker), marker, 0o600); err != nil {
 			return err
 		}
 		marker = nil // the deferred put back is done
+	} else {
+		oldDBNS, oldTable, _ = u.oldSQLWithIdentity(ctx, log, "")
 	}
 	if c, err = ReadControl(ctx, u.Old.Bin("pg_controldata"), u.Old.Data); err != nil {
 		return err
 	}
-	m := UpgradedFrom{Major: oldMajor, Data: u.Old.Data, SystemID: c.SystemID, Checkpoint: c.Checkpoint, Mode: mode,
-		At: time.Now().UTC()}
+	var oldIdentity string
+	if c.SystemID != "" && oldDBNS != "" {
+		oldIdentity = c.SystemID + "/" + oldDBNS
+	}
+	m := UpgradedFrom{Major: oldMajor, Data: u.Old.Data, SystemID: c.SystemID, Checkpoint: c.Checkpoint,
+		Identity: oldIdentity, Table: oldTable, Mode: mode, At: time.Now().UTC()}
 	raw, _ := json.MarshalIndent(m, "", "  ")
+	// Mark record seeding pending BEFORE finalizing UpgradeMarker: a crash between the two
+	// re-runs Needed()+Run(); a crash after UpgradeMarker still sees RecordSeedPending on
+	// restart and completes seeding/reconciliation before removing it.
+	if err := os.WriteFile(filepath.Join(u.New.Data, RecordSeedPending), []byte(c.SystemID+"@"+c.Checkpoint+"\n"), 0o600); err != nil {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(u.New.Data, UpgradeMarker), append(raw, '\n'), 0o600); err != nil {
 		return err
 	}
@@ -434,6 +470,12 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 		mode, u.New.Data, oldMajor, u.Old.Data)
 	return nil
 }
+
+// oldSQLBound is how long the deferred putting back of the old cluster's grants has
+// (oldSQL): it starts a server of its own, which first may wait out shared memory a killed
+// postmaster left (a full shmWait); a stop in the middle of an upgrade must not hang for
+// that, and its next start makes the grants again anyway (Prepare).
+const oldSQLBound = 30 * time.Second
 
 // oldSQL runs sql as the superuser in the app's database on the old cluster, with a server
 // of its own (never on the LAN).
@@ -447,6 +489,39 @@ func (u MajorUpgrade) oldSQL(ctx context.Context, log io.Writer, sql string) err
 		}
 		return q.Exec(ctx, AppDatabase, sql)
 	})
+}
+
+// oldIdentitySQL matches dbsafe.Target.Identity's database, public schema, and migration
+// table OIDs so UpgradeMarker can record the full identity of the upgraded cluster.
+const oldIdentitySQL = `SELECT d.oid::text || '/' || coalesce((SELECT n.oid::text FROM pg_namespace n WHERE n.nspname = 'public'), '') || '#' ||
+	coalesce((SELECT c.oid::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = 'goose_db_version'), '')
+	FROM pg_database d WHERE d.datname = current_database()`
+
+// oldSQLWithIdentity runs sql (when non-empty) on the old cluster and best-effort reads the
+// app database's dbOID/publicOID and goose_db_version OID in the same server session.
+func (u MajorUpgrade) oldSQLWithIdentity(ctx context.Context, log io.Writer, sql string) (dbNS, table string, err error) {
+	old := u.Old
+	old.LAN, old.TLS = false, false
+	err = old.withServer(ctx, log, func() error {
+		q, err := old.NewQuerier()
+		if err != nil {
+			return err
+		}
+		if sql != "" {
+			if err := q.Exec(ctx, AppDatabase, sql); err != nil {
+				return err
+			}
+		}
+		if rows, qerr := q.Query(ctx, AppDatabase, oldIdentitySQL); qerr == nil && len(rows) > 0 {
+			if lhs, tbl, ok := strings.Cut(strings.TrimSpace(rows[0]), "#"); ok {
+				if db, ns, ok2 := strings.Cut(lhs, "/"); ok2 && db != "" && ns != "" {
+					dbNS, table = db+"/"+ns, tbl
+				}
+			}
+		}
+		return nil
+	})
+	return dbNS, table, err
 }
 
 // slotGrantsOffSQL puts the replication slot functions clusterSQL grants the app role back

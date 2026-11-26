@@ -470,7 +470,15 @@ var (
 	makeRoom = pgbundle.MakeRoomWith
 	// the same for the copy of the database a restore replaces (MakeRoomKeeping), and whether
 	// it would be made (RoomKeeping)
-	makeRoomKeeping, roomKeeping, roomNow = pgbundle.MakeRoomKeeping, pgbundle.RoomKeeping, pgbundle.RoomNow
+	makeRoomKeeping, roomKeeping, roomNow, roomNowAtLeast = pgbundle.MakeRoomKeeping, pgbundle.RoomKeeping, pgbundle.RoomNow, pgbundle.RoomNowAtLeast
+	// verifyAside checks a candidate replaced-* dump before it is reused as protection
+	verifyAside = func(ctx context.Context, g *migrationGate, path string) error {
+		t, err := g.target()
+		if err != nil {
+			return err
+		}
+		return t.VerifyAside(ctx, path)
+	}
 	// the other sessions on the database, ended before an update's migrations
 	endSessionsBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.EndSessions(ctx) }
 	endSessionsExternal = func(ctx context.Context, t dbsafe.Target) (int, error) { return t.EndSessions(ctx) }
@@ -627,27 +635,32 @@ func (g *migrationGate) backups() string {
 
 // setAsideReplaced dumps the database a restore by hand replaces
 // (replaced-<version>-<utc>.dump beside the backups), once for a restore however often it
-// is tried (the record's Aside; its path, "" when it could not): it holds every change made
-// since the backup, which the person chose to put back. Room is made for it from the older
-// backups, never the one put back, those kept for this restore, or the newest of each kind
-// (asideKeeps), and none at all when it is not enough, or the person confirmed a restore
-// without a copy. One that cannot be kept is an error: the restore stops there, unless the
-// person confirmed it goes on without (restoreAsked). An update's rollback sets nothing aside: the
-// release before starts at once, from the dump taken before the failed release's
-// migrations when they ran.
+// is tried: the path is named in the record before the dump is taken, so a kill between the
+// two finds it there and takes no second one, and what a try or a release that kept no
+// record of it left is found and kept as it is (replacedDumpThere). The copy holds every
+// change made since the backup, which the person chose to put back. Room is made for it from
+// the older backups, never the one put back, those kept for this restore, or the newest of
+// each kind (asideKeeps), and none at all when it is not enough, or the person confirmed a
+// restore without a copy. One that cannot be kept is an error: the restore stops there,
+// unless the person confirmed it goes on without (restoreAsked). An update's rollback sets
+// nothing aside: the release before starts at once, from the dump taken before the failed
+// release's migrations when they ran.
 func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Database) (string, error) {
 	dir := g.backups()
-	prefix, since := pgbundle.ReplacedDumpPrefix+rec.Version+"-", rec.At
-	if ents, err := os.ReadDir(dir); err == nil && rec.Data == apppayload.DataUnknown {
-		// asked on a release that did not record it: it may have set it aside already
-		for _, e := range ents {
-			if info, err := e.Info(); err == nil && strings.HasPrefix(e.Name(), prefix) &&
-				strings.HasSuffix(e.Name(), ".dump") && !info.ModTime().Before(since) {
-				return filepath.Join(dir, e.Name()), nil
-			}
+	if found := replacedDumpThere(ctx, dir, rec, func(vctx context.Context, p string) error {
+		return verifyAside(vctx, g, p)
+	}); found != "" {
+		return found, nil // the record still says the data is what it was: it is the same copy
+	}
+	path := rec.Aside
+	if path == "" {
+		path = filepath.Join(dir, pgbundle.ReplacedDumpPrefix+rec.Version+"-"+
+			time.Now().UTC().Format("20060102T150405")+".dump")
+		rec.Aside, rec.AsideBytes = path, 0
+		if err := g.save(rec); err != nil {
+			return "", err
 		}
 	}
-	path := filepath.Join(dir, prefix+time.Now().UTC().Format("20060102T150405")+".dump")
 	var err error
 	if rec.NoCopy != "" {
 		err = roomNow(dir, g.room)
@@ -1609,7 +1622,9 @@ func existingDir(dirs ...string) string {
 // with the release it was put back for. No update attempt: nothing failed. What the data
 // is goes in the record before each step that changes it; a try that fails says it, and
 // what can be done then (serve_restore_exits.go). A newer release installed since the try
-// failed goes on from what was there before instead.
+// failed goes on from what was there before instead. An ask not yet tried, whose release
+// never became the one that starts (a stop between the record and the switch), waits for
+// that release's own start: it is kept here, and it puts its backup back itself.
 func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Database, report func(supervisor.Detail)) (apppayload.Database, error) {
 	if !g.keeps() {
 		return rec, supervisor.Halt(detailErr("db_no_cluster", fmt.Sprintf("the library database cannot be put back "+
@@ -1646,14 +1661,33 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 			"was before it\n", rec.Dump, rec.RestoreError, g.version)
 		return base, nil
 	}
+	// the ask has not been tried, and this is not the release it is for: mark had written the
+	// record (a new mark: it says what was there before, Before) and was to make that release
+	// the one that starts, and a stop came between the two, so this newer one is still the one
+	// that starts. The release it is for is kept here, so the restore is left for its own
+	// start — this one putting the backup back and then migrating it in the same breath is
+	// not what was asked. (A mark from before, or that release's code not kept here any more:
+	// what was asked is honored here instead, and this release's migrations follow the backup.)
+	if rec.TriedBy == "" && rec.From != "" && rec.Before != nil && !sameRelease(rec.From, g.version) &&
+		g.prev != nil && g.prev(rec.From) != "" {
+		g.holdBackups(rec)
+		fmt.Fprintf(g.log, "[serve] the restore of %s, asked for %s, waits: a stop kept %s from becoming the one that "+
+			"starts, and this is %s\n", rec.Dump, rec.From, rec.From, g.version)
+		return rec, supervisor.Halt(detailErr("db_restore_for_release", fmt.Sprintf("the library database's restore of %s "+
+			"waits for release %s, which was asked for just before a stop and never became the one that starts. Start %s "+
+			"— its code is kept here — and it puts the backup back itself, or give the restore up and %s goes on with the "+
+			"library as it is", rec.Dump, rec.From, rec.From, g.version), rec.Dump, rec.From))
+	}
 	// every backup stays until this is done: the one put back, and the next one tried
 	if err := holdBackupsFor(g.backups(), rec); err != nil {
 		return rec, g.restoreFailed(ctx, rec, err)
 	}
 	report(detail("db_restoring_backup", fmt.Sprintf("Putting the library database back from %s, as %s asked",
 		rec.Dump, rec.By), rec.Dump, rec.By))
-	if !asideThere(rec) && rec.Data != apppayload.DataReplaced && rec.Data != apppayload.DataGone {
-		rec.Aside, rec.AsideBytes = "", 0
+	asideOK := asideThere(rec) && validAsideCandidate(tctx, rec.Aside, func(vctx context.Context, p string) error {
+		return verifyAside(vctx, g, p)
+	})
+	if !asideOK && rec.Data != apppayload.DataReplaced && rec.Data != apppayload.DataGone {
 		if rec.Aside, err = g.setAsideReplaced(tctx, rec); err != nil && ctx.Err() == nil && tctx.Err() == nil {
 			if !goOnWithoutCopy(rec, err) {
 				// the only copy of the newest data: never lost unasked

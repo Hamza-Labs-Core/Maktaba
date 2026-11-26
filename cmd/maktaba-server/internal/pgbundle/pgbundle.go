@@ -214,16 +214,21 @@ func sqliteInUse() bool {
 // Bin is one of the install's programs.
 func (b Bundle) Bin(name string) string { return filepath.Join(b.Home, "bin", exe(name)) }
 
+// StopCommandContext is StopCommand bounded by ctx.
+func (b Bundle) StopCommandContext(ctx context.Context) *exec.Cmd {
+	return exec.CommandContext(ctx, b.Bin("pg_ctl"), "stop", "-D", b.Data, "-m", "fast", "-W")
+}
+
 // StopCommand is the fast shutdown where a signal cannot ask for it (Windows has no
 // SIGINT for another process): pg_ctl stop -m fast, not waiting.
 func (b Bundle) StopCommand() *exec.Cmd {
-	return exec.Command(b.Bin("pg_ctl"), "stop", "-D", b.Data, "-m", "fast", "-W")
+	return b.StopCommandContext(context.Background())
 }
 
-// stop asks a server of this cluster to shut down fast.
-func (b Bundle) stop(p *os.Process) {
+// stop asks a server of this cluster to shut down fast, bounding Windows' pg_ctl call to ctx.
+func (b Bundle) stop(ctx context.Context, p *os.Process) {
 	if runtime.GOOS == "windows" {
-		_ = b.StopCommand().Run()
+		_ = b.StopCommandContext(ctx).Run()
 		return
 	}
 	_ = p.Signal(os.Interrupt)
@@ -642,23 +647,60 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, sql string, log io.Write
 // end cleanly left, and waits for the shared memory of one that was killed (a power cut, a
 // hard stop, then a start at once). Where that cannot be seen before (Windows, once a start
 // replaced the lock), Postgres says it, and it is started again until the memory is free:
-// shmWait at most.
+// shmWait at most, counted from before the first wait, so a start retried near the bound
+// cannot wait shmWait a second time after it.
 func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
 	b.ClearStaleLock()
 	began := time.Now()
+	deadline := began.Add(shmWait)
+	var lastShmErr error
 	for {
-		b.AwaitShmFree(ctx)
-		err := b.runServer(ctx, log, fn)
-		if !errors.Is(err, errShmInUse) || ctx.Err() != nil || time.Since(began) >= shmWait {
+		wctx, cancel := waitCtx(ctx, deadline)
+		awaitShmFree(b, wctx)
+		cancel()
+		err := b.runServer(ctx, deadline, log, fn)
+		if errors.Is(err, errShmInUse) {
+			lastShmErr = err
+		} else {
+			// If a retry was cut short by the shared shmWait deadline (not caller
+			// cancellation) before Postgres could finish starting or exiting, preserve
+			// the shared-memory cause alongside the readiness error.
+			if err != nil && lastShmErr != nil && ctx.Err() == nil && !time.Now().Before(deadline) {
+				return fmt.Errorf("%w (%w)", err, lastShmErr)
+			}
+			return err
+		}
+		if ctx.Err() != nil || !time.Now().Before(deadline) {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "[postgres] the shared memory of %s is still in use: started again\n", b.Data)
+		sctx, scancel := waitCtx(ctx, deadline)
+		t := time.NewTimer(shmRetryEvery)
 		select {
-		case <-ctx.Done():
+		case <-sctx.Done():
+			t.Stop()
+			scancel()
 			return err
-		case <-time.After(shmRetryEvery):
+		case <-t.C:
+			scancel()
 		}
 	}
+}
+
+// waitCtx is ctx, ended by latest at the latest (a deadline of its own already sooner
+// stays): the waits of one start share a bound, so a wait that begins near it does not
+// get the whole bound of its own after it.
+func waitCtx(ctx context.Context, latest time.Time) (context.Context, context.CancelFunc) {
+	if d, ok := ctx.Deadline(); ok && !d.After(latest) {
+		return ctx, func() {}
+	}
+	return context.WithDeadline(ctx, latest)
+}
+
+// awaitShmFree is b.AwaitShmFree, on a context the caller has bounded (tests replace it,
+// to prove the wait runs before the server starts).
+var awaitShmFree = func(b Bundle, ctx context.Context) {
+	b.AwaitShmFree(ctx)
 }
 
 // errShmInUse is a server that did not start because processes of a postmaster that was
@@ -685,8 +727,9 @@ func (e *startError) Is(target error) bool {
 	return target == errShmInUse && strings.Contains(e.said, "pre-existing shared memory block")
 }
 
-// runServer is withServer's one start.
-func (b Bundle) runServer(ctx context.Context, log io.Writer, fn func() error) error {
+// runServer is withServer's one start. startDeadline bounds startup readiness and startup
+// teardown to withServer's shared shmWait budget while leaving ctx untouched for fn once ready.
+func (b Bundle) runServer(ctx context.Context, startDeadline time.Time, log io.Writer, fn func() error) error {
 	srv, err := b.serverCommand(b.serverArgs(false))
 	if err != nil {
 		return err
@@ -701,17 +744,44 @@ func (b Bundle) runServer(ctx context.Context, log io.Writer, fn func() error) e
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- srv.Wait() }()
+	ready := false
 	defer func() {
-		b.stop(srv.Process) // fast shutdown
+		wait := 30 * time.Second
+		if !ready && !startDeadline.IsZero() {
+			if left := time.Until(startDeadline); left < wait {
+				wait = max(left, 0)
+			}
+		}
+		if wait == 0 {
+			_ = srv.Process.Kill()
+			<-exited
+			return
+		}
+		stopDeadline := time.Now().Add(wait)
+		stopCtx, stopCancel := context.WithDeadline(context.Background(), stopDeadline)
+		defer stopCancel()
+		b.stop(stopCtx, srv.Process) // fast shutdown (pg_ctl bounded to stopDeadline on Windows)
+		left := time.Until(stopDeadline)
+		if left <= 0 {
+			_ = srv.Process.Kill()
+			<-exited
+			return
+		}
+		t := time.NewTimer(left)
+		defer t.Stop()
 		select {
 		case <-exited:
-		case <-time.After(30 * time.Second):
+		case <-t.C:
 			_ = srv.Process.Kill()
 			<-exited
 		}
 	}()
 
-	rctx, cancel := context.WithTimeout(ctx, readyTimeout)
+	readyDeadline := time.Now().Add(readyTimeout)
+	if !startDeadline.IsZero() && startDeadline.Before(readyDeadline) {
+		readyDeadline = startDeadline
+	}
+	rctx, cancel := waitCtx(ctx, readyDeadline)
 	defer cancel()
 	for {
 		err := readyCheck(rctx, b.Addr(), SuperUser, "postgres")
@@ -723,10 +793,17 @@ func (b Bundle) runServer(ctx context.Context, log io.Writer, fn func() error) e
 			exited <- werr // for the deferred stop
 			return &startError{werr, tail.said()}
 		case <-rctx.Done():
+			select {
+			case werr := <-exited:
+				exited <- werr
+				return &startError{werr, tail.said()}
+			default:
+			}
 			return fmt.Errorf("postgres did not get ready: %w", err)
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
+	ready = true
 	return fn()
 }
 

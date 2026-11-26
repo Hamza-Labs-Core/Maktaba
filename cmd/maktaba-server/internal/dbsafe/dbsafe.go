@@ -435,6 +435,46 @@ func (t Target) GrantWorkersConnect(ctx context.Context) error {
 	return err
 }
 
+// VerifyAside checks that path is a non-empty, readable PostgreSQL dump whose archive
+// payload streams cleanly end-to-end (opening and decompressing every table-data member
+// without executing SQL), whose tables match the live database (VerifyDump), and whose
+// counts and chunks are whole (CheckCounts, CheckChunks). Empty files, empty directories,
+// and missing/truncated/corrupt archive members are rejected so they are never reused as
+// protection before overwriting live data.
+func (t Target) VerifyAside(ctx context.Context, path string) error {
+	if !pgbundle.HasDumpHeader(path) {
+		return fmt.Errorf("dump_unreadable: %s is empty or not a PostgreSQL dump", path)
+	}
+	if err := pgbundle.CheckCounts(path); err != nil {
+		return err
+	}
+	list, err := t.list(ctx, path)
+	if err != nil {
+		return err
+	}
+	if err := pgbundle.CheckAsideChunks(path, list); err != nil {
+		return err
+	}
+	// Stream the full archive through pg_restore to /dev/null (io.Discard) without touching
+	// any database so every table-data member (.dat / .dat.gz / .dat.zst / custom data block)
+	// is actually opened, decompressed, and verified end-to-end.
+	cmd := exec.CommandContext(ctx, t.bin("pg_restore"), "--file=-", path)
+	cmd.Stdout = io.Discard
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("dump_corrupt: pg_restore %s: %w: %s", path, err, tail(stderr.Bytes()))
+	}
+	n, err := t.VerifyDump(ctx, path)
+	if err != nil {
+		return err
+	}
+	if n == 0 && len(pgbundle.ParseTOC(list)) == 0 {
+		return fmt.Errorf("dump_incomplete: %s holds no objects", path)
+	}
+	return nil
+}
+
 // VerifyDump checks a dump reads back: pg_restore --list parses it and names every
 // table the database has now in public (a dump of an empty database lists none). It
 // returns how many tables the dump holds.
@@ -690,10 +730,10 @@ func validIdent(s string) bool { return identRe.MatchString(s) }
 // are ended, and the public schema made afresh with the dump restored in it, all in one
 // transaction (psql over pg_restore's script): a restore that fails leaves the database
 // as it was, never empty. Not its publications, which outlive the schema and are brought
-// up to date with the restored tables at a machine's next grant. Without psql, the schema
-// is made afresh and the dump restored in a transaction of its own (as before). For a
-// Postgres the home does not bundle (the bundled one is restored by
-// pgbundle.RestoreRunning).
+// up to date with the restored tables at a machine's next grant. Without psql beside
+// pg_restore nothing is done at all: such a restore cannot be made whole or nothing, so
+// it is refused (nothing changed). For a Postgres the home does not bundle (the bundled
+// one is restored by pgbundle.RestoreRunning).
 func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	return t.RestoreWith(ctx, dump, nil, log)
 }
@@ -758,36 +798,17 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 		// one it may not end (a superuser's) stops that at once: those it may, then
 		_, _ = d.ExecContext(ctx, pgbundle.EndSessionsSQL(""))
 	}
-	if psql {
-		if err := t.restoreAtomic(ctx, dump, list, how.empty, only, tell, log); err != nil {
-			return err
-		}
-		_, _ = d.ExecContext(ctx, `ANALYZE`)
-		return t.verifyRestore(ctx, d, dump, how.list)
-	}
-	if err := tell(pgbundle.StepGone); err != nil {
-		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
-	}
-	if _, err := d.ExecContext(ctx, how.empty); err != nil {
-		return fmt.Errorf("make the public schema afresh: %w", err)
-	}
-	args := append([]string{"--no-owner", "--no-publications", "--exit-on-error", "--single-transaction"}, useList(only)...)
-	cmd, err := t.command(ctx, "pg_restore", "", append(args, dump)...)
-	if err != nil {
+	if err := t.restoreAtomic(ctx, dump, list, how.empty, how.after, only, tell, log); err != nil {
 		return err
-	}
-	if err := tell(pgbundle.StepReplaced); err != nil {
-		return fmt.Errorf("restore %s: %w", dump, err)
-	}
-	var out bytes.Buffer
-	cmd.Stdout = io.MultiWriter(&out, orDiscard(log))
-	cmd.Stderr = cmd.Stdout
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("pg_restore %s: %v: %s", dump, err, tail(out.Bytes()))
 	}
 	_, _ = d.ExecContext(ctx, `ANALYZE`)
 	return t.verifyRestore(ctx, d, dump, how.list)
 }
+
+// childWaitDelay is how long a child's pipes may stay open after the child itself ended
+// (exec.Cmd's WaitDelay): psql's own, and pg_restore's, whose stdout a grandchild may hold
+// (tests shorten it).
+var childWaitDelay = 10 * time.Second
 
 // psqlLookEvery is how often a restore looks at its psql's session (tests look more often),
 // and psqlLooks how many looks in a row that say its transaction is over end it.
@@ -967,7 +988,13 @@ var havePSQL = func(psql string) bool {
 // short goes no further), a \copy of each chunk of its chunked tables (pgbundle.Chunked;
 // CheckChunks refused a damaged one before), with every table's rows counted, and its indexes
 // and constraints.
-func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, only string, tell func(step string) error, log io.Writer) error {
+// pipeSetReadDeadline sets a read deadline on an os.Pipe reader (tests replace it to
+// exercise the Windows / non-pollable pipe fallback deterministically on Unix).
+var pipeSetReadDeadline = func(f *os.File, t time.Time) error {
+	return f.SetReadDeadline(t)
+}
+
+func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, after, only string, tell func(step string) error, log io.Writer) error {
 	pctx, kill := context.WithCancel(ctx)
 	defer kill()
 	counts, err := pgbundle.CountsScript(dump, list)
@@ -993,7 +1020,7 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, only strin
 	var out bytes.Buffer // read once psql ended
 	word := "maktaba-restore-" + randHex(8)
 	ran, at := newSignal(word+"-ran"), &psqlSession{word: word + "-session"}
-	cmd.WaitDelay = 10 * time.Second // its output pipe, should a child outlive it
+	cmd.WaitDelay = childWaitDelay // its output pipe, should a child outlive it
 	cmd.Stdout = io.MultiWriter(&out, orDiscard(log), ran, at)
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
@@ -1050,29 +1077,146 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, only strin
 			args = []string{"--no-owner", "--no-publications", "--section=pre-data", "--section=data", "--file=-"}
 		}
 		gen := exec.CommandContext(pctx, t.bin("pg_restore"), append(append(args, useList(only)...), dump)...)
-		script, err := gen.StdoutPipe()
+		// Own the stdout pipe ourselves instead of gen.StdoutPipe(): calling gen.Wait()
+		// concurrently with reading StdoutPipe() violates os/exec's contract and closes the
+		// pipe before unread output drains when psql backpressures. With an owned os.Pipe,
+		// gen.Wait() never touches pr; once pg_restore exits, post-exit reads from pr are
+		// bounded by childWaitDelay so a grandchild inheriting stdout cannot hang forever,
+		// while slow psql writes still drain every buffered byte without truncation.
+		pr, pw, err := os.Pipe()
 		if err != nil {
 			return stopped(err)
 		}
 		var genErr bytes.Buffer
+		gen.Stdout = pw
 		gen.Stderr = &genErr
-		gen.WaitDelay = 10 * time.Second // as psql's
+		gen.WaitDelay = childWaitDelay // bounds stderr if a grandchild holds it
 		if err := gen.Start(); err != nil {
+			_ = pr.Close()
+			_ = pw.Close()
 			return stopped(fmt.Errorf("pg_restore: %w", err))
 		}
+		_ = pw.Close() // only pg_restore (and any inheriting child) holds the write end now
 		var scan copyScan
-		if _, copyErr := io.Copy(io.MultiWriter(in, &scan), script); copyErr != nil {
-			// pg_restore would wait on the pipe for ever: stopped with psql
-			err := stopped(copyErr)
-			_ = script.Close() // what is left of it is written nowhere
-			_ = gen.Wait()
+		copyDone := make(chan error, 1)
+		dst := io.MultiWriter(in, &scan)
+		// Post-exit read watchdog: charges only idle time spent blocked in pr.Read AFTER
+		// pg_restore exits (doneAt), never pre-exit read time and never time spent writing
+		// to a backpressured psql. When SetReadDeadline is unsupported (Windows), the timer
+		// is armed ONLY while blocked in pr.Read after doneAt and stopped before dst.Write.
+		var (
+			wdMu      sync.Mutex
+			inRead    bool
+			readGen   uint64
+			doneAt    time.Time
+			readBegan time.Time
+			waitLeft  = childWaitDelay
+			wdTimer   *time.Timer
+			timedOut  bool
+		)
+		armWatchdogLocked := func(now time.Time, gen uint64) {
+			if waitLeft <= 0 {
+				timedOut = true
+				_ = pr.Close()
+				return
+			}
+			if derr := pipeSetReadDeadline(pr, now.Add(waitLeft)); derr != nil {
+				wdTimer = time.AfterFunc(waitLeft, func() {
+					wdMu.Lock()
+					shouldClose := inRead && readGen == gen
+					if shouldClose {
+						timedOut = true
+					}
+					wdMu.Unlock()
+					if shouldClose {
+						_ = pr.Close()
+					}
+				})
+			}
+		}
+		go func() {
+			buf := make([]byte, 32<<10)
+			for {
+				wdMu.Lock()
+				now := time.Now()
+				readGen++
+				myGen := readGen
+				inRead = true
+				readBegan = now
+				if !doneAt.IsZero() {
+					if waitLeft <= 0 {
+						inRead = false
+						wdMu.Unlock()
+						copyDone <- fmt.Errorf("pg_restore stdout stayed open after it exited: %w", os.ErrDeadlineExceeded)
+						return
+					}
+					armWatchdogLocked(now, myGen)
+				}
+				wdMu.Unlock()
+
+				n, rerr := pr.Read(buf)
+
+				wdMu.Lock()
+				inRead = false
+				if wdTimer != nil {
+					wdTimer.Stop()
+					wdTimer = nil
+				}
+				if !doneAt.IsZero() {
+					since := readBegan
+					if doneAt.After(since) {
+						since = doneAt
+					}
+					if elapsed := time.Since(since); elapsed > 0 {
+						waitLeft -= elapsed
+					}
+				}
+				wasTimedOut := timedOut
+				wdMu.Unlock()
+
+				if n > 0 {
+					if _, werr := dst.Write(buf[:n]); werr != nil {
+						copyDone <- werr
+						return
+					}
+				}
+				if errors.Is(rerr, io.EOF) {
+					copyDone <- nil
+					return
+				}
+				if rerr != nil {
+					if wasTimedOut {
+						copyDone <- fmt.Errorf("pg_restore stdout stayed open after it exited: %w", os.ErrDeadlineExceeded)
+						return
+					}
+					copyDone <- rerr
+					return
+				}
+			}
+		}()
+		waitDone := make(chan error, 1)
+		go func() {
+			werr := gen.Wait()
+			wdMu.Lock()
+			doneAt = time.Now()
+			if inRead {
+				armWatchdogLocked(doneAt, readGen)
+			}
+			wdMu.Unlock()
+			waitDone <- werr
+		}()
+		cerr := <-copyDone
+		_ = pr.Close()
+		if cerr != nil {
+			err := stopped(cerr)
+			<-waitDone // psql's end (killed by the same context) ends pg_restore too
 			return err
 		}
-		if err := gen.Wait(); err != nil {
+		if werr := <-waitDone; werr != nil {
 			// the script is not whole: psql ends before its input does, with no commit
 			kill()
 			<-ended
-			return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
+			return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, werr, tail(genErr.Bytes()))
 		}
 		if part == dataPart {
 			if err := scan.whole(tables); err != nil {
@@ -1081,6 +1225,13 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, only strin
 				<-ended
 				return fmt.Errorf("restore %s (nothing changed: one transaction): %w", dump, err)
 			}
+		}
+	}
+	// post-restore SQL (e.g. publicAfresh's GRANT USAGE ON SCHEMA public TO PUBLIC after any
+	// retained dump ACL) runs before \warn ran and COMMIT.
+	if after != "" {
+		if err := write(after); err != nil {
+			return stopped(err)
 		}
 	}
 	// the whole script: once psql ran all of it (it says so), the commit, its last line
@@ -1097,8 +1248,13 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, only strin
 		<-ended
 		return fmt.Errorf("restore %s (nothing changed: one transaction): %w", dump, err)
 	}
-	if err := write("COMMIT;\n"); err != nil {
-		return stopped(err)
+	if n, err := io.WriteString(in, "COMMIT;\n"); err != nil {
+		if n == 0 {
+			return stopped(err) // COMMIT was never written to psql: nothing committed
+		}
+		kill()
+		<-ended
+		return fmt.Errorf("restore %s (one transaction, not known to be committed): %v: %s", dump, err, tail(out.Bytes()))
 	}
 	_ = in.Close()
 	if <-ended; werr != nil {

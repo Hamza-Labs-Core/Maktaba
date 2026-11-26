@@ -98,7 +98,7 @@ func MakeRoom(dir string) error { return MakeRoomWith(dir, DefaultRoom()) }
 // MakeRoomWith is MakeRoom with the room p leaves.
 func MakeRoomWith(dir string, p RoomPolicy) error {
 	held := BackupsHeld(dir) // a restore is not done: every dump stays
-	return roomIn(dir, p, func(string) bool { return held }, RemoveDump)
+	return roomIn(dir, p, 0, func(string) bool { return held }, RemoveDump)
 }
 
 // MakeRoomKeeping is MakeRoomWith for the copy of the database a restore replaces, while the
@@ -108,18 +108,24 @@ func MakeRoomKeeping(dir string, p RoomPolicy, names ...string) error {
 	if err := RoomKeeping(dir, p, names...); err != nil {
 		return err
 	}
-	return roomIn(dir, p, keepNames(names), RemoveDump)
+	return roomIn(dir, p, 0, keepNames(names), RemoveDump)
 }
 
 // RoomKeeping says whether MakeRoomKeeping would make the room (a *NoRoomError: it would
 // not), removing nothing.
 func RoomKeeping(dir string, p RoomPolicy, names ...string) error {
-	return roomIn(dir, p, keepNames(names), func(string) error { return nil })
+	return roomIn(dir, p, 0, keepNames(names), func(string) error { return nil })
 }
 
 // RoomNow says whether there is room for the next dump as it is, removing nothing.
 func RoomNow(dir string, p RoomPolicy) error {
-	return roomIn(dir, p, func(string) bool { return true }, RemoveDump)
+	return RoomNowAtLeast(dir, p, 0)
+}
+
+// RoomNowAtLeast is RoomNow with a floor minNext on the next dump's estimated size
+// (for example, the live database's current size when it has grown past the newest backup).
+func RoomNowAtLeast(dir string, p RoomPolicy, minNext uint64) error {
+	return roomIn(dir, p, minNext, func(string) bool { return true }, RemoveDump)
 }
 
 // keepNames keeps names (a disk may not tell their case apart).
@@ -129,9 +135,9 @@ func keepNames(names []string) func(string) bool {
 	}
 }
 
-// roomIn is MakeRoomWith's work: keep says which dumps stay besides the newest of each kind,
-// remove removes one.
-func roomIn(dir string, p RoomPolicy, keep func(name string) bool, remove func(path string) error) error {
+// roomIn is MakeRoomWith's work: minNext is a floor on the next dump's estimated size,
+// keep says which dumps stay besides the newest of each kind, remove removes one.
+func roomIn(dir string, p RoomPolicy, minNext uint64, keep func(name string) bool, remove func(path string) error) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
@@ -168,7 +174,7 @@ func roomIn(dir string, p RoomPolicy, keep func(name string) bool, remove func(p
 			newest[k] = d
 		}
 	}
-	var next uint64
+	next := minNext
 	for _, d := range newest {
 		if n := uint64(float64(d.size) * dumpGrowth); n > next {
 			next = n

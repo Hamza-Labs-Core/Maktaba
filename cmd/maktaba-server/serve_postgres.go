@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -204,13 +205,15 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 	need, why, err := u.Needed(ctx)
 	if err == nil && need {
 		err = u.Run(ctx, log)
-		if err == nil {
-			// the new cluster's record starts as the old one's: the same release's
-			// migrations, the same dumps (a second try takes it again: the old moved on)
-			seedClusterRecord(root, oldMajor, newMajor, log)
-		}
 	} else if err == nil {
 		fmt.Fprintf(log, "[postgres] the library database runs on PostgreSQL %s (%s)\n", newMajor, why)
+	}
+	if err == nil {
+		// Seed and reconcile the new cluster's record ONLY when the upgrade wrote
+		// RecordSeedPending and the source cluster still matches UpgradeMarker (fail closed
+		// on error). Legacy clusters upgraded before this marker existed have no pending
+		// file, so their live database record is never touched.
+		err = seedClusterRecordIfPending(ctx, root, ob, b, oldMajor, newMajor, log)
 	}
 	if err != nil {
 		fmt.Fprintf(log, "[postgres] level=error the library database could not be upgraded to PostgreSQL %s, so it "+
@@ -225,20 +228,126 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 	return b
 }
 
-// seedClusterRecord copies the old cluster's database record to the new one's.
-func seedClusterRecord(root, oldMajor, newMajor string, log io.Writer) {
+// seedClusterRecordIfPending copies and reconciles the old cluster's database record into
+// b's major record ONLY when pgbundle.RecordSeedPending is present (written by MajorUpgrade
+// before finalizing UpgradeMarker) AND the old cluster directory still holds the exact
+// cluster (SystemID and Checkpoint) named by UpgradeMarker. Legacy PG 18 homes upgraded by
+// earlier releases have no pending marker and keep their live record untouched; if the old
+// cluster was replaced or moved on before seeding ran, the pending marker is cleared without
+// touching PG 18's record. Any I/O or control-read failure fails closed so the pending marker
+// stays for the next start and the upgrade does not proceed unseeded.
+func seedClusterRecordIfPending(ctx context.Context, root string, ob, b pgbundle.Bundle, oldMajor, newMajor string, log io.Writer) error {
+	pendingPath := filepath.Join(b.Data, pgbundle.RecordSeedPending)
+	if _, err := os.Stat(pendingPath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("check pending cluster record seed %s: %w", pendingPath, err)
+	}
+	m, ok, err := pgbundle.ReadUpgradedFrom(b.Data)
+	if err != nil {
+		return fmt.Errorf("read upgrade marker for pending record seed: %w", err)
+	}
+	if !ok || m.Checkpoint == "" {
+		return fmt.Errorf("pending record seed marker present in %s without completed %s", b.Data, pgbundle.UpgradeMarker)
+	}
+	pgVer := filepath.Join(ob.Data, "PG_VERSION")
+	if _, err := os.Stat(pgVer); errors.Is(err, os.ErrNotExist) {
+		// Only treat the source cluster as gone when PG_VERSION is genuinely absent (and
+		// ob.Data itself is missing or a directory, never a stat/permission error or file).
+		if di, derr := os.Stat(ob.Data); derr != nil && !errors.Is(derr, os.ErrNotExist) {
+			return fmt.Errorf("stat source cluster %s for pending record seed: %w", ob.Data, derr)
+		} else if derr == nil && !di.IsDir() {
+			return fmt.Errorf("source cluster path %s is not a directory", ob.Data)
+		}
+		fmt.Fprintf(log, "[postgres] level=warn old cluster %s is gone before record seeding: leaving PostgreSQL %s's record as it is\n", ob.Data, newMajor)
+		if err := os.Remove(pendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("clear pending cluster record seed %s: %w", pendingPath, err)
+		}
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("stat source cluster %s for pending record seed: %w", pgVer, err)
+	}
+	oc, oerr := pgbundle.ReadControl(ctx, ob.Bin("pg_controldata"), ob.Data)
+	if oerr != nil {
+		return fmt.Errorf("read source cluster identity for pending record seed: %w", oerr)
+	}
+	if oc.SystemID != m.SystemID || oc.Checkpoint != m.Checkpoint {
+		fmt.Fprintf(log, "[postgres] level=warn old cluster %s no longer matches upgrade marker (%s@%s vs %s@%s): leaving PostgreSQL %s's record as it is\n",
+			ob.Data, oc.SystemID, oc.Checkpoint, m.SystemID, m.Checkpoint, newMajor)
+		if err := os.Remove(pendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("clear pending cluster record seed %s: %w", pendingPath, err)
+		}
+		return nil
+	}
+	nc, cerr := pgbundle.ReadControl(ctx, b.Bin("pg_controldata"), b.Data)
+	if cerr != nil {
+		return fmt.Errorf("read upgraded cluster identity for pending record seed: %w", cerr)
+	}
+	if err := seedClusterRecord(root, oldMajor, newMajor, m.Identity, m.Table, nc.SystemID, log); err != nil {
+		return err
+	}
+	if err := os.Remove(pendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("clear pending cluster record seed %s: %w", pendingPath, err)
+	}
+	return nil
+}
+
+// seedClusterRecord copies the old cluster's database record to the new one's. When a
+// pending restore recorded untouched data matching the verified old cluster's full identity
+// (oldID = <sys>/<db_oid>/<public_ns_oid> and oldTable = goose_db_version OID), its old
+// DataID/DataTable are cleared so the upgraded cluster (newSys, with a new system
+// identifier) adopts its own live identity on the next settleData probe instead of falsely
+// classifying untouched data as replaced.
+func seedClusterRecord(root, oldMajor, newMajor, oldID, oldTable, newSys string, log io.Writer) error {
 	dir := filepath.Join(root, "state")
 	from, to := filepath.Join(dir, apppayload.ClusterRecordName(oldMajor)), filepath.Join(dir, apppayload.ClusterRecordName(newMajor))
 	raw, err := os.ReadFile(from)
 	if errors.Is(err, os.ErrNotExist) {
-		_ = os.Remove(to)
-		return
+		if rerr := os.Remove(to); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+			return rerr
+		}
+		return nil
 	}
 	if err == nil {
+		raw = reconcileUpgradedRecord(raw, oldID, oldTable, newSys, log)
 		err = layout.WriteFileAtomic(to, raw, 0o644)
 	}
 	if err != nil {
 		fmt.Fprintf(log, "[postgres] level=warn the upgraded library database's record is not seeded (%v): "+
 			"this start takes it as an update from the release that ran last\n", err)
+		return err
 	}
+	return nil
+}
+
+func reconcileUpgradedRecord(raw []byte, oldID, oldTable, newSys string, log io.Writer) []byte {
+	if oldID == "" || newSys == "" {
+		return raw
+	}
+	oldSys, oldRest, ok := strings.Cut(oldID, "/")
+	if !ok || oldSys == "" || oldRest == "" || oldSys == newSys {
+		return raw
+	}
+	var rec apppayload.Database
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return raw
+	}
+	if !asked(rec) || rec.Data != apppayload.DataUntouched || rec.DataID == "" || strings.HasSuffix(rec.DataID, insideMark) {
+		return raw
+	}
+	// Verify the full old identity (cluster system ID, database OID, public schema OID,
+	// and migration-table OID when recorded), never system ID alone.
+	if rec.DataID != oldID {
+		return raw
+	}
+	if rec.DataTable != "" && (oldTable == "" || rec.DataTable != oldTable) {
+		return raw
+	}
+	rec.DataID, rec.DataTable = "", ""
+	updated, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return raw
+	}
+	fmt.Fprintf(log, "[postgres] reconciled pending untouched restore identity across cluster upgrade (%s -> %s)\n", oldSys, newSys)
+	return append(updated, '\n')
 }

@@ -168,6 +168,7 @@ takes a new code.
 | `db_restore_backup_part` | `dump`, `error` | Putting the library database back from the backup `dump` failed, and the database may hold a part of it: only a backup puts it right. Maktaba stays stopped; its next start tries again, and on the recovery page another backup can be put back |
 | `db_restore_backup_gone` | `dump`, `error` | Putting the library database back from the backup `dump` failed, and the database is gone: only a backup brings it back. Maktaba stays stopped; its next start tries again, and on the recovery page another backup can be put back |
 | `db_restore_no_copy` | `dump`, `error` | The restore of the backup `dump` stopped: no copy of the library as it is now could be kept (`error`: why). This try changed nothing. The recovery page says why, and what can be done (another backup, giving it up, or this one with no copy kept) |
+| `db_restore_for_release` | `dump`, `release` | The restore of the backup `dump` waits for release `release`, which was asked for just before a stop and never became the one that starts. Start `release` — its code is kept here — or give the restore up on the recovery page |
 | `db_no_cluster` | `failed`, `error`, `dump` | The update to `failed` could not change the library database (`error`), and this Maktaba runs no database of its own to put `dump` back into |
 | `db_record_failed` | `path`, `error` | The library database's record (`path`) cannot be read or saved: `error` |
 | `pg_unreadable` | `path`, `error` | The library database (`path`) cannot be read: `error` |

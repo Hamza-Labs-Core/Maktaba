@@ -3,47 +3,33 @@
 package pgbundle
 
 import (
-	"context"
-	"os"
-	"path/filepath"
-	"strconv"
+	"strings"
 	"testing"
-	"time"
-
-	"golang.org/x/sys/windows"
 )
 
-// A start on Windows waits while the shared memory of a killed postmaster is still there (a
-// process it left holds it), and goes on once it is gone.
-func TestAwaitShmFreeWaitsForAMapping(t *testing.T) {
-	oldLook, oldWait := lookProcess, shmWait
-	t.Cleanup(func() { lookProcess, shmWait = oldLook, oldWait })
-	lookProcess = func(int) (string, bool) { return "", false }
-	shmWait = 30 * time.Second
-	b := Bundle{Data: t.TempDir()}
-	lock := "4242\n" + filepath.ToSlash(b.Data) + "\n1700000000\n" + strconv.Itoa(5432) + "\n"
-	if err := os.WriteFile(filepath.Join(b.Data, "postmaster.pid"), []byte(lock), 0o600); err != nil {
-		t.Fatal(err)
+// A lock's data directory is read as UTF-8 and as the system's ANSI code page: an ASCII
+// path is the same both ways (one name), and one that is not matches the other reading.
+func TestShmDataDirs(t *testing.T) {
+	for _, c := range []string{`C:\Program Files\Maktaba`, `C:\data`} {
+		if got := shmDataDirs(c); len(got) != 1 || got[0] != c {
+			t.Errorf("%q: %v", c, got)
+		}
 	}
-	if shmInUse(lock) {
-		t.Fatal("in use with no mapping there")
+	if acp := acpToUTF8("plain-ascii"); acp != "plain-ascii" {
+		t.Errorf("the code page reading of ASCII is %q", acp)
 	}
-	name, err := windows.UTF16PtrFromString(shmName(b.Data))
-	if err != nil {
-		t.Fatal(err)
+	if acpToUTF8("") != "" {
+		t.Error("an empty name")
 	}
-	h, err := windows.CreateFileMapping(windows.InvalidHandle, nil, windows.PAGE_READWRITE, 0, 4096, name)
-	if err != nil {
-		t.Fatal(err)
+}
+
+// The mapping's name is what Postgres makes of the directory (win32_shmem.c): the drive
+// as it is, backslashes slashes, after PostgreSQL:.
+func TestShmName(t *testing.T) {
+	if got := shmName(`C:\Data\Maktaba`); got != `Global\PostgreSQL:C:/Data/Maktaba` {
+		t.Fatalf("got %q", got)
 	}
-	if !shmInUse(lock) {
-		t.Fatalf("%s is not in use while it is held", shmName(b.Data))
-	}
-	const held = 400 * time.Millisecond
-	time.AfterFunc(held, func() { _ = windows.CloseHandle(h) })
-	start := time.Now()
-	b.AwaitShmFree(context.Background())
-	if d := time.Since(start); d < held-50*time.Millisecond || d > 10*time.Second {
-		t.Fatalf("waited %s for memory held %s", d, held)
+	if !strings.HasPrefix(shmName(`relative`), `Global\PostgreSQL:`) {
+		t.Fatal("a relative directory is made absolute")
 	}
 }

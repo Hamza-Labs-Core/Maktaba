@@ -128,3 +128,48 @@ func TestPruneBackupsDirectoryDumpsAndPartials(t *testing.T) {
 		t.Fatalf("left %v", got)
 	}
 }
+
+func TestHasDumpHeader(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(rel string, data []byte) string {
+		p := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	custom := mustWrite("good.dump", []byte("PGDMP\x01\x0e"))
+	dirGood := filepath.Join(dir, "dir.dump")
+	mustWrite(filepath.Join("dir.dump", "toc.dat"), []byte("PGDMP\x01\x0e"))
+	emptyFile := mustWrite("empty.dump", nil)
+	badFile := mustWrite("bad.dump", []byte("not-pg"))
+	emptyDir := filepath.Join(dir, "emptydir.dump")
+	if err := os.MkdirAll(emptyDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	badDir := filepath.Join(dir, "baddir.dump")
+	mustWrite(filepath.Join("baddir.dump", "toc.dat"), []byte("nope!"))
+	notDump := mustWrite("good.txt", []byte("PGDMP\x01\x0e"))
+
+	if !HasDumpHeader(custom) {
+		t.Errorf("custom PGDMP rejected")
+	}
+	if !HasDumpHeader(dirGood) {
+		t.Errorf("directory PGDMP rejected")
+	}
+	for name, p := range map[string]string{
+		"missing":   filepath.Join(dir, "missing.dump"),
+		"emptyFile": emptyFile,
+		"badFile":   badFile,
+		"emptyDir":  emptyDir,
+		"badDir":    badDir,
+		"notDump":   notDump,
+	} {
+		if HasDumpHeader(p) {
+			t.Errorf("%s (%s) accepted by HasDumpHeader", name, p)
+		}
+	}
+}

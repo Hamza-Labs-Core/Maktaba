@@ -444,13 +444,23 @@ func TestARestoreThatIsNotDoneIsShownWithItsWaysOut(t *testing.T) {
 	}
 	for _, lang := range []string{"en", "ar"} {
 		page := do(h, http.MethodGet, "/recovery", "", admin, map[string]string{"Accept-Language": lang}).Body.String()
-		for _, k := range []string{"running", "untouched", "replaced", "gone", "retry", "other", "giveUp", "giveUpHeld", "stop", "newer",
+		for _, k := range []string{"running", "waitingFor", "untouched", "replaced", "gone", "retry", "other", "giveUp", "giveUpHeld", "stop", "newer",
 			"noCopy", "withoutCopy"} {
 			k = "recovery.stuck." + k
 			if !strings.Contains(page, `"`+k+`":`) || !strings.Contains(page, jsonText(T(lang, k))) {
 				t.Errorf("%s: the page lacks %s", lang, k)
 			}
 		}
+	}
+	h.Actions.Stuck = func() *Stuck {
+		return &Stuck{Backup: "pre-0.3.153-to-0.3.158.dump", Data: "untouched", WaitingFor: "0.3.153", CanGiveUp: true, Release: "0.3.158"}
+	}
+	var wst State
+	if err := json.Unmarshal(do(h, http.MethodGet, "/recovery/api/state", "", admin, nil).Body.Bytes(), &wst); err != nil {
+		t.Fatal(err)
+	}
+	if wst.Stuck == nil || wst.Stuck.WaitingFor != "0.3.153" || wst.Stuck.Why != "" {
+		t.Fatalf("waitingFor stuck: %+v", wst.Stuck)
 	}
 	hdr := map[string]string{"X-Maktaba-Recovery": "1"}
 	if c := do(h, http.MethodPost, "/recovery/api/action", `{"action":"give_up_restore","confirm":1}`, admin, hdr).Code; c != http.StatusPreconditionRequired || by != "" {

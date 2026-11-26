@@ -384,7 +384,7 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.asides = append(f.asides, filepath.Base(path))
-		return os.WriteFile(path, []byte("aside"), 0o600)
+		return os.WriteFile(path, []byte("PGDMP"), 0o600)
 	}
 	dumpBeforeUpdate = func(_ context.Context, b pgbundle.Bundle, from, to string, keep int) (string, error) {
 		f.mu.Lock()
@@ -1947,6 +1947,7 @@ func TestDetailCodesAreAFixedList(t *testing.T) {
 		"db_restore_backup_part":   "dump error",
 		"db_restore_backup_gone":   "dump error",
 		"db_restore_no_copy":       "dump error",
+		"db_restore_for_release":   "dump release",
 		"db_no_cluster":            "failed error dump",
 		"db_record_failed":         "path error",
 		"pg_unreadable":            "path error",

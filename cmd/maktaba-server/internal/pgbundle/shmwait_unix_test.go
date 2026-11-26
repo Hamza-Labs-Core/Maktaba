@@ -111,3 +111,35 @@ func TestAwaitShmFreeBounds(t *testing.T) {
 		within(t, time.Second, func() { b.AwaitShmFree(context.Background()) })
 	})
 }
+
+// A stale lock's segment id taken since by another server (a power cut, then any
+// Postgres on the machine) is not the dead postmaster's memory: the segment's creator
+// tells, and the start does not wait out the bound for backends that are another
+// server's. One the dead postmaster made, and one whose creator cannot be told, are
+// waited for as before.
+func TestShmInUseIgnoresASegmentAnotherPostmasterTook(t *testing.T) {
+	oldStat := shmStat
+	t.Cleanup(func() { shmStat = oldStat })
+	shmStat = func(_ int, ds *unix.SysvShmDesc) (int, error) {
+		ds.Nattch, ds.Cpid = 2, 4243
+		return 0, nil
+	}
+	lock := "4242\n/data\n1700000000\n5432\n/data\n127.0.0.1\n  5432001     65538\nready\n"
+	if shmInUse(lock) {
+		t.Fatal("a segment another postmaster made is taken for the dead one's")
+	}
+	shmStat = func(_ int, ds *unix.SysvShmDesc) (int, error) {
+		ds.Nattch, ds.Cpid = 2, 4242
+		return 0, nil
+	}
+	if !shmInUse(lock) {
+		t.Fatal("a segment the dead postmaster made is not waited for")
+	}
+	shmStat = func(_ int, ds *unix.SysvShmDesc) (int, error) {
+		ds.Nattch, ds.Cpid = 2, 0
+		return 0, nil
+	}
+	if !shmInUse(lock) {
+		t.Fatal("a segment whose creator cannot be told is not waited for")
+	}
+}

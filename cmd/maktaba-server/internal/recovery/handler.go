@@ -62,6 +62,9 @@ type Stuck struct {
 	// WithoutCopy: and it may be put back without one
 	WithoutCopy bool   `json:"without_copy,omitempty"`
 	Release     string `json:"release,omitempty"`
+	// WaitingFor: the release the restore waits to start (non-empty when a stop happened
+	// before switching to that release; rendered with its own EN/AR copy rather than Why).
+	WaitingFor string `json:"waiting_for,omitempty"`
 }
 
 // Held is an update that stopped with nothing put back by itself: the release that

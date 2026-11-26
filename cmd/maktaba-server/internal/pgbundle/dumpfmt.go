@@ -237,3 +237,30 @@ func isDump(e fs.DirEntry) bool {
 func IsDump(info fs.FileInfo) bool {
 	return strings.HasSuffix(info.Name(), backupSuffix) && (info.Mode().IsRegular() || info.IsDir())
 }
+
+// HasDumpHeader reports whether path is a non-empty PostgreSQL archive: a custom-format
+// regular file starting with "PGDMP", or a directory-format dump whose toc.dat starts with
+// "PGDMP". It rejects empty files, empty directories, and non-archive garbage before a
+// candidate copy is reused.
+func HasDumpHeader(path string) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !IsDump(info) {
+		return false
+	}
+	header := path
+	if info.IsDir() {
+		header = filepath.Join(path, "toc.dat")
+		ti, err := os.Lstat(header)
+		if err != nil || !ti.Mode().IsRegular() {
+			return false
+		}
+	}
+	f, err := os.Open(header) //nolint:gosec // a dump path validated by IsDump
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	var magic [5]byte
+	n, err := f.Read(magic[:])
+	return err == nil && n == len(magic) && string(magic[:]) == "PGDMP"
+}

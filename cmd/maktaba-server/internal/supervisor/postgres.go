@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
@@ -32,12 +33,20 @@ func BuildPostgres(b pgbundle.Bundle) (Process, error) {
 	}
 	cmd.Env = os.Environ()
 	wire(cmd)
+	var shmGate *shmRetryGate
+	if runtime.GOOS == "windows" {
+		shmGate = newShmRetryGate(b.AwaitShmFree, func() bool { return pgbundle.ShmHeld(b.Data) }, pgbundle.ShmWaitBound)
+	}
 	p := Process{
 		Role:  RolePostgres,
 		Cmd:   cmd,
 		Probe: "postgres://" + b.Addr(),
 		Check: func(ctx context.Context) error {
-			return postgresCheck(pgbundle.Ready(ctx, b.Addr(), pgbundle.AppRole, pgbundle.AppDatabase))
+			err := postgresCheck(pgbundle.Ready(ctx, b.Addr(), pgbundle.AppRole, pgbundle.AppDatabase))
+			if err == nil && shmGate != nil {
+				shmGate.reset()
+			}
+			return err
 		},
 		StopSignal: os.Interrupt, // fast shutdown: ends sessions, checkpoints, exits
 		First:      true,
@@ -48,13 +57,78 @@ func BuildPostgres(b pgbundle.Bundle) (Process, error) {
 		// checked after BeforeStart, which ends a postmaster a killed server left
 		Binds: []ports.Bind{{Addr: b.Addr(), What: "database port"}},
 	}
-	if runtime.GOOS == "windows" {
+	if shmGate != nil {
 		// no SIGINT for another process there: pg_ctl's fast shutdown, not a kill
 		// (which costs a crash recovery at the next start); unlike the CTRL_BREAK
 		// the other roles get, it needs no console
 		p.Stop = func() { _ = b.StopCommand().Run() }
+		// share one 2-minute deadline across the pre-start AwaitShmFree settle and the
+		// at-once retry loop: the lock the pre-start wait goes by is gone with the first
+		// failed start, so only Postgres's own exit tells after that
+		p.Settle = shmGate.settle
+		p.RestartAtOnce = shmGate.retry
 	}
 	return patient(p), nil
+}
+
+// shmRetryGate shares one deadline (bound, pgbundle.ShmWaitBound) across the pre-start
+// AwaitShmFree settle and postgres's at-once restart retries on Windows: a start whose
+// pre-start wait already spent part (or all) of the bound does not get a second full
+// bound on its first failed start. Once Postgres becomes ready (reset) or the shared
+// memory is free, the window resets for any future crash.
+type shmRetryGate struct {
+	await func(context.Context)
+	held  func() bool
+	bound func() time.Duration
+	now   func() time.Time
+
+	mu    sync.Mutex
+	until time.Time
+}
+
+func newShmRetryGate(await func(context.Context), held func() bool, bound func() time.Duration) *shmRetryGate {
+	return &shmRetryGate{await: await, held: held, bound: bound, now: time.Now}
+}
+
+func (g *shmRetryGate) settle(ctx context.Context) {
+	g.mu.Lock()
+	if g.until.IsZero() {
+		g.until = g.now().Add(g.bound())
+	}
+	until := g.until
+	g.mu.Unlock()
+	wctx, cancel := capDeadline(ctx, until)
+	defer cancel()
+	g.await(wctx)
+}
+
+func (g *shmRetryGate) retry() string {
+	if !g.held() {
+		g.reset()
+		return ""
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.until.IsZero() {
+		g.until = g.now().Add(g.bound())
+	}
+	if g.now().After(g.until) {
+		return ""
+	}
+	return "the shared memory a postmaster that was killed left is still in use"
+}
+
+func (g *shmRetryGate) reset() {
+	g.mu.Lock()
+	g.until = time.Time{}
+	g.mu.Unlock()
+}
+
+func capDeadline(ctx context.Context, latest time.Time) (context.Context, context.CancelFunc) {
+	if d, ok := ctx.Deadline(); ok && !d.After(latest) {
+		return ctx, func() {}
+	}
+	return context.WithDeadline(ctx, latest)
 }
 
 // The bounds of a Postgres the supervisor runs (the home's, a node's copy). Stopping one
