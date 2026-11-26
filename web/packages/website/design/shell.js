@@ -1,5 +1,5 @@
 // maktaba.tv's shell script (story 60.01 part A): the phone menu, the copy buttons, the
-// problem index's filter and the language hint's dismissal. No framework, no request.
+// mockup indexes' filter and the language hint's dismissal. No framework, no request.
 // Every page works without it: the nav stays a row of links, the code stays selectable,
 // the index stays a full list.
 
@@ -52,12 +52,12 @@ for (const button of document.querySelectorAll(".copy")) {
   }
 }
 
-// The problem index's filter in the mockup: narrows the list in the page as you type, no
+// The help and problem index filters in the mockups: narrows the list in the page as you type, no
 // request. The built index has its own (src/problems-filter.ts, with Arabic's plural forms on
 // data-count-*), so this one runs only on a count that carries the mockup's data-many.
 const filter = document.getElementById("filter");
 if (filter && document.getElementById("count")?.dataset.many) {
-  const items = [...document.querySelectorAll(".areas li")];
+  const items = [...document.querySelectorAll(".areas li, .help-groups .topics li")];
   const count = document.getElementById("count");
   const none = document.getElementById("no-match");
   const fold = (s) => s.toLocaleLowerCase().normalize("NFKD").replace(/[ً-ٟ]/g, "");
@@ -69,11 +69,11 @@ if (filter && document.getElementById("count")?.dataset.many) {
       li.hidden = !hit;
       if (hit) shown++;
     }
-    for (const area of document.querySelectorAll(".areas section")) {
+    for (const area of document.querySelectorAll(".areas section, .help-groups section")) {
       area.hidden = ![...area.querySelectorAll("li")].some((li) => !li.hidden);
     }
     count.textContent = count.dataset[shown === 1 ? "one" : "many"].replace("{n}", shown);
-    none.hidden = shown !== 0;
+    if (none) none.hidden = shown !== 0;
   };
   filter.addEventListener("input", run);
   run();

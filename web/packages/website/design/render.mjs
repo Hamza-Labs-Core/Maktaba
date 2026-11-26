@@ -124,6 +124,9 @@ async function render() {
             deviceScaleFactor: 1,
           });
           const failed = [];
+          page.on("pageerror", (error) => {
+            problems.push(`${name}.${lang} at ${width}px: ${error.message}`);
+          });
           page.on("requestfailed", (q) => failed.push(q.url()));
           page.on("response", (q) => q.status() >= 400 && failed.push(`${q.status()} ${q.url()}`));
           await page.goto(url, { waitUntil: "networkidle" });
