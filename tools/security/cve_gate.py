@@ -191,11 +191,29 @@ def parse_govulncheck(component: str, text: str) -> list[Vuln]:
     return out
 
 
+_LOCAL_VER = re.compile(r"^([A-Za-z0-9_.-]+(?:\[[^\]]*\])?==[^\s;#+\\]+)\+[A-Za-z0-9._-]+")
+
+
+def normalize_pip_requirements(text: str) -> str:
+    """Strip PEP 440 local version suffixes (`+cu130`, etc.) from requirement pins for pip-audit.
+
+    PyPI has no metadata for local builds (such as PyTorch's `torch==2.14.1+cu130`), so
+    pip-audit skips them with HTTP 404. Stripping only the `+local` suffix after `==ver`
+    leaves environment markers, comments, index URLs and `--hash=...` lines intact while
+    letting pip-audit check the upstream version. The CycloneDX SBOM keeps the full suffix.
+    """
+    return "\n".join(_LOCAL_VER.sub(r"\1", ln) for ln in text.splitlines()) + ("\n" if text.endswith("\n") else "")
+
+
 def parse_pip_audit(component: str, text: str, severity: Callable[[str, set[str]], str]) -> list[Vuln]:
     doc = json.loads(text)
     deps = doc["dependencies"] if isinstance(doc, dict) else doc
     out = []
+    skipped = []
     for dep in deps:
+        if dep.get("skip_reason"):
+            skipped.append(f"{dep.get('name', '?')}: {dep['skip_reason']}")
+            continue
         for v in dep.get("vulns") or []:
             aliases = set(v.get("aliases") or [])
             sev = severity(v["id"], aliases)
@@ -213,6 +231,8 @@ def parse_pip_audit(component: str, text: str, severity: Callable[[str, set[str]
                     blocks=sev not in NOT_BLOCKING,
                 )
             )
+    if skipped:
+        raise ReportError(f"{component}: pip-audit skipped {len(skipped)} dependency(ies): {'; '.join(skipped)}")
     return out
 
 
@@ -427,7 +447,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--today", type=dt.date.fromisoformat, default=dt.date.today())
     ap.add_argument("--severities", type=Path, help="a JSON {id: severity} instead of asking OSV")
     ap.add_argument("--summary", type=Path, help="also write the report here (GITHUB_STEP_SUMMARY)")
+    ap.add_argument(
+        "--normalize-requirements",
+        type=Path,
+        metavar="FILE",
+        help="strip PEP 440 local version suffixes (+cu130, etc.) from FILE and print to stdout",
+    )
     a = ap.parse_args(argv)
+
+    if a.normalize_requirements:
+        sys.stdout.write(normalize_pip_requirements(a.normalize_requirements.read_text(encoding="utf-8")))
+        return 0
 
     severity = file_severity(a.severities) if a.severities else osv_severity({})
     vulns: list[Vuln] = []

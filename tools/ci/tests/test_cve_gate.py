@@ -259,6 +259,42 @@ def test_a_report_that_cannot_be_read_is_exit_2(tmp_path: Path) -> None:
     assert cve_gate.main(["--cargo-audit", f"plugind={tmp_path / 'cargo.json'}", "--suppressions", str(tmp_path), "--severities", str(tmp_path / "pnpm.json")]) == 2
 
 
+def test_a_skipped_pip_audit_dependency_fails_closed(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    skipped_doc = {
+        "dependencies": [
+            {"name": "torch", "skip_reason": "Dependency not found on PyPI and could not be audited: torch (2.14.1+cu130)"},
+            {"name": "clean", "version": "1.0.0", "vulns": []},
+        ],
+        "fixes": [],
+    }
+    (tmp_path / "pip-cuda.json").write_text(json.dumps(skipped_doc))
+    (tmp_path / "sev.json").write_text("{}")
+    rc = cve_gate.main(["--pip-audit", f"pipeline-cuda={tmp_path / 'pip-cuda.json'}", "--suppressions", str(tmp_path), "--severities", str(tmp_path / "sev.json")])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "skipped" in err and "torch" in err and "2.14.1+cu130" in err
+
+
+def test_normalize_pip_requirements_strips_local_suffix_without_mangling_markers_or_hashes() -> None:
+    raw = (
+        "# comment +cu130 stays\n"
+        "--extra-index-url https://download.pytorch.org/whl/cu130\n"
+        "torch==2.14.1+cu130 ; (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') \\\n"
+        "    --hash=sha256:abc+def123\n"
+        "torch==2.14.1 ; sys_platform == 'darwin'\n"
+        "pkg[extra]==1.2.3+local.1\n"
+    )
+    want = (
+        "# comment +cu130 stays\n"
+        "--extra-index-url https://download.pytorch.org/whl/cu130\n"
+        "torch==2.14.1 ; (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32') \\\n"
+        "    --hash=sha256:abc+def123\n"
+        "torch==2.14.1 ; sys_platform == 'darwin'\n"
+        "pkg[extra]==1.2.3\n"
+    )
+    assert cve_gate.normalize_pip_requirements(raw) == want
+
+
 def test_the_repository_suppressions_are_valid_today() -> None:
     sups = cve_gate.load_suppressions(cve_gate.SUPPRESSIONS, dt.date.today())
     assert [s.path.name for s in sups if s.problems] == []
@@ -319,6 +355,7 @@ def test_the_gate_scopes_web_to_prod_excludes_python_dev_audits_cuda_and_plugind
     assert "< <(python3" not in gate_text  # never swallow sbom.py exit status in process substitution
     assert 'sbom.py" pipeline-extras' in gate_text
     assert "--group cuda" in gate_text
+    assert "--normalize-requirements" in gate_text
     assert "pipeline-cuda=" in gate_text
     assert 'cargo-audit audit --file "${ROOT}/plugind/Cargo.lock" --json' in gate_text
 

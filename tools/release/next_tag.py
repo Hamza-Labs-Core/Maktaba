@@ -107,6 +107,11 @@ _NIGHTLY_TITLED = re.compile("^" + re.escape(BROADCAST_NIGHTLY_TITLE) + r"([0-9a
 # A run that ended so is no result either way (stopped, or never ran): it is passed over.
 NO_RESULT = frozenset({"cancelled", "skipped", "neutral", "stale", ""})
 
+CVE_WORKFLOW = "cve-gate-nightly.yml"
+CVE_EVENTS = ("schedule", "workflow_dispatch")
+CVE_LIMIT = 100
+CVE_FIELDS = "headSha,headBranch,event,status,conclusion,createdAt"
+
 
 def trail_only(path: str) -> bool:
     """path is one of TRAIL_ONLY's (a trailing /** is the folder and everything in it)."""
@@ -225,9 +230,9 @@ def broadcast_verdict(sha: str, nightlies: Sequence[tuple[str, bool]], code: Cal
     return f"no broadcast rehearsal nightly ran on {sha}'s broadcast code"
 
 
-def cve_nightly_results(runs: Iterable[Mapping[str, Any]]) -> list[tuple[str, bool]]:
+def _cve_nightly_entries(runs: Iterable[Mapping[str, Any]]) -> list[tuple[str, bool, str]]:
     """The finished nightly CVE gate runs on main (schedule or workflow_dispatch), newest first,
-    as (commit, passed). A run still going, or one cancelled or skipped, is passed over."""
+    as (commit, passed, created_at). Runs still going, cancelled or skipped are passed over."""
     done: list[tuple[str, str, bool]] = []
     for r in runs:
         if r.get("headBranch", "main") != "main":
@@ -244,34 +249,87 @@ def cve_nightly_results(runs: Iterable[Mapping[str, Any]]) -> list[tuple[str, bo
             continue
         done.append((str(r.get("createdAt", "")), commit, conclusion == "success"))
     done = sorted(done, key=lambda d: d[0], reverse=True)
-    return [(c, ok) for _, c, ok in done]
+    return [(c, ok, ts) for ts, c, ok in done]
+
+
+def cve_nightly_results(runs: Iterable[Mapping[str, Any]]) -> list[tuple[str, bool]]:
+    """The finished nightly CVE gate runs on main (schedule or workflow_dispatch), newest first,
+    as (commit, passed). A run still going, or one cancelled or skipped, is passed over."""
+    return [(c, ok) for c, ok, _ in _cve_nightly_entries(runs)]
+
+
+def _cve_truncation_cutoffs(
+    runs: Iterable[Mapping[str, Any]],
+    sha: str,
+    same_non_trail: Callable[[str, str], bool],
+    is_ancestor: Callable[[str, str], bool],
+    limit: int = CVE_LIMIT,
+) -> dict[str, str]:
+    """Events whose query hit `limit` without reaching a strict non-trail ancestor of `sha`.
+
+    Maps each such event name to the oldest `createdAt` seen in its window (or "" if any run
+    lacked a timestamp): a failed nightly older than that cutoff may have been pushed out of
+    the window, so only a conclusive pass on `sha` at or after every cutoff clears `sha`.
+    """
+    by_event: dict[str, list[Mapping[str, Any]]] = {}
+    for r in runs:
+        if r.get("headBranch", "main") != "main":
+            continue
+        ev = str(r.get("event") or "")
+        if ev in CVE_EVENTS:
+            by_event.setdefault(ev, []).append(r)
+    cutoffs: dict[str, str] = {}
+    for ev, ev_runs in by_event.items():
+        if len(ev_runs) < limit:
+            continue
+        reached_older = any(
+            (rsha := str(r.get("headSha") or ""))
+            and rsha != sha
+            and not same_non_trail(sha, rsha)
+            and is_ancestor(rsha, sha)
+            for r in ev_runs
+        )
+        if not reached_older:
+            times = [str(r.get("createdAt") or "") for r in ev_runs]
+            cutoffs[ev] = min(times) if all(times) else ""
+    return cutoffs
 
 
 def cve_verdict(
     sha: str,
-    nightlies: Sequence[tuple[str, bool]],
+    nightlies: Sequence[tuple[str, bool] | tuple[str, bool, str]],
     same_non_trail: Callable[[str, str], bool],
     is_ancestor: Callable[[str, str], bool],
+    raw_runs: Iterable[Mapping[str, Any]] = (),
+    limit: int = CVE_LIMIT,
 ) -> str | None:
     """Why sha is not tag-eligible on the nightly CVE gate, or None when it is.
 
     Walks finished nightly CVE gate runs on main (newest first):
     - If a run matches sha (same commit, or differing only in trail files): a pass makes sha
-      eligible; a failure blocks sha.
+      eligible unless a truncated event window could hide a newer failure; a failure blocks sha.
     - If a newer descendant commit (is_ancestor(sha, commit)) failed a nightly CVE gate run and
       no newer passing nightly exists on sha itself, do not fall back to the older commit sha
       (it may carry the same newly-disclosed vulnerability); wait for a fix commit or a newer
       passing nightly/dispatch.
-    - If no matching or newer-descendant nightly failed, sha stays eligible (its CI push run
-      already passed cve-gate).
+    - If an event query hit `limit` without reaching a strict earlier commit than sha and no
+      conclusive pass at or after the truncation cutoff exists, fail closed.
     """
-    for commit, passed in nightlies:
+    cutoffs = _cve_truncation_cutoffs(raw_runs, sha, same_non_trail, is_ancestor, limit)
+    for item in nightlies:
+        commit, passed = item[0], item[1]
+        created_at = item[2] if len(item) > 2 else ""
         if commit == sha or same_non_trail(sha, commit):
-            if passed:
+            if not passed:
+                return f"the newest nightly CVE gate run on {sha} (run on {commit}) failed"
+            if not cutoffs or (created_at and all(c and created_at >= c for c in cutoffs.values())):
                 return None
-            return f"the newest nightly CVE gate run on {sha} (run on {commit}) failed"
+            break
         if not passed and is_ancestor(sha, commit):
             return f"cannot fall back to {sha}: a newer nightly CVE gate run on {commit} failed"
+    if cutoffs:
+        events = ", ".join(sorted(cutoffs))
+        return f"the nightly CVE gate history for {sha} is truncated ({events} hit the {limit}-run limit without a conclusive verdict)"
     return None
 
 
@@ -382,11 +440,6 @@ BROADCAST_EVENTS = ("schedule", "workflow_dispatch")
 BROADCAST_LIMIT = 60
 BROADCAST_FIELDS = "headSha,headBranch,event,status,conclusion,displayTitle,createdAt"
 
-CVE_WORKFLOW = "cve-gate-nightly.yml"
-CVE_EVENTS = ("schedule", "workflow_dispatch")
-CVE_LIMIT = 100
-CVE_FIELDS = "headSha,headBranch,event,status,conclusion,createdAt"
-
 
 class FetchError(Exception):
     """A workflow's runs could not be had: no tag (fail closed)."""
@@ -488,7 +541,13 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         except FetchError as e:
             print(f"the nightly CVE gate's runs could not be read: {e}", file=sys.stderr)
             return 1
-        why = cve_verdict(args.check_cve, cve_nightly_results(cve_runs), git_same_non_trail, git_is_ancestor)
+        why = cve_verdict(
+            args.check_cve,
+            _cve_nightly_entries(cve_runs),
+            git_same_non_trail,
+            git_is_ancestor,
+            raw_runs=cve_runs,
+        )
         if why is not None:
             print(why, file=sys.stderr)
             return 1
@@ -521,7 +580,7 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         print(f"reason=no tag: the nightly CVE gate's runs could not be read: {e}")
         return 0
     nightlies = nightly_results(runs)
-    cve_nightlies = cve_nightly_results(cve_runs)
+    cve_nightlies = _cve_nightly_entries(cve_runs)
     codes: dict[str, str | None] = {}
 
     def code(c: str) -> str | None:
@@ -530,7 +589,9 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         return codes[c]
 
     def verdict(c: str) -> str | None:
-        return broadcast_verdict(c, nightlies, code) or cve_verdict(c, cve_nightlies, git_same_non_trail, git_is_ancestor)
+        return broadcast_verdict(c, nightlies, code) or cve_verdict(
+            c, cve_nightlies, git_same_non_trail, git_is_ancestor, raw_runs=cve_runs
+        )
 
     sha, passed_over = newest_eligible(order, green, verdict)
     if sha is None:

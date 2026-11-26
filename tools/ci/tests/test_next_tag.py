@@ -497,6 +497,35 @@ def test_in_a_repository_the_nightly_cve_gate_blocks_unchanged_main(
     (repo / ".cve-ok.json").write_text(json.dumps([cve_nightly(c, "success", created="2026-11-26T06:00:00Z")]))
     assert nt.main(["--check-cve", c, "--cve-runs", str(repo / ".cve-ok.json")]) == 0
 
+    # A full CVE_LIMIT window of cancelled runs on c (never reaching an earlier commit) must
+    # fail closed rather than silently permitting a tag
+    full_cancelled = [
+        cve_nightly(c, "cancelled", event="schedule", created=f"2026-11-26T05:{i // 60:02d}:{i % 60:02d}Z")
+        for i in range(nt.CVE_LIMIT)
+    ]
+    out = choose(repo, [c], monkeypatch, capsys, cve_runs=full_cancelled)
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "truncated" in out["reason"] and "schedule" in out["reason"]
+    (repo / ".cve-trunc.json").write_text(json.dumps(full_cancelled))
+    monkeypatch.chdir(repo)
+    assert nt.main(["--check-cve", c, "--cve-runs", str(repo / ".cve-trunc.json")]) == 1
+    assert "truncated" in capsys.readouterr().err
+
+    # An older passing workflow_dispatch before the truncated schedule window cannot clear c,
+    # whereas a passing dispatch AFTER the oldest run in the truncated window clears c
+    older_pass = [*full_cancelled, cve_nightly(c, "success", event="workflow_dispatch", created="2026-11-26T04:00:00Z")]
+    assert choose(repo, [c], monkeypatch, capsys, cve_runs=older_pass)["tag"] == ""
+    newer_pass = [cve_nightly(c, "success", event="workflow_dispatch", created="2026-11-26T06:00:00Z"), *full_cancelled]
+    assert choose(repo, [c], monkeypatch, capsys, cve_runs=newer_pass)["tag"] == "v0.3.83"
+
+    # A full CVE_LIMIT window of historical runs that reaches a strict ancestor (a, before c)
+    # does NOT block fresh commit c (normal steady state after 100+ nightly runs)
+    historical_full = [
+        cve_nightly(a, "success", event="schedule", created=f"2026-11-20T04:{i // 60:02d}:{i % 60:02d}Z")
+        for i in range(nt.CVE_LIMIT)
+    ]
+    assert choose(repo, [c], monkeypatch, capsys, cve_runs=historical_full)["tag"] == "v0.3.83"
+
 
 def test_the_runs_are_fetched_with_gh_when_no_file_is_given(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
