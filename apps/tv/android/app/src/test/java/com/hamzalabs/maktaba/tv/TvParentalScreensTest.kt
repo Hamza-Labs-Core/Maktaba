@@ -310,7 +310,7 @@ class TvParentalScreensTest {
         assertEquals(LayoutDirection.Rtl, direction)
         compose.onNodeWithTag("parental-blocked-title").assertTextEquals("هذا غير متاح")
         compose.onNodeWithTag("parental-stopped").assertTextEquals("لم يعد هذا المقطع متاحًا على هذا الحساب.")
-        compose.onNodeWithTag("parental-blocked-reason").assertTextEquals("حسابك مقيَّد بـ \u200E+١٣.")
+        compose.onNodeWithTag("parental-blocked-reason").assertTextEquals("حسابك مقيَّد بـ \u200E+13.")
     }
 
     @Test

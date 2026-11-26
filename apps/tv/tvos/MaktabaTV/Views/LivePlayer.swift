@@ -707,7 +707,7 @@ struct LiveBanner: View {
             HStack(alignment: .center, spacing: 32) {
                 ChannelLogo(channel: channel, size: 120)
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(verbatim: "\(channel.number.formatted()) · \(channel.name)")
+                    Text(verbatim: "\(channel.number.formatted(.number.locale(AppLanguage.locale))) · \(channel.name)")
                         .font(Theme.body(32, weight: .semibold))
                         .foregroundStyle(Theme.goldText)
                         .accessibilityIdentifier("live.player.channel")
@@ -728,7 +728,7 @@ struct LiveBanner: View {
                         .foregroundStyle(Theme.muted)
                     }
                     if let next = now?.next {
-                        Text("Next: \(next.start.formatted(date: .omitted, time: .shortened)) \(next.displayTitle())")
+                        Text("Next: \(next.start.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale))) \(next.displayTitle())")
                             .font(Theme.body(26))
                             .foregroundStyle(Theme.muted)
                             .lineLimit(1)
@@ -800,7 +800,7 @@ struct LiveMiniGuide: View {
                 .font(Theme.body(28))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(1)
-            Text(verbatim: now?.next.map { "\($0.start.formatted(date: .omitted, time: .shortened)) \($0.displayTitle())" } ?? " ")
+            Text(verbatim: now?.next.map { "\($0.start.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale))) \($0.displayTitle())" } ?? " ")
                 .font(Theme.body(24))
                 .opacity(0.75)
                 .frame(width: 560, alignment: .leading)

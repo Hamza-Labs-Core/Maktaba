@@ -117,11 +117,11 @@ struct MachineRow: View {
         switch machine.group {
         case .asking:
             if let a = machine.remoteAddr { parts.append(String(localized: "from \(a)")) }
-            if let e = machine.expiresAt { parts.append(String(localized: "asks until \(e.formatted(date: .omitted, time: .shortened))")) }
+            if let e = machine.expiresAt { parts.append(String(localized: "asks until \(e.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale)))")) }
         case .approved:
             parts.append(machine.online ? String(localized: "online") : String(localized: "offline"))
             if !machine.online, let seen = machine.lastSeenAt {
-                parts.append(String(localized: "seen \(seen.formatted(.relative(presentation: .named)))"))
+                parts.append(String(localized: "seen \(seen.formatted(.relative(presentation: .named).locale(AppLanguage.locale)))"))
             }
         case .other:
             parts.append(machine.expired && machine.state == "pending" ? String(localized: "request expired") : stateWords)

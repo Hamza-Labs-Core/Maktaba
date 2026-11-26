@@ -360,7 +360,7 @@ describe("LibraryDashboard", () => {
       await act(async () => {});
       expect(document.documentElement.getAttribute("dir")).toBe("rtl");
       expect(screen.getByRole("group", { name: "عرض" })).toBeInTheDocument();
-      expect(screen.getByText(/^٣ مكتبة، /)).toBeInTheDocument();
+      expect(screen.getByText(/^3 مكتبة، /)).toBeInTheDocument();
     } finally {
       localStorage.removeItem("mkt:locale");
     }

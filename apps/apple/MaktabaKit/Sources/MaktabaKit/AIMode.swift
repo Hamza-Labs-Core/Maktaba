@@ -644,7 +644,7 @@ public enum AIWords {
     public static func clock(_ seconds: Double, _ l: Locale = AppLanguage.locale) -> String {
         // a time no video has (a broken home's 1e308) is clamped: Duration traps past Int128
         let s = min(max(0, seconds.isFinite ? seconds.rounded(.down) : 0), 9_999_999)
-        return Duration.seconds(s).formatted(.time(pattern: s >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(l))
+        return Duration.seconds(s).formatted(.time(pattern: s >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(AppLanguage.westernDigits(l)))
     }
 
     /// What a turn that is not running says (nil: nothing to add under it).

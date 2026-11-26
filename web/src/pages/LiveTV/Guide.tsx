@@ -203,11 +203,11 @@ export function Guide() {
         ms,
         x: pct(minutesBetween(windowStart, ms)),
         half: at.getMinutes() !== 0,
-        label: at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        label: formatDate(at, { hour: "2-digit", minute: "2-digit" }),
       });
     }
     return out;
-  }, [windowStart]);
+  }, [windowStart, formatDate]);
 
   function onCellActivate(p: Program, channelNumber: number) {
     // The airing block tunes live; a future block opens details (AC3).

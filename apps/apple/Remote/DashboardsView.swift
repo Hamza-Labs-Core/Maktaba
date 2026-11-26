@@ -217,9 +217,10 @@ enum DashWords {
 
     /// Bytes as sizes, the rest as numbers, in the app's language.
     static func value(_ v: Double, of name: String) -> String {
+        let locale = AppLanguage.locale
         if name.contains("bytes") {
-            return Int64(v).formatted(.byteCount(style: .file))
+            return Int64(v).formatted(.byteCount(style: .file).locale(locale))
         }
-        return v.formatted(.number.precision(.fractionLength(0...1)))
+        return v.formatted(.number.precision(.fractionLength(0...1)).locale(locale))
     }
 }

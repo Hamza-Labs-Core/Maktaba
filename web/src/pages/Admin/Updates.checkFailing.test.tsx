@@ -100,14 +100,32 @@ describe("Updates: a check that keeps failing", () => {
     expect(screen.queryByTestId("updates-check-failed-once")).toBeNull();
   });
 
-  it("reads in Arabic", async () => {
-    renderPage(
-      overview({ check_failures: 2, check_failing_since: since, last_check_code: "rate_limited" }),
-      "ar"
-    );
-    const box = await screen.findByTestId("updates-check-failing");
-    expect(box.textContent).toContain("تعذّر التحقق من التحديثات منذ");
-    expect(box.textContent).toContain("طلب GitHub من مكتبة أن تنتظر");
+  it("reads in Arabic with Western digits", async () => {
+    const orig = Date.prototype.toLocaleString;
+    const spy = vi.spyOn(Date.prototype, "toLocaleString").mockImplementation(function (
+      this: Date,
+      locales?: Intl.LocalesArgument,
+      options?: Intl.DateTimeFormatOptions
+    ) {
+      return orig.call(this, locales ?? "ar-EG", options);
+    });
+    try {
+      renderPage(
+        overview({
+          check_failures: 2,
+          check_failing_since: since,
+          last_check_code: "rate_limited",
+        }),
+        "ar"
+      );
+      const box = await screen.findByTestId("updates-check-failing");
+      expect(box.textContent).toContain("تعذّر التحقق من التحديثات منذ");
+      expect(box.textContent).toContain("طلب GitHub من مكتبة أن تنتظر");
+      expect(box.textContent).toContain(orig.call(new Date(since), "ar-u-nu-latn"));
+      expect(box.textContent).not.toMatch(/[٠-٩]/);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

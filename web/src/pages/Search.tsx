@@ -65,6 +65,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { useToast } from "@ds/components/Toast/Toast";
 import { api } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { relativeTimeFormat } from "../lib/intl";
 import { useAuth } from "../lib/auth";
 import { PageHelp } from "../help/HelpLink";
 import {
@@ -231,7 +232,7 @@ function relativeTime(iso: string, locale: string, now = Date.now()): string {
   if (!Number.isFinite(at)) return "";
   const diff = (at - now) / 1000;
   const abs = Math.abs(diff);
-  const rtf = new Intl.RelativeTimeFormat(locale === "ar" ? "ar-EG" : "en", { numeric: "auto" });
+  const rtf = relativeTimeFormat(locale, { numeric: "auto" });
   if (abs < 60) return rtf.format(Math.round(diff), "second");
   if (abs < 3600) return rtf.format(Math.round(diff / 60), "minute");
   if (abs < 86400) return rtf.format(Math.round(diff / 3600), "hour");

@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { useI18n } from "../lib/i18n";
+import { dateTimeFormat } from "../lib/intl";
 import { registerMenuRouter } from "../lib/desktop";
 import { returnPath, setFullScreen } from "../lib/bigScreen";
 import { FocusProvider, useFocusApi } from "./focus/FocusProvider";
@@ -442,7 +443,7 @@ function Tabs() {
         </button>
       )}
       <time className="bs-clock" dateTime={now.toISOString()}>
-        {new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
+        {dateTimeFormat(locale, {
           hour: "numeric",
           minute: "2-digit",
         }).format(now)}

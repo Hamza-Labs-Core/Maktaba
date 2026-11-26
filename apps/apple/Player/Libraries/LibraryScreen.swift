@@ -245,8 +245,8 @@ struct VideoCard: View {
                    poster: LibraryArt.poster(client, video: video.id), progress: video.progress)
     }
 
-    /// 1:05:30 or 42:10, in `locale`'s digits.
+    /// 1:05:30 or 42:10, in Western digits in Arabic.
     static func length(_ seconds: Double, _ locale: Locale) -> String {
-        Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(locale))
+        Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(AppLanguage.westernDigits(locale)))
     }
 }

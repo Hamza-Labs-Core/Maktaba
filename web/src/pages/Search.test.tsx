@@ -805,9 +805,11 @@ describe("Search (test-cases/search.md)", () => {
     expect(screen.getByRole("heading", { name: "في العناوين" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "في التفريغات" })).toBeInTheDocument();
     expect(screen.getByText("مطابقة واحدة")).toBeInTheDocument();
-    expect(screen.getAllByText(/الصفحة ١ من ١/)).toHaveLength(2);
+    expect(screen.getAllByText(/الصفحة 1 من 1/)).toHaveLength(2);
     expect(screen.queryByText("Saved searches")).toBeNull();
-    expect(screen.getByRole("complementary", { name: "عمليات البحث الأخيرة" })).toBeInTheDocument();
+    const recentAside = screen.getByRole("complementary", { name: "عمليات البحث الأخيرة" });
+    expect(recentAside).toBeInTheDocument();
+    expect(recentAside.textContent).not.toMatch(/[٠-٩]/);
     const time = document.querySelector(".mkt-result__time")!;
     expect(time.textContent).toContain("←");
   });

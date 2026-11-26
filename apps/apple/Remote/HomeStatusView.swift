@@ -123,7 +123,7 @@ struct HomeStatusView: View {
                         LabeledContent("Paused stages", value: paused.map(\.info.label).formatted(.list(type: .and)))
                     }
                     if let cpu = q.health?.cpu?.pct {
-                        LabeledContent("CPU", value: (cpu / 100).formatted(.percent.precision(.fractionLength(0))))
+                        LabeledContent("CPU", value: (cpu / 100).formatted(.percent.precision(.fractionLength(0)).locale(AppLanguage.locale)))
                     }
                 }
             }

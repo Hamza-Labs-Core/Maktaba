@@ -136,6 +136,8 @@ fun PlayerScreen(
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
+                    // Media3 PlayerControlView initializes its time Formatter from Locale.getDefault()
+                    com.hamzalabs.maktaba.core.i18n.applyWesternDigitsDefaultLocale()
                     PlayerView(ctx).apply {
                         useController = true
                         setShowSubtitleButton(true)

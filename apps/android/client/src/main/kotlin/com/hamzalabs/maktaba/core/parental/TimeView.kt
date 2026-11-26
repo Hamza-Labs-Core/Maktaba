@@ -8,6 +8,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import java.util.Locale
+import com.hamzalabs.maktaba.core.i18n.withWesternArabicLocale
 
 /**
  * How the players show the time the home says an account has (Epic 57 story 57.15), the same
@@ -85,9 +86,9 @@ object TimeView {
      */
     fun nextWords(at: Instant, locale: Locale, zone: ZoneId = ZoneId.systemDefault(), now: Instant = Instant.now()): String {
         val local = at.atZone(zone)
-        val time = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).format(local)
+        val time = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withWesternArabicLocale(locale).format(local)
         if (local.toLocalDate() == now.atZone(zone).toLocalDate()) return time
-        return DateTimeFormatter.ofPattern("EEEE", locale).format(local) + " " + time
+        return DateTimeFormatter.ofPattern("EEEE").withWesternArabicLocale(locale).format(local) + " " + time
     }
 
     /** A position as m:ss, or h:mm:ss from an hour up. */

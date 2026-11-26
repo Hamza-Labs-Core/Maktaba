@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.hamzalabs.maktaba.core.R as CoreR
 import com.hamzalabs.maktaba.core.api.ApiClient
 import com.hamzalabs.maktaba.core.api.Episode
+import com.hamzalabs.maktaba.core.i18n.withWesternDigits
 import com.hamzalabs.maktaba.core.ui.ErrorState
 import com.hamzalabs.maktaba.core.ui.MaktabaTokens
 import com.hamzalabs.maktaba.core.ui.formatDuration
@@ -235,5 +236,6 @@ private fun EpisodeRow(e: Episode, client: ApiClient, onOpen: () -> Unit, onMark
     HorizontalDivider(Modifier.padding(horizontal = MaktabaTokens.Spacing.s4), color = MaterialTheme.colorScheme.outlineVariant)
 }
 
-/** A series' year in [locale]'s digits, as its episode count is (the plural's `%d`), with no grouping. */
-internal fun seriesYear(year: Int, locale: java.util.Locale): String = String.format(locale, "%d", year)
+/** A series' year with Western digits in Arabic and no grouping. */
+internal fun seriesYear(year: Int, locale: java.util.Locale): String =
+    String.format(locale.withWesternDigits(), "%d", year)

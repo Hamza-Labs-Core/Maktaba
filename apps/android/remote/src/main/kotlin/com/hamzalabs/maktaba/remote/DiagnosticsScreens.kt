@@ -440,14 +440,14 @@ private fun seriesTitle(name: String): Int? = when (name) {
 
 private fun value(v: Double, name: String): String =
     if (name.contains("bytes")) bytes(v)
-    else if (v == Math.floor(v)) v.toLong().toString() else "%.1f".format(v)
+    else if (v == Math.floor(v)) v.toLong().toString() else "%.1f".format(java.util.Locale.ROOT, v)
 
 private fun bytes(v: Double): String {
     val units = listOf("B", "KB", "MB", "GB", "TB")
     var x = v
     var i = 0
     while (x >= 1000 && i < units.size - 1) { x /= 1000; i++ }
-    return if (i == 0) "${x.toLong()} B" else "%.1f %s".format(x, units[i])
+    return if (i == 0) "${x.toLong()} B" else "%.1f %s".format(java.util.Locale.ROOT, x, units[i])
 }
 
 @OptIn(ExperimentalLayoutApi::class)

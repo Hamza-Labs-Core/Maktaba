@@ -9,7 +9,7 @@
 //   - `dir`               "rtl" for Arabic, "ltr" otherwise; stamped on
 //                         <html dir> + <html lang>.
 //   - `n(value)`          Intl.NumberFormat in the active locale
-//                         (Arabic-Indic digits under `ar`).
+//                         (Western digits 0–9 under `ar` too).
 //   - `formatDate(d)`     Intl.DateTimeFormat in the active locale (a
 //                         date and time unless opts say otherwise).
 //
@@ -27,7 +27,7 @@ import {
 } from "react";
 import en from "../i18n/en.json";
 import ar from "../i18n/ar.json";
-import { dateTimeFormat, numberFormat } from "./intl";
+import { dateTimeFormat, intlLocale, numberFormat } from "./intl";
 
 export type Locale = "en" | "ar";
 export type Direction = "ltr" | "rtl";
@@ -113,7 +113,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const n = useCallback(
     (value: number, opts?: Intl.NumberFormatOptions) =>
-      numberFormat(locale === "ar" ? "ar-EG" : "en", opts).format(value),
+      numberFormat(intlLocale(locale), opts).format(value),
     [locale]
   );
 
@@ -122,7 +122,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       const d = value instanceof Date ? value : new Date(value);
       if (Number.isNaN(d.getTime())) return String(value);
       return dateTimeFormat(
-        locale === "ar" ? "ar-EG" : "en",
+        intlLocale(locale),
         opts ?? { dateStyle: "medium", timeStyle: "short" }
       ).format(d);
     },

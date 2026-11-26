@@ -238,7 +238,7 @@ public final class AgeSignalSender {
     public func rangeText(_ locale: Locale = AppLanguage.locale) -> String {
         guard case let .shared(lower, upper, _)? = range else { return ParentalWords.text("ageSignal.profile.notShared", locale) }
         var style = IntegerFormatStyle<Int>.number.grouping(.never)
-        style = style.locale(locale)
+        style = style.locale(AppLanguage.westernDigits(locale))
         switch (lower, upper) {
         case let (l?, u?): return "\u{200E}\(l.formatted(style))–\(u.formatted(style))"
         case let (l?, nil): return AgeTier.label(l, locale)

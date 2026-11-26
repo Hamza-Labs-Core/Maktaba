@@ -10,7 +10,7 @@ public struct StatusStripView: View {
     /// A line's words in the person's language, with its values (the cloud's maintenance window).
     private func words(_ line: StripLine) -> Text {
         if line.args.isEmpty { return Text(LocalizedStringKey(line.text), bundle: .module) }
-        return Text(verbatim: String(format: StripWords.localized(line.text), arguments: line.args))
+        return Text(verbatim: String(format: StripWords.localized(line.text), locale: AppLanguage.locale, arguments: line.args))
     }
 
     let lines: [StripLine]

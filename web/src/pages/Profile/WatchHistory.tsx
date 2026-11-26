@@ -21,6 +21,7 @@ import { ErrorState } from "@ds/components/ErrorState/ErrorState";
 import { Skeleton } from "@ds/components/Skeleton/Skeleton";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useI18n } from "../../lib/i18n";
+import { dateTimeFormat } from "../../lib/intl";
 import {
   analyticsApi,
   formatPercent,
@@ -274,9 +275,8 @@ export function ActivityTimeline({ limit }: { limit?: number }) {
   const items = list.data?.items ?? (error ? [] : null);
   const more = list.data?.more ?? false;
 
-  const tag = locale === "ar" ? "ar-EG" : "en";
-  const timeFmt = new Intl.DateTimeFormat(tag, { hour: "numeric", minute: "2-digit" });
-  const dayFmt = new Intl.DateTimeFormat(tag, { dateStyle: "full" });
+  const timeFmt = dateTimeFormat(locale, { hour: "numeric", minute: "2-digit" });
+  const dayFmt = dateTimeFormat(locale, { dateStyle: "full" });
   const groups: Array<{ key: string; label: string; rows: ActivityItem[] }> = [];
   for (const it of items ?? []) {
     const key = dayKey(it.at);

@@ -486,4 +486,29 @@ describe("AdminLiveTV", () => {
     expect(await screen.findByText("A1B2C3D4")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Streaming hosts" })).not.toBeInTheDocument();
   });
+
+  it("formats Plex timestamps with Western digits in Arabic", async () => {
+    const orig = Date.prototype.toLocaleString;
+    const spy = vi.spyOn(Date.prototype, "toLocaleString").mockImplementation(function (
+      this: Date,
+      locales?: Intl.LocalesArgument,
+      options?: Intl.DateTimeFormatOptions
+    ) {
+      return orig.call(this, locales ?? "ar-EG", options);
+    });
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      routes({ "/api/tv/plex": plexRegistered });
+      renderPage();
+      const checkLabel = await screen.findByText("آخر فحص");
+      const checkValue = checkLabel.nextElementSibling;
+      expect(checkValue?.textContent).toContain(
+        orig.call(new Date(plexRegistered.checked_at), "ar-u-nu-latn")
+      );
+      expect(checkValue?.textContent).not.toMatch(/[٠-٩]/);
+    } finally {
+      spy.mockRestore();
+      localStorage.clear();
+    }
+  });
 });

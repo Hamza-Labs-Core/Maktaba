@@ -31,7 +31,7 @@ struct ReportsInboxView: View {
                         Text(verbatim: [r.name, r.app].compactMap { $0 }.joined(separator: " · "))
                             .font(.caption).foregroundStyle(.secondary)
                         if let at = r.at {
-                            Text(at.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                            Text(at.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale))).font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -74,7 +74,7 @@ struct ReportView: View {
                 Section {
                     LabeledContent("From", value: d.summary.name ?? String(localized: "Unknown user"))
                     LabeledContent("Category", value: ReportWords.category(d.summary.category))
-                    if let when = d.when { LabeledContent("When", value: when.formatted(date: .abbreviated, time: .shortened)) }
+                    if let when = d.when { LabeledContent("When", value: when.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale))) }
                     LabeledContent("App") {
                         Text(verbatim: "\(d.summary.app) \(d.version)").font(.callout.monospaced())
                     }

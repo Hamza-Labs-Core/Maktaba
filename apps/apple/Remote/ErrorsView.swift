@@ -88,7 +88,7 @@ struct ErrorRow: View {
                 Sparkline(days: group.days).frame(width: 70, height: 18)
             }
             if let last = group.lastSeen {
-                Text("Last seen \(last.formatted(.relative(presentation: .named)))")
+                Text("Last seen \(last.formatted(.relative(presentation: .named).locale(AppLanguage.locale)))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -176,9 +176,9 @@ struct ErrorGroupView: View {
                     LabeledContent("In 24 hours", value: g.count24h, format: .number)
                     LabeledContent("In all", value: g.count, format: .number)
                     LabeledContent("People", value: g.users, format: .number)
-                    if let first = g.firstSeen { LabeledContent("First seen", value: first.formatted(date: .abbreviated, time: .shortened)) }
-                    if let last = g.lastSeen { LabeledContent("Last seen", value: last.formatted(date: .abbreviated, time: .shortened)) }
-                    if let until = g.mutedUntil { LabeledContent("Muted until", value: until.formatted(date: .abbreviated, time: .shortened)) }
+                    if let first = g.firstSeen { LabeledContent("First seen", value: first.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale))) }
+                    if let last = g.lastSeen { LabeledContent("Last seen", value: last.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale))) }
+                    if let until = g.mutedUntil { LabeledContent("Muted until", value: until.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale))) }
                     if !d.versions.isEmpty { LabeledContent("Releases", value: d.versions.joined(separator: ", ")) }
                     if !d.machines.isEmpty { LabeledContent("Machines", value: d.machines.joined(separator: ", ")) }
                 }

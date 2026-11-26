@@ -87,6 +87,7 @@ import com.hamzalabs.maktaba.core.ui.QrScanner
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
+import com.hamzalabs.maktaba.core.i18n.withWesternArabicLocale
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import kotlin.math.abs
@@ -520,12 +521,12 @@ private fun Modifier.testTagGuest(tag: String) = testTag(tag)
 @Composable
 private fun time(at: Instant): String {
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
-    return DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).withZone(ZoneId.systemDefault()).format(at)
+    return DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withWesternArabicLocale(locale).withZone(ZoneId.systemDefault()).format(at)
 }
 
 /** A day in the app's language. */
 @Composable
 private fun day(epochSec: Long): String {
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
-    return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(epochSec))
+    return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withWesternArabicLocale(locale).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(epochSec))
 }

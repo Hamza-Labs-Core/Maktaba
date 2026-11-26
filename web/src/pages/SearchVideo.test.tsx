@@ -277,6 +277,6 @@ describe("SearchVideo (test-cases/search.md)", () => {
     await waitFor(() => expect(matchButtons()).toHaveLength(2));
     expect(screen.getByRole("link", { name: /العودة إلى النتائج/ })).toHaveTextContent("→");
     expect(screen.getByRole("button", { name: "المطابقة التالية" })).toBeInTheDocument();
-    expect(screen.getByTestId("matches-count")).toHaveTextContent("عدد المطابقات: ٣");
+    expect(screen.getByTestId("matches-count")).toHaveTextContent("عدد المطابقات: 3");
   });
 });

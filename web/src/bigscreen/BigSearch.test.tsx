@@ -703,7 +703,7 @@ describe("AI mode (story 49.14)", () => {
       await write(ev("queue", { position: 3 }));
       if (locale === "ar") {
         expect(document.documentElement.dir).toBe("rtl");
-        expect(screen.getByTestId("big-ai-turn")).toHaveTextContent("سؤالك رقم ٣ في الصف");
+        expect(screen.getByTestId("big-ai-turn")).toHaveTextContent("سؤالك رقم 3 في الصف");
       }
       await write(ev("sources", SOURCES) + ev("text", S1) + ev("done", { answered: true }));
       expect(screen.getByRole("heading", { name: T["search.ai.sources"] })).toBeInTheDocument();

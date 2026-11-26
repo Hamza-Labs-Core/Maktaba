@@ -114,7 +114,7 @@ public struct GuestSpaceView: View {
                 NavigationLink(value: pass) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(verbatim: GuestWords.onMaktaba(pass.name.isEmpty ? pass.publisher : pass.name))
-                        Text(verbatim: GuestWords.text("guest.until", pass.expiresAt.formatted(date: .abbreviated, time: .omitted)))
+                        Text(verbatim: GuestWords.text("guest.until", pass.expiresAt.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(AppLanguage.locale))))
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

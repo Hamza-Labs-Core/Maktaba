@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { dateTimeFormat } from "../../lib/intl";
 import { queueApi } from "../../lib/queueApi";
 import type { Lane, LogLine, StageInfo } from "../../lib/queueApi";
 import type { LiveLine } from "../../lib/useQueueStream";
@@ -24,13 +25,20 @@ export interface ActivityLogProps {
 
 const isProblem = (l: AnyLine) => l.level === "warn" || l.level === "error";
 
-const timeOf = (iso: string) => {
+const timeOf = (iso: string, locale: string) => {
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString([], { hour12: false });
+  return Number.isNaN(d.getTime())
+    ? ""
+    : dateTimeFormat(locale, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).format(d);
 };
 
 export function ActivityLog({ stages, live, fixedStage, libraryId, initial }: ActivityLogProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [stage, setStage] = useState<string>(fixedStage ?? "");
   const [problems, setProblems] = useState(false);
   const [items, setItems] = useState<LogLine[] | null>(Array.isArray(initial) ? initial : null);
@@ -143,7 +151,7 @@ export function ActivityLog({ stages, live, fixedStage, libraryId, initial }: Ac
           {shown.map((l) => (
             <li className={`mkt-q-logline mkt-q-logline--${l.level}`} key={l.id}>
               <time className="mkt-q-logline__time" dateTime={l.at}>
-                {timeOf(l.at)}
+                {timeOf(l.at, locale)}
               </time>
               <span className={`mkt-q-chip mkt-q-chip--lane-${laneOf(l.stage)}`}>
                 {stageMeta.get(l.stage)?.label ?? l.stage}

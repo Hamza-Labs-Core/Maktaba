@@ -9,6 +9,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useWindowKeydown } from "../../lib/useWindowKeydown";
 import { useToast } from "@ds/components/Toast/Toast";
 import { useI18n } from "../../lib/i18n";
+import { intlLocale } from "../../lib/intl";
 import { useIsAdmin } from "../../components/queue/useIsAdmin";
 import { useOptionalAuth } from "../../lib/auth";
 import { pluralKey } from "../../lib/plural";
@@ -344,7 +345,13 @@ export function Review() {
         <p className="mkt-review-empty">
           {t("review.empty")}
           {lastCheck && (
-            <> · {t("review.lastCheck", { when: new Date(lastCheck).toLocaleString(locale) })}</>
+            <>
+              {" "}
+              ·{" "}
+              {t("review.lastCheck", {
+                when: new Date(lastCheck).toLocaleString(intlLocale(locale)),
+              })}
+            </>
           )}
         </p>
       )}

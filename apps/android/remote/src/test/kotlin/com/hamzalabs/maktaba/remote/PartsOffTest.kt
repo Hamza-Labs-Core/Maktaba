@@ -64,7 +64,7 @@ class PartsOffTest {
         home.features.value = threeOff
         machines()
         compose.settledUntil { compose.has("parts-off") }
-        compose.onNodeWithTag("parts-off").assertExistsWith("٣ أجزاء متوقفة") // Arabic digits, as the locale writes them
+        compose.onNodeWithTag("parts-off").assertExistsWith("3 أجزاء متوقفة") // Western digits in Arabic (#1199)
     }
 
     @Test

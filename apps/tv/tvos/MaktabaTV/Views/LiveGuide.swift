@@ -216,7 +216,8 @@ private struct GuideBlockLabel: View {
     }
 
     private var timeRange: String {
-        "\(block.start.formatted(date: .omitted, time: .shortened)) – \(block.stop.formatted(date: .omitted, time: .shortened))"
+        let style = Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale)
+        return "\(block.start.formatted(style)) – \(block.stop.formatted(style))"
     }
 }
 
@@ -261,7 +262,7 @@ private struct GuideDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
             if let channel {
-                Text(verbatim: "\(channel.number.formatted()) · \(channel.name)")
+                Text(verbatim: "\(channel.number.formatted(.number.locale(AppLanguage.locale))) · \(channel.name)")
                     .font(Theme.body(28, weight: .semibold))
                     .foregroundStyle(Theme.goldText)
             }

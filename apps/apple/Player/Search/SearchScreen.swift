@@ -575,7 +575,7 @@ private func details(_ hit: SearchVideo) -> String {
 
 /// A time as a clock: 27:02, 1:02:03.
 private func clock(_ seconds: Double) -> String {
-    Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond))
+    Duration.seconds(seconds).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(AppLanguage.locale))
 }
 
 /// The home's snippet as one text, the query's words marked: one run for the whole snippet,

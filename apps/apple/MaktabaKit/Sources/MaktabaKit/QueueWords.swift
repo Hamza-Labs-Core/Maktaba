@@ -37,6 +37,6 @@ public enum QueueWords {
     public static func componentLine(_ hold: ComponentHold, _ locale: Locale = AppLanguage.locale) -> String {
         filled(lines, "queue.health.", hold.stopped ? "componentHeld" : "componentOff",
                ["component": componentTitle(hold.component, locale),
-                "n": hold.queued.formatted(.number.locale(locale))], locale)
+                "n": hold.queued.formatted(.number.locale(AppLanguage.westernDigits(locale)))], locale)
     }
 }

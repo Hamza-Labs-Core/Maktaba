@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.core.text.layoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
+import com.hamzalabs.maktaba.core.i18n.withWesternDigits
 import com.hamzalabs.maktaba.core.session.KeyValueStore
 import com.hamzalabs.maktaba.core.session.PreferencesStore
 import com.hamzalabs.maktaba.player.R
@@ -143,7 +144,7 @@ fun AppLanguageScope(languages: AppLanguages = appLanguages(), content: @Composa
     val baseConfig = LocalConfiguration.current
     val baseResources = LocalResources.current
     val baseDirection = LocalLayoutDirection.current
-    val locale = remember(language) { language.tag?.let(Locale::forLanguageTag) }
+    val locale = remember(language) { language.tag?.let(Locale::forLanguageTag)?.withWesternDigits() }
     val config = remember(baseConfig, locale) {
         locale?.let { Configuration(baseConfig).apply { setLocale(it); setLayoutDirection(it) } } ?: baseConfig
     }

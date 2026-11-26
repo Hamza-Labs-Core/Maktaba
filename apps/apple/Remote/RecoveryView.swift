@@ -287,7 +287,7 @@ private struct RecoveryList: View {
     }
 
     static func bytes(_ n: Int64) -> String {
-        n < 0 ? "?" : ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
+        n < 0 ? "?" : n.formatted(.byteCount(style: .file).locale(AppLanguage.locale))
     }
 }
 
@@ -310,7 +310,7 @@ private struct PartRow: View {
             }
             Group {
                 if let at = part.lastExitDate, let code = part.lastCode {
-                    Text("\(part.restarts) restarts · last stopped \(at.formatted(date: .abbreviated, time: .shortened)) (code \(code))")
+                    Text("\(part.restarts) restarts · last stopped \(at.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale))) (code \(code))")
                 } else {
                     Text("\(part.restarts) restarts")
                 }
@@ -343,7 +343,7 @@ private struct LineRow: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(verbatim: line.msg).font(.caption.monospaced()).lineLimit(6)
                 .foregroundStyle(line.level == "error" ? .red : .primary)
-            Text(verbatim: [line.ts.map { $0.formatted(date: .omitted, time: .standard) }, line.level,
+            Text(verbatim: [line.ts.map { $0.formatted(Date.FormatStyle(date: .omitted, time: .standard).locale(AppLanguage.locale)) }, line.level,
                             line.component.isEmpty ? line.service : line.component]
                 .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                 .font(.caption2)
@@ -368,7 +368,7 @@ private struct BackupPicker: View {
                         Button { pick(b) } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(verbatim: b.name).font(.body.monospaced()).environment(\.layoutDirection, .leftToRight)
-                                Text(verbatim: [b.at.map { $0.formatted(date: .abbreviated, time: .shortened) },
+                                Text(verbatim: [b.at.map { $0.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale)) },
                                                 b.size < 0 ? nil : RecoveryList.bytes(b.size)]
                                     .compactMap { $0 }.joined(separator: " · "))
                                     .font(.caption)

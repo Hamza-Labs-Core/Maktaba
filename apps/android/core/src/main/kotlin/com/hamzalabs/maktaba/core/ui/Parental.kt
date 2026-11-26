@@ -65,6 +65,7 @@ import com.hamzalabs.maktaba.core.api.PinHolder
 import com.hamzalabs.maktaba.core.api.SubjectKind
 import com.hamzalabs.maktaba.core.api.TimeRefusal
 import com.hamzalabs.maktaba.core.api.isParentPin
+import com.hamzalabs.maktaba.core.i18n.withWesternDigits
 import com.hamzalabs.maktaba.core.parental.AskState
 import com.hamzalabs.maktaba.core.parental.ParentAsk
 import com.hamzalabs.maktaba.core.parental.ParentalState
@@ -120,7 +121,7 @@ fun timesUpTitle(reason: String): Int =
 
 /** The locale the screen's words are in (the app's language, which may differ from the device's). */
 @Composable
-fun wordsLocale(): Locale = LocalConfiguration.current.locales[0] ?: Locale.ENGLISH
+fun wordsLocale(): Locale = (LocalConfiguration.current.locales[0] ?: Locale.ENGLISH).withWesternDigits()
 
 /** "7:30 PM" today, "Thursday 7:00 AM" another day, in the app's language. */
 @Composable

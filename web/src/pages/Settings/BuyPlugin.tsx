@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { useI18n } from "../../lib/i18n";
+import { numberFormat } from "../../lib/intl";
 import { pluginsApi, type CatalogEntry } from "../../lib/pluginsApi";
 import { refusalWords } from "./PluginsSection";
 import { StoreAccount } from "./StoreAccount";
@@ -29,7 +30,7 @@ export function shownPrice(
   const currency =
     order.find((c) => typeof prices[c] === "number") ?? Object.keys(prices).sort()[0];
   if (!currency) return null;
-  const f = new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en-US", {
+  const f = numberFormat(locale === "ar" ? "ar" : "en-US", {
     style: "currency",
     currency,
   });

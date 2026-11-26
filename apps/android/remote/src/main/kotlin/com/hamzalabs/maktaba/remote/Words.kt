@@ -14,6 +14,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import com.hamzalabs.maktaba.core.i18n.withWesternArabicLocale
+import com.hamzalabs.maktaba.core.i18n.withWesternDigits
 import java.time.format.DateTimeFormatter
 import java.time.format.DecimalStyle
 
@@ -217,8 +219,8 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
         else -> w.text(R.string.say_hours_short, sec / 3600)
     }
 
-    /** A number as this language writes it. */
-    fun number(n: Int): String = String.format(w.locale, "%d", n)
+    /** A number with Western digits in Arabic. */
+    fun number(n: Int): String = String.format(w.locale.withWesternDigits(), "%d", n)
 
     // ---------- the queue ----------
 
@@ -289,7 +291,7 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
     fun whenText(iso: String): String =
         runCatching {
             OffsetDateTime.parse(iso).atZoneSameInstant(zone).format(
-                DateTimeFormatter.ofPattern("EEE d MMM, HH:mm", w.locale).withDecimalStyle(DecimalStyle.of(w.locale)),
+                DateTimeFormatter.ofPattern("EEE d MMM, HH:mm").withWesternArabicLocale(w.locale),
             )
         }.getOrElse { iso }
 

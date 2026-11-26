@@ -50,6 +50,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.time.ZoneId
+import com.hamzalabs.maktaba.core.i18n.withWesternArabicLocale
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
@@ -79,8 +80,8 @@ fun stripText(key: StripKey): Int = when (key) {
 /** A moment's date and time in the device's language and time zone (the maintenance window). */
 fun localWhen(ms: Long): Pair<String, String> {
     val t = Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault())
-    return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).format(t) to
-        DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).format(t)
+    return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withWesternArabicLocale().format(t) to
+        DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withWesternArabicLocale().format(t)
 }
 
 /**

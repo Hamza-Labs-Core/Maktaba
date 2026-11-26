@@ -16,6 +16,7 @@ import { Toggle } from "@ds/components/Choice/Toggle";
 import { CopyField } from "../../../components/CopyField";
 import { ApiError } from "../../../lib/api";
 import { useI18n } from "../../../lib/i18n";
+import { intlLocale } from "../../../lib/intl";
 import {
   tvPublicApi,
   type PublicChannel,
@@ -24,7 +25,8 @@ import {
 } from "../../../lib/tvPublicApi";
 import { simulcastErrCode } from "../../../lib/tvSimulcastApi";
 
-const when = (s?: string | null) => (s ? new Date(s).toLocaleString() : "—");
+const when = (s: string | null | undefined, locale: string) =>
+  s ? new Date(s).toLocaleString(intlLocale(locale)) : "—";
 
 function errText(e: unknown): string {
   if (e instanceof ApiError) return e.problem.detail || e.message;
@@ -32,7 +34,7 @@ function errText(e: unknown): string {
 }
 
 export function PublicPanel() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [view, setView] = useState<PublicView | null>(null);
   const [hidden, setHidden] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,7 +172,7 @@ export function PublicPanel() {
         </Button>
       </p>
       <p className="mkt-livetv__hint" data-testid="tvpublic-publisher">
-        {t("tvpublic.lastPost", { at: when(pub?.last_ok_at) })}
+        {t("tvpublic.lastPost", { at: when(pub?.last_ok_at, locale) })}
         {pub?.last_error ? ` — ${pub.last_error}` : ""}
       </p>
       <table className="mkt-livetv__table">
@@ -203,7 +205,7 @@ export function PublicPanel() {
               <td>{c.public ? (c.on_air ? t("tvpublic.yes") : t("tvpublic.no")) : "—"}</td>
               <td>
                 {c.rights_confirmed_at
-                  ? t("tvpublic.rightsAt", { at: when(c.rights_confirmed_at) })
+                  ? t("tvpublic.rightsAt", { at: when(c.rights_confirmed_at, locale) })
                   : "—"}
               </td>
             </tr>

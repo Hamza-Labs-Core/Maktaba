@@ -225,7 +225,7 @@ private struct GuideBlockLabel: View {
                 .font(.maktabaBody(MaktabaTokens.TypeSize.sm, weight: .medium))
                 .foregroundStyle(Color.mktText)
                 .lineLimit(2)
-            Text(verbatim: "\(block.start.formatted(date: .omitted, time: .shortened)) – \(block.stop.formatted(date: .omitted, time: .shortened))")
+            Text(verbatim: "\(block.start.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale))) – \(block.stop.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale)))")
                 .font(.maktabaBody(11))
                 .foregroundStyle(Color.mktMuted)
                 .lineLimit(1)
@@ -257,7 +257,7 @@ struct LiveProgrammeSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s3) {
                     if let channel {
-                        Text(verbatim: "\(channel.number.formatted()) · \(channel.name)")
+                        Text(verbatim: "\(channel.number.formatted(.number.locale(AppLanguage.locale))) · \(channel.name)")
                             .font(.maktabaBody(MaktabaTokens.TypeSize.sm, weight: .semibold))
                             .foregroundStyle(Color.mktBrassText)
                     }
@@ -265,7 +265,7 @@ struct LiveProgrammeSheet: View {
                         .font(.maktabaHeading(MaktabaTokens.TypeSize.h1, relativeTo: .title))
                         .foregroundStyle(Color.mktText)
                         .accessibilityIdentifier("live.detail.title")
-                    Text(verbatim: "\(block.start.formatted(.dateTime.weekday(.wide).hour().minute())) – \(block.stop.formatted(date: .omitted, time: .shortened))")
+                    Text(verbatim: "\(block.start.formatted(.dateTime.weekday(.wide).hour().minute().locale(AppLanguage.locale))) – \(block.stop.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale)))")
                         .font(.maktabaBody(MaktabaTokens.TypeSize.sm))
                         .foregroundStyle(Color.mktMuted)
                         .accessibilityIdentifier("live.detail.time")

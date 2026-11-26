@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
 import { lookupMessage, useI18n } from "../../lib/i18n";
+import { intlLocale } from "../../lib/intl";
 import { tvRemoteApi } from "../../lib/tvRemoteApi";
 import type { RemoteIntegration, RemoteTestLine, RemoteTestResult } from "../../lib/tvRemoteApi";
 import { useAction } from "../../components/queue/useAction";
@@ -74,7 +75,7 @@ export function RemoteTestLines({
 }
 
 export function CloudflareRemote({ refresh }: { refresh: number }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const action = useAction();
   const [st, setSt] = useState<RemoteIntegration | null>(null);
   const [failed, setFailed] = useState(false);
@@ -158,7 +159,7 @@ export function CloudflareRemote({ refresh }: { refresh: number }) {
         <>
           <p className={last.ok ? "mkt-q-status--ok" : "mkt-q-status--bad"}>
             {t(last.ok ? "cfstream.lastOk" : "cfstream.lastBad", {
-              at: new Date(last.checked_at).toLocaleString(),
+              at: new Date(last.checked_at).toLocaleString(intlLocale(locale)),
             })}
           </p>
           <RemoteTestLines result={last} />

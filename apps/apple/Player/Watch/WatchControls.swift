@@ -140,6 +140,9 @@ enum WatchTime {
     static func text(_ seconds: Double) -> String {
         let s = Int((seconds.isFinite ? max(0, seconds) : 0).rounded(.down))
         let h = s / 3600, m = (s % 3600) / 60, sec = s % 60
-        return h > 0 ? String(format: "%d:%02d:%02d", h, m, sec) : String(format: "%d:%02d", m, sec)
+        let posix = Locale(identifier: "en_US_POSIX")
+        return h > 0
+            ? String(format: "%d:%02d:%02d", locale: posix, h, m, sec)
+            : String(format: "%d:%02d", locale: posix, m, sec)
     }
 }

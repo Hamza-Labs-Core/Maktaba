@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Badge } from "@ds/components/Badge/Badge";
 import { bidiIsolate, useI18n } from "../../lib/i18n";
+import { intlLocale } from "../../lib/intl";
 import type { HealthStatus, StatusItem, StatusReport } from "../../lib/systemStatus";
 import { useFmt, type Fmt } from "../../components/queue/format";
 import { componentTitle } from "../../components/cluster/format";
@@ -96,7 +97,8 @@ export function itemReason(
   t: T,
   fmt: Fmt,
   n: (v: number) => string,
-  date: (iso: string) => string = (iso) => new Date(iso).toLocaleString()
+  date: (iso: string) => string = (iso) =>
+    new Date(iso).toLocaleString(intlLocale(Intl.DateTimeFormat().resolvedOptions().locale))
 ): string {
   const vars: Record<string, string | number> = {};
   for (const [k, v] of Object.entries(it.params ?? {})) {

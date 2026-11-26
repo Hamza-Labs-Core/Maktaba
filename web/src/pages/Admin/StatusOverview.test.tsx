@@ -306,14 +306,14 @@ describe("System health: the status of every part", () => {
     expect(banner).toHaveTextContent(en["health.banner.unreachable"]);
   });
 
-  it("Arabic: the banner, names and reasons in Arabic with Arabic-Indic digits", async () => {
+  it("Arabic: the banner, names and reasons in Arabic with Western digits", async () => {
     localStorage.setItem("mkt:locale", "ar");
     routeGet(get, table(report()));
     open();
     expect(await screen.findByTestId("health-banner")).toHaveTextContent(ar["health.banner.ok"]);
     const pg = await tile("postgres");
     expect(pg).toHaveTextContent("قاعدة البيانات");
-    expect(pg).toHaveTextContent("تجيب في ٣ ملّي ثانية.");
+    expect(pg).toHaveTextContent("تجيب في 3 ملّي ثانية.");
     expect(
       screen.getByRole("heading", { level: 2, name: ar["health.group.queues_tv"] })
     ).toBeInTheDocument();

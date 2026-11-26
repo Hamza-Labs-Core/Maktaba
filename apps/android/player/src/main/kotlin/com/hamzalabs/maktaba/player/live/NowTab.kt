@@ -41,6 +41,7 @@ import com.hamzalabs.maktaba.player.ui.components.ChannelLogo
 import com.hamzalabs.maktaba.player.ui.components.ProgressStrip
 import com.hamzalabs.maktaba.player.ui.components.watchedPercent
 import java.time.Instant
+import com.hamzalabs.maktaba.core.i18n.withWesternArabicLocale
 import java.time.format.DateTimeFormatter
 
 /** Now (FR-21): each channel's logo, number, name, what is on with its progress, and what is next. */
@@ -143,7 +144,7 @@ internal fun rememberTimeFormat(): (Long) -> String {
     val zone = LocalLiveEnv.current.zone()
     val locale = LocalConfiguration.current.locales[0]
     return remember(zone, locale) {
-        val f = DateTimeFormatter.ofPattern("HH:mm", locale).withZone(zone)
+        val f = DateTimeFormatter.ofPattern("HH:mm").withWesternArabicLocale(locale).withZone(zone)
         val format: (Long) -> String = { ms -> f.format(Instant.ofEpochMilli(ms)) }
         format
     }

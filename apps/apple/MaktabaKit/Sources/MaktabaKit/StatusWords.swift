@@ -593,7 +593,7 @@ public enum UpdateWords {
         let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: at)).day ?? 0
         if days == 0 { return kit("today", locale) }
         if days == 1 { return kit("tomorrow", locale) }
-        var style = Date.FormatStyle.dateTime.weekday(.wide).month(.abbreviated).day().locale(locale)
+        var style = Date.FormatStyle.dateTime.weekday(.wide).month(.abbreviated).day().locale(AppLanguage.westernDigits(locale))
         style.calendar = calendar
         style.timeZone = calendar.timeZone
         return at.formatted(style)

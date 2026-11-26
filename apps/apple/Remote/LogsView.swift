@@ -151,7 +151,7 @@ struct LogLineRow: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 if let ts = line.ts {
-                    Text(ts.formatted(.dateTime.hour().minute().second()))
+                    Text(ts.formatted(.dateTime.hour().minute().second().locale(AppLanguage.locale)))
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }

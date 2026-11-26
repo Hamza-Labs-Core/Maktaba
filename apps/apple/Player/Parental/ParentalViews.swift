@@ -560,7 +560,8 @@ struct TimeUpView: View {
 
     /// A position as a clock ("12:05", "1:02:03"), digits left to right.
     static func clock(_ seconds: Double) -> String {
-        "\u{200E}" + Duration.seconds(seconds.rounded(.down)).formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond))
+        "\u{200E}" + Duration.seconds(seconds.rounded(.down))
+            .formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(AppLanguage.locale))
     }
 }
 

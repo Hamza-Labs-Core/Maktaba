@@ -143,7 +143,7 @@ private struct TVGuestHome: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(verbatim: GuestWords.onMaktaba(pass.name.isEmpty ? pass.publisher : pass.name))
                                     .font(Theme.heading(40))
-                                Text(verbatim: GuestWords.text("guest.until", pass.expiresAt.formatted(.dateTime.day().month().year())))
+                                Text(verbatim: GuestWords.text("guest.until", pass.expiresAt.formatted(Date.FormatStyle.dateTime.day().month().year().locale(AppLanguage.locale))))
                                     .font(Theme.body(26))
                                     .opacity(0.75)
                             }

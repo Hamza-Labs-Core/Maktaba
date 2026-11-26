@@ -12,6 +12,7 @@ import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
 import { ApiError } from "../../../lib/api";
 import { useI18n } from "../../../lib/i18n";
+import { intlLocale } from "../../../lib/intl";
 import {
   tvRemoteApi,
   type RemoteControllerStatus,
@@ -26,7 +27,8 @@ export const REMOTE_PAGE = 50;
 
 const RUNNING = new Set(["requested", "connecting", "live", "stopping"]);
 
-const since = (s?: string | null) => (s ? new Date(s).toLocaleString() : "—");
+const since = (s: string | null | undefined, locale: string) =>
+  s ? new Date(s).toLocaleString(intlLocale(locale)) : "—";
 
 function channelLabel(p: {
   channel_number?: number;
@@ -54,7 +56,7 @@ const NO_INTEGRATION: RemoteIntegration = {
 };
 
 export function RemotePanel() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [integration, setIntegration] = useState<RemoteIntegration | null>(null);
   const [st, setSt] = useState<RemoteControllerStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -232,7 +234,7 @@ export function RemotePanel() {
                 </td>
                 <td>{t(`tv.remote.inputState.${i.state}`)}</td>
                 <td>{i.channel_id ? <bdi>{i.channel_id.slice(0, 8)}</bdi> : "—"}</td>
-                <td>{since(i.assigned_at)}</td>
+                <td>{since(i.assigned_at, locale)}</td>
                 <td className={i.error ? "mkt-q-status--bad" : ""}>
                   {i.error || t("tv.remote.ok")}
                 </td>
@@ -271,7 +273,7 @@ export function RemotePanel() {
                 {t(`cfremote.push.${p.state}`)}
                 {p.state === "failed" && p.detail ? ` — ${p.detail}` : ""}
               </td>
-              <td>{since(p.live_at ?? p.started_at)}</td>
+              <td>{since(p.live_at ?? p.started_at, locale)}</td>
               <td>{RUNNING.has(p.state) ? viewersCell(p) : "—"}</td>
             </tr>
           ))}
@@ -312,7 +314,7 @@ export function RemotePanel() {
               <td>
                 <bdi>{channelLabel(s)}</bdi>
               </td>
-              <td>{since(s.started_at)}</td>
+              <td>{since(s.started_at, locale)}</td>
             </tr>
           ))}
         </tbody>
@@ -331,7 +333,7 @@ export function RemotePanel() {
           <ol>
             {[...events].reverse().map((ev, i) => (
               <li key={i} className={ev.level === "ERROR" ? "mkt-q-status--bad" : ""}>
-                <time>{since(ev.at)}</time> <code>{ev.event}</code> {ev.message}
+                <time>{since(ev.at, locale)}</time> <code>{ev.event}</code> {ev.message}
                 {ev.code && <span className="mkt-q-muted"> · {ev.code}</span>}
               </li>
             ))}

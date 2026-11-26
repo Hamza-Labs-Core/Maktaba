@@ -16,7 +16,7 @@ public struct ConnectStrings: Sendable {
     }
 
     public var isRightToLeft: Bool { language == .ar }
-    public var locale: Locale { Locale(identifier: language.rawValue) }
+    public var locale: Locale { AppLanguage.westernDigits(Locale(identifier: language.rawValue)) }
 
     public func text(_ key: Key, _ args: String...) -> String {
         var s = (language == .ar ? Self.ar : Self.en)[key] ?? Self.en[key] ?? key.rawValue

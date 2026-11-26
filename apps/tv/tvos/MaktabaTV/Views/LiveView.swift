@@ -277,7 +277,8 @@ struct LiveChannelCard: View {
 
     private var nextLine: String {
         guard let next = now?.next else { return " " }
-        return String(localized: "Next: \(next.start.formatted(date: .omitted, time: .shortened)) \(next.displayTitle())")
+        let at = next.start.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale))
+        return String(localized: "Next: \(at) \(next.displayTitle())")
     }
 }
 

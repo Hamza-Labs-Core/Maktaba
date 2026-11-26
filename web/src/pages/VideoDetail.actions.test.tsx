@@ -183,7 +183,7 @@ describe("VideoDetail actions", () => {
     ).toBeInTheDocument();
     expect(
       await screen.findByRole("navigation", { name: ar["video.series.nav"] })
-    ).toHaveTextContent("الدرس ٢ من ٣ في");
+    ).toHaveTextContent("الدرس 2 من 3 في");
   });
 
   // Epic 56 story 56.13: Play next and Add to queue go to the server queue

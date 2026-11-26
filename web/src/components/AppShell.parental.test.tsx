@@ -102,17 +102,17 @@ describe("the More page", () => {
     expect(within(link).getByLabelText("Requests waiting: 4")).toHaveTextContent("4");
   });
 
-  it("counts them in the language's own digits, to the eye and to a screen reader", () => {
+  it("counts them in Western digits in Arabic, to the eye and to a screen reader", () => {
     more({ children: [child], pendingRequests: 4 }, memberUser, "ar");
     const link = screen.getByRole("link", { name: new RegExp(ar["nav.family"]) });
-    const count = within(link).getByLabelText("طلبات بالانتظار: ٤");
-    expect(count).toHaveTextContent("٤");
-    expect(count).not.toHaveTextContent("4");
+    const count = within(link).getByLabelText("طلبات بالانتظار: 4");
+    expect(count).toHaveTextContent("4");
+    expect(count.textContent).not.toMatch(/[٠-٩]/);
   });
 
-  it("past ninety-nine says so in the language's own digits", () => {
+  it("past ninety-nine says so in Western digits in Arabic", () => {
     const { unmount } = more({ children: [child], pendingRequests: 120 }, memberUser, "ar");
-    expect(screen.getByLabelText("طلبات بالانتظار: ١٢٠")).toHaveTextContent("٩٩+");
+    expect(screen.getByLabelText("طلبات بالانتظار: 120")).toHaveTextContent("99+");
     unmount();
     more({ children: [child], pendingRequests: 120 });
     expect(screen.getByLabelText("Requests waiting: 120")).toHaveTextContent("99+");
@@ -144,11 +144,11 @@ describe("the sidebar's Family count", () => {
     );
   }
 
-  it("is in the language's own digits, to the eye and to a screen reader", async () => {
+  it("is Western digits in Arabic, to the eye and to a screen reader", async () => {
     shell(4, "ar");
     const count = await screen.findByTestId("family-count");
-    expect(count).toHaveTextContent("٤");
-    expect(count).toHaveAttribute("aria-label", "طلبات بالانتظار: ٤");
+    expect(count).toHaveTextContent("4");
+    expect(count).toHaveAttribute("aria-label", "طلبات بالانتظار: 4");
   });
 
   it("is Western digits in English", async () => {

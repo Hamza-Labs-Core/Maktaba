@@ -159,6 +159,6 @@ describe("BroadcastViewers", () => {
     expect(screen.getByText("يشاهدون الآن")).toBeInTheDocument();
     expect(screen.getAllByText("أخرى")).toHaveLength(2);
     expect(screen.getByText(/تحت "أخرى" في تلك الساعة/)).toBeInTheDocument();
-    expect(screen.getByText("٩٠ من ٥٬٠٠٠")).toBeInTheDocument();
+    expect(screen.getByText("90 من 5,000")).toBeInTheDocument();
   });
 });

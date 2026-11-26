@@ -102,7 +102,7 @@ describe("TimeLeft", () => {
   it("is Arabic in Arabic, in a right-to-left page", () => {
     page(<TimeLeft time={time({ remainingSeconds: 5 * 60 })} />, "ar");
     expect(document.documentElement).toHaveAttribute("dir", "rtl");
-    expect(screen.getByTestId("parental-time-left")).toHaveTextContent("بقي ٥ دقائق اليوم");
+    expect(screen.getByTestId("parental-time-left")).toHaveTextContent("بقي 5 دقائق اليوم");
   });
 });
 
@@ -152,7 +152,7 @@ describe("the warnings", () => {
 
   it("says the time that is left in Arabic too", () => {
     page(<TimeWarning time={time({ remainingSeconds: 200 })} />, "ar");
-    expect(screen.getByRole("alert")).toHaveTextContent("تنتهي المشاهدة بعد ٣ دقائق.");
+    expect(screen.getByRole("alert")).toHaveTextContent("تنتهي المشاهدة بعد 3 دقائق.");
   });
 
   it("warns again after more time came and ran down", () => {

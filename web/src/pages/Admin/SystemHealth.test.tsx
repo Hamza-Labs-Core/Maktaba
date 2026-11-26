@@ -439,8 +439,8 @@ describe("SystemHealth (test-cases/admin-health.md)", () => {
     expect(document.documentElement.dir).toBe("rtl");
     expect(document.documentElement.lang).toBe("ar");
     const tv = await screen.findByTestId("health-tv");
-    expect(tv).toHaveTextContent("الأجهزة المتصلة ١ من ٢");
-    expect(await screen.findByText("١٢")).toBeInTheDocument();
+    expect(tv).toHaveTextContent("الأجهزة المتصلة 1 من 2");
+    expect(await screen.findByText("12")).toBeInTheDocument();
     expect(screen.getByText("thumbs")).toBeInTheDocument();
     expect(screen.getByText("abcdef123456")).toBeInTheDocument();
   });

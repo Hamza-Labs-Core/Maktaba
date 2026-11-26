@@ -358,7 +358,7 @@ final class LivePlayback {
     }
 
     private func showNowPlaying() {
-        let name = channel.map { "\($0.number.formatted()) · \($0.name)" } ?? ""
+        let name = channel.map { "\($0.number.formatted(.number.locale(AppLanguage.locale))) · \($0.name)" } ?? ""
         NowPlaying.shared.show(self, NowPlayingItem(title: name, subtitle: programme, playing: !paused && phase == .playing))
     }
 

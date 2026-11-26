@@ -162,7 +162,7 @@ struct CloudSheet: View {
         if let at = session.cloudHomesSavedAt {
             // story 50.13: the cloud can't be reached; the saved list, with its time
             Section {
-                Text(words.text(.cloudHomesSaved, at.formatted(date: .abbreviated, time: .shortened)))
+                Text(words.text(.cloudHomesSaved, at.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(words.locale))))
                     .accessibilityIdentifier("cloud.saved")
                 if session.cloudHomesOld {
                     Text(words.text(.cloudHomesSavedOld)).foregroundStyle(.secondary)

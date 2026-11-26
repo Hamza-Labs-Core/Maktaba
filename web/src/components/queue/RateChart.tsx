@@ -2,6 +2,7 @@
 // top, and a dashed line (own scale) for NAS timeouts. Inline SVG with
 // CSS classes, no chart library; colours come from tokens in queue.css.
 import { useI18n } from "../../lib/i18n";
+import { dateTimeFormat } from "../../lib/intl";
 import type { RatePoint } from "../../lib/queueApi";
 
 export interface RateChartProps {
@@ -10,7 +11,7 @@ export interface RateChartProps {
 }
 
 export function RateChart({ points, height = 170 }: RateChartProps) {
-  const { t, n } = useI18n();
+  const { t, n, locale } = useI18n();
   const width = 600;
   const pad = { top: 10, right: 8, bottom: 20, left: 8 };
   const innerW = width - pad.left - pad.right;
@@ -58,10 +59,10 @@ export function RateChart({ points, height = 170 }: RateChartProps) {
             <g key={p.t}>
               <title>
                 {t("queue.chart.tip", {
-                  time: new Date(p.t).toLocaleTimeString([], {
+                  time: dateTimeFormat(locale, {
                     hour: "2-digit",
                     minute: "2-digit",
-                  }),
+                  }).format(new Date(p.t)),
                   done: n(p.done),
                   failed: n(p.failed),
                 })}

@@ -9,8 +9,7 @@ import type { HostLoad } from "../../lib/queueApi";
 
 export function HostOverloaded({ host }: { host: HostLoad }) {
   const { t, n, locale } = useI18n();
-  const num = (v: number) =>
-    numberFormat(locale === "ar" ? "ar-EG" : "en", { maximumFractionDigits: 1 }).format(v);
+  const num = (v: number) => numberFormat(locale, { maximumFractionDigits: 1 }).format(v);
   const top = host.top ?? [];
   const sep = locale === "ar" ? "، " : ", ";
   return (

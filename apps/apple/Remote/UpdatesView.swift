@@ -91,13 +91,13 @@ struct UpdatesView: View {
                         .foregroundStyle(Color.brass)
                 }
                 if let at = o.plan.eligibleAt, at > Date() {
-                    LabeledContent("Old enough on", value: at.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent("Old enough on", value: at.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale)))
                 }
             } else if let reason = o.plan.reason, reason != "up_to_date", !reason.isEmpty {
                 Text(UpdateWords.planReason(reason)).foregroundStyle(.secondary)
             }
             if let ok = o.lastCheckOK {
-                LabeledContent("Last checked", value: ok.formatted(.relative(presentation: .named)))
+                LabeledContent("Last checked", value: ok.formatted(.relative(presentation: .named).locale(AppLanguage.locale)))
             }
         }
     }
@@ -142,10 +142,10 @@ private struct RunSections: View {
                 LabeledContent("Started by", value: UpdateWords.trigger(trigger))
             }
             if let started = run.startedAt {
-                LabeledContent("Started", value: started.formatted(date: .abbreviated, time: .shortened))
+                LabeledContent("Started", value: started.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale)))
             }
             if let finished = run.finishedAt {
-                LabeledContent("Ended", value: finished.formatted(date: .abbreviated, time: .shortened))
+                LabeledContent("Ended", value: finished.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale)))
             }
             if let error = run.errorText {
                 VStack(alignment: .leading, spacing: 4) {
@@ -265,7 +265,7 @@ private struct UpdateMachineRow: View {
             }
             Text(facts).font(.caption).foregroundStyle(.secondary)
             if let last = machine.lastUpdate, !last.to.isEmpty {
-                Text("Last update: \(last.to), \((last.endedAt ?? last.at)?.formatted(.relative(presentation: .named)) ?? "") (\(last.how))")
+                Text("Last update: \(last.to), \((last.endedAt ?? last.at)?.formatted(.relative(presentation: .named).locale(AppLanguage.locale)) ?? "") (\(last.how))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

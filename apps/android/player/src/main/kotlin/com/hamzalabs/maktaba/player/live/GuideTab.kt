@@ -71,6 +71,7 @@ import com.hamzalabs.maktaba.player.ui.components.ChannelLogo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
+import com.hamzalabs.maktaba.core.i18n.withWesternArabicLocale
 import java.time.format.DateTimeFormatter
 
 /** The guide's scale: a minute is this wide (an hour is 240 dp). */
@@ -135,7 +136,7 @@ internal fun GuideTab(live: LiveTv, nowMs: Long, wide: Boolean, onWatch: (String
 private fun DayPicker(day: Int, base: Long, onDay: (Int) -> Unit, onEarlier: () -> Unit, onLater: () -> Unit) {
     val zone = LocalLiveEnv.current.zone()
     val locale = LocalConfiguration.current.locales[0]
-    val dayName = remember(zone, locale) { DateTimeFormatter.ofPattern("EEE d", locale).withZone(zone) }
+    val dayName = remember(zone, locale) { DateTimeFormatter.ofPattern("EEE d").withWesternArabicLocale(locale).withZone(zone) }
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onEarlier, modifier = Modifier.testTag("guide-earlier")) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, stringResource(R.string.live_earlier))

@@ -406,7 +406,7 @@ struct LiveBanner: View {
             HStack(alignment: .top, spacing: MaktabaTokens.Spacing.s3) {
                 ChannelLogo(name: channel.name, number: channel.number, logo: logo, size: 48)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: "\(channel.number.formatted()) · \(channel.name)")
+                    Text(verbatim: "\(channel.number.formatted(.number.locale(AppLanguage.locale))) · \(channel.name)")
                         .font(.maktabaBody(MaktabaTokens.TypeSize.sm, weight: .semibold))
                         .foregroundStyle(Color.mktBrassText)
                         .accessibilityIdentifier("live.player.channel")

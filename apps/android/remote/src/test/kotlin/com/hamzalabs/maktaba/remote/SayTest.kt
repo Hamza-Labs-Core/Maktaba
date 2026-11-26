@@ -199,7 +199,7 @@ class SayTest {
             waiting = listOf(HealthWaiting(on = "component:transcription", count = 1840, component = "transcription", phase = "off")),
         )
         assertEquals(listOf("Waiting: the Transcription component is off · 1840 queued"), en.health(off, 0))
-        assertEquals(listOf("في الانتظار: المكوّن التفريغ النصي متوقف · ١٨٤٠ في الطابور"), ar.health(off, 0))
+        assertEquals(listOf("في الانتظار: المكوّن التفريغ النصي متوقف · 1840 في الطابور"), ar.health(off, 0))
         val held = off.copy(waiting = listOf(off.waiting[0].copy(phase = "stopped")))
         assertEquals(listOf("Waiting: the Transcription component is stopped until you turn it on · 1840 queued"), en.health(held, 0))
         assertEquals("Transcription", en.waitingOn("component:transcription"))
@@ -226,9 +226,9 @@ class SayTest {
             "الإصدار 0.3.44 متاح؛ التثبيت التلقائي متوقف.",
             ar.planNext(plan(UpdatesPlan(target = target, waiting = "auto_install_off"))),
         )
-        // the day, the month and the digits are Arabic; the version stays as the home sent it
+        // the day and the month are Arabic; digits stay Western across clients
         assertEquals(
-            "يُثبَّت الإصدار 0.3.44 في الأحد ١ نوفمبر, ٠٢:٠٠.",
+            "يُثبَّت الإصدار 0.3.44 في الأحد 1 نوفمبر, 02:00.",
             ar.planNext(plan(UpdatesPlan(target = target, nextRunAt = "2026-11-01T02:00:00Z"))),
         )
         assertEquals(

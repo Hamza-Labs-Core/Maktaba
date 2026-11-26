@@ -148,9 +148,11 @@ public enum CloudStatusRules {
         return nil
     }
 
-    /// The date and the time in the device's language and time zone.
+    /// The date and the time in the device's language and time zone, with Western digits in Arabic.
     @Sendable public static func localWhen(_ d: Date) -> (date: String, time: String) {
-        (d.formatted(date: .abbreviated, time: .omitted), d.formatted(date: .omitted, time: .shortened))
+        let locale = AppLanguage.locale
+        return (d.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(locale)),
+                d.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))
     }
 }
 

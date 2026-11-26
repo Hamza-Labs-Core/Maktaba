@@ -2,6 +2,7 @@
 // menu, the sources dialog, the file-actions and duplicates pages).
 import { useCallback } from "react";
 import { useI18n } from "../../lib/i18n";
+import { dateTimeFormat, numberFormat } from "../../lib/intl";
 
 /** A library action of the Queues page, in pipeline order: download, convert, dedup. */
 export type OfflineAction = "youtube_refresh" | "convert" | "dedup";
@@ -20,7 +21,7 @@ export function useBytes(): (b: number | null | undefined) => string {
         v /= 1024;
         i++;
       }
-      const num = new Intl.NumberFormat(locale === "ar" ? "ar-EG" : "en", {
+      const num = numberFormat(locale, {
         maximumFractionDigits: i === 0 ? 0 : 1,
       }).format(v);
       return t(`queue.unit.bytes.${units[i]}`, { n: num });
@@ -35,7 +36,7 @@ export function useDate(): (iso: string | null | undefined) => string {
   return useCallback(
     (iso: string | null | undefined) =>
       iso
-        ? new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
+        ? dateTimeFormat(locale, {
             year: "numeric",
             month: "short",
             day: "numeric",

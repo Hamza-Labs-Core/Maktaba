@@ -42,6 +42,7 @@ import com.hamzalabs.maktaba.core.api.Suggestion
 import com.hamzalabs.maktaba.core.api.TitleHit
 import com.hamzalabs.maktaba.core.api.TranscriptHit
 import com.hamzalabs.maktaba.core.api.languageName
+import com.hamzalabs.maktaba.core.i18n.withWesternDigits
 import com.hamzalabs.maktaba.core.search.SUGGEST_DELAY_MS
 import com.hamzalabs.maktaba.core.search.SearchAnswer
 import com.hamzalabs.maktaba.core.search.SearchModel
@@ -301,7 +302,7 @@ private fun facetName(f: Facet): String = stringResource(
 /** A bucket's name: a library's (or the one seen before), a language's, a year, a band's words, a speaker. */
 @Composable
 private fun bucketName(f: Facet, value: String, label: String?, libraries: Map<String, String>): String {
-    val locale = LocalConfiguration.current.locales[0]
+    val locale = LocalConfiguration.current.locales[0].withWesternDigits()
     return when (f) {
         Facet.Library -> label?.trim()?.takeIf { it.isNotEmpty() } ?: libraries[value] ?: value
         Facet.Language -> remember(value, locale) { languageName(value, locale) }
