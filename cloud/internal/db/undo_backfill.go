@@ -206,10 +206,10 @@ func backfillColumnDefinition(tokens []string) bool {
 	}
 	switch tokens[0] {
 	case "bit", "char", "character", "varchar", "decimal", "numeric", "time", "timetz", "timestamp", "timestamptz":
-		close := slices.Index(tokens, ")")
-		return close > typeWords+1 &&
-			typeModifiers.MatchString(strings.Join(tokens[typeWords+1:close], "")) &&
-			backfillExpressions(tokens[close+1:])
+		closeIdx := slices.Index(tokens, ")")
+		return closeIdx > typeWords+1 &&
+			typeModifiers.MatchString(strings.Join(tokens[typeWords+1:closeIdx], "")) &&
+			backfillExpressions(tokens[closeIdx+1:])
 	default:
 		return false
 	}
