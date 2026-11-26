@@ -26,7 +26,6 @@ import datetime as dt
 import json
 import re
 import sys
-import tomllib
 import uuid
 from pathlib import Path
 
@@ -236,6 +235,31 @@ def cargo_expect(metadata: dict, package_name: str) -> list[str]:
     return sorted({f"{pkgs[i]['name']}@{pkgs[i]['version']}" for i in seen if i in pkgs})
 
 
+def _parse_optional_dep_keys(text: str) -> list[str]:
+    """Minimal fallback parser for `[project.optional-dependencies]` keys on Python < 3.11."""
+    in_section = False
+    depth = 0
+    keys: list[str] = []
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        if depth == 0 and line.startswith("["):
+            in_section = line == "[project.optional-dependencies]"
+            continue
+        if not in_section:
+            continue
+        if depth == 0:
+            m = re.match(r'^([A-Za-z0-9_.-]+|"[^"]+")\s*=\s*(.*)', line)
+            if m:
+                keys.append(_unquote(m.group(1)))
+                rest = m.group(2)
+                depth += rest.count("[") - rest.count("]")
+        else:
+            depth += line.count("[") - line.count("]")
+    return keys
+
+
 def pipeline_extras(pyproject_path: Path) -> list[str]:
     """Every shipped optional dependency extra of pipeline/pyproject.toml (all except dev).
 
@@ -243,10 +267,15 @@ def pipeline_extras(pyproject_path: Path) -> list[str]:
     runtime (`uv sync --frozen --no-dev`), while the release's node constraints and component
     packs ship every optional extra except `dev`.
     """
-    with pyproject_path.open("rb") as f:
-        project = tomllib.load(f).get("project") or {}
-    opt = project.get("optional-dependencies") or {}
-    return sorted(name for name in opt if name != "dev")
+    try:
+        import tomllib
+    except ModuleNotFoundError:
+        names = _parse_optional_dep_keys(pyproject_path.read_text(encoding="utf-8"))
+    else:
+        with pyproject_path.open("rb") as f:
+            project = tomllib.load(f).get("project") or {}
+        names = list((project.get("optional-dependencies") or {}).keys())
+    return sorted(name for name in names if name != "dev")
 
 
 def main(argv: list[str] | None = None) -> int:

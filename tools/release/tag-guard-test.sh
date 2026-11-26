@@ -36,8 +36,10 @@ cat >"${work}/stubs/gh" <<'EOF'
 case "$1 $2" in
     "release list") printf '%s\n' "${PUBLISHED}" ;;
     "run list")
-        if [[ "$*" == *cve-gate-nightly* ]]; then
-            [ -z "${CVE_NIGHTLY:-}" ] || printf '%s\n' "${CVE_NIGHTLY}"
+        if [[ "$*" == *cve-gate-nightly* && "$*" == *"--event schedule"* ]]; then
+            printf '%s\n' "${CVE_NIGHTLY_SCHEDULE:-[]}"
+        elif [[ "$*" == *cve-gate-nightly* && "$*" == *"--event workflow_dispatch"* ]]; then
+            printf '%s\n' "${CVE_NIGHTLY_DISPATCH:-[]}"
         elif [[ "$*" == *update-rehearsal* && "$*" == *"--event workflow_run"* ]]; then
             [ -z "${REHEARSAL_MAIN:-}" ] || printf '%s\n' "${REHEARSAL_MAIN}"
         elif [[ "$*" == *update-rehearsal* ]]; then
@@ -173,9 +175,11 @@ CI_RUNS="in_progress  13" expect_refused "a CI run still going at the deadline" 
 CI_RUNS=$'completed failure 10\ncompleted success 14' expect_pass "a commit CI passed on in another run" \
     v0.3.2 "${c3}" "" false true false
 
-# the nightly CVE gate (cve-gate-nightly.yml): a failed newest run on the commit (or on a
-# trail-only commit above it) refuses the tag; a newer passed run lets it through; a failed
-# run on an older code commit does not block a newer commit
+# the nightly CVE gate (cve-gate-nightly.yml, unified through next_tag.py --check-cve):
+# a failed newest run on the commit (or on a trail-only commit above it, or on a newer
+# descendant commit, even behind >20 intervening cancelled runs) refuses the tag; a newer
+# passed dispatch lets it through; a failed run on an older code commit does not block a
+# newer commit
 mkdir -p docs/trail/events
 echo "event" >docs/trail/events/0001-note.md
 git add docs/trail/events/0001-note.md
@@ -183,15 +187,37 @@ git commit -q -m "trail"
 t1="$(git rev-parse HEAD)"
 git push -q origin main 2>/dev/null
 
-CVE_NIGHTLY="failure ${c3}" expect_refused "a commit whose newest nightly CVE gate failed" \
+cve_run_json() { # cve_run_json SHA CONCLUSION EVENT CREATED [STATUS]
+    printf '{"headSha":"%s","headBranch":"main","event":"%s","status":"%s","conclusion":"%s","createdAt":"%s"}' \
+        "$1" "$3" "${5:-completed}" "$2" "$4"
+}
+
+CVE_NIGHTLY_SCHEDULE="[$(cve_run_json "${c3}" failure schedule 2026-11-26T04:23:00Z)]" \
+    expect_refused "a commit whose newest nightly CVE gate failed" \
     v0.3.2 "${c3}" "" "nightly CVE gate run on ${c3}"
-CVE_NIGHTLY="failure ${t1}" expect_refused "a commit whose trail-only descendant failed the nightly CVE gate" \
+CVE_NIGHTLY_SCHEDULE="[$(cve_run_json "${t1}" failure schedule 2026-11-26T04:23:00Z)]" \
+    expect_refused "a commit whose trail-only descendant failed the nightly CVE gate" \
     v0.3.2 "${c3}" "" "nightly CVE gate run on ${c3} (run on ${t1})"
-CVE_NIGHTLY=$'success '"${c3}"$'\nfailure '"${c3}" expect_pass "a newer green nightly CVE gate overrides an older failure" \
+
+# >20 intervening cancelled runs do not push a failed nightly out of the window
+many_runs=""
+for i in $(seq -w 1 25); do
+    many_runs="${many_runs}$(cve_run_json "${c3}" cancelled schedule "2026-11-26T05:${i}:00Z"),"
+done
+many_runs="${many_runs}$(cve_run_json "${c3}" failure schedule 2026-11-26T04:23:00Z)"
+CVE_NIGHTLY_SCHEDULE="[${many_runs}]" \
+    expect_refused "a failed nightly CVE gate behind 25 cancelled runs still refuses the tag" \
+    v0.3.2 "${c3}" "" "nightly CVE gate run on ${c3}"
+
+CVE_NIGHTLY_SCHEDULE="[$(cve_run_json "${c3}" failure schedule 2026-11-26T04:23:00Z)]" \
+    CVE_NIGHTLY_DISPATCH="[$(cve_run_json "${c3}" success workflow_dispatch 2026-11-26T06:00:00Z)]" \
+    expect_pass "a newer green dispatch overrides an older failed nightly CVE gate" \
     v0.3.2 "${c3}" "" false true false
-CVE_NIGHTLY="failure ${c2}" expect_pass "a failed nightly CVE gate on an older code commit does not block a newer commit" \
+CVE_NIGHTLY_SCHEDULE="[$(cve_run_json "${c2}" failure schedule 2026-11-25T04:23:00Z)]" \
+    expect_pass "a failed nightly CVE gate on an older code commit does not block a newer commit" \
     v0.3.2 "${c3}" "" false true false
-CVE_NIGHTLY="failure ${c2}" expect_pass "a re-run of an already-published tag is not blocked by a later nightly CVE failure" \
+CVE_NIGHTLY_SCHEDULE="[$(cve_run_json "${c2}" failure schedule 2026-11-26T04:23:00Z)]" \
+    expect_pass "a re-run of an already-published tag is not blocked by a later nightly CVE failure" \
     v0.3.1 "${c2}" "" true true false
 
 if [ "${fails}" -gt 0 ]; then

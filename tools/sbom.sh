@@ -11,8 +11,9 @@
 #   (cmd/maktaba-launcher), healthcheck
 #   (tools/healthcheck, in the api and streaming images)
 #   plugind (maktaba-plugind, Rust)                      cargo cyclonedx over plugind/Cargo.lock
-#   pipeline                                             cyclonedx-py over `uv export` (runtime +
-#                                                        every shipped optional extra; dev excluded)
+#   pipeline, pipeline-cuda                              cyclonedx-py over `uv export` (runtime +
+#                                                        every shipped optional extra; dev excluded;
+#                                                        pipeline-cuda adds `--group cuda`)
 #   web                                                  tools/security/sbom.py over pnpm-lock.yaml
 #
 # Each SBOM is then checked against the dependency list its own tool chain resolves (`go
@@ -83,49 +84,78 @@ emit_go() {
     check "${out}" "${WORK}/${name}.expect"
 }
 
+file_sha256() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{print $1}'
+    else
+        shasum -a 256 "$1" | awk '{print $1}'
+    fi
+}
+
 # emit_rust NAME MANIFEST_REL PACKAGE: CycloneDX 1.5 SBOM for a shipped Rust binary across
 # all target cfgs (`--target all`), checked against the transitive normal dependencies
 # `cargo metadata --locked` resolves for PACKAGE.
+# `cargo metadata --locked` runs first and plugind/Cargo.lock is hashed before and after
+# `cargo cyclonedx` so any lockfile mutation fails loudly.
 emit_rust() {
-    local name=$1 manifest_rel=$2 pkg=$3 out manifest_dir tmp_stem
+    local name=$1 manifest_rel=$2 pkg=$3 out manifest_dir tmp_stem lockfile hash_before hash_after
     out=$(out_for "${name}")
     manifest_dir=$(dirname "${ROOT}/${manifest_rel}")
+    lockfile="${ROOT}/plugind/Cargo.lock"
     tmp_stem=".maktaba-sbom-${name}-$$"
     RUST_TMP_STEM="${tmp_stem}"
     echo "[sbom] rust ${pkg} -> ${out}"
+    cargo metadata --manifest-path "${ROOT}/plugind/Cargo.toml" --locked --format-version 1 \
+        | python3 "${ROOT}/tools/security/sbom.py" cargo-expect "${pkg}" >"${WORK}/${name}.expect"
+    hash_before="$(file_sha256 "${lockfile}")"
     # cargo cyclonedx writes <tmp_stem>.json in every workspace member directory; keep the
     # shipped binary's SBOM and remove all workspace scratch files cleanly.
     cargo cyclonedx --manifest-path "${ROOT}/${manifest_rel}" --format json --spec-version 1.5 \
         --target all --override-filename "${tmp_stem}" >/dev/null
+    hash_after="$(file_sha256 "${lockfile}")"
+    if [ "${hash_before}" != "${hash_after}" ]; then
+        echo "[sbom] cargo cyclonedx mutated ${lockfile} (${hash_before} -> ${hash_after})" >&2
+        exit 1
+    fi
     mv "${manifest_dir}/${tmp_stem}.json" "${out}"
     find "${ROOT}/plugind" -maxdepth 3 -name "${tmp_stem}.json" -delete
     RUST_TMP_STEM=""
-    cargo metadata --manifest-path "${ROOT}/plugind/Cargo.toml" --locked --format-version 1 \
-        | python3 "${ROOT}/tools/security/sbom.py" cargo-expect "${pkg}" >"${WORK}/${name}.expect"
+    check "${out}" "${WORK}/${name}.expect"
+}
+
+# emit_python_set NAME [UV_EXPORT_ARGS...]: exports pipeline dependencies for one release
+# constraint set (default PyPI set or `--group cuda` for Windows/Linux CUDA) and checks the
+# generated CycloneDX SBOM against every exported requirement.
+emit_python_set() {
+    local name=$1
+    shift
+    local out reqs
+    out=$(out_for "${name}")
+    reqs="${WORK}/${name}-requirements.txt"
+    echo "[sbom] python ${name} -> ${out}"
+    (cd "${ROOT}/pipeline" && uv export --frozen --no-hashes --no-emit-project --no-dev \
+        "$@" --format requirements-txt >"${reqs}")
+    uvx --from "cyclonedx-bom==${CYCLONEDX_PY_VERSION}" cyclonedx-py requirements "${reqs}" \
+        --output-format JSON --output-file "${out}"
+    # `name==version ; marker` lines, as name@version
+    sed -nE 's/^([A-Za-z0-9_.-]+)(\[[^]]*\])?==([^ ;]+).*/\1@\3/p' "${reqs}" >"${WORK}/${name}.expect"
     check "${out}" "${WORK}/${name}.expect"
 }
 
 # emit_python: pipeline/Dockerfile syncs the base runtime (`--no-dev`), while the release's
 # node constraints (deploy/packaging/node/build-release.sh) and component packs
-# (tools/release/packs/wheelhouse.sh) ship every optional extra except `dev`. Exporting all
-# non-dev extras covers every shipped Python dependency without pulling in dev-only tools
-# (`pytest`, `mypy`, `ruff`, `grpcio-tools`).
+# (tools/release/packs/wheelhouse.sh) ship every optional extra except `dev` plus the
+# `--group cuda` PyTorch set for Windows NVIDIA GPUs.
 emit_python() {
-    local out reqs extra
+    local extras_list extra
     local -a extra_args=()
-    out=$(out_for pipeline)
-    reqs="${WORK}/pipeline-requirements.txt"
+    extras_list="$(python3 "${ROOT}/tools/security/sbom.py" pipeline-extras "${ROOT}/pipeline/pyproject.toml")"
+    [ -n "${extras_list}" ] || { echo "[sbom] pipeline-extras returned no extras" >&2; exit 2; }
     while IFS= read -r extra; do
         [ -n "${extra}" ] && extra_args+=(--extra "${extra}")
-    done < <(python3 "${ROOT}/tools/security/sbom.py" pipeline-extras "${ROOT}/pipeline/pyproject.toml")
-    echo "[sbom] python pipeline -> ${out}"
-    (cd "${ROOT}/pipeline" && uv export --frozen --no-hashes --no-emit-project --no-dev \
-        ${extra_args[@]+"${extra_args[@]}"} --format requirements-txt >"${reqs}")
-    uvx --from "cyclonedx-bom==${CYCLONEDX_PY_VERSION}" cyclonedx-py requirements "${reqs}" \
-        --output-format JSON --output-file "${out}"
-    # `name==version ; marker` lines, as name@version
-    sed -nE 's/^([A-Za-z0-9_.-]+)(\[[^]]*\])?==([^ ;]+).*/\1@\3/p' "${reqs}" >"${WORK}/pipeline.expect"
-    check "${out}" "${WORK}/pipeline.expect"
+    done <<<"${extras_list}"
+    emit_python_set pipeline "${extra_args[@]}"
+    emit_python_set pipeline-cuda "${extra_args[@]}" --group cuda
 }
 
 emit_web() {

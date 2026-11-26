@@ -251,19 +251,27 @@ def cve_verdict(
     sha: str,
     nightlies: Sequence[tuple[str, bool]],
     same_non_trail: Callable[[str, str], bool],
+    is_ancestor: Callable[[str, str], bool],
 ) -> str | None:
     """Why sha is not tag-eligible on the nightly CVE gate, or None when it is.
 
-    Checks the newest finished nightly CVE gate run on sha or on a commit that differs from sha
-    only in trail files. If none has run yet, sha stays eligible (its CI push run already
-    passed cve-gate); if the newest one failed, sha is held back until fixed or re-run green.
+    Walks finished nightly CVE gate runs on main (newest first):
+    - If a run matches sha (same commit, or differing only in trail files): a pass makes sha
+      eligible; a failure blocks sha.
+    - If a newer descendant commit (is_ancestor(sha, commit)) failed a nightly CVE gate run and
+      no newer passing nightly exists on sha itself, do not fall back to the older commit sha
+      (it may carry the same newly-disclosed vulnerability); wait for a fix commit or a newer
+      passing nightly/dispatch.
+    - If no matching or newer-descendant nightly failed, sha stays eligible (its CI push run
+      already passed cve-gate).
     """
     for commit, passed in nightlies:
-        if commit != sha and not same_non_trail(sha, commit):
-            continue
-        if passed:
-            return None
-        return f"the newest nightly CVE gate run on {sha} (run on {commit}) failed"
+        if commit == sha or same_non_trail(sha, commit):
+            if passed:
+                return None
+            return f"the newest nightly CVE gate run on {sha} (run on {commit}) failed"
+        if not passed and is_ancestor(sha, commit):
+            return f"cannot fall back to {sha}: a newer nightly CVE gate run on {commit} failed"
     return None
 
 
@@ -376,7 +384,7 @@ BROADCAST_FIELDS = "headSha,headBranch,event,status,conclusion,displayTitle,crea
 
 CVE_WORKFLOW = "cve-gate-nightly.yml"
 CVE_EVENTS = ("schedule", "workflow_dispatch")
-CVE_LIMIT = 30
+CVE_LIMIT = 100
 CVE_FIELDS = "headSha,headBranch,event,status,conclusion,createdAt"
 
 
@@ -427,10 +435,10 @@ def fetch_broadcast_runs(run: Runner = _run) -> list[dict[str, Any]]:
     return _fetch_workflow_runs("broadcast-rehearsal.yml", BROADCAST_EVENTS, BROADCAST_LIMIT, BROADCAST_FIELDS, run)
 
 
-def fetch_cve_runs(run: Runner = _run) -> list[dict[str, Any]]:
+def fetch_cve_runs(run: Runner = _run, workflow: str = CVE_WORKFLOW) -> list[dict[str, Any]]:
     """cve-gate-nightly.yml's runs on main, every status, as `gh run list --json` gives
     them. Raises FetchError when gh is missing, fails, or prints something that is not a list."""
-    return _fetch_workflow_runs(CVE_WORKFLOW, CVE_EVENTS, CVE_LIMIT, CVE_FIELDS, run)
+    return _fetch_workflow_runs(workflow, CVE_EVENTS, CVE_LIMIT, CVE_FIELDS, run)
 
 
 def load_broadcast_runs(path: str) -> list[dict[str, Any]]:
@@ -459,9 +467,32 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         help="a file: cve-gate-nightly.yml's runs, every status (gh run list --json); "
         "without it they are fetched with gh. A failed newest nightly on the commit blocks the tag",
     )
+    ap.add_argument(
+        "--check-cve",
+        metavar="SHA",
+        help="check only the nightly CVE gate verdict for SHA (used by tag-guard.sh); "
+        "exit 0 when eligible, exit 1 with reason on stderr when blocked or unreadable",
+    )
+    ap.add_argument(
+        "--cve-workflow",
+        default=CVE_WORKFLOW,
+        help=f"workflow file name for nightly CVE gate runs (default {CVE_WORKFLOW})",
+    )
     ap.add_argument("--main", default="origin/main", help="main's ref (default origin/main)")
     ap.add_argument("--depth", type=int, default=200, help="how many of main's commits to look through")
     args = ap.parse_args(argv)
+
+    if args.check_cve:
+        try:
+            cve_runs = load_broadcast_runs(args.cve_runs) if args.cve_runs else fetch_cve_runs(run, args.cve_workflow)
+        except FetchError as e:
+            print(f"the nightly CVE gate's runs could not be read: {e}", file=sys.stderr)
+            return 1
+        why = cve_verdict(args.check_cve, cve_nightly_results(cve_runs), git_same_non_trail, git_is_ancestor)
+        if why is not None:
+            print(why, file=sys.stderr)
+            return 1
+        return 0
 
     if args.green and not (args.ci_runs or args.rehearsal_runs):
         with open(args.green, encoding="utf-8") as f:
@@ -483,7 +514,7 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         print(f"reason=no tag: the broadcast rehearsal's runs could not be read: {e}")
         return 0
     try:
-        cve_runs = load_broadcast_runs(args.cve_runs) if args.cve_runs else fetch_cve_runs(run)
+        cve_runs = load_broadcast_runs(args.cve_runs) if args.cve_runs else fetch_cve_runs(run, args.cve_workflow)
     except FetchError as e:
         print("tag=")
         print("sha=")
@@ -499,7 +530,7 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         return codes[c]
 
     def verdict(c: str) -> str | None:
-        return broadcast_verdict(c, nightlies, code) or cve_verdict(c, cve_nightlies, git_same_non_trail)
+        return broadcast_verdict(c, nightlies, code) or cve_verdict(c, cve_nightlies, git_same_non_trail, git_is_ancestor)
 
     sha, passed_over = newest_eligible(order, green, verdict)
     if sha is None:

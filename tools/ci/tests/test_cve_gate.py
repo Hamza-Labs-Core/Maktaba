@@ -272,8 +272,10 @@ def test_ci_runs_the_gate_on_every_push_to_main_and_in_ci_success() -> None:
     wf = yaml.safe_load((ROOT / ".github/workflows/_cve-gate.yml").read_text())
     steps = wf["jobs"]["cve-gate"]["steps"]
     setup_go = [s for s in steps if str(s.get("uses", "")).startswith("actions/setup-go@")]
+    setup_py = [s for s in steps if str(s.get("uses", "")).startswith("actions/setup-python@")]
     # the Go that builds the release (release.yml's setup-go reads api/go.mod too)
     assert setup_go and setup_go[0]["with"]["go-version-file"] == "api/go.mod"
+    assert setup_py and setup_py[0]["with"]["python-version-file"] == "pipeline/.python-version"
     assert any("tools/security/cve-gate.sh" in str(s.get("run", "")) for s in steps)
     assert any("install-rust-tool.sh cargo-audit" in str(s.get("run", "")) for s in steps)
     assert any("--go-only" in str(s.get("run", "")) for s in steps)
@@ -310,9 +312,31 @@ def test_the_gate_scans_exact_shipped_go_binaries_in_sync_with_sbom_sh() -> None
     assert shipped_mods <= set(mods)
 
 
-def test_the_gate_scopes_web_to_prod_excludes_python_dev_and_audits_plugind() -> None:
+def test_the_gate_scopes_web_to_prod_excludes_python_dev_audits_cuda_and_plugind() -> None:
     gate_text = (ROOT / "tools/security/cve-gate.sh").read_text()
     assert "pnpm audit --prod --json" in gate_text
     assert "--all-extras" not in gate_text
-    assert "sbom.py\" pipeline-extras" in gate_text
-    assert "cargo-audit audit --file \"${ROOT}/plugind/Cargo.lock\" --json" in gate_text
+    assert "< <(python3" not in gate_text  # never swallow sbom.py exit status in process substitution
+    assert 'sbom.py" pipeline-extras' in gate_text
+    assert "--group cuda" in gate_text
+    assert "pipeline-cuda=" in gate_text
+    assert 'cargo-audit audit --file "${ROOT}/plugind/Cargo.lock" --json' in gate_text
+
+
+def test_cve_gate_sh_fails_loudly_when_pipeline_extras_fails(tmp_path: Path) -> None:
+    import os
+    import subprocess
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    for tool in ("govulncheck", "uv", "pnpm", "cargo-audit"):
+        p = bin_dir / tool
+        p.write_text("#!/bin/sh\nexit 0\n")
+        p.chmod(0o755)
+    py = bin_dir / "python3"
+    py.write_text("#!/bin/sh\necho 'simulated python error' >&2\nexit 17\n")
+    py.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "CVE_GATE_GO": "__none__"}
+    r = subprocess.run(["bash", str(ROOT / "tools/security/cve-gate.sh"), str(tmp_path / "out")], env=env, capture_output=True, text=True, check=False)
+    assert r.returncode == 17
+    assert "simulated python error" in r.stderr

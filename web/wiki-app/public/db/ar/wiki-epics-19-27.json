@@ -1413,7 +1413,7 @@
       "title": "أمان سلسلة التوريد",
       "epic": "23-security",
       "phase": 4,
-      "content": "# القصة 23.7 — أمان سلسلة التوريد\n\nكل اعتمادية وصورة أساسية وملف تنفيذي يُشحن في إصدار قابلٌ للتدقيق.\n\n## معايير القبول\n\n- AC1. تُولَّد قائمة مكوّنات البرمجيات SBOM (`cyclonedx-go`، `cyclonedx-py`، وقائمة npm) لكل منتَج من منتجات الإصدار؛ وتُنشر بجانبه.\n- AC2. بوابة لفحص الثغرات المعروفة في التكامل المستمر (`govulncheck`، `pip-audit`، `npm\n  audit --audit-level=high`)؛ وتمنع الثغرة عالية الخطورة الدمج ما لم تُكتم صراحةً مع سبب مسجّل وتاريخ أقصى لانتهاء الكتم.\n- AC3. الصور الأساسية مثبّتة بالملخّص؛ وتستخدم ملفات `Dockerfile` الخيار\n  `--platform=$BUILDPLATFORM` استخدامًا صحيحًا؛ ولا وسم `:latest`.\n- AC4. ترقيات الاعتماديات ",
+      "content": "# القصة 23.7 — أمان سلسلة التوريد\n\nكل اعتمادية وصورة أساسية وملف تنفيذي يُشحن في إصدار قابلٌ للتدقيق.\n\n## معايير القبول\n\n- AC1. تُولَّد قائمة مكوّنات البرمجيات SBOM (`cyclonedx-gomod`، `cargo-cyclonedx`، `cyclonedx-py`، وقائمة `pnpm-lock.yaml`) لكل منتَج إصدار مشحون (ثنائيات Go، و`maktaba-plugind` بلغة Rust، ومجموعتا Python الافتراضية وCUDA، والويب)؛ وتُنشر بجانبه.\n- AC2. بوابة لفحص الثغرات المعروفة في التكامل المستمر (`govulncheck` لحزم Go الرئيسية المشحونة بوسوم الإصدار، و`cargo-audit` على `plugind/Cargo.lock`، و`pip-audit` على مجموعات Python المشحونة دون `dev`، و`pnpm audit --prod` لاعتماديات الإنتاج في الويب، إضافةً إلى تشغيل ليلي على `main`)؛ وتمنع الثغرة المستدعاة في Go أو العالية/الحرجة الدمج والإصدار ما لم تُكتم صراحةً مع سبب مسجّل وتاريخ أقصى لانتهاء الكتم.\n- AC3. الصور الأساسية مثبّتة بالملخّص؛ وتستخدم ملفات `Dockerfile` الخيار `--platform=$BUILDPLATFORM` استخدامًا صحيحًا؛ ولا وسم `:latest`.\n- AC4. ترقيات الاعتماديات ",
       "tags": [
         "story",
         "23-security",
@@ -1437,7 +1437,7 @@
         "lang": "ar",
         "source": {
           "title": "acb1be645e04d506",
-          "content": "225e789812e2a97b"
+          "content": "f60ffac0cc6fc3af"
         }
       }
     },
@@ -5066,7 +5066,7 @@
       "title": "خطة التنفيذ — القصة 23.7 أمان سلسلة التوريد",
       "epic": "23-security",
       "phase": 4,
-      "content": "# خطة التنفيذ — القصة 23.7 أمان سلسلة التوريد\n\n> مرافقة لـ [story-23-07-supply-chain-security.md](story-23-07-supply-chain-security.md).\n> تحدد القصة *ماذا* و*لماذا*؛ وتحدد هذه الخطة *كيف*.\n> ترتبط ببوابات التكامل المستمر من [القصة 22.1](plan-22-01-ci-pipeline.md) و\n> بمنتجات الإصدار من [القصة 22.5](plan-22-05-release-management.md).\n\n## 0. النطاق والموضع\n\n| المسألة | القرار |\n|---|---|\n| قائمة مكوّنات البرمجيات | `cyclonedx-go` (Go)، `cyclonedx-py` (Python)، `@cyclonedx/cyclonedx-npm` (Node). تُولَّد لكل منتَج إصدار؛ وتُنشر بصيغة `*.cdx.json` بجانب الملف التنفيذي أو الصورة. |\n| فحص الثغرات ",
+      "content": "# خطة التنفيذ — القصة 23.7 أمان سلسلة التوريد\n\n> مرافقة لـ [story-23-07-supply-chain-security.md](story-23-07-supply-chain-security.md).\n> تحدد القصة *ماذا* و*لماذا*؛ وتحدد هذه الخطة *كيف*.\n> ترتبط ببوابات التكامل المستمر من [القصة 22.1](plan-22-01-ci-pipeline.md) و\n> بمنتجات الإصدار من [القصة 22.5](plan-22-05-release-management.md).\n\n## 0. النطاق والموضع\n\n| المسألة | القرار |\n|---|---|\n| قائمة مكوّنات البرمجيات | `cyclonedx-gomod` (ثنائيات Go)، `cargo-cyclonedx` (`maktaba-plugind` بلغة Rust)، `cyclonedx-py` (مجموعتا خط معالجة Python الافتراضية و`--group cuda` دون `dev`)، و`tools/security/sbom.py` على `pnpm-lock.yaml` (الويب، مع وسم حزم التطوير فقط بـ `excluded`). تُولَّد لكل منتَج إصدار؛ وتُنشر بصيغة `*.cdx.json` بجانب الإصدار. |\n| فحص الثغرات | `govulncheck` (حزم Go الرئيسية المشحونة بوسوم الإصدار)، و`cargo-audit` (`plugind/Cargo.lock`)، و`pip-audit` (مجموعات Python المشحونة دون `dev` بما في ذلك `--group cuda`)، و`pnpm audit --prod` (اعتماديات الإنتاج في الويب). مدمجة في التكامل المستمر (`_cve-gate.yml`) وتعمل ليليًا على `main` (`cve-gate-nightly.yml`). |",
       "tags": [
         "plan",
         "23-security"
@@ -5085,7 +5085,7 @@
         "lang": "ar",
         "source": {
           "title": "66a6c4306d992733",
-          "content": "d80db1b03e2994c7"
+          "content": "54ddafe27b1e46f1"
         }
       }
     },

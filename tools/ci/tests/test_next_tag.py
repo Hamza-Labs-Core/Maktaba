@@ -436,6 +436,8 @@ def cve_nightly(sha: str, conclusion: str = "success", event: str = "schedule", 
 def test_in_a_repository_the_nightly_cve_gate_blocks_unchanged_main(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    import json
+
     repo = tmp_path / "r"
     repo.mkdir()
     run(repo, "init", "-q", "-b", "main")
@@ -473,6 +475,27 @@ def test_in_a_repository_the_nightly_cve_gate_blocks_unchanged_main(
     # a failed nightly on an older code commit (a) does not block newer code commit (b)
     out = choose(repo, [b], monkeypatch, capsys, cve_runs=[cve_nightly(a, "failure", created="2026-11-25T04:23:00Z")])
     assert (out["tag"], out["sha"]) == ("v0.3.83", b)
+
+    # >20 intervening cancelled runs do not hide a failed nightly
+    intervening = [cve_nightly(b, "cancelled", created=f"2026-11-26T05:{i:02d}:00Z") for i in range(1, 26)]
+    out = choose(repo, [b], monkeypatch, capsys, cve_runs=[*intervening, cve_nightly(b, "failure", created="2026-11-26T04:23:00Z")])
+    assert (out["tag"], out["sha"]) == ("", "") and "nightly CVE gate" in out["reason"]
+
+    # two untagged green commits (b <- c): when the newer commit c fails the nightly CVE gate,
+    # next_tag.py must NOT fall back and tag the older commit b (which ships the same deps)
+    c = commit(repo, "web/other.ts")
+    out = choose(repo, [b, c], monkeypatch, capsys, cve_runs=[cve_nightly(c, "failure", created="2026-11-26T04:23:00Z")])
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "cannot fall back" in out["reason"] and c in out["reason"]
+
+    # --check-cve mode (shared with tag-guard.sh) gives the exact same verdict
+    (repo / ".cve-fail.json").write_text(json.dumps([cve_nightly(c, "failure", created="2026-11-26T04:23:00Z")]))
+    monkeypatch.chdir(repo)
+    assert nt.main(["--check-cve", c, "--cve-runs", str(repo / ".cve-fail.json")]) == 1
+    assert nt.main(["--check-cve", b, "--cve-runs", str(repo / ".cve-fail.json")]) == 1
+    assert "cannot fall back" in capsys.readouterr().err
+    (repo / ".cve-ok.json").write_text(json.dumps([cve_nightly(c, "success", created="2026-11-26T06:00:00Z")]))
+    assert nt.main(["--check-cve", c, "--cve-runs", str(repo / ".cve-ok.json")]) == 0
 
 
 def test_the_runs_are_fetched_with_gh_when_no_file_is_given(

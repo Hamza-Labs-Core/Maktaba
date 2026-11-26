@@ -150,7 +150,25 @@ def test_sbom_sh_covers_the_spec_components_plus_plugind_and_requires_its_tools(
     assert "need cyclonedx-gomod" in text
     assert "need cargo-cyclonedx" in text
     assert "--all-extras" not in text
-    assert "sbom.py\" pipeline-extras" in text
+    assert "< <(python3" not in text  # never swallow sbom.py exit status in process substitution
+    assert 'sbom.py" pipeline-extras' in text
+    assert "--group cuda" in text
+    assert "emit_python_set pipeline-cuda" in text
+    # Rust lockfile integrity: cargo metadata --locked runs before cargo cyclonedx, and
+    # plugind/Cargo.lock is hashed before and after cargo cyclonedx
+    assert text.index("cargo metadata --manifest-path") < text.index("cargo cyclonedx --manifest-path")
+    assert text.index('hash_before="$(file_sha256 "${lockfile}")"') < text.index("cargo cyclonedx --manifest-path")
+    assert text.index("cargo cyclonedx --manifest-path") < text.index('hash_after="$(file_sha256 "${lockfile}")"')
+
+
+def test_pipeline_extras_fallback_parser_matches_tomllib() -> None:
+    pyproject = ROOT / "pipeline" / "pyproject.toml"
+    via_api = sbom.pipeline_extras(pyproject)
+    via_fallback = sorted(k for k in sbom._parse_optional_dep_keys(pyproject.read_text(encoding="utf-8")) if k != "dev")
+    assert via_fallback == via_api
+    # sbom.py has no top-level `import tomllib` (safe on Python 3.10)
+    src = (ROOT / "tools" / "security" / "sbom.py").read_text(encoding="utf-8")
+    assert "\nimport tomllib\n" not in src
 
 
 def test_cargo_expect_walks_normal_transitive_deps_and_skips_dev_and_build() -> None:
@@ -236,6 +254,8 @@ def test_the_release_attaches_the_sboms() -> None:
     jobs = wf["jobs"]
     job = jobs["sbom"]
     assert any("tools/sbom.sh" in str(s.get("run", "")) for s in job["steps"])
+    setup_py = [s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/setup-python@")]
+    assert setup_py and setup_py[0]["with"]["python-version-file"] == "pipeline/.python-version"
     assert any(str(s.get("uses", "")).startswith("dtolnay/rust-toolchain@") for s in job["steps"])
     assert any("install-rust-tool.sh cargo-cyclonedx" in str(s.get("run", "")) for s in job["steps"])
     assert any(str(s.get("uses", "")).startswith("actions/upload-artifact@") and s["with"]["name"] == "release-sbom" for s in job["steps"])

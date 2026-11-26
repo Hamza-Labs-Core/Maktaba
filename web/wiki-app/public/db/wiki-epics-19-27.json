@@ -1139,7 +1139,7 @@
       "title": "Supply-chain security",
       "epic": "23-security",
       "phase": 4,
-      "content": "# Story 23.7 — Supply-chain security\n\nEvery dependency, base image, and binary that ships in a release is\nauditable.\n\n## Acceptance criteria\n\n- AC1. SBOM (`cyclonedx-go`, `cyclonedx-py`, npm SBOM) generated for\n  every release artifact; published alongside.\n- AC2. CVE scanning gate in CI (`govulncheck`, `pip-audit`, `npm\n  audit --audit-level=high`); a high-severity vuln blocks merge\n  unless explicitly suppressed with a recorded reason and a date\n  ceiling.\n- AC3. Base images pinned by digest; `Dockerfile`s use\n  `--platform=$BUILDPLATFORM` correctly; no `:latest`.\n- AC4. Dependency upgrades ",
+      "content": "# Story 23.7 — Supply-chain security\n\nEvery dependency, base image, and binary that ships in a release is\nauditable.\n\n## Acceptance criteria\n\n- AC1. SBOM (`cyclonedx-gomod`, `cargo-cyclonedx`, `cyclonedx-py`, pnpm\n  lockfile SBOM) generated for every shipped release artifact (Go\n  binaries, Rust `maktaba-plugind`, Python pipeline default + CUDA\n  sets, and web); published alongside.\n- AC2. CVE scanning gate in CI (`govulncheck` over shipped Go main\n  packages with release build tags, `cargo-audit` over\n  `plugind/Cargo.lock`, `pip-audit` over shipped non-dev Python sets,\n  `pnpm audit --prod` ",
       "tags": [
         "story",
         "23-security",
@@ -4043,7 +4043,7 @@
       "title": "Implementation Plan — Story 23.7 Supply-chain security",
       "epic": "23-security",
       "phase": 4,
-      "content": "# Implementation Plan — Story 23.7 Supply-chain security\n\n> Companion to [story-23-07-supply-chain-security.md](story-23-07-supply-chain-security.md).\n> Story states *what* and *why*; this plan states *how*.\n> Hooks the CI gates from [Story 22.1](plan-22-01-ci-pipeline.md) and\n> the release artifacts from [Story 22.5](plan-22-05-release-management.md).\n\n## 0. Scope and placement\n\n| Concern | Decision |\n|---|---|\n| SBOM | `cyclonedx-go` (Go), `cyclonedx-py` (Python), `@cyclonedx/cyclonedx-npm` (Node). Generated per release artifact; published as `*.cdx.json` alongside the binary/image. |\n| CVE ",
+      "content": "# Implementation Plan — Story 23.7 Supply-chain security\n\n> Companion to [story-23-07-supply-chain-security.md](story-23-07-supply-chain-security.md).\n> Story states *what* and *why*; this plan states *how*.\n> Hooks the CI gates from [Story 22.1](plan-22-01-ci-pipeline.md) and\n> the release artifacts from [Story 22.5](plan-22-05-release-management.md).\n\n## 0. Scope and placement\n\n| Concern | Decision |\n|---|---|\n| SBOM | `cyclonedx-gomod` (Go binaries), `cargo-cyclonedx` (Rust `maktaba-plugind`), `cyclonedx-py` (Python pipeline default + `--group cuda` sets, excluding `dev`), `tools/security/s",
       "tags": [
         "plan",
         "23-security"

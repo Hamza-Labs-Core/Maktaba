@@ -162,27 +162,17 @@ passed_on() { # passed_on WORKFLOW WHAT [judge-jobs|rehearsal]
 passed_on "${ci}" "CI" judge-jobs
 passed_on "${REHEARSAL_WORKFLOW:-update-rehearsal.yml}" "the update rehearsal" rehearsal
 
-# 5. The newest finished nightly CVE gate run on main for this commit (or a commit differing
-# only in trail files) did not fail: an advisory published after CI went green on an unchanged
-# main still stops the tag. Skipped for maintenance releases (release/*) and re-runs of an
-# already-published tag.
+# 5. The newest finished nightly CVE gate run on main (shared lookup and verdict logic with
+# tools/release/next_tag.py: per-event schedule and workflow_dispatch queries up to 100 runs
+# each, refusing when the commit, a trail-only commit above it, or a newer descendant commit
+# failed the nightly CVE gate). Skipped for maintenance releases (release/*) and re-runs of
+# an already-published tag.
 if [ "${maintenance}" != true ] && [ "${is_published}" != true ]; then
-    cve_runs="$("${here}/gh-retry.sh" gh run list --workflow "${CVE_NIGHTLY_WORKFLOW:-cve-gate-nightly.yml}" \
-        --branch main --limit 20 --json status,conclusion,headSha,event \
-        --jq '[.[] | select(.status == "completed" and (.event == "schedule" or .event == "workflow_dispatch") and (.conclusion == "success" or .conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "action_required")) | "\(.conclusion) \(.headSha)"] | .[]')"
-    while read -r concl rsha; do
-        [ -n "${concl}" ] || continue
-        if [ "${rsha}" != "${SHA}" ]; then
-            diff_paths="$(git diff --name-only --no-renames "${SHA}" "${rsha}" 2>/dev/null || echo "__unknown__")"
-            non_trail="$(grep -Ev '^(docs/claude-trail\.md|docs/trail/)' <<<"${diff_paths}" || true)"
-            [ -z "${non_trail}" ] || continue
-        fi
-        if [ "${concl}" != success ]; then
-            err "the newest nightly CVE gate run on ${SHA} (run on ${rsha}) did not pass (${concl}): fix or suppress the advisory on main before tagging"
-        fi
-        echo "tag guard: the newest nightly CVE gate run on ${SHA} (run on ${rsha}) passed"
-        break
-    done <<<"${cve_runs}"
+    if ! cve_err="$(python3 "${here}/next_tag.py" --check-cve "${SHA}" \
+        --cve-workflow "${CVE_NIGHTLY_WORKFLOW:-cve-gate-nightly.yml}" 2>&1)"; then
+        err "${cve_err}: fix or suppress the advisory on main before tagging"
+    fi
+    echo "tag guard: nightly CVE gate check passed for ${SHA}"
 fi
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then

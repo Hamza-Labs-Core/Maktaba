@@ -1494,6 +1494,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6.0.2
 
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version-file: pipeline/.python-version
+
       # the Go that builds the release's binaries (build-server's setup-go)
       - uses: actions/setup-go@v6.4.0
         with:
