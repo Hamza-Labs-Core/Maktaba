@@ -486,7 +486,7 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 	pctx, cancel := context.WithTimeout(ctx, passageBudget)
 	defer cancel()
 	late := func(err error) (map[string][]Hit, map[string]int, map[int64][]string, bool, error) {
-		if pctx.Err() != nil && ctx.Err() == nil {
+		if passageBudgetExpired(ctx, pctx) {
 			return nil, nil, nil, false, nil // over the budget: the line path's passages
 		}
 		return nil, nil, nil, false, fmt.Errorf("normalised lines: %w", err)
@@ -590,7 +590,7 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 			 WHERE s.id IN (`+placeholders(ids, &args)+`)
 			   AND (public.maktaba_tsv(s.text) @@ q.e OR public.maktaba_tsv_stem(s.text) @@ q.st)`, args...)
 		if err != nil {
-			if pctx.Err() == nil || ctx.Err() != nil {
+			if !passageBudgetExpired(ctx, pctx) {
 				return late(err)
 			}
 			rows = nil // out of time: the lines matched here stand
@@ -601,7 +601,7 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 			var words []string
 			if err := rows.Scan(&id, &score, pq.Array(&words)); err != nil {
 				_ = rows.Close()
-				if pctx.Err() == nil || ctx.Err() != nil {
+				if !passageBudgetExpired(ctx, pctx) {
 					return late(err)
 				}
 				break
@@ -615,7 +615,7 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 		if rows != nil {
 			cerr, rerr := rows.Close(), rows.Err()
 			for _, err := range []error{cerr, rerr} {
-				if err != nil && (pctx.Err() == nil || ctx.Err() != nil) {
+				if err != nil && !passageBudgetExpired(ctx, pctx) {
 					return late(err)
 				}
 			}
@@ -641,6 +641,11 @@ func (h *Handler) normalisedLines(ctx context.Context, q string, videoIDs []stri
 		}
 	}
 	return hits, counts, marks, true, nil
+}
+
+// passageBudgetExpired distinguishes the passage deadline from cancellation of the search.
+func passageBudgetExpired(ctx, pctx context.Context) bool {
+	return pctx.Err() != nil && ctx.Err() == nil
 }
 
 // maybeCap bounds the lines normalisedLines asks Postgres about. Each costs it some 40 µs
@@ -702,25 +707,27 @@ func lineWords(s string) (words, norm []string) {
 // foldWord is a word as the exact configuration's lexeme spells it: slot 0231's folding,
 // its accents off (the configuration's unaccent: café is cafe), lowercased.
 func foldWord(w string) string {
-	w = textnorm.Normalize(w)
-	accented := false
+	return foldAccents(textnorm.Normalize(w))
+}
+
+// These letters survive canonical decomposition. The replacements are the lowercase
+// forms of the corresponding PostgreSQL unaccent.rules entries.
+var latinAccentReplacements = strings.NewReplacer("ø", "o", "ł", "l", "æ", "ae", "œ", "oe", "ß", "ss")
+
+func foldAccents(w string) string {
 	for _, r := range w {
-		if r >= 0x00C0 && r < 0x0590 { // Latin, Greek, Cyrillic with their accents
-			accented = true
-			break
+		if r >= 0x00C0 && (r < 0x0590 || unicode.Is(unicode.Latin, r)) {
+			w = norm.NFD.String(w)
+			w = strings.Map(func(r rune) rune {
+				if unicode.Is(unicode.Mn, r) {
+					return -1
+				}
+				return unicode.ToLower(r)
+			}, w)
+			return latinAccentReplacements.Replace(norm.NFC.String(w))
 		}
 	}
-	if !accented { // Arabic and plain ASCII: the folding did it all
-		return strings.ToLower(w)
-	}
-	w = norm.NFD.String(w)
-	w = strings.Map(func(r rune) rune {
-		if unicode.Is(unicode.Mn, r) {
-			return -1
-		}
-		return r
-	}, w)
-	return strings.ToLower(norm.NFC.String(w))
+	return strings.ToLower(w)
 }
 
 // hasAll counts the occurrences of the lexemes in words when each lexeme is among them,

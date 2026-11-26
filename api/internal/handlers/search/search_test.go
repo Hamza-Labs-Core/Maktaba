@@ -216,3 +216,23 @@ func TestFuseUsesRuntimeWeights(t *testing.T) {
 		t.Fatalf("fts weight 5: %v", got)
 	}
 }
+
+func TestHighlightSnippetLatinAccents(t *testing.T) {
+	for _, tc := range []struct {
+		s, q, want string
+		maxLen     int
+	}{
+		{"øØ łŁ æÆ œŒ ßẞ", "oo ll aeae oeoe ssss", "<mark>øØ</mark> <mark>łŁ</mark> <mark>æÆ</mark> <mark>œŒ</mark> <mark>ßẞ</mark>", 240},
+		{"قال: Café Cafe\u0301!", "cafe", "قال: <mark>Café</mark> <mark>Cafe\u0301</mark>!", 240},
+		{"æaeœoeßss", "ae oe ss", "<mark>æ</mark><mark>ae</mark><mark>œ</mark><mark>oe</mark><mark>ß</mark><mark>ss</mark>", 240},
+		{"æa", "a", "æ<mark>a</mark>", 240},
+		{"eæ", "e", "<mark>e</mark>æ", 240},
+		{"æa", "ea", "æa", 240},
+		{"ætail", "ae", "<mark>æ</mark>t…", 1},
+		{strings.Repeat("ø", 61) + "ẞ", "ss", "…" + strings.Repeat("ø", 60) + "<mark>ẞ</mark>", 240},
+	} {
+		if got := highlightSnippet(tc.s, tc.q, tc.maxLen); got != tc.want || !utf8.ValidString(got) {
+			t.Errorf("highlightSnippet(%q, %q) = %q, want %q", tc.s, tc.q, got, tc.want)
+		}
+	}
+}

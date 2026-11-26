@@ -44,3 +44,15 @@ func TestLineWordsAndFolding(t *testing.T) {
 		t.Fatalf("hasAll with a missing lexeme = %d", n)
 	}
 }
+
+func TestFoldWordLatinAccents(t *testing.T) {
+	for input, want := range map[string]string{
+		"ASCII": "ascii", "CAFÉ Cafe\u0301": "cafe cafe",
+		"øØ łŁ æÆ œŒ ßẞ":                          "oo ll aeae oeoe ssss",
+		"إِسْلَام Øresund Łódź Æsir Œuvre Straße": "اسلام oresund lodz aesir oeuvre strasse",
+	} {
+		if got := foldWord(input); got != want {
+			t.Errorf("foldWord(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
