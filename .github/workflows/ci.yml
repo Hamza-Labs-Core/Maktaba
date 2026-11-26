@@ -58,6 +58,10 @@ on:
         description: the merge-base of the branch head and its pull request's base (a commit SHA)
         type: string
         required: true
+      base_ref:
+        description: the pull request target branch for branch-head CI
+        type: string
+        required: true
 
 permissions:
   contents: read
@@ -211,6 +215,7 @@ jobs:
     if: needs.changes.outputs.repo == 'true'
     uses: ./.github/workflows/_lint.yml
     with:
+      base_ref: ${{ inputs.base_ref }}
       go: ${{ needs.changes.outputs.lint_go == 'true' }}
       pipeline: ${{ needs.changes.outputs.lint_pipeline == 'true' }}
       web: ${{ needs.changes.outputs.lint_web == 'true' }}

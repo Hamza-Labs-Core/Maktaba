@@ -357,14 +357,18 @@ def test_ci_yml_runs_every_gate() -> None:
     gates = set(ci_paths.load_workflow().jobs) - {"linux-app-downloads", "fork-rerun-comment"}
     assert ran(runs) == gates
     for job in ("lint", "unit", "integration", "cve-gate", "node-packaging", "apple-apps"):
-        assert all(v is True for v in runs[job].inputs.values()), job  # type: ignore[union-attr]
+        result = runs[job]
+        assert result is not None
+        assert all(v is True for k, v in result.inputs.items() if k != "base_ref"), job
 
 
 def test_a_push_runs_everything() -> None:
     runs = run(event="push")
     assert ran(runs) == set(ci_paths.load_workflow().jobs) - {"pr-body-check", "affected-tests", "fork-rerun-comment"}
     for job in ("lint", "unit", "integration", "cve-gate", "node-packaging", "apple-apps"):
-        assert all(v is True for v in runs[job].inputs.values()), job  # type: ignore[union-attr]
+        result = runs[job]
+        assert result is not None
+        assert all(v is True for k, v in result.inputs.items() if k != "base_ref"), job
 
 
 @pytest.mark.parametrize(
@@ -895,25 +899,39 @@ def test_ci_yml_keeps_its_pull_request_and_main_triggers_and_is_callable_with_a_
     on = _yaml(ci_paths.CI_YML)["on"]
     assert on["pull_request"] == {"branches": ["main", "release/**"]}  # the merge ref still gates the merge
     assert on["push"]["branches"] == ["main", "release/**"]
-    assert on["workflow_call"]["inputs"] == {
-        "base": {
-            "description": on["workflow_call"]["inputs"]["base"]["description"],
-            "type": "string",
-            "required": True,
-        }
-    }
+    inputs = on["workflow_call"]["inputs"]
+    assert set(inputs) == {"base", "base_ref"}
+    for spec in inputs.values():
+        assert spec["type"] == "string"
+        assert spec["required"] is True
+    lint = _yaml(ci_paths.CI_YML)["jobs"]["lint"]
+    assert lint["with"]["base_ref"] == "${{ inputs.base_ref }}"
 
 
-def test_ci_branch_calls_ci_yml_only_when_its_guard_says_so_with_the_merge_base() -> None:
+@pytest.mark.parametrize(("event", "base_ref"), [("pull_request", ""), ("push", ""), ("branch", "main")])
+def test_ci_passes_the_simulated_base_ref_to_lint(event: str, base_ref: str) -> None:
+    lint = run(".github/workflows/ci.yml", event=event)["lint"]
+    assert lint is not None
+    assert lint.inputs["base_ref"] == base_ref
+
+
+def test_ci_branch_calls_ci_yml_only_when_its_guard_says_so_with_the_base() -> None:
     jobs = _yaml(BRANCH_WF)["jobs"]
     assert set(jobs) == {"pr", "ci"}  # no job of its own is named ci-success: its rollup is `ci / ci-success`
     pr, ci = jobs["pr"], jobs["ci"]
     assert any("tools/ci/branch_head.py" in str(s.get("run", "")) for s in pr["steps"])
-    assert pr["outputs"] == {"run": "${{ steps.pr.outputs.run }}", "base": "${{ steps.pr.outputs.base }}"}
+    assert pr["outputs"] == {
+        "run": "${{ steps.pr.outputs.run }}",
+        "base": "${{ steps.pr.outputs.base }}",
+        "base_ref": "${{ steps.pr.outputs.base_ref }}",
+    }
     assert ci["needs"] == ["pr"]
     assert ci["if"] == "needs.pr.outputs.run == 'true'"
     assert ci["uses"] == "./.github/workflows/ci.yml"
-    assert ci["with"] == {"base": "${{ needs.pr.outputs.base }}"}
+    assert ci["with"] == {
+        "base": "${{ needs.pr.outputs.base }}",
+        "base_ref": "${{ needs.pr.outputs.base_ref }}",
+    }
     assert "secrets" not in ci  # ci.yml reads no secret
 
 

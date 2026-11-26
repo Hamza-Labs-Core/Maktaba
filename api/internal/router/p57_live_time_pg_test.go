@@ -93,29 +93,19 @@ func (e *liveTimeEnv) reach(seconds int) {
 	}
 	e.exec(`DELETE FROM parental_time_usage WHERE user_id = $1`, e.users["child"])
 	e.exec(`INSERT INTO parental_time_usage (user_id, day, library_id, seconds) VALUES ($1, $2::date, $3, $4)`,
-		e.users["child"], parental.DayKey(time.Now(), loc), parental.NoLibrary, seconds)
-}
-
-// endsIn is when a stream started now must end under the test's rule (60
-// minutes every day) with used already counted today. Today's minutes stop at
-// the home day line (04:00); a stream still allowed there carries on into the
-// next day's 60.
-func (e *liveTimeEnv) endsIn(used time.Duration) time.Duration {
-	e.t.Helper()
-	loc, err := e.cache.Store().HomeZone(context.Background())
-	if err != nil {
-		e.t.Fatal(err)
-	}
-	left := time.Hour - used
-	if toLine := time.Until(parental.DayStart(time.Now(), loc).AddDate(0, 0, 1)); toLine < left {
-		return toLine + time.Hour
-	}
-	return left
+		e.users["child"], parental.DayKey(e.cache.Store().Clock(), loc), parental.NoLibrary, seconds)
 }
 
 // Finding 1: live TV counts like any playback and is refused by the same rules.
 func TestP57LiveTimePG(t *testing.T) {
 	e := setupLiveTime(t)
+	// Keep the verdict and the usage row on the same home day throughout the test.
+	loc, err := e.cache.Store().HomeZone(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, time.November, 10, 12, 0, 0, 0, loc)
+	e.cache.Store().Now = func() time.Time { return now }
 	child, viewer := e.users["child"], e.users["viewer"]
 	e.exec(`INSERT INTO parental_time_rules (user_id, days, daily_minutes) VALUES ($1, 127, 60)`, child)
 	q := "channel=" + e.ch9 + "&user=" + child
@@ -125,9 +115,15 @@ func TestP57LiveTimePG(t *testing.T) {
 	if code != 200 || v["time_allowed"] != true || v["allowed"] != true || v["time_reason"] != nil {
 		t.Fatalf("inside the limit: %d %v", code, v)
 	}
-	if at, err := time.Parse(time.RFC3339, v["time_ends_at"].(string)); err != nil || (time.Until(at)-e.endsIn(0)).Abs() > time.Minute {
-		t.Fatalf("time_ends_at = %v, want %v from now", v["time_ends_at"], e.endsIn(0).Round(time.Second))
+	assertEndsAt := func(v map[string]any, want time.Time) {
+		t.Helper()
+		value, _ := v["time_ends_at"].(string)
+		at, err := time.Parse(time.RFC3339, value)
+		if err != nil || !at.Equal(want) {
+			t.Fatalf("time_ends_at = %v, want %v", v["time_ends_at"], want)
+		}
 	}
+	assertEndsAt(v, now.Add(time.Hour))
 	for _, path := range []string{"/access", "/play"} {
 		method := map[string]string{"/access": "GET", "/play": "POST"}[path]
 		if code, raw, _ := e.do("child", method, "/api/channels/"+e.ch9+path, ""); code != 200 {
@@ -142,9 +138,7 @@ func TestP57LiveTimePG(t *testing.T) {
 	if got := e.usedSeconds(child); got != 120 {
 		t.Fatalf("120 s of live TV served: %d s counted", got)
 	}
-	if at, _ := time.Parse(time.RFC3339, v["time_ends_at"].(string)); (time.Until(at) - e.endsIn(2*time.Minute)).Abs() > time.Minute {
-		t.Fatalf("after 2 minutes of live TV the stream ends at %v, want %v from now", at, e.endsIn(2*time.Minute).Round(time.Second))
-	}
+	assertEndsAt(v, now.Add(58*time.Minute))
 	// one report never adds more than the keeper's bound, and a viewer is not counted
 	e.verdict(q + "&served=86400")
 	if got := e.usedSeconds(child); got != 120+int(parental.MaxLiveServed/time.Second) {
@@ -169,7 +163,7 @@ func TestP57LiveTimePG(t *testing.T) {
 	if code != 200 || v["time_allowed"] != false || v["time_reason"] != parental.ReasonLimitReached || v["allowed"] != true {
 		t.Fatalf("the limit reached: %d %v", code, v)
 	}
-	if at, err := time.Parse(time.RFC3339, v["time_next_allowed_at"].(string)); err != nil || !at.After(time.Now()) {
+	if at, err := time.Parse(time.RFC3339, v["time_next_allowed_at"].(string)); err != nil || !at.After(now) {
 		t.Fatalf("time_next_allowed_at = %v", v["time_next_allowed_at"])
 	}
 	var noted int

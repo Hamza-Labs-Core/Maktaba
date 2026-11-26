@@ -21,6 +21,7 @@ from uuid import UUID
 import pytest
 
 from maktaba_pipeline.db.jobs_state import mark_done
+from maktaba_pipeline.engine import reconcile
 from maktaba_pipeline.engine.claim import claim_for_pool
 from maktaba_pipeline.engine.enqueue import enqueue_job
 from maktaba_pipeline.engine.graph import GRAPH as CORE_GRAPH
@@ -34,6 +35,7 @@ from maktaba_pipeline.engine.sql import is_pg, now, to_ts
 from maktaba_pipeline.engine.sync import sync_graph
 from maktaba_pipeline.engine.workers import heartbeat_worker, register_worker
 from maktaba_pipeline.runtime import Database
+from maktaba_pipeline.search.pgstore import COPY_ENV, COPY_LOCK_KEY
 from tests.engine.factory import make_library, make_video
 
 #: the most reconciler statements that may complete while another loop waits for the
@@ -44,6 +46,47 @@ HANG_SEC = 10.0
 
 Hook = Callable[[asyncio.Task[Any] | None, str], None]
 Pause = Callable[[asyncio.Task[Any] | None, str], Awaitable[None]]
+
+
+@pytest.mark.asyncio
+async def test_both_semantic_sweeps_hold_for_a_copy_on_another_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(COPY_ENV, raising=False)
+    monkeypatch.setattr(reconcile, "_partial_cursor", "")
+
+    class FullNodeDB:
+        dialect = "postgres"
+        copy_locked = True
+        sweep_queries = 0
+
+        async def fetchrow(self, sql: str) -> dict[str, Any]:
+            assert "semantic_store_ready" in sql
+            return {"ready": True, "store": "chroma"}
+
+        async def fetchval(self, sql: str, *args: Any) -> bool:
+            if "pg_catalog.pg_locks" in sql:
+                assert args == (COPY_LOCK_KEY,)
+                return self.copy_locked
+            assert "copy_done_at IS NULL" in sql
+            self.sweep_queries += 1
+            return False
+
+        async def fetch(self, sql: str, *args: Any) -> list[Any]:
+            assert "segment_embeddings" in sql
+            self.sweep_queries += 1
+            return []
+
+    db = FullNodeDB()
+    graph = {s.name: s for s in CORE_GRAPH if s.name == "index"}
+    assert "index" in graph
+    assert await reconcile._semantic_sweep(db, graph) == 0
+    assert await reconcile._partial_copy_sweep(db, graph) == 0
+    assert db.sweep_queries == 0 and reconcile._partial_cursor == ""
+    db.copy_locked = False
+    assert await reconcile._semantic_sweep(db, graph) == 0
+    assert await reconcile._partial_copy_sweep(db, graph) == 0
+    assert db.sweep_queries == 2
 
 
 def hook_statements(

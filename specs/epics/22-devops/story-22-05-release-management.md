@@ -12,8 +12,9 @@ from a green main.
 - AC2. A release is a Git tag `v{MAJOR}.{MINOR}.{PATCH}` on a green
   main commit; the release workflow rebuilds artifacts from that tag
   (no "release the artifacts CI happened to produce" path).
-- AC3. CHANGELOG.md follows Keep-a-Changelog; CI fails a PR that adds
-  user-visible behavior without a changelog entry.
+- AC3. User-visible changes are recorded as English and Arabic fragment pairs in
+  `changelog.d/`. CI validates submitted pairs and protects the frozen legacy
+  changelog. A pull request can pass the gate without adding a fragment.
 - AC4. A `maktaba --version` and `GET /api/system/version` both return
   semver + git-sha + build-time; consistent across the four backend
   services.
@@ -22,8 +23,9 @@ from a green main.
 
 - TC1. Version surface: a fresh build's `--version` matches the tag
   and the embedded git sha; mismatch fails the release workflow.
-- TC2. Changelog gate: a feature PR without a CHANGELOG line fails
-  CI; a docs-only PR is exempt.
+- TC2. Changelog gate: a PR without a fragment passes if it leaves
+  frozen entries alone. Invalid fragment pairs and new entries in a
+  frozen changelog section fail the gate.
 - TC3. Tag → artifact lineage: the published image's OCI label
   `org.opencontainers.image.revision` matches the source tag commit.
 

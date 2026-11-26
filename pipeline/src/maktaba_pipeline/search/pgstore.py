@@ -60,6 +60,24 @@ _clock = time.monotonic
 #: the supervisor's word that this start runs the Chroma copy (story 43.5)
 COPY_ENV = "MAKTABA_CHROMA_COPY"
 
+#: One copy at a time per database. Also visible to a full node on a separate connection.
+COPY_LOCK_KEY = 0x43_03_C0_9E
+
+
+async def copy_lock_held(db: Any) -> bool:
+    # A single bigint advisory key is stored as its high and low 32 bits in
+    # classid and objid, with objsubid=1. This key fits in the low half.
+    return bool(
+        await db.fetchval(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_locks"
+            " WHERE locktype = 'advisory' AND granted AND mode = 'ExclusiveLock'"
+            " AND database = (SELECT oid FROM pg_catalog.pg_database"
+            " WHERE datname = current_database())"
+            " AND classid = 0 AND objid = $1::oid AND objsubid = 1)",
+            COPY_LOCK_KEY,
+        )
+    )
+
 
 @dataclass(frozen=True, slots=True)
 class StoreState:

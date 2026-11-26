@@ -121,11 +121,22 @@ describe("the changelog page", () => {
     expect(count(rel({ [first.name]: ["0.3.9", "2026-11-25"] }))).toEqual(
       both("Unreleased Added:1", "[0.3.9] - 2026-11-25 Fixed:1")
     );
-    // the same English with another Arabic is another entry: the languages stay paired
-    const other = frag("2026-11-27-o.md", first.en, "### أُصلح\n\n- غيره\n");
-    const en = changelogPage(EN, "en", [other, first], none);
-    expect(checkChangelog(en, changelogPage(AR, "ar", [other, first], none))).toEqual([]);
-    expect(outline(en, "en")[0].sections[0].entries).toBe(2);
+    // A translation or wording correction in the original fragment takes effect on both pages.
+    for (const corrected of [
+      frag(first.name, first.en, "### أُصلح\n\n- صياغة مصحّحة\n"),
+      frag(first.name, "### Fixed\n\n- corrected wording\n", first.ar),
+    ]) {
+      const releases = rel({ [first.name]: ["0.3.9", "2026-11-25"] });
+      const en = changelogPage(EN, "en", [second, corrected], releases);
+      const ar = changelogPage(AR, "ar", [second, corrected], releases);
+      const sectionCounts = (page: string, lang: "en" | "ar") =>
+        outline(page, lang).map((r) => r.sections.map((section) => section.entries));
+      expect(sectionCounts(en, "en")).toEqual(sectionCounts(ar, "ar"));
+      expect(en.match(/^- a\n|^- corrected wording\n/gm)).toHaveLength(1);
+      expect(ar.match(/^- أ\n|^- صياغة مصحّحة\n/gm)).toHaveLength(1);
+      expect(en).toContain(corrected.en!.split("\n\n")[1]);
+      expect(ar).toContain(corrected.ar!.split("\n\n")[1]);
+    }
     // and the same words in another section are another entry
     const added = frag(
       "2026-11-28-o.md",
@@ -221,10 +232,17 @@ describe("the fragments' parity", () => {
 
 describe("the release of a fragment", () => {
   let dir = "";
+  let timestamp = 1_795_608_000;
   const git = (...args: string[]) =>
     execFileSync("git", ["-C", dir, ...args], {
       encoding: "utf8",
-      env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" },
+      env: {
+        ...process.env,
+        GIT_CONFIG_GLOBAL: "/dev/null",
+        GIT_CONFIG_SYSTEM: "/dev/null",
+        GIT_AUTHOR_DATE: `${timestamp} +0000`,
+        GIT_COMMITTER_DATE: `${timestamp++} +0000`,
+      },
     });
   const add = (f: string) => {
     fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
@@ -252,12 +270,13 @@ describe("the release of a fragment", () => {
     git("tag", "nightly");
     git("tag", "v0.3.11-rc1");
     git("tag", "v0.3.11");
+    git("tag", "-a", "-m", "backport", "v0.2.99", "v0.3.11");
     add("changelog.d/2026-11-27-c.md");
     git("tag", "v0.3.12-rc1"); // a candidate is no release: c is unreleased
   });
   afterAll(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it("is the lowest version tag whose tree has it; none yet is unreleased", () => {
+  it("uses the first dated tag, keeping the original release after a backport", () => {
     const got = fragmentReleases(dir);
     expect([...got].map(([name, r]) => [name, r.version])).toEqual([
       ["2026-11-25-a.md", "0.3.9"],

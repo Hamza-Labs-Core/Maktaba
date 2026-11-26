@@ -1,7 +1,7 @@
 // The changelog page: CHANGELOG.md (CHANGELOG.ar.md) and the fragments (changelog.d/, one pair
 // of files per pull request; changelog.d/README.md).
 //
-// A fragment is never folded into the files. Its release is the first vX.Y.Z tag whose tree has
+// A fragment is never folded into the files. Its release is the earliest dated vX.Y.Z tag whose tree has
 // it, read from git at build time, so no release edits a file, no step waits for a person, and
 // the page cannot disagree with what a tag contains. A fragment in no tag is unreleased. With no
 // tags fetched (a shallow clone) every fragment reads as unreleased.
@@ -89,8 +89,9 @@ const bySemver = (a, b) => {
 };
 
 /**
- * The release that brought each fragment: name -> {version, date}, the lowest vX.Y.Z tag whose
- * tree has the file. One git process lists the tags, one their changelog.d trees, then one per
+ * The release that brought each fragment: name -> {version, date, timestamp}. Read the tagger
+ * date for annotated tags and the tagged commit's date for lightweight tags. Sort by time so a
+ * later backport to a lower version does not change a fragment's original release. One git process lists the tags, one their changelog.d trees, then one per
  * distinct tree (most releases bring fragments; those that bring none share a tree).
  */
 export function fragmentReleases(repo) {
@@ -107,7 +108,7 @@ export function fragmentReleases(repo) {
   try {
     listed = git([
       "for-each-ref",
-      "--format=%(refname:strip=2) %(creatordate:short)",
+      "--format=%(refname:strip=2) %(creatordate:short) %(creatordate:unix)",
       "refs/tags/v*",
     ]);
   } catch {
@@ -117,9 +118,14 @@ export function fragmentReleases(repo) {
     listed
       .split("\n")
       .filter(Boolean)
-      .map((l) => /** @type {[string, string]} */ (l.split(" ")))
+      .map((line) => {
+        const [tag, date, timestamp] = line.split(" ");
+        return [tag, { date, timestamp: Number(timestamp) }];
+      })
   );
-  const tags = [...dates.keys()].filter((t) => VERSION.test(t)).sort(bySemver);
+  const tags = [...dates.keys()]
+    .filter((t) => VERSION.test(t))
+    .sort((a, b) => dates.get(a).timestamp - dates.get(b).timestamp || bySemver(a, b));
   if (!tags.length) return releases;
   const trees = git(
     ["cat-file", "--batch-check=%(objectname) %(objecttype)"],
@@ -132,7 +138,7 @@ export function fragmentReleases(repo) {
     seen.add(m[1]);
     for (const name of git(["ls-tree", "--name-only", m[1]]).split("\n"))
       if (NAME.test(name) && !releases.has(name))
-        releases.set(name, { version: tag.slice(1), date: dates.get(tag) });
+        releases.set(name, { version: tag.slice(1), ...dates.get(tag) });
   });
   return releases;
 }
@@ -155,19 +161,22 @@ function entriesOf(md, lang) {
 }
 
 /**
- * The fragments as entries in both languages, an entry (section, English, Arabic) two fragments
- * have once: in the earliest release that has it, or in the older fragment. Two stacked branches that
- * both moved their entries leave such a pair.
+ * Keep one bilingual entry when fragments share either wording in the same section.
+ * Prefer the first release, then the older filename for entries that have yet to ship.
  */
 export function pageEntries(fragments, releases) {
-  const rank = (f) => {
+  const published = (f) => {
     const r = releases.get(f.name);
-    return r ? semver(`v${r.version}`) : [Infinity, 0, 0];
+    return r ? (r.timestamp ?? Date.parse(r.date) / 1000) : Infinity;
   };
   const byAge = [...fragments].sort((a, b) => {
-    const [x, y] = [rank(a), rank(b)];
-    const i = [0, 1, 2].find((k) => x[k] !== y[k]);
-    return i === undefined ? (a.name < b.name ? -1 : 1) : x[i] - y[i];
+    const x = releases.get(a.name);
+    const y = releases.get(b.name);
+    return (
+      published(a) - published(b) ||
+      (x && y ? bySemver(`v${x.version}`, `v${y.version}`) : 0) ||
+      a.name.localeCompare(b.name)
+    );
   });
   const seen = new Set();
   const out = new Map();
@@ -181,8 +190,12 @@ export function pageEntries(fragments, releases) {
     out.set(
       f.name,
       pairs.filter((p) => {
-        const key = JSON.stringify(p);
-        return !seen.has(key) && seen.add(key);
+        const enKey = JSON.stringify([p.section, "en", p.en]);
+        const arKey = JSON.stringify([p.section, "ar", p.ar]);
+        if (seen.has(enKey) || (p.ar && seen.has(arKey))) return false;
+        seen.add(enKey);
+        if (p.ar) seen.add(arKey);
+        return true;
       })
     );
   }

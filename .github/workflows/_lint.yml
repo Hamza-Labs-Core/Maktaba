@@ -12,6 +12,9 @@ name: Lint
 on:
   workflow_call:
     inputs:
+      base_ref:
+        description: the pull request target branch for branch-head CI
+        type: string
       go:
         description: the Go modules' linters, migration-lint, log-lint, go.mod drift
         type: boolean
@@ -91,16 +94,11 @@ jobs:
           shellcheck tools/dev/merge-main.sh tools/dev/merge-main-test.sh
           bash tools/dev/merge-main-test.sh
 
-      # changelog.d/README.md: every fragment is a well-formed English and Arabic pair, and a
-      # branch adds no line to the frozen [Unreleased] of CHANGELOG.md or CHANGELOG.ar.md (one
-      # begun before the fragments may, with a warning). It requires no entry. Its tests are in
-      # tools/ci/tests, below.
+      # The gate validates bilingual fragments and protects frozen changelog entries.
       - name: Changelog entries are fragments (tools/dev/changelog_fragment.py)
         env:
-          # the pull request's base and own head (the checkout is their merge); a branch head
-          # (ci-branch.yml) against main; a push against its own branch, where only the
-          # fragments themselves are checked
-          BASE: ${{ github.base_ref || (startsWith(github.ref, 'refs/heads/release/') && github.ref_name) || 'main' }}
+          # A direct push compares against its own branch and validates the fragments.
+          BASE: ${{ github.base_ref || inputs.base_ref || (startsWith(github.ref, 'refs/heads/release/') && github.ref_name) || 'main' }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python3 tools/dev/changelog_fragment.py check --base "origin/$BASE" --head "$HEAD"
 
