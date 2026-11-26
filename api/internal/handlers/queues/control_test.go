@@ -449,6 +449,40 @@ func TestRetry(t *testing.T) {
 			}
 		})
 	}
+	// Retrying a failed job whose payload has {"apply": true} with no plan_digests:
+	// - when inserted, Enqueue already wrote the payload so mergeApprovalSQL is skipped;
+	// - when coalesced, plan_digests is normalized to "[]" (never "null").
+	for _, tc := range []struct {
+		name       string
+		outcome    string
+		wantMerges int
+	}{
+		{"apply without plan_digests inserted skips merge", "inserted", 0},
+		{"apply without plan_digests coalesced normalizes to empty array", "coalesced", 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(
+				singleStageRule(stageRow("plex_livetv", "channels", 3, "network_plex", withExternal())),
+				stagesRule(stageRow("plex_livetv", "channels", 3, "network_plex", withExternal())),
+				&queuestest.Rule{
+					Match: "j.id = any($2::bigint[]) and not exists",
+					Cols:  []string{"id", "kind", "sid", "state", "payload", "force_cascade"},
+					Rows:  [][]driver.Value{{int64(21), "season", uidA, "failed", []byte(`{"apply":true}`), false}},
+				},
+				enqueueRule([]driver.Value{int64(91), tc.outcome}),
+			)
+			if rec := f.do("POST", "/api/queues/plex_livetv/retry", `{"job_ids":[21]}`, admin()); rec.Code != 200 {
+				t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+			}
+			merges := f.db.Find("'plan_digests'")
+			if len(merges) != tc.wantMerges {
+				t.Fatalf("approval merges = %d (%+v), want %d", len(merges), merges, tc.wantMerges)
+			}
+			if tc.wantMerges == 1 && (merges[0].Args[0] != int64(91) || merges[0].Args[1] != "[]") {
+				t.Fatalf("merge args = %+v, want [91, \"[]\"]", merges[0].Args)
+			}
+		})
+	}
 }
 
 func TestApply(t *testing.T) {
@@ -493,14 +527,24 @@ func TestApply(t *testing.T) {
 			if payload["apply"] != true || len(digests) != 2 || digests[0] != "d1" || digests[1] != "d2" {
 				t.Errorf("payload = %v", payload)
 			}
-			// the approval is merged into the row the enqueue landed on (it may have
-			// coalesced into a pending or running job, whose payload the function keeps)
-			merges := f.db.Find("'plan_digests'")
-			if len(merges) != 2 || merges[0].Args[0] != int64(90) || merges[0].Args[1] != `["d1","d2"]` {
-				t.Errorf("approval merges = %+v", merges)
+			// inserted rows already carry the payload written by processing_jobs_enqueue
+			if merges := f.db.Find("'plan_digests'"); len(merges) != 0 {
+				t.Errorf("inserted apply should not run mergeApprovalSQL: %+v", merges)
 			}
 		})
 	}
+	t.Run("coalesced apply merges approval digests", func(t *testing.T) {
+		f := newFixture(singleStageRule(ext), stagesRule(ext), reviewRows,
+			enqueueRule([]driver.Value{int64(90), "coalesced"}))
+		rec := f.do("POST", "/api/queues/plex_livetv/apply", `{"all":true}`, admin())
+		if rec.Code != 200 {
+			t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+		}
+		merges := f.db.Find("'plan_digests'")
+		if len(merges) != 2 || merges[0].Args[0] != int64(90) || merges[0].Args[1] != `["d1","d2"]` {
+			t.Errorf("approval merges = %+v", merges)
+		}
+	})
 }
 
 // ---------- retrigger ----------

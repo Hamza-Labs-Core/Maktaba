@@ -158,7 +158,7 @@ func (c ClusterHook) StagesSwitched(r *http.Request, nodeID string, stages map[s
 
 func problemOf(err error) error {
 	var p *pl.Problem
-	if errors.As(err, &p) {
+	if errors.As(err, &p) && p != nil {
 		return pluginProblem(p)
 	}
 	if ref, ok := svc.AsRefusal(err); ok {

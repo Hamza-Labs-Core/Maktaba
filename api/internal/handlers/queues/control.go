@@ -418,6 +418,26 @@ UPDATE processing_jobs
                      COALESCE(payload -> 'plan_digests', '[]'::jsonb) || $2::jsonb) AS d))
  WHERE id = $1`
 
+// approvalDigestsJSON marshals a payload's plan_digests as a JSON array for
+// mergeApprovalSQL, defaulting nil or non-array values to "[]" so
+// jsonb_array_elements never receives null or turns a missing field into [null].
+func approvalDigestsJSON(v any) ([]byte, error) {
+	switch d := v.(type) {
+	case []string:
+		if len(d) == 0 {
+			return []byte("[]"), nil
+		}
+		return json.Marshal(d)
+	case []any:
+		if len(d) == 0 {
+			return []byte("[]"), nil
+		}
+		return json.Marshal(d)
+	default:
+		return []byte("[]"), nil
+	}
+}
+
 // enqueueTargets enqueues every target in ONE transaction and tallies
 // the outcomes: enqueued = inserted, coalesced = coalesced or
 // rerun_requested. Targets whose stage is disabled / invalid are
@@ -451,8 +471,8 @@ func (h *Handler) enqueueTargets(r *http.Request, stage string, targets []target
 		if err != nil {
 			return 0, 0, err
 		}
-		if res.JobID != nil && p.Payload != nil && p.Payload["apply"] == true {
-			digests, err := json.Marshal(p.Payload["plan_digests"])
+		if res.JobID != nil && res.Outcome != OutcomeInserted && p.Payload != nil && p.Payload["apply"] == true {
+			digests, err := approvalDigestsJSON(p.Payload["plan_digests"])
 			if err != nil {
 				return 0, 0, err
 			}

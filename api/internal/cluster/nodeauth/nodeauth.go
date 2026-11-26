@@ -52,6 +52,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/homelink"
@@ -600,26 +601,31 @@ func jwtKID(tok string) string {
 }
 
 func (r *Resolver) verifyJWT(ctx context.Context, tok string) *principal.Principal {
+	p, _ := r.verifyJWTState(ctx, tok)
+	return p
+}
+
+func (r *Resolver) verifyJWTState(ctx context.Context, tok string) (*principal.Principal, bool) {
 	kid := jwtKID(tok)
 	if kid == "" {
-		return nil
+		return nil, false
 	}
 	pub := r.jwksKey(ctx, kid)
 	if pub == nil {
-		return nil
+		return nil, false
 	}
 	set := keys.NewSet(0)
 	set.Replace(&keys.Key{KID: kid, Public: pub})
 	c, err := jwt.Verify(set, tok, "api")
 	if err != nil {
-		return nil
+		return nil, errors.Is(err, jwt.ErrExpired)
 	}
 	p := &principal.Principal{UserID: c.Usr, IsAdmin: c.IsAdmin, Libraries: c.Lib,
 		AccessAllLibraries: c.IsAdmin, Source: principal.SourceJWT,
 		RefreshFamily: c.Fam, AgeCeiling: c.Ac}
 	p.ApplyCloudScope(c.Scp, nil) // a cloud play token is no admin on a node either
 	p.ApplyRestricted(c.Rst)      // nor a cloud code's TV
-	return p
+	return p, false
 }
 
 // ---------- middleware ----------
@@ -682,7 +688,12 @@ func (r *Resolver) Middleware(next http.Handler) http.Handler {
 				ireq.PAT = b
 				p, _, err = r.resolve(req.Context(), patKey(b), ireq)
 			} else {
-				p, jwt = r.verifyJWT(req.Context(), b), true
+				var expired bool
+				p, expired = r.verifyJWTState(req.Context(), b)
+				jwt = true
+				if expired {
+					req = req.WithContext(authmw.WithTokenExpired(req.Context()))
+				}
 				if p != nil && r.Unreachable() {
 					// the home cannot be asked whether the user is still allowed in:
 					// the copy is, under the same rules as any other credential

@@ -767,6 +767,8 @@ func TestPluginRefusalThroughComponents(t *testing.T) {
 	cat, skipped := components.WithPlugins(components.Default(), []components.PluginSpec{
 		{ID: "dev.example.revoked"},
 		{ID: "dev.example.caps"},
+		{ID: "dev.example.zerostatus"},
+		{ID: "dev.example.reserved"},
 	})
 	if len(skipped) != 0 {
 		t.Fatalf("skipped plugins: %v", skipped)
@@ -790,6 +792,28 @@ func TestPluginRefusalThroughComponents(t *testing.T) {
 						Code:   pl.CodeRequiredCapability,
 						Detail: "grant library.read first",
 						Params: map[string]any{"capabilities": []string{"library.read"}},
+					}
+				case "plugin.dev.example.zerostatus":
+					return &pl.Problem{
+						Status: 0,
+						Code:   pl.CodeRevoked,
+						Detail: "invalid status falls back to 500",
+					}
+				case "plugin.dev.example.reserved":
+					return &pl.Problem{
+						Status: http.StatusBadRequest,
+						Code:   pl.CodeRequiredCapability,
+						Detail: "grant library.read first",
+						Params: map[string]any{
+							"capabilities": []string{"library.read"},
+							"type":         "https://evil.invalid/override",
+							"status":       200,
+							"title":        "forged",
+							"detail":       "forged",
+							"instance":     "/forged",
+							"requestId":    "forged",
+							"code":         "forged_code",
+						},
 					}
 				}
 				return nil
@@ -818,5 +842,30 @@ func TestPluginRefusalThroughComponents(t *testing.T) {
 	caps, _ := body["capabilities"].([]any)
 	if len(caps) != 1 || caps[0] != "library.read" {
 		t.Fatalf("caps params = %+v", body)
+	}
+
+	// Status == 0 falls back to 500
+	rec = f.do("PUT", "/api/components/plugin.dev.example.zerostatus", `{"want":"enabled"}`, admin())
+	body = nil
+	decode(t, rec, http.StatusInternalServerError, &body)
+	if body["status"] != float64(http.StatusInternalServerError) {
+		t.Fatalf("zero-status problem = %+v", body)
+	}
+
+	// Reserved RFC 9457 keys in Params cannot overwrite envelope fields
+	rec = f.do("PUT", "/api/components/plugin.dev.example.reserved", `{"want":"enabled"}`, admin())
+	body = nil
+	decode(t, rec, http.StatusBadRequest, &body)
+	if body["type"] != httperror.TypeForCode(pl.CodeRequiredCapability) ||
+		body["status"] != float64(http.StatusBadRequest) ||
+		body["code"] != pl.CodeRequiredCapability ||
+		body["detail"] != "grant library.read first" ||
+		body["instance"] != "/api/components/plugin.dev.example.reserved" ||
+		body["title"] == "forged" || body["requestId"] == "forged" {
+		t.Fatalf("reserved keys overwritten: %+v", body)
+	}
+	caps, _ = body["capabilities"].([]any)
+	if len(caps) != 1 || caps[0] != "library.read" {
+		t.Fatalf("non-reserved param lost: %+v", body)
 	}
 }

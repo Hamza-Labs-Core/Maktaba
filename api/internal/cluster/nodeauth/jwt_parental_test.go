@@ -7,11 +7,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/jwt"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/keys"
+	authmw "github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/middleware"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
 // Epic 57 story 57.04: a node reads the sign-in and the device's age limit from an
@@ -55,5 +59,68 @@ func TestAnAccessTokenCarriesItsSignInAndDeviceLimitOnANode(t *testing.T) {
 	}
 	if p := g.r.verifyJWT(context.Background(), sign(jwt.Claims{IsAdmin: true})); p == nil || !p.IsAdmin || p.Restricted {
 		t.Fatalf("an admin token: %+v", p)
+	}
+}
+
+// Issue #1172: a joined full node's Middleware marks expired access JWTs with
+// WithTokenExpired so downstream RequireAuth / RequireAuthExcept emits 401
+// token-expired just like the home.
+func TestNodeAuthMiddleware_ExpiredJWTEmitsTokenExpired(t *testing.T) {
+	g := newOfflineRig(t, true)
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := keys.NewSet(0)
+	set.Replace(&keys.Key{KID: "k1", Private: priv, Public: &priv.PublicKey})
+	jwks, _ := json.Marshal(map[string]any{"keys": []map[string]string{{"kty": "RSA", "kid": "k1",
+		"n": base64.RawURLEncoding.EncodeToString(priv.N.Bytes()),
+		"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(priv.E)).Bytes())}}})
+	g.home.jwks = jwks
+
+	expAccess, err := jwt.Sign(set, jwt.Claims{
+		Iss: "maktaba", Aud: "api", Sub: "u1", Usr: "u1",
+		Iat: time.Now().Add(-2 * time.Hour).Unix(),
+		Exp: time.Now().Add(-1 * time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expStreaming, err := jwt.Sign(set, jwt.Claims{
+		Iss: "maktaba", Aud: "streaming", Sub: "u1", Usr: "u1",
+		Iat: time.Now().Add(-2 * time.Hour).Unix(),
+		Exp: time.Now().Add(-1 * time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	chain := g.r.Middleware(authmw.RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/libraries", nil)
+	req.Header.Set("Authorization", "Bearer "+expAccess)
+	rec := httptest.NewRecorder()
+	chain.ServeHTTP(rec, req)
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusUnauthorized || body["type"] != httperror.TypeTokenExpired {
+		t.Fatalf("expired access JWT on node: status=%d body=%+v", rec.Code, body)
+	}
+
+	// Wrong-audience expired JWT stays generic unauthorized
+	req = httptest.NewRequest(http.MethodGet, "/api/libraries", nil)
+	req.Header.Set("Authorization", "Bearer "+expStreaming)
+	rec = httptest.NewRecorder()
+	chain.ServeHTTP(rec, req)
+	body = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusUnauthorized || body["type"] == httperror.TypeTokenExpired {
+		t.Fatalf("wrong-audience expired JWT on node: status=%d body=%+v", rec.Code, body)
 	}
 }

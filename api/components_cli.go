@@ -356,7 +356,7 @@ func (c *componentsCLI) installRefused(ctx context.Context, d components.Detail)
 
 func (c *componentsCLI) fail(err error) int {
 	var p *plugins.Problem
-	if errors.As(err, &p) {
+	if errors.As(err, &p) && p != nil {
 		fmt.Fprintf(c.errOut, "Refused (%s): %s\n", p.Code, p.Detail)
 		return exitComponentsFailed
 	}

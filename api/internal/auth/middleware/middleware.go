@@ -39,7 +39,10 @@ import (
 
 type tokenExpiredKey struct{}
 
-func withTokenExpired(ctx context.Context) context.Context {
+// WithTokenExpired marks ctx as having carried an expired access JWT so the
+// downstream auth gate can emit 401 token-expired when no other credential
+// authenticates the request.
+func WithTokenExpired(ctx context.Context) context.Context {
 	return context.WithValue(ctx, tokenExpiredKey{}, true)
 }
 
@@ -133,7 +136,7 @@ func JWTBearer(set *keys.Set, expectedAud string) func(http.Handler) http.Handle
 			c, err := jwt.Verify(set, tok, expectedAud)
 			if err != nil {
 				if errors.Is(err, jwt.ErrExpired) {
-					r = r.WithContext(withTokenExpired(r.Context()))
+					r = r.WithContext(WithTokenExpired(r.Context()))
 				}
 				next.ServeHTTP(w, r)
 				return
