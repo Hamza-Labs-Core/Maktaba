@@ -51,8 +51,13 @@ export function Login() {
     if (left.current) return;
     left.current = true;
     // the TV build (story 58.08) is its own page, not a route of this app
-    if (dest === "/tv/" || dest.startsWith("/tv/")) {
-      window.location.assign(dest);
+    if (dest.startsWith("/tv/")) {
+      const url = new URL(dest, window.location.origin);
+      if (url.origin === window.location.origin && url.pathname.startsWith("/tv/")) {
+        window.location.assign(url.pathname + url.search + url.hash);
+      } else {
+        nav("/", { replace: true });
+      }
       return;
     }
     nav(dest, { replace: true });

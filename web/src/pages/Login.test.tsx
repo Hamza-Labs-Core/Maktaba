@@ -63,13 +63,13 @@ describe("Login next", () => {
   });
 
   // story 58.08: the TV build is its own page, loaded fresh (not a route of this app)
-  it("loads the TV build's page for a next under /tv/", async () => {
+  it.each(["/tv/", "/tv/?code=123#top"])("loads the TV build at %s", async (next) => {
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign });
     try {
-      renderAt(`/login?next=${encodeURIComponent("/tv/")}`);
+      renderAt(`/login?next=${encodeURIComponent(next)}`);
       await signIn();
-      await vi.waitFor(() => expect(assign).toHaveBeenCalledWith("/tv/"));
+      await vi.waitFor(() => expect(assign).toHaveBeenCalledWith(next));
     } finally {
       vi.unstubAllGlobals();
     }
@@ -83,6 +83,9 @@ describe("Login next", () => {
 
   it.each([
     "http://evil.example/library",
+    "https://evil.example/tv/",
+    "//evil.example/tv/",
+    "/tv/..//evil.com",
     "//evil.example/library",
     "/\\evil.example/library",
     "javascript:alert(1)",

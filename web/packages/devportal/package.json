@@ -19,7 +19,7 @@
     "redoc": "2.5.4",
     "typescript": "5.7.3",
     "vitest": "4.1.12",
-    "wrangler": "4.151.0"
+    "wrangler": "4.154.0"
   },
   "engines": {
     "node": ">=22"
