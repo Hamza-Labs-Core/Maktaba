@@ -74,12 +74,12 @@ enum TouchHook {
                 }
             }
         }, ask as CFString, nil, .deliverImmediately)
-        NotificationCenter.default.addObserver(forName: UIWindow.didBecomeVisibleNotification, object: nil, queue: .main) { note in
+        _ = NotificationCenter.default.addObserver(forName: UIWindow.didBecomeVisibleNotification, object: nil, queue: .main) { note in
             guard let window = note.object as? UIWindow else { return }
             MainActor.assumeIsolated { watch(window) }
         }
         for name in scenePhases {
-            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
+            _ = NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { note in
                 guard let line = sceneNote(note.name) else { return }
                 log.notice("\(line, privacy: .public)")
             }

@@ -71,10 +71,10 @@ extension View {
 private extension View {
     /// The SDK's own state for the UI tests of the real SDK (a Debug build only, and only when
     /// such a test asked for it).
-    @ViewBuilder func castSDKState(_ cast: CastController) -> some View {
+    @ViewBuilder func castSDKState(_ cast: CastController, visible: Bool = true) -> some View {
         #if DEBUG
         overlay(alignment: .topLeading) {
-            if cast.sdk != nil {
+            if visible, cast.sdk != nil {
                 TimelineView(.periodic(from: .now, by: 1)) { _ in
                     Color.clear.frame(width: 1, height: 1)
                         .accessibilityElement()
@@ -98,6 +98,7 @@ private struct CastSheets: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .castSDKState(cast, visible: !cast.showsInterstitial && !cast.showsPicker)
             .sheet(isPresented: $cast.showsInterstitial) {
                 CastInterstitial(cast: cast)
                     .presentationDetents([.medium])

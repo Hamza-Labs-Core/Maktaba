@@ -177,7 +177,7 @@ public extension VideoQuery {
 }
 
 public extension APIClient {
-    /// A library's Collections tab, all kinds or one (`youtube`, `plex`, `curated`, `topic`, `filler`).
+    /// A library's Collections tab, all kinds or one (`youtube`, `curated`, `topic`, `filler`).
     func libraryCollections(_ library: String, kind: String? = nil) async throws -> [LibraryCollection] {
         var q = ["limit": "200"]
         if let kind { q["kind"] = kind }

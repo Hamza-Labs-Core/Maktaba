@@ -46,9 +46,12 @@ APPS = Path("/Applications")
 RELEASE = re.compile(r"^Xcode_(\d+(?:\.\d+)*)\.app$")
 KINDS = {
     "iphone": ("iOS", re.compile(r"^iPhone (\d+)$")),
-    "ipad": ("iOS", re.compile(r"^iPad Pro 11-inch \(M(\d+)\)$")),
+    "ipad": ("iOS", re.compile(r"^iPad Pro 11-inch \(M(\d+)\)( \(\d+GB\))?$")),
     # "Apple TV 4K" (the first) or "Apple TV 4K (3rd generation)"; never "(at 1080p)"
-    "appletv": ("tvOS", re.compile(r"^Apple TV 4K(?: \((\d+)(?:st|nd|rd|th) generation\))?$")),
+    "appletv": (
+        "tvOS",
+        re.compile(r"^Apple TV 4K(?: \((\d+)(?:st|nd|rd|th) generation\))?$"),
+    ),
 }
 
 
@@ -59,7 +62,9 @@ def version(text: str) -> tuple[int, ...]:
 # ---- select
 
 
-def newest_xcode(names: Iterable[str], real: Callable[[str], str] = lambda n: n) -> tuple[str, tuple[int, ...]] | None:
+def newest_xcode(
+    names: Iterable[str], real: Callable[[str], str] = lambda n: n
+) -> tuple[str, tuple[int, ...]] | None:
     """The newest released Xcode among /Applications' entries: (app name, version), or None.
 
     `real` resolves a name to the app it is. Each entry is judged by that app's own folder name,
@@ -80,32 +85,62 @@ def xcodebuild_major(output: str) -> int:
     """The major version in `xcodebuild -version`'s first line ("Xcode 27.2")."""
     m = re.match(r"Xcode (\d+)", output)
     if not m:
-        raise ValueError(f"not an Xcode version: {output.splitlines()[0] if output else output!r}")
+        raise ValueError(
+            f"not an Xcode version: {output.splitlines()[0] if output else output!r}"
+        )
     return int(m.group(1))
+
+
+def released_developer_dir(active: str, real: Callable[[str], str]) -> bool:
+    path = Path(real(active))
+    return (
+        path.parts[-2:] == ("Contents", "Developer")
+        and RELEASE.fullmatch(path.parent.parent.name) is not None
+    )
 
 
 def select(minimum: int, sdk: str | None) -> int:
     names = os.listdir(APPS)
-    found = newest_xcode(names, lambda n: os.path.realpath(APPS / n))
-    listed = ", ".join(sorted(n for n in names if n.startswith("Xcode"))) or "none"
+    installed = {
+        name: os.path.realpath(APPS / name)
+        for name in names
+        if name.startswith("Xcode") and (APPS / name).exists()
+    }
+    found = newest_xcode(installed, installed.__getitem__)
+    listed = (
+        ", ".join(sorted({Path(path).name for path in installed.values()})) or "none"
+    )
     if found is None or found[1][0] < minimum:
-        print(f"::error::no released Xcode {minimum} or later on this runner (it has: {listed}). "
-              f"App Store Connect wants the {minimum} SDKs; run the job on an image with Xcode {minimum}.")
+        print(
+            f"::error::no released Xcode {minimum} or later on this runner (it has: {listed}). "
+            f"App Store Connect wants the {minimum} SDKs; run the job on an image with Xcode {minimum}."
+        )
         return 1
     path = APPS / found[0]
-    subprocess.run(["sudo", "xcode-select", "-s", str(path / "Contents/Developer")], check=True)
-    active = subprocess.run(["xcode-select", "-p"], check=True, capture_output=True, text=True).stdout.strip()
-    app = os.path.basename(os.path.realpath(active).removesuffix("/Contents/Developer"))
-    if not RELEASE.match(app):
-        print(f"::error::the active Xcode is {os.path.realpath(active)}, not a released Xcode")
+    if subprocess.run(
+        ["sudo", "xcode-select", "-s", str(path / "Contents/Developer")], check=False
+    ).returncode:
+        print(f"::error::could not select {path}")
         return 1
-    out = subprocess.run(["xcodebuild", "-version"], check=True, capture_output=True, text=True).stdout
+    active = subprocess.run(
+        ["xcode-select", "-p"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    if not released_developer_dir(active, os.path.realpath):
+        print(
+            f"::error::the active Xcode is {os.path.realpath(active)}, not a released Xcode"
+        )
+        return 1
+    out = subprocess.run(
+        ["xcodebuild", "-version"], check=True, capture_output=True, text=True
+    ).stdout
     print(out, end="")
     if xcodebuild_major(out) < minimum:
         print(f"::error::{path} says {out.splitlines()[0]}, older than Xcode {minimum}")
         return 1
     if sdk:
-        sdks = subprocess.run(["xcodebuild", "-showsdks"], check=True, capture_output=True, text=True).stdout
+        sdks = subprocess.run(
+            ["xcodebuild", "-showsdks"], check=True, capture_output=True, text=True
+        ).stdout
         got = sdk_versions(sdks, sdk)
         print(f"{sdk} SDKs: {', '.join('.'.join(map(str, v)) for v in got) or 'none'}")
         if not got or max(got)[0] < minimum:
@@ -116,7 +151,10 @@ def select(minimum: int, sdk: str | None) -> int:
 
 def sdk_versions(showsdks: str, sdk: str) -> list[tuple[int, ...]]:
     """The versions of an SDK family in `xcodebuild -showsdks` (`-sdk iphoneos27.2`)."""
-    return [version(m) for m in re.findall(rf"-sdk {re.escape(sdk)}(\d+(?:\.\d+)*)\b", showsdks)]
+    return [
+        version(m)
+        for m in re.findall(rf"-sdk {re.escape(sdk)}(\d+(?:\.\d+)*)\b", showsdks)
+    ]
 
 
 # ---- simulator
@@ -125,7 +163,11 @@ def sdk_versions(showsdks: str, sdk: str) -> list[tuple[int, ...]]:
 def candidates(kind: str, listing: dict) -> list[tuple[str, str, str]]:
     """(runtime id, device type id, label) pairs to try, best first, from `simctl list -j`."""
     platform, pattern = KINDS[kind]
-    runtimes = [r for r in listing["runtimes"] if r.get("platform") == platform and r.get("isAvailable")]
+    runtimes = [
+        r
+        for r in listing["runtimes"]
+        if r.get("platform") == platform and r.get("isAvailable")
+    ]
     runtimes.sort(key=lambda r: version(r["version"]), reverse=True)
     pairs: list[tuple[str, str, str]] = []
     for r in runtimes:
@@ -133,13 +175,16 @@ def candidates(kind: str, listing: dict) -> list[tuple[str, str, str]]:
         for d in r.get("supportedDeviceTypes", []):
             m = pattern.match(d["name"])
             if m:
-                ranked.append((int(m.group(1) or 1), d["identifier"], d["name"]))
-        for _, ident, name in sorted(ranked, reverse=True):
+                plain = kind != "ipad" or m.group(2) is None
+                ranked.append((int(m.group(1) or 1), plain, d["identifier"], d["name"]))
+        for _, _, ident, name in sorted(ranked, reverse=True):
             pairs.append((r["identifier"], ident, f"{name} on {r['name']}"))
     return pairs
 
 
-def make_simulator(kind: str, name: str, create: Callable[[str, str, str], str | None], listing: dict) -> str | None:
+def make_simulator(
+    kind: str, name: str, create: Callable[[str, str, str], str | None], listing: dict
+) -> str | None:
     tried = []
     for runtime, devtype, label in candidates(kind, listing):
         udid = create(name, devtype, runtime)
@@ -148,24 +193,39 @@ def make_simulator(kind: str, name: str, create: Callable[[str, str, str], str |
             return udid
         tried.append(label)
     # stderr: the workflow reads stdout into udid=$(...), and that is lost when the step fails
-    print(f"::error::no {kind} simulator could be made; tried: {', '.join(tried) or 'no matching device type in any runtime'}",
-          file=sys.stderr)
+    print(
+        f"::error::no {kind} simulator could be made; tried: {', '.join(tried) or 'no matching device type in any runtime'}",
+        file=sys.stderr,
+    )
     return None
 
 
 def simctl_create(name: str, devtype: str, runtime: str) -> str | None:
     # exits non-zero and makes nothing when it refuses the pair ("Incompatible device")
-    p = subprocess.run(["xcrun", "simctl", "create", name, devtype, runtime], capture_output=True, text=True)
+    p = subprocess.run(
+        ["xcrun", "simctl", "create", name, devtype, runtime],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     if p.returncode != 0:
-        print(f"refused: {devtype} on {runtime}: {p.stderr.strip().splitlines()[-1] if p.stderr.strip() else p.returncode}",
-              file=sys.stderr)
+        print(
+            f"refused: {devtype} on {runtime}: {p.stderr.strip().splitlines()[-1] if p.stderr.strip() else p.returncode}",
+            file=sys.stderr,
+        )
         return None
     return p.stdout.strip()
 
 
 def simulator(kind: str, name: str) -> int:
-    listing = json.loads(subprocess.run(["xcrun", "simctl", "list", "runtimes", "-j"], check=True,
-                                        capture_output=True, text=True).stdout)
+    listing = json.loads(
+        subprocess.run(
+            ["xcrun", "simctl", "list", "runtimes", "-j"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+    )
     udid = make_simulator(kind, name, simctl_create, listing)
     if not udid:
         return 1
@@ -206,12 +266,18 @@ def check_sdk(archive: Path, minimum: int) -> int:
         return 1
     status = 0
     for app in apps:
-        plist = app / "Contents/Info.plist" if (app / "Contents/Info.plist").exists() else app / "Info.plist"
+        plist = (
+            app / "Contents/Info.plist"
+            if (app / "Contents/Info.plist").exists()
+            else app / "Info.plist"
+        )
         info = plistlib.loads(plist.read_bytes())
         problems = sdk_problems(info, minimum)
         built = f"{info.get('DTSDKName')}, platform {info.get('DTPlatformVersion')}, Xcode {info.get('DTXcode')} ({info.get('DTXcodeBuild')})"
         if problems:
-            print(f"::error::{app.name} was built with an SDK App Store Connect will refuse ({built}): {'; '.join(problems)}")
+            print(
+                f"::error::{app.name} was built with an SDK App Store Connect will refuse ({built}): {'; '.join(problems)}"
+            )
             status = 1
         else:
             print(f"{app.name}: {built}")
@@ -224,30 +290,96 @@ def check_sdk(archive: Path, minimum: int) -> int:
 def self_test() -> int:
     # the cases below print ::error:: lines on purpose: kept out of the log, where GitHub
     # would show them as the job's errors
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    with (
+        contextlib.redirect_stdout(io.StringIO()),
+        contextlib.redirect_stderr(io.StringIO()),
+    ):
         _self_test()
     print("xcode.py self-test: ok")
     return 0
 
 
 def _self_test() -> None:
-    links = {"Xcode.app": "Xcode_27.1.app", "Xcode_27.2.0.app": "Xcode_27.2.app", "Xcode_27.0.app": "Xcode_27.app",
-             "Xcode_27.0.0.app": "Xcode_27.app"}
-    names = ["Xcode.app", "Xcode_27.app", "Xcode_27.0.app", "Xcode_27.0.0.app", "Xcode_27.1.app",
-             "Xcode_27.2.app", "Xcode_27.2.0.app", "Xcode_28_beta_1.app", "Xcode_26.6.app"]
+    from unittest.mock import patch
+
+    with tempfile.TemporaryDirectory() as folder:
+        apps = Path(folder)
+        beta_app = apps / "Xcode_27_beta.app"
+        beta_app.mkdir()
+        (apps / "Xcode_27.app").symlink_to(beta_app)
+        (apps / "Xcode_28.app").symlink_to(apps / "missing.app")
+        with (
+            patch(f"{__name__}.APPS", apps),
+            patch.object(subprocess, "run") as run,
+            patch("builtins.print") as report,
+        ):
+            assert select(27, None) == 1
+            run.assert_not_called()
+            diagnostic = report.call_args.args[0]
+            assert "it has: Xcode_27_beta.app)" in diagnostic, diagnostic
+
+            release_app = apps / "Xcode_27.1.app"
+            developer_dir = release_app / "Contents/Developer"
+            developer_dir.mkdir(parents=True)
+            run.return_value = subprocess.CompletedProcess([], 1)
+            assert select(27, None) == 1
+            run.assert_called_once_with(
+                ["sudo", "xcode-select", "-s", str(developer_dir)], check=False
+            )
+            assert report.call_args.args == (
+                f"::error::could not select {release_app}",
+            )
+
+    links = {
+        "Xcode.app": "Xcode_27.1.app",
+        "Xcode_27.2.0.app": "Xcode_27.2.app",
+        "Xcode_27.0.app": "Xcode_27.app",
+        "Xcode_27.0.0.app": "Xcode_27.app",
+    }
+    names = [
+        "Xcode.app",
+        "Xcode_27.app",
+        "Xcode_27.0.app",
+        "Xcode_27.0.0.app",
+        "Xcode_27.1.app",
+        "Xcode_27.2.app",
+        "Xcode_27.2.0.app",
+        "Xcode_28_beta_1.app",
+        "Xcode_26.6.app",
+    ]
     # Xcode_27.2.0.app and Xcode_27.2.app are one app; the beta and Xcode.app never count
     assert newest_xcode(names, lambda n: links.get(n, n)) == ("Xcode_27.2.app", (27, 2))
     # the image's Xcode_27.3.app is a link to the 27.3 beta (CI run 44659284257 built with it)
     beta = {**links, "Xcode_27.3.app": "Xcode_27.3_beta.app"}
-    assert newest_xcode([*names, "Xcode_27.3.app", "Xcode_27.3_beta.app"], lambda n: beta.get(n, n)) == \
-        ("Xcode_27.2.app", (27, 2))
+    assert newest_xcode(
+        [*names, "Xcode_27.3.app", "Xcode_27.3_beta.app"], lambda n: beta.get(n, n)
+    ) == ("Xcode_27.2.app", (27, 2))
     # a link to a release counts as that release
-    assert newest_xcode(["Xcode.app"], lambda n: "/Applications/Xcode_27.1.app") == ("Xcode_27.1.app", (27, 1))
+    assert newest_xcode(["Xcode.app"], lambda n: "/Applications/Xcode_27.1.app") == (
+        "Xcode_27.1.app",
+        (27, 1),
+    )
     assert newest_xcode(["Xcode_26.6.app", "Xcode_27.app"]) == ("Xcode_27.app", (27,))
     # a beta is never picked, however new
-    assert newest_xcode(["Xcode_27_beta_3.app", "Xcode_26.6.app"]) == ("Xcode_26.6.app", (26, 6))
+    assert newest_xcode(["Xcode_27_beta_3.app", "Xcode_26.6.app"]) == (
+        "Xcode_26.6.app",
+        (26, 6),
+    )
     assert newest_xcode(["Xcode_27_beta_3.app", "Xcode.app"]) is None
-    assert newest_xcode(["Xcode_26.10.app", "Xcode_26.9.app"]) == ("Xcode_26.10.app", (26, 10))
+    assert newest_xcode(["Xcode_26.10.app", "Xcode_26.9.app"]) == (
+        "Xcode_26.10.app",
+        (26, 10),
+    )
+    dev = "/Applications/Xcode.app/Contents/Developer"
+    assert not released_developer_dir(
+        dev, lambda _: "/Applications/Xcode_27_beta.app/Contents/Developer"
+    )
+    assert not released_developer_dir(
+        "/Library/Developer/CommandLineTools", lambda p: p
+    )
+    assert released_developer_dir(
+        dev, lambda _: "/Applications/Xcode_27.app/Contents/Developer"
+    )
     assert xcodebuild_major("Xcode 27.2\nBuild version 27B52\n") == 27
     shows = "iOS SDKs:\n\tiOS 27.2 -sdk iphoneos27.2\n\niOS Simulator SDKs:\n\tSimulator - iOS 27.2 -sdk iphonesimulator27.2\n"
     assert sdk_versions(shows, "iphoneos") == [(27, 2)]
@@ -255,28 +387,94 @@ def _self_test() -> None:
 
     def rt(platform: str, ver: str, types: list[str]) -> dict:
         ident = f"com.apple.CoreSimulator.SimRuntime.{platform}-{ver.replace('.', '-')}"
-        return {"platform": platform, "version": ver, "isAvailable": True, "identifier": ident,
-                "name": f"{platform} {ver}",
-                "supportedDeviceTypes": [{"name": t, "identifier": "type." + t.replace(" ", "-")} for t in types]}
+        return {
+            "platform": platform,
+            "version": ver,
+            "isAvailable": True,
+            "identifier": ident,
+            "name": f"{platform} {ver}",
+            "supportedDeviceTypes": [
+                {"name": t, "identifier": "type." + t.replace(" ", "-")} for t in types
+            ],
+        }
 
     # what Xcode 27.1 answers on a Mac (docs/testflight.md): iOS 27.1 is the Duo's alone
-    listing = {"runtimes": [
-        rt("iOS", "27.1", ["iPhone Duo"]),
-        rt("iOS", "27.0", ["iPhone 16", "iPhone 17", "iPhone 17 Pro", "iPhone 18 Pro", "iPhone 17e",
-                           "iPad Pro 11-inch (M4)", "iPad Pro 11-inch (M5)", "iPad Pro 13-inch (M5)"]),
-        rt("iOS", "26.4", ["iPhone 17", "iPad Pro 11-inch (M5)"]),
-        rt("tvOS", "27.0", ["Apple TV 4K (2nd generation)", "Apple TV 4K (3rd generation)",
-                            "Apple TV 4K (3rd generation) (at 1080p)"]),
-        rt("tvOS", "26.4", ["Apple TV", "Apple TV 4K", "Apple TV 4K (3rd generation)"]),
-        {**rt("tvOS", "27.2", ["Apple TV 4K (4th generation)"]), "isAvailable": False},
-    ]}
-    assert candidates("iphone", listing)[0][:2] == ("com.apple.CoreSimulator.SimRuntime.iOS-27-0", "type.iPhone-17")
-    assert candidates("iphone", listing)[1][0].endswith("iOS-27-0") and candidates("iphone", listing)[1][1] == "type.iPhone-16"
+    listing = {
+        "runtimes": [
+            rt("iOS", "27.1", ["iPhone Duo"]),
+            rt(
+                "iOS",
+                "27.0",
+                [
+                    "iPhone 16",
+                    "iPhone 17",
+                    "iPhone 17 Pro",
+                    "iPhone 18 Pro",
+                    "iPhone 17e",
+                    "iPad Pro 11-inch (M4)",
+                    "iPad Pro 11-inch (M5)",
+                    "iPad Pro 13-inch (M5)",
+                ],
+            ),
+            rt("iOS", "26.4", ["iPhone 17", "iPad Pro 11-inch (M5)"]),
+            rt(
+                "tvOS",
+                "27.0",
+                [
+                    "Apple TV 4K (2nd generation)",
+                    "Apple TV 4K (3rd generation)",
+                    "Apple TV 4K (3rd generation) (at 1080p)",
+                ],
+            ),
+            rt(
+                "tvOS",
+                "26.4",
+                ["Apple TV", "Apple TV 4K", "Apple TV 4K (3rd generation)"],
+            ),
+            {
+                **rt("tvOS", "27.2", ["Apple TV 4K (4th generation)"]),
+                "isAvailable": False,
+            },
+        ]
+    }
+    assert candidates("iphone", listing)[0][:2] == (
+        "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+        "type.iPhone-17",
+    )
+    assert (
+        candidates("iphone", listing)[1][0].endswith("iOS-27-0")
+        and candidates("iphone", listing)[1][1] == "type.iPhone-16"
+    )
     assert candidates("ipad", listing)[0][1] == "type.iPad-Pro-11-inch-(M5)"
+    memory = {
+        "runtimes": [
+            rt(
+                "iOS",
+                "27.0",
+                ["iPad Pro 11-inch (M5) (16GB)", "iPad Pro 11-inch (M6) (other)"],
+            )
+        ]
+    }
+    assert [pair[1] for pair in candidates("ipad", memory)] == [
+        "type.iPad-Pro-11-inch-(M5)-(16GB)"
+    ]
+    memory["runtimes"][0]["supportedDeviceTypes"].extend(
+        rt("iOS", "27.0", ["iPad Pro 11-inch (M5)"])["supportedDeviceTypes"]
+    )
+    assert [pair[1] for pair in candidates("ipad", memory)] == [
+        "type.iPad-Pro-11-inch-(M5)",
+        "type.iPad-Pro-11-inch-(M5)-(16GB)",
+    ]
     tv = candidates("appletv", listing)
-    assert tv[0][:2] == ("com.apple.CoreSimulator.SimRuntime.tvOS-27-0", "type.Apple-TV-4K-(3rd-generation)"), tv
+    assert tv[0][:2] == (
+        "com.apple.CoreSimulator.SimRuntime.tvOS-27-0",
+        "type.Apple-TV-4K-(3rd-generation)",
+    ), tv
     # the first Apple TV 4K ranks last on a runtime that still takes it; 1080p and plain Apple TV never
-    assert [t[1] for t in tv if t[0].endswith("tvOS-26-4")] == ["type.Apple-TV-4K-(3rd-generation)", "type.Apple-TV-4K"]
+    assert [t[1] for t in tv if t[0].endswith("tvOS-26-4")] == [
+        "type.Apple-TV-4K-(3rd-generation)",
+        "type.Apple-TV-4K",
+    ]
     assert not any("1080p" in t[1] for t in tv)
 
     # a refused pair moves on to the next; none accepted fails
@@ -288,18 +486,34 @@ def _self_test() -> None:
         return None if (devtype, runtime) in refused else "UDID-1"
 
     assert make_simulator("iphone", "t", create, listing) == "UDID-1"
-    assert made == [("type.iPhone-17", "com.apple.CoreSimulator.SimRuntime.iOS-27-0"),
-                    ("type.iPhone-16", "com.apple.CoreSimulator.SimRuntime.iOS-27-0")]
+    assert made == [
+        ("type.iPhone-17", "com.apple.CoreSimulator.SimRuntime.iOS-27-0"),
+        ("type.iPhone-16", "com.apple.CoreSimulator.SimRuntime.iOS-27-0"),
+    ]
     assert make_simulator("ipad", "t", lambda *_: None, listing) is None
     assert make_simulator("appletv", "t", create, {"runtimes": []}) is None
 
-    good = {"DTSDKName": "iphoneos27.2", "DTPlatformVersion": "27.2", "DTXcode": "2720", "DTXcodeBuild": "27B52"}
+    good = {
+        "DTSDKName": "iphoneos27.2",
+        "DTPlatformVersion": "27.2",
+        "DTXcode": "2720",
+        "DTXcodeBuild": "27B52",
+    }
     assert sdk_problems(good, 27) == []
-    assert sdk_problems({**good, "DTSDKName": "macosx27.0", "DTPlatformVersion": "27.0"}, 27) == []
+    assert (
+        sdk_problems(
+            {**good, "DTSDKName": "macosx27.0", "DTPlatformVersion": "27.0"}, 27
+        )
+        == []
+    )
     assert sdk_problems({**good, "DTSDKName": "appletvos27.0"}, 27) == []
     old = {"DTSDKName": "iphoneos26.5", "DTPlatformVersion": "26.5", "DTXcode": "2650"}
     assert len(sdk_problems(old, 27)) == 3, sdk_problems(old, 27)
-    assert sdk_problems({}, 27) == ["DTSDKName missing", "DTPlatformVersion missing", "DTXcode missing"]
+    assert sdk_problems({}, 27) == [
+        "DTSDKName missing",
+        "DTPlatformVersion missing",
+        "DTXcode missing",
+    ]
 
     with tempfile.TemporaryDirectory() as tmp:
         archive = Path(tmp) / "app.xcarchive"

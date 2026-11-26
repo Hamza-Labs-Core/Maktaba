@@ -237,10 +237,13 @@ jobs:
   tvos:
     name: tvos (compile check; TestFlight in testflight.yml)
     needs: [guard]
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6.0.2
+
+      - name: Select released Xcode
+        run: python3 tools/apple/xcode.py select --min 27 --sdk appletvos
 
       # The Apple TV app is the "Maktaba TV" target of apps/apple/Maktaba.xcodeproj (on
       # MaktabaKit, the Apple apps' shared package): a simulator build, the same check

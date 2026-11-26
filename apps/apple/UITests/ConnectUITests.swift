@@ -13,7 +13,7 @@ final class ConnectUITests: XCTestCase {
         home = try MockHome()
         try home.start()
         app = XCUIApplication()
-        app.launchArguments = ["-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset",
+        app.launchArguments = ["-maktaba-cast", "off", "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset",
                                "-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         app.launch()
         dismissWalkthrough()

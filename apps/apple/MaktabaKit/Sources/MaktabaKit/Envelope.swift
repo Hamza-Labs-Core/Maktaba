@@ -199,7 +199,7 @@ public enum Envelope {
         }
     }
 
-    nonisolated(unsafe) private static let mkTime: DateFormatter = {
+    private static let mkTime: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd HH:mm:ss Z"
@@ -330,7 +330,7 @@ public enum DeviceInfo {
         sysctlbyname("hw.model", nil, &size, nil, 0)
         var buf = [CChar](repeating: 0, count: max(size, 1))
         sysctlbyname("hw.model", &buf, &size, nil, 0)
-        return String(cString: buf)
+        return String(decoding: buf.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
         #else
         var u = utsname()
         uname(&u)

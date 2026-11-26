@@ -131,7 +131,6 @@ final class PlaybackPreferences {
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
         func bool(_ key: String, _ fallback: Bool) -> Bool { defaults.object(forKey: key) as? Bool ?? fallback }
         func value<T: RawRepresentable>(_ key: String, _ fallback: T) -> T where T.RawValue == String {
             defaults.string(forKey: key).flatMap(T.init(rawValue:)) ?? fallback
@@ -143,6 +142,7 @@ final class PlaybackPreferences {
         qualityWifi = value(Key.qualityWifi, StreamQuality.original)
         qualityMobile = value(Key.qualityMobile, StreamQuality.p720)
         resumeWithoutAsking = bool(Key.resumeWithoutAsking, true)
+        self.defaults = defaults
     }
 
     /// The quality for the network in use: `expensive` is mobile data (or a hotspot).

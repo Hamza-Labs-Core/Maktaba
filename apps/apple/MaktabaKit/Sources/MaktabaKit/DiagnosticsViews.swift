@@ -178,7 +178,7 @@ struct CrashReportsModifier: ViewModifier {
 
     private func send() async {
         guard let home = session.current, let client = session.client, let outbox = CrashOutbox.shared else { return }
-        await outbox.flush(to: client, home: home)
+        _ = await outbox.flush(to: client, home: home)
         if !asking, CrashConsent().answer(home) != nil, CrashConsent.questionAllowed() { notice = outbox.notice() }
     }
 }

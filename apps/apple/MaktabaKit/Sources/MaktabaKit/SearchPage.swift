@@ -1,5 +1,4 @@
 import Foundation
-import MaktabaKit
 import Observation
 
 /// Search's state (FR-19, FR-20): what is typed, the suggestions for it, the recent searches,

@@ -127,7 +127,7 @@ public final class LiveRelayLoader: NSObject, AVAssetResourceLoaderDelegate, @un
     public func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
                                shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
         guard let url = loadingRequest.request.url, Self.unwrap(url) != nil else { return false }
-        nonisolated(unsafe) let request = loadingRequest
+        let request = loadingRequest
         Task { [queue] in
             do {
                 let data = try await self.playlist(for: url)

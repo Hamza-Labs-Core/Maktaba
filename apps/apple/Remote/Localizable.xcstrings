@@ -1,6 +1,17 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "• %@" : {
+      "comment" : "A bullet followed by a review reason",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "• %@"
+          }
+        }
+      }
+    },
     "%@ (%@)" : {
       "localizations" : {
         "ar" : {

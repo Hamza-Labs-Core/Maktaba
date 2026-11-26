@@ -306,7 +306,10 @@ struct CollectionsTab: View {
                         NavigationLink { CollectionPageView(library: library, collection: c).parentalFresh() } label: {
                             VStack(alignment: .leading) {
                                 VideoCard(id: c.posterVideoIDs.first ?? "", title: c.name)
-                                if let b = Self.badge(c) { Text(b).font(Theme.body(22)).foregroundStyle(Theme.gold) }
+                                if let b = Self.badge(c) {
+                                    Text(b).font(Theme.body(22)).foregroundStyle(Theme.gold)
+                                        .accessibilityIdentifier("collection.badge.\(c.id)")
+                                }
                             }
                         }
                         .buttonStyle(.borderless)

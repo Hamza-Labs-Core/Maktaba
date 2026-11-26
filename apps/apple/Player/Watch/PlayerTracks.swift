@@ -90,8 +90,8 @@ struct TrackChoice: Identifiable, Hashable {
     /// already has; `loadedSound` loads the ones it does not.
     static func sound(player: AVPlayer, item: AVPlayerItem) -> (codec: String?, audible: Bool) {
         let formats = enabledAudio(of: item).map { t in
-            // swiftlint:disable:next force_cast
-            t.formatDescriptions.map { CMFormatDescriptionGetMediaSubType($0 as! CMFormatDescription) }
+            guard case .loaded(let descriptions) = t.status(of: .formatDescriptions) else { return [FourCharCode]() }
+            return descriptions.map { CMFormatDescriptionGetMediaSubType($0) }
         }
         return (codec(of: formats), audible(player))
     }

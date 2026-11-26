@@ -143,7 +143,10 @@ struct ReviewWordView: View {
                 }
                 .buttonStyle(.bordered)
                 if noAudio { Text("Audio not available").foregroundStyle(.secondary) }
-                ForEach(f.reasons, id: \.self) { r in Text(verbatim: "• ") + Text(LocalizedStringKey(reasonWords(r))) }
+                ForEach(f.reasons, id: \.self) { r in
+                    let reason = Text(LocalizedStringKey(reasonWords(r)))
+                    Text("• \(reason)", comment: "A bullet followed by a review reason")
+                }
                 if f.isQuran, let v = f.verse { verse(v) }
                 candidates
                 TextField("Spelling", text: $edit)

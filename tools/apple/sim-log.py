@@ -19,11 +19,13 @@ the app at all). It is said, with what CoreSimulator logged on the host meanwhil
 (NAME-coresimulator.log), and the simulator is booted again to read its log: the log is kept
 on the simulator's disk, so every launch's lines are still there.
 """
+
 from __future__ import annotations
 
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -32,10 +34,12 @@ import time
 APP = 'subsystem BEGINSWITH "com.hamzalabs.maktaba"'
 # the system's word on an app process ending: RunningBoard's exit and termination lines,
 # jetsam and the watchdog, and the crash reporter
-ENDS = ('(eventMessage CONTAINS[c] "maktaba") AND (process == "runningboardd" OR process == "SpringBoard" '
-        'OR process == "ReportCrash" OR process == "osanalyticshelper" OR process == "launchd") AND '
-        '(eventMessage CONTAINS[c] "exit" OR eventMessage CONTAINS[c] "terminat" OR eventMessage CONTAINS[c] "jetsam" '
-        'OR eventMessage CONTAINS[c] "watchdog" OR eventMessage CONTAINS[c] "crash" OR eventMessage CONTAINS[c] "kill")')
+ENDS = (
+    '(eventMessage CONTAINS[c] "maktaba") AND (process == "runningboardd" OR process == "SpringBoard" '
+    'OR process == "ReportCrash" OR process == "osanalyticshelper" OR process == "launchd") AND '
+    '(eventMessage CONTAINS[c] "exit" OR eventMessage CONTAINS[c] "terminat" OR eventMessage CONTAINS[c] "jetsam" '
+    'OR eventMessage CONTAINS[c] "watchdog" OR eventMessage CONTAINS[c] "crash" OR eventMessage CONTAINS[c] "kill")'
+)
 
 
 def state(devices: dict, udid: str) -> str | None:
@@ -51,16 +55,51 @@ def crash_reports(folder: pathlib.Path, since: float) -> list[pathlib.Path]:
     """The Maktaba apps' crash reports in `folder` made at or after `since` (seconds)."""
     if not folder.is_dir():
         return []
-    return sorted(p for p in folder.iterdir()
-                  if p.is_file() and "maktaba" in p.name.lower() and p.suffix in (".ips", ".crash")
-                  and p.stat().st_mtime >= since)
+    return sorted(
+        p
+        for p in folder.iterdir()
+        if p.is_file()
+        and "maktaba" in p.name.lower()
+        and p.suffix in (".ips", ".crash")
+        and p.stat().st_mtime >= since
+    )
+
+
+def crash_pid(report: pathlib.Path) -> int | None:
+    """The process ID from either a modern .ips or a legacy text crash report."""
+    text = report.read_text(errors="replace")
+    if report.suffix == ".ips":
+        try:
+            metadata, _, body = text.partition("\n")
+            payload = json.loads(body if body.strip() else metadata)
+            pid = payload.get("pid") if isinstance(payload, dict) else None
+            return pid if isinstance(pid, int) and not isinstance(pid, bool) else None
+        except ValueError:
+            return None
+    process = re.search(r"^Process:.*\[(\d+)\]", text, re.MULTILINE)
+    return int(process.group(1)) if process else None
+
+
+def termination_crashes(
+    log: pathlib.Path, reports: list[pathlib.Path]
+) -> list[pathlib.Path]:
+    if not reports or not log.is_file():
+        return []
+    pids = {
+        int(pid)
+        for pid in re.findall(
+            r"XCTest failed to terminate the app \(pid (\d+)\)",
+            log.read_text(errors="replace"),
+        )
+    }
+    return [report for report in reports if crash_pid(report) in pids]
 
 
 def run(*args: str, out: pathlib.Path | None = None) -> int:
     if out is None:
-        return subprocess.run(args).returncode
+        return subprocess.run(args, check=False).returncode
     with out.open("w") as f:
-        return subprocess.run(args, stdout=f).returncode
+        return subprocess.run(args, stdout=f, check=False).returncode
 
 
 def made_at(udid: str) -> float:
@@ -75,39 +114,97 @@ def made_at(udid: str) -> float:
 def main(udid: str, results: pathlib.Path, name: str) -> int:
     results.mkdir(parents=True, exist_ok=True)
     since = made_at(udid)
-    listed = subprocess.run(["xcrun", "simctl", "list", "devices", "-j"], capture_output=True, text=True)
-    now = state(json.loads(listed.stdout or "{}"), udid) if listed.returncode == 0 else None
+    listed = subprocess.run(
+        ["xcrun", "simctl", "list", "devices", "-j"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    now = (
+        state(json.loads(listed.stdout or "{}"), udid)
+        if listed.returncode == 0
+        else None
+    )
     if now is None:
         print(f"::warning::the simulator {udid} is gone: no log of the app to read")
         return 0
     if now != "Booted":
         minutes = max(1, int((time.time() - since) / 60) + 1)
-        print(f"::warning::the simulator had stopped ({now}) before its log was read: it stopped under the "
-              f"tests, CoreSimulator's lines are in {name}-coresimulator.log; booted again to read its log")
-        run("log", "show", "--style", "compact", "--info", "--last", f"{minutes}m",
-            "--predicate", 'subsystem BEGINSWITH "com.apple.CoreSimulator" OR process == "launchd_sim"',
-            out=results / f"{name}-coresimulator.log")
+        print(
+            f"::warning::the simulator had stopped ({now}) before its log was read: it stopped under the "
+            f"tests, CoreSimulator's lines are in {name}-coresimulator.log; booted again to read its log"
+        )
+        run(
+            "log",
+            "show",
+            "--style",
+            "compact",
+            "--info",
+            "--last",
+            f"{minutes}m",
+            "--predicate",
+            'subsystem BEGINSWITH "com.apple.CoreSimulator" OR process == "launchd_sim"',
+            out=results / f"{name}-coresimulator.log",
+        )
         run("xcrun", "simctl", "bootstatus", udid, "-b")
-    run("xcrun", "simctl", "spawn", udid, "log", "show", "--style", "compact", "--info", "--debug",
-        "--predicate", APP, out=results / f"{name}-app.log")
-    run("xcrun", "simctl", "spawn", udid, "log", "show", "--style", "compact", "--info",
-        "--predicate", ENDS, out=results / f"{name}-ends.log")
-    reports = crash_reports(pathlib.Path.home() / "Library/Logs/DiagnosticReports", since)
+    app_log = ("log", "show", "--style", "compact", "--info", "--debug")
+    run(
+        "xcrun",
+        "simctl",
+        "spawn",
+        udid,
+        *app_log,
+        "--predicate",
+        APP,
+        out=results / f"{name}-app.log",
+    )
+    run(
+        "xcrun",
+        "simctl",
+        "spawn",
+        udid,
+        "log",
+        "show",
+        "--style",
+        "compact",
+        "--info",
+        "--predicate",
+        ENDS,
+        out=results / f"{name}-ends.log",
+    )
+    reports = crash_reports(
+        pathlib.Path.home() / "Library/Logs/DiagnosticReports", since
+    )
     if reports:
         crashes = results / f"{name}-crashes"
         crashes.mkdir(exist_ok=True)
         for p in reports:
             shutil.copy2(p, crashes / p.name)
-        print(f"::warning::{len(reports)} crash report(s) of the app: {', '.join(p.name for p in reports)} "
-              f"(kept in {name}-crashes)")
+        print(
+            f"::warning::{len(reports)} crash report(s) of the app: {', '.join(p.name for p in reports)} "
+            f"(kept in {name}-crashes)"
+        )
     run("xcrun", "simctl", "shutdown", udid)
     run("xcrun", "simctl", "delete", udid)
-    return 0
+    failed = termination_crashes(results / f"{name}-xcodebuild.log", reports)
+    for report in failed:
+        print(
+            f"::error::app pid {crash_pid(report)} crashed during the XCTest termination check ({report.name})"
+        )
+    return int(bool(failed))
 
 
 def self_test() -> int:
     import tempfile
-    devices = {"devices": {"iOS-27-2": [{"udid": "A", "state": "Booted"}, {"udid": "B", "state": "Shutdown"}]}}
+
+    devices = {
+        "devices": {
+            "iOS-27-2": [
+                {"udid": "A", "state": "Booted"},
+                {"udid": "B", "state": "Shutdown"},
+            ]
+        }
+    }
     assert state(devices, "A") == "Booted"
     assert state(devices, "B") == "Shutdown"
     assert state(devices, "C") is None
@@ -122,6 +219,17 @@ def self_test() -> int:
         os.utime(old, (1000, 1000))
         found = crash_reports(folder, 2000)
         assert found == [new], found
+        new.write_text('{}\n{"pid": 123}')
+        text = text.with_suffix(".crash")
+        text.write_text("Process: Maktaba Player [124]\n")
+        assert crash_pid(text) == 124
+        other.write_text('{"pid": true}')
+        assert crash_pid(other) is None
+        log = folder / "xcodebuild.log"
+        log.write_text(
+            "::warning::XCTest failed to terminate the app (pid 123) in its 60 s"
+        )
+        assert termination_crashes(log, [new, text]) == [new]
         assert crash_reports(folder / "none", 0) == []
     print("sim-log: self-test passed")
     return 0
