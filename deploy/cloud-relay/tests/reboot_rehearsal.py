@@ -271,7 +271,8 @@ def nothing_serves() -> None:
     out = on("docker ps --filter label=com.docker.compose.project=maktaba-relay --format '{{.Label \"com.docker.compose.service\"}}'")[1].split()
     assert not set(out) & {"maktaba-cloud", "api", "worker", "caddy"}, f"a refused release runs: {out}"
     assert on(f"curl -sk --max-time 5 --resolve {rr.APP}:443:127.0.0.1 https://{rr.APP}/", check=False)[0] != 0, "a refused release answers"
-    assert status() == "committed: none", status()
+    st = status()
+    assert st.splitlines()[0] == "committed: none" and "skips starting" in st, st
 
 
 def psql(sql: str) -> str:

@@ -47,6 +47,7 @@ failed, and people ask again.
 | `driver` | `log` (default) or `resend` |
 | `from`, `reply_to` | the sender, on the domain verified at Resend; where answers go |
 | `resend_api_key_path` | the key's file, read at each send (a new key needs no restart). Or env `MAKTABA_CLOUD_RESEND_API_KEY_FILE`, or the key itself in `MAKTABA_CLOUD_RESEND_API_KEY`. A key written in `cloud.toml` is refused |
+| `resend_webhook_secret_path` | Resend's Svix signing secret (`whsec_...`) for `POST /v1/mail/webhook/resend`, read on each delivery (no restart on rotation). Or env `MAKTABA_CLOUD_RESEND_WEBHOOK_SECRET_FILE` / `MAKTABA_CLOUD_RESEND_WEBHOOK_SECRET`. Unset or missing file: the webhook answers 404. Written in `cloud.toml`: refused |
 | `allow_recipients` | the only addresses and `@domain`s this deployment writes to; empty is everyone. Another address's mail is written and given up (`suppressed`) |
 | `subject_prefix` | before each subject (`[QA]`) |
 | `daily_limit`, `monthly_limit` | mails sent in 24 hours and in 30 days (80 and 2,700) |
@@ -187,6 +188,20 @@ its EU-U.S. Data Privacy Framework listing. What we keep is above (How a mail is
 privacy page, `CurrentPolicy()`, the record of processing and the DPA template say the same; a
 change of provider, region or plan changes them in the same pull request.
 
-Not built: Resend's bounce and complaint webhook
-([#1714](https://github.com/Hamza-Labs-Core/Maktaba/issues/1714)). Until then Resend's dashboard
-shows them, and it stops sending to an address that bounced or complained by itself.
+## Bounce and complaint webhook
+
+The api listens at `POST /v1/mail/webhook/resend` for Resend's delivery events (`email.bounced`,
+`email.complained`, `email.delivery_delayed`, `email.failed`):
+
+- Svix headers (`svix-id`, `svix-timestamp`, `svix-signature`) are verified against the signing
+  secret in `secrets/resend-webhook.key` (`RESEND_WEBHOOK_SECRET` per GitHub environment, handed
+  over on stdin like `RESEND_API_KEY`). Without a secret, the route answers 404.
+- Events are idempotent by `svix-id` and match `mail_outbox` by Resend's message id (`provider_id`),
+  never storing recipient addresses in the clear.
+- On a hard bounce (`Permanent`) or a complaint, the address's keyed hash is recorded in
+  `mail_suppressions`: future sign-up and notice mails to that hash are marked `suppressed`, while
+  password resets are still attempted so nobody is locked out.
+- When 30-day rates near Resend's limits (hard bounces 3 % toward 4 %, complaints 0.06 % toward
+  0.08 %), the api logs `mail_bounce_rate_high` / `mail_complaint_rate_high` (`maktaba_errors_total`
+  and `docs/runbooks/cloud/mail-reputation.md`) and `maktaba-cloud mail status` reports the counts,
+  rates, and active alerts.

@@ -52,6 +52,9 @@ WATCH_SECONDS="${WATCH_SECONDS:-45}"
 # how long a deploy may go without a word from its workflow
 LEASE_SECONDS="${LEASE_SECONDS:-1200}"
 LOCK_WAIT="${LOCK_WAIT:-60}"
+# how long a single docker daemon probe waits before assuming docker is frozen (SIGSTOP)
+DOCKER_INFO_TIMEOUT="${DOCKER_INFO_TIMEOUT:-15}"
+DOCKER_READY_SECONDS="${DOCKER_READY_SECONDS:-120}"
 APP=(maktaba-cloud api worker)
 SET=(.env docker-compose.yml Caddyfile cloud.toml cloud.toml.template secrets ops)
 
@@ -78,12 +81,15 @@ begun() {
 }
 env_of() { grep -E "^$1=" "$DEPLOY_DIR/.env" 2>/dev/null | sed -n 1p | cut -d= -f2- || true; }
 
+# bounded docker info probe so a frozen dockerd (SIGSTOP) fails promptly instead of hanging 50 min
+docker_info() { timeout -k 5 "$DOCKER_INFO_TIMEOUT" docker info "$@"; }
+
 # a service's containers by their labels, whatever the compose file says by now; -a: the ones that do
 # not run too. It fails when docker does not answer.
 containers() { # containers [-a] SERVICE
 	local all=()
 	if [ "$1" = -a ]; then all=(-a); shift; fi
-	docker ps -q ${all[@]+"${all[@]}"} --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1"
+	timeout -k 5 "$DOCKER_INFO_TIMEOUT" docker ps -q ${all[@]+"${all[@]}"} --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1"
 }
 running() { local ids; ids="$(containers "$1" 2>/dev/null)" && [ -n "$ids" ]; }
 # stop_all SERVICE...: stopped and gone, and seen to be. Gone: docker starts at boot what it had not
@@ -122,9 +128,9 @@ stop_all() {
 
 # docker answers again (it was restarted under us): the daemon, and what it starts by itself
 docker_ready() {
-	local end=$((SECONDS + 120))
+	local end=$((SECONDS + DOCKER_READY_SECONDS))
 	while [ "$SECONDS" -lt "$end" ]; do
-		if docker info >/dev/null 2>&1; then sleep 5; return 0; fi
+		if docker_info >/dev/null 2>&1; then sleep 5; return 0; fi
 		sleep 2
 	done
 	return 1
@@ -137,12 +143,12 @@ docker_ready() {
 # with it, this included: it can be run twice.)
 heal_docker() {
 	local root id pid said half=() end
-	root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 0
-	for id in $(docker ps -aq --no-trunc --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null); do
-		if said="$(docker inspect --type container "$id" 2>&1 >/dev/null)"; then continue; fi
+	root="$(docker_info --format '{{.DockerRootDir}}' 2>/dev/null)" || return 0
+	for id in $(timeout -k 5 "$DOCKER_INFO_TIMEOUT" docker ps -aq --no-trunc --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null); do
+		if said="$(timeout -k 5 "$DOCKER_INFO_TIMEOUT" docker inspect --type container "$id" 2>&1 >/dev/null)"; then continue; fi
 		# its own words alone: any other failure says nothing about the container
 		case "$said" in *"No such container"* | *"no such container"* | *"no such object"*) ;; *) continue ;; esac
-		if [ -n "$(docker ps -aq --no-trunc --filter "id=$id" 2>/dev/null)" ]; then half+=("$id"); fi
+		if [ -n "$(timeout -k 5 "$DOCKER_INFO_TIMEOUT" docker ps -aq --no-trunc --filter "id=$id" 2>/dev/null)" ]; then half+=("$id"); fi
 	done
 	[ "${#half[@]}" -gt 0 ] || return 0
 	log "docker lists ${#half[@]} container(s) that were half removed when the power went: out of its way, and docker starts again"
@@ -327,7 +333,7 @@ cmd_begin() {
 	esac
 	[ ! -f "$STATE/held" ] || { cat "$STATE/held" >&2; die "the node is held: a person decides first (maktaba-rollout unhold)"; }
 	[ ! -d "$STATE/pending" ] || die "begin: a deploy is under way ($(pending_id)): nothing was changed"
-	docker info >/dev/null 2>&1 || die "begin: docker does not answer: nothing was changed"
+	docker_info >/dev/null 2>&1 || die "begin: docker does not answer: nothing was changed"
 	heal_docker || die "begin: docker does not answer: nothing was changed"
 	finish_commit
 	# a name used before would be answered with that deploy's output
@@ -350,7 +356,7 @@ cmd_begin() {
 	# every image of the new stack, before any file of the running one changes
 	tmp="$(mktemp -d)"
 	# shellcheck disable=SC2064  # expands now, on purpose
-	trap "rm -rf '$tmp'" EXIT
+	trap "rm -rf '$tmp' '$STATE/pending.new'" EXIT
 	(
 		umask 077
 		# what compose only needs to read the file (setup.sh makes the real ones, which win)
@@ -430,6 +436,7 @@ cmd_begin() {
 	# the last deploy's words, only now: a begin that refused before this left them where they are
 	rm -rf "$STATE/last-logs.old"
 	[ ! -d "$STATE/last-logs" ] || mv "$STATE/last-logs" "$STATE/last-logs.old"
+	[ "$first" = yes ] || rm -f "$STATE/no-release"
 	sync
 	mv "$STATE/pending.new" "$STATE/pending"
 	sync
@@ -598,6 +605,7 @@ not_now() { WHY_NOT="$1"; err "$1"; return 1; }
 # one pass at going back: 0 done, 1 not now (WHY_NOT), 2 never (WHY_NOT)
 restore_once() {
 	local added rc release=()
+	docker_info >/dev/null 2>&1 || { not_now "docker does not answer"; return 1; }
 	# the migrations this deploy applied (by apply, or by a role that started on its own), newest
 	# first; once, not again after a crash further on
 	if [ ! -f "$STATE/pending/settled" ]; then
@@ -735,7 +743,7 @@ cmd_job() {
 	(umask 077; mkdir -p "$STATE/jobs") || die "job: the state folder can't be written"
 	if mkdir "$dir" 2>/dev/null; then
 		if ! : > "$dir/log" || ! systemd-run --quiet --collect --unit="$unit" --property=RuntimeMaxSec=3000 --property=KillMode=mixed \
-			--setenv=DEPLOY_DIR="$DEPLOY_DIR" --setenv=WATCH_SECONDS="$WATCH_SECONDS" --setenv=LEASE_SECONDS="$LEASE_SECONDS" \
+			--setenv=DEPLOY_DIR="$DEPLOY_DIR" --setenv=WATCH_SECONDS="$WATCH_SECONDS" --setenv=LEASE_SECONDS="$LEASE_SECONDS" --setenv=DOCKER_INFO_TIMEOUT="$DOCKER_INFO_TIMEOUT" --setenv=DOCKER_READY_SECONDS="$DOCKER_READY_SECONDS" \
 			--setenv=HOME="${HOME:-/root}" "$SELF" run-job "$dir" "$cmd" "$id"; then
 			rm -rf "$dir"
 			die "job: $cmd could not be started"
@@ -823,6 +831,7 @@ cmd_unhold() {
 	# a first release that was refused starts for nobody: unless a person started it by now
 	if [ "$runs" = yes ]; then rm -f "$STATE/no-release"
 	elif [ -f "$STATE/pending/first" ]; then touch "$STATE/no-release"
+	elif [ -d "$STATE/pending" ]; then rm -f "$STATE/no-release"
 	fi
 	if [ -d "$STATE/pending" ]; then
 		rm -rf "$STATE/held-set"
@@ -839,6 +848,10 @@ cmd_status() {
 	if [ -f "$STATE/held" ]; then cat "$STATE/held"; return 0; fi
 	if [ -d "$STATE/pending" ]; then echo "pending: deploy $(pending_id) began and is neither committed nor rolled back"; return 0; fi
 	echo "committed: $(cat "$STATE/committed" 2>/dev/null || echo none)"
+	if [ -f "$STATE/no-release" ] && [ ! -f "$STATE/committed" ]; then
+		echo "no release was ever committed here and the last deploy failed: maktaba-relay.service skips starting the refused release (also by hand and at boot)."
+		echo "deploy a release, or start it on purpose: rm -f $STATE/no-release && systemctl start maktaba-relay (or docker compose --env-file .env up -d in $DEPLOY_DIR)"
+	fi
 }
 
 # begin alone: an earlier deploy that was cut off is undone first, as a unit of its own (this

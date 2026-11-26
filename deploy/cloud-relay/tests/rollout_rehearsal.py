@@ -138,6 +138,11 @@ MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
     "boot-never-waits": ("ops/rollout.sh", r"flock -w \"\$\{BOOT_WAIT:-30\}\" 9", "flock -n 9", ["a boot waits for the watch"]),
     "half-removed": ("ops/rollout.sh", r"heal_docker\(\) \{\n", "heal_docker() {\n\treturn 0\n", []),
     "downgrades": ("ops/rollout.sh", r"\[ \"\$now\" -lt \"\$was\" \]", "false", ["an older release"]),
+    "begin-no-heal": ("ops/rollout.sh", r"heal_docker \|\| die \"begin: docker does not answer: nothing was changed\"", "true", ["begin heals a half-removed container"]),
+    "boot-no-stop-held": ("ops/rollout.sh", r"(cmd_boot\(\) \{\n\tif \[ -f \"\$STATE/held\" \]; then\n\t\t)stop_held \|\| true", r"\1true", ["boot stops a held node without the watch"]),
+    "no-docker-info-timeout": ("ops/rollout.sh", r"docker_info\(\) \{ timeout -k 5 \"\$DOCKER_INFO_TIMEOUT\" docker info \"\$@\"; \}", 'docker_info() { docker info "$@"; }', ["a frozen docker daemon during rollback"]),
+    "pending-new-left": ("ops/rollout.sh", r"trap \"rm -rf '\$tmp' '\$STATE/pending\.new'\" EXIT", "trap \"rm -rf '$tmp'\" EXIT", ["a release that stops being ready"]),
+    "unhold-stopped-first": ("ops/rollout.sh", r"elif \[ -d \"\$STATE/pending\" \]; then rm -f \"\$STATE/no-release\"", "elif false; then true", ["unhold after a failed first deploy"]),
 }
 
 
@@ -146,7 +151,7 @@ def mutate(src: Path) -> None:
         return
     file, pattern, instead, _ = MUTATIONS[MUTATE]
     text = (src / file).read_text()
-    out, n = re.subn(pattern, lambda _m: instead, text, flags=re.S if "\\n" in pattern and ".*?" in pattern else 0)
+    out, n = re.subn(pattern, lambda m: m.expand(instead), text, flags=re.S if "\\n" in pattern else 0)
     assert n >= 1, f"{MUTATE}: nothing to take out of {file}"
     (src / file).write_text(out)
     sh(f"bash -n {src / file}")
@@ -452,7 +457,8 @@ def failed_first_stays_down() -> str:
     nothing_serves()
     code, out = reboot()
     nothing_serves()
-    assert "committed: none" in sh(f"{ROLLOUT} status")
+    st = sh(f"{ROLLOUT} status")
+    assert "committed: none" in st and "skips starting" in st and "start it on purpose" in st, st
     dc("up -d --wait postgres </dev/null")
     psql("INSERT INTO users (email, email_verified) VALUES ('first@example.org', true)")
     code, out = begin("a")  # it checks that a backup was taken
@@ -717,7 +723,23 @@ def unhold_after_a_failed_first() -> str:
         assert code == 0, out
         ready()
         same(before, snapshot())
-    return "the node is as the person left it, also at boot"
+        # Non-first held deploy unheld while stack is stopped: next begin must not treat it as first deploy.
+        (STATE / "no-release").touch()
+        (STATE / "pending").mkdir(exist_ok=True)
+        (STATE / "held").write_text("HELD for the rehearsal\n")
+        dc("stop maktaba-cloud api worker")
+        try:
+            sh(f"{ROLLOUT} unhold")
+            assert not (STATE / "no-release").exists(), "unhold of non-first deploy left no-release behind"
+            code, out = begin("b")
+            assert code == 0 and "a first deploy" not in out, out[-2000:]
+            code, out = rollback()
+            assert code == 0 and "serves again" in out, out[-2000:]
+            ready()
+            same(before, snapshot())
+        finally:
+            sh(f"rm -rf {STATE}/held-set")
+    return "the node is as the person left it, also at boot and when stopped before begin"
 
 
 def first_with_a_role_down() -> str:
@@ -832,6 +854,7 @@ def unhealthy() -> str:
         assert code != 0 and kept.exists(), "a begin that refused moved it"
     code, out = begin("b", extra=stand_in('*"exec -T postgres pg_restore"*) exit 1 ;;'))
     assert code != 0 and "backup" in out and kept.exists(), f"a begin that refused moved it: {out[-800:]}"
+    assert not (STATE / "pending.new").exists(), "failed begin left pending.new behind"
     code, out = begin("b")
     assert code == 0 and (STATE / "last-logs.old/maktaba-cloud.log").exists() and not kept.exists(), out[-1500:]
     code, out = rollback()
@@ -1597,6 +1620,76 @@ def held(release: str, says: str) -> str:
     return "stopped, said why, refused deploys and boots until a person decided"
 
 
+def begin_heals_half_removed() -> str:
+    """A half-removed container present before begin: begin's heal_docker clears it so the deploy begins."""
+    before = snapshot()
+    c = dc("ps -q --no-trunc worker").strip()
+    assert len(c) == 64, c
+    sh(f"cp -a /var/lib/docker/containers/{c} /root/half-begin && docker rm -f {c} >/dev/null && "
+       f"mv /root/half-begin /var/lib/docker/containers/{c} && sync && systemctl restart docker")
+    wait_for("docker lists the half-removed container", lambda: c in sh("docker ps -aq --no-trunc"), 60)
+    code, out = begin("b")
+    assert code == 0 and "half removed" in out, out[-2500:]
+    code, out = rollback()
+    assert code == 0, out[-2500:]
+    not_pending()
+    ready()
+    same(before, snapshot())
+    return "begin healed docker and proceeded"
+
+
+def boot_stops_held_without_watch() -> str:
+    """boot stops a held node's leftover containers on its own, without the watch timer running."""
+    before = snapshot()
+    sh("systemctl stop maktaba-rollout-watch.timer maktaba-rollout-watch.service")
+    try:
+        (STATE / "held").write_text(
+            "HELD 2026-11-25T00:00:00Z: rehearsal\n"
+            "NOT ALL of the relay, api and worker could be stopped yet (the node goes on trying): see docker ps. The database is untouched.\n"
+        )
+        (STATE / "not-stopped").write_text("maktaba-cloud\napi\nworker\n")
+        assert app_running(), "expected running containers before boot"
+        code, out = rc(f"{ROLLOUT} boot")
+        assert code == 1, f"held boot should refuse start: {code} {out}"
+        assert not app_running(), f"boot left held containers running: {app_running()}"
+        assert not (STATE / "not-stopped").exists() and "are stopped." in sh(f"{ROLLOUT} status")
+    finally:
+        (STATE / "held").unlink(missing_ok=True)
+        (STATE / "not-stopped").unlink(missing_ok=True)
+        sh("systemctl start maktaba-rollout-watch.timer")
+        dc("up -d --wait </dev/null")
+        ready()
+    same(before, snapshot())
+    return "boot stopped the held stack without the watch"
+
+
+def frozen_docker_during_rollback() -> str:
+    """A SIGSTOP'd Docker daemon during rollback times out promptly and holds instead of hanging 50 minutes."""
+    before = snapshot()
+    code, out = deploy("b", "app b")
+    assert code == 0, out[-3000:]
+    pid = int(sh("systemctl show -p MainPID --value docker").strip())
+    assert pid > 1, pid
+    t0 = time.monotonic()
+    os.kill(pid, signal.SIGSTOP)
+    try:
+        code, out = rc(f"{ROLLOUT} rollback {ID}", env={"DOCKER_INFO_TIMEOUT": "2", "DOCKER_READY_SECONDS": "6"})
+    finally:
+        os.kill(pid, signal.SIGCONT)
+    took = time.monotonic() - t0
+    assert code != 0 and "HELD" in out and "NOT ALL" in out, f"{code} ({took:.0f}s): {out[-2000:]}"
+    assert took < 180, f"rollback hung for {took:.0f}s on frozen docker"
+    wait_for("the watch stops it after thaw", lambda: not app_running() and "are stopped." in sh(f"{ROLLOUT} status"), 180)
+    sh(f"{ROLLOUT} unhold")
+    code, out = deploy("a", "app a")
+    assert code == 0, out[-3000:]
+    commit()
+    sh(f"rm -rf {STATE}/held-set")
+    ready()
+    same(before, snapshot())
+    return f"timed out and held in {took:.0f} s, stopped after thaw"
+
+
 def backup_and_check() -> str:
     folder = Path("/var/backups/maktaba-cloud")
     aged = {}
@@ -1841,6 +1934,9 @@ def main() -> int:
         ("docker restarted during a rollback", docker_restarted_during_a_rollback),
         ("docker restarted while a command waits", docker_restarted_while_a_command_waits),
         ("a rollback without docker", rollback_without_docker),
+        ("a frozen docker daemon during rollback", frozen_docker_during_rollback),
+        ("boot stops a held node without the watch", boot_stops_held_without_watch),
+        ("begin heals a half-removed container", begin_heals_half_removed),
         ("an answer docker does not give", answer_docker_does_not_give),
         ("backups during a deploy", backups_during_a_deploy),
         ("two failed in a row, the schema kept", two_failed_in_a_row_with_a_kept_schema),

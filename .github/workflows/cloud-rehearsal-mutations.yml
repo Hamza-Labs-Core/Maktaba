@@ -77,6 +77,11 @@ jobs:
           - reserve-for-nothing
           - boot-never-waits
           - downgrades
+          - begin-no-heal
+          - boot-no-stop-held
+          - no-docker-info-timeout
+          - pending-new-left
+          - unhold-stopped-first
     steps:
       - uses: actions/checkout@v6.0.2
         with:

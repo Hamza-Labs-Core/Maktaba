@@ -123,6 +123,8 @@ driver = "log"
 # from                = "Maktaba <no-reply@maktaba.tv>"
 # reply_to            = "support@maktaba.tv"
 # resend_api_key_path = "/etc/maktaba/cloud/secrets/resend.key"
+# Resend's webhook signing secret (Svix whsec_*), for POST /v1/mail/webhook/resend; unset or missing file answers 404.
+# resend_webhook_secret_path = "/etc/maktaba/cloud/secrets/resend-webhook.key"
 # the only addresses and @domains to write to; empty is everyone
 # allow_recipients    = ["@maktaba.tv", "delivered@resend.dev"]
 # subject_prefix      = "[QA]"

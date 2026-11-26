@@ -9,12 +9,13 @@ import type { FormEvent } from "react";
 import { Badge } from "@ds/components/Badge/Badge";
 import { Button } from "@ds/components/Button/Button";
 import { Card } from "@ds/components/Card/Card";
+import { EmptyState } from "@ds/components/EmptyState/EmptyState";
 import { Input } from "@ds/components/Input/Input";
 import { Modal } from "@ds/components/Modal/Modal";
 import { Select } from "@ds/components/Select/Select";
 import { Textarea } from "@ds/components/Textarea/Textarea";
 import { useToast } from "@ds/components/Toast/Toast";
-import { api, fetchApi } from "../api";
+import { api, CloudApiError, fetchApi } from "../api";
 import { useI18n } from "@cloud-shared/i18n";
 import { Banner, LoadError, Loading, Page, useErrorMessage, useLoad } from "@cloud-shared/ui";
 import { ReasonDialog } from "./ReasonDialog";
@@ -174,6 +175,17 @@ export function AdminModeration() {
     setDecision(d);
   };
 
+  if (data.error instanceof CloudApiError && data.error.status === 404) {
+    return (
+      <Page title={t("admin.moderation.title")}>
+        <EmptyState
+          kind="first_run"
+          title={t("admin.moderation.broadcastOff")}
+          description={t("admin.moderation.broadcastOffBody")}
+        />
+      </Page>
+    );
+  }
   if (data.error != null) {
     return (
       <Page title={t("admin.moderation.title")}>

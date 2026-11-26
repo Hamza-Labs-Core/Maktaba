@@ -94,12 +94,23 @@ func (c mailCmd) status(ctx context.Context) error {
 			key = "missing"
 		}
 	}
+	webhook := "not set"
+	if _, err := c.Cfg.Mail.ResendWebhookSecret(); err == nil {
+		webhook = "set"
+	} else if !errors.Is(err, config.ErrMissing) {
+		webhook = "invalid"
+	}
+	out := map[string]any{
+		"driver": st.Driver, "delivers": st.Delivers, "recipients": st.Recipients,
+		"api_key": key, "webhook": webhook,
+		"limits": map[string]int{"day": c.Cfg.Mail.DailyLimit, "month": c.Cfg.Mail.MonthlyLimit}, "mails": counts,
+	}
+	if len(counts.Events.Alerts) > 0 {
+		out["alerts"] = counts.Events.Alerts
+	}
 	enc := json.NewEncoder(c.Out)
 	enc.SetIndent("", "  ")
-	return enc.Encode(map[string]any{
-		"driver": st.Driver, "delivers": st.Delivers, "recipients": st.Recipients, "api_key": key,
-		"limits": map[string]int{"day": c.Cfg.Mail.DailyLimit, "month": c.Cfg.Mail.MonthlyLimit}, "mails": counts,
-	})
+	return enc.Encode(out)
 }
 
 func (c mailCmd) test(ctx context.Context, lang string) error {

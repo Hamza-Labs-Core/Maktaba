@@ -243,9 +243,13 @@ would keep a copy off the machine; neither is set up.
 
 ## Monitoring
 
-The deploy's tests are the checks today. GitHub mails the owner when a run fails. The outside
-probe (`cloud-probe.yml`, story 50.10) is built for the pair's witness and stays off. Nothing
-watches the certificates or the nightly backup between deploys yet ([#1665](https://github.com/Hamza-Labs-Core/Maktaba/issues/1665)).
+A daily scheduled workflow (`.github/workflows/cloud-node-watch.yml`, `deploy/cloud-relay/ops/node-watch.py`)
+checks the production node between deploys: TLS expiry of `relay.maktaba.tv`, its wildcard
+(`tls-probe.relay.maktaba.tv`), `api.maktaba.tv` and `app.maktaba.tv` (failing under 14 days),
+`/readyz` of the relay and the api, and over SSH with the pinned host key (`NODE_KNOWN_HOSTS`) the
+newest backup's age (failing over 26 hours) and `ops/backup.sh --check`. GitHub mails the owner
+when a run fails. The outside probe (`cloud-probe.yml`, story 50.10) is built for the pair's
+witness and stays off.
 
 ## Sizing
 

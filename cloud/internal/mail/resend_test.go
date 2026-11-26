@@ -69,8 +69,12 @@ var testMail = Message{ID: "7c1e", To: "someone@example.test", Subject: "Hello\r
 
 func TestResendSendsOneMail(t *testing.T) {
 	f := newFake(t, ok200)
-	if err := f.driver().Send(context.Background(), testMail); err != nil {
+	id, err := f.driver().SendID(context.Background(), testMail)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if id != "49a3999c-0ce1-4ea6-ab68-afcd6dc2e794" {
+		t.Fatalf("id = %q", id)
 	}
 	r := f.reqs[0]
 	if r.Method != "POST" || r.URL.Path != "/emails" || r.Header.Get("Authorization") != "Bearer "+testKey ||

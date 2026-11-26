@@ -48,6 +48,13 @@ type Mailer interface {
 	Send(ctx context.Context, m Message) error
 }
 
+// IDMailer is a Mailer that returns the provider's message id on success so webhook events can
+// match the outbox row without storing a recipient address in the clear.
+type IDMailer interface {
+	Mailer
+	SendID(ctx context.Context, m Message) (string, error)
+}
+
 // ErrSuppressed: this deployment does not mail the recipient (Guard).
 var ErrSuppressed = errors.New("mail: this deployment does not mail the recipient")
 

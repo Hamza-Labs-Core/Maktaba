@@ -136,6 +136,22 @@ describe("moderation queue", () => {
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
 
+  it("shows a clean broadcasting-off state on 404 in English and Arabic", async () => {
+    stubFetch({
+      "POST /v1/staff/refresh": staffSession(),
+      [`GET ${Q}`]: [404, "404 page not found\n"],
+    });
+    renderAt("/moderation");
+    expect(await screen.findByText("Broadcasting is off.")).toBeInTheDocument();
+    expect(screen.getByText(/unavailable while home broadcasting is disabled/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Retry|Try again/i })).not.toBeInTheDocument();
+
+    localStorage.setItem("mkt:cloud:locale", "ar");
+    renderAt("/moderation");
+    expect(await screen.findByText("البث متوقف.")).toBeInTheDocument();
+    expect(screen.getByText(/قوائم الإشراف غير متاحة/)).toBeInTheDocument();
+  });
+
   it("lists the open notices and reports, the actions, the counter-notices and the strikes", async () => {
     stubFetch({ "POST /v1/staff/refresh": staffSession(), [`GET ${Q}`]: [200, queue()] });
     renderAt("/moderation");

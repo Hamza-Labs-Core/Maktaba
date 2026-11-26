@@ -444,6 +444,8 @@
   "admin.moderation.error.restore_window_closed": "لا يوجد إشعار مضاد مرّت أيام العمل العشرة على تقديمه دون دعوى، ولم يُسحب الإشعار.",
   "admin.moderation.error.notice_incomplete": "ينقص الإشعار عنصر مطلوب.",
   "admin.moderation.error.not_on_maktaba": "لا يشير أي من الروابط إلى قناة على مكتبة.",
+  "admin.moderation.broadcastOff": "البث متوقف.",
+  "admin.moderation.broadcastOffBody": "قوائم الإشراف غير متاحة ما دام البث المنزلي معطّلًا.",
   "admin.broadcast.version": "إصدار القائمة {version}، تغيّر في {at}",
   "admin.broadcast.unsigned": "لم يُضبط مفتاح توقيع البث: تُحفظ التغييرات لكن لا تصل قائمة موقّعة إلى الحافة ولا إلى المنازل.",
   "admin.broadcast.addTitle": "إيقاف بث",

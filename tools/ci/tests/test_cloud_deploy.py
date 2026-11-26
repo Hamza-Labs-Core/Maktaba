@@ -568,33 +568,57 @@ def test_the_mail_key_is_the_environments_and_goes_on_stdin_only() -> None:
     assert users[0][2], "the job is in the target's environment, whose own secret it is"
     step = named("deploy", "Set up the node")
     assert step["env"]["RESEND_API_KEY"] == "${{ secrets.RESEND_API_KEY }}"
+    assert step["env"]["RESEND_WEBHOOK_SECRET"] == "${{ secrets.RESEND_WEBHOOK_SECRET }}"
     run = step["run"]
     assert run.count("RESEND_API_KEY:-") == 2
-    for k in ("RESEND_API_KEY", "TURNSTILE_SECRET_KEY", "TURNSTILE_SITE_KEY"):
+    for k in ("RESEND_API_KEY", "RESEND_WEBHOOK_SECRET", "TURNSTILE_SECRET_KEY", "TURNSTILE_SITE_KEY"):
         assert step["env"][k] == "${{ secrets.%s }}" % k and f'"${{{k}:-}}"' in run[: run.index("ssh node")], k
     # on the node it is read from stdin: the remote command holds only the variable's name
     remote = run[run.index('ssh node "') :]
-    assert "$RESEND_API_KEY" not in remote and "$TURNSTILE_SECRET_KEY" not in remote and 'export RESEND_API_KEY=\\"\\$m\\"' in remote
+    assert "$RESEND_API_KEY" not in remote and "$RESEND_WEBHOOK_SECRET" not in remote and "$TURNSTILE_SECRET_KEY" not in remote
+    assert 'export RESEND_API_KEY=\\"\\$m\\"' in remote and 'export RESEND_WEBHOOK_SECRET=\\"\\$mw\\"' in remote
     for k in ("MAIL_ALLOW", "MAIL_SUBJECT_PREFIX", "MAIL_DAILY_LIMIT", "MAIL_MONTHLY_LIMIT"):
         assert k in remote, k
+
+
+WEBHOOK_SECRET = "whsec_dGVzdHdlYmhvb2tzZWNyZXQxMjM0NTY3ODkwMTIzNA=="
+
+
+def test_the_resend_webhook_secret_writes_secret_file_and_clears_when_empty(tmp_path: Path) -> None:
+    code, said, toml = mail_block(tmp_path, {"RESEND_API_KEY": KEY, "MAIL_ALLOW": "everyone", "RESEND_WEBHOOK_SECRET": WEBHOOK_SECRET})
+    assert code == 0, said
+    assert toml["resend_webhook_secret_path"] == "/etc/maktaba/cloud/secrets/resend-webhook.key"
+    secret_file = tmp_path / "secrets/resend-webhook.key"
+    assert secret_file.read_text() == WEBHOOK_SECRET and secret_file.stat().st_mode & 0o777 == 0o600
+    assert WEBHOOK_SECRET not in said + (tmp_path / ".env").read_text() + (tmp_path / "cloud.toml").read_text()
+    # omitted preserves existing secret file; empty string removes it
+    assert mail_block(tmp_path, {})[0] == 0 and secret_file.read_text() == WEBHOOK_SECRET
+    code, said, _ = mail_block(tmp_path, {"RESEND_WEBHOOK_SECRET": ""})
+    assert code == 0 and not secret_file.exists(), said
+    # malformed webhook secret is refused without printing its value
+    code, said, _ = mail_block(tmp_path, {"RESEND_WEBHOOK_SECRET": "not-a-whsec-secret"})
+    assert code != 0 and "RESEND_WEBHOOK_SECRET" in said and "not-a-whsec-secret" not in said
 
 
 def test_the_remote_setup_hands_the_key_over_whole(tmp_path: Path) -> None:
     """The step itself, with an ssh that runs the remote command here and a setup that says what it got."""
     (tmp_path / "ssh").write_text('#!/bin/sh\nshift\nexec bash -c "$1"\n')
     (tmp_path / "ssh").chmod(0o755)
-    (tmp_path / "rollout").write_text('#!/bin/sh\nprintf "%s|" "$RESEND_API_KEY" "${CF_API_TOKEN-unset}" "$MAIL_ALLOW" "$MAIL_SUBJECT_PREFIX" "$MAIL_DAILY_LIMIT" "$TURNSTILE_SECRET_KEY" "$TURNSTILE_SITE_KEY"\n')
+    (tmp_path / "rollout").write_text(
+        '#!/bin/sh\nprintf "%s|" "$RESEND_API_KEY" "$RESEND_WEBHOOK_SECRET" "${CF_API_TOKEN-unset}" "$MAIL_ALLOW" "$MAIL_SUBJECT_PREFIX" "$MAIL_DAILY_LIMIT" "$TURNSTILE_SECRET_KEY" "$TURNSTILE_SITE_KEY"\n'
+    )
     (tmp_path / "rollout").chmod(0o755)
     run = named("deploy", "Set up the node")["run"].replace("/usr/local/sbin/maktaba-rollout", str(tmp_path / "rollout"))
     for target in ("qa", "prod"):
         t = target_env(target)
         for key in (KEY, ""):
+            wh = WEBHOOK_SECRET if key else ""
             p = subprocess.run(["bash", "-c", run], capture_output=True, text=True, env={
                 "PATH": f"{tmp_path}:{os.environ['PATH']}", "TARGET": target, "DEPLOY_ID": "1", "RELAY_TLS": "dns", "CLOUD_REF": "c", "CADDY_REF": "c",
-                "RESEND_API_KEY": key, "TURNSTILE_SECRET_KEY": key and "0xsecret", "TURNSTILE_SITE_KEY": "0xsite", **t})
+                "RESEND_API_KEY": key, "RESEND_WEBHOOK_SECRET": wh, "TURNSTILE_SECRET_KEY": key and "0xsecret", "TURNSTILE_SITE_KEY": "0xsite", **t})
             assert p.returncode == 0, p.stderr
             said = p.stdout.splitlines()[-1]
-            assert said.endswith(f"{key}|unset|{t['MAIL_ALLOW']}|{t.get('MAIL_SUBJECT_PREFIX', '')}|{t['MAIL_DAILY_LIMIT']}|{key and '0xsecret'}|0xsite|"), said
+            assert said.endswith(f"{key}|{wh}|unset|{t['MAIL_ALLOW']}|{t.get('MAIL_SUBJECT_PREFIX', '')}|{t['MAIL_DAILY_LIMIT']}|{key and '0xsecret'}|0xsite|"), said
             level = "::warning::" if target == "prod" else "::notice::"
             for missing in ("has no RESEND_API_KEY", "has not both TURNSTILE_SECRET_KEY and TURNSTILE_SITE_KEY"):
                 assert (f"{level}the {target} environment {missing}" in p.stdout) == (key == ""), missing
@@ -658,3 +682,254 @@ def test_the_reset_links_hash_is_the_clouds() -> None:
     go = (ROOT / "cloud/internal/stores/tokens.go").read_text()
     assert "sha256.Sum256([]byte(raw))" in go and "hex.EncodeToString(sum[:])" in go
     assert re.search(r'PurposePasswordReset\s+= "password_reset"', go)
+
+
+# --- daily single-node watch (#1665)
+
+
+@pytest.fixture
+def node_watch() -> Any:
+    spec = importlib.util.spec_from_file_location("node_watch", NODE / "ops/node-watch.py")
+    assert spec and spec.loader
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    return m
+
+
+def test_node_watch_workflow_is_daily_pinned_and_leaves_cloud_probe_alone() -> None:
+    watch_path = ROOT / ".github/workflows/cloud-node-watch.yml"
+    watch_text = watch_path.read_text()
+    watch = yaml.safe_load(watch_text)
+    assert "schedule" in watch[True] and "workflow_dispatch" in watch[True]
+    for line in watch_text.splitlines():
+        m = re.search(r"uses:\s*(\S+)@(\S+)(.*)$", line)
+        if m:
+            assert re.fullmatch(r"[0-9a-f]{40}", m[2]) and re.search(r"#\s*v\d", m[3]), line
+    watch_steps = watch["jobs"]["watch"]["steps"]
+    names = [s.get("name", "") for s in watch_steps]
+    assert "StrictHostKeyChecking yes" in watch_text
+    assert "--min-cert-days 14" in watch_text and "--max-backup-hours 26" in watch_text
+    forget = next(s for s in watch_steps if s.get("name") == "Forget the key")
+    assert forget["if"] == "always()" and "node_key" in forget["run"]
+    assert names.index("Forget the key") == len(names) - 1
+    # cloud-probe.yml stays off (gated behind CLOUD_PROBE == 'true')
+    probe = yaml.safe_load((ROOT / ".github/workflows/cloud-probe.yml").read_text())
+    assert probe["jobs"]["probe"]["if"] == "vars.CLOUD_PROBE == 'true'"
+
+
+def test_node_watch_parses_backup_age_and_enforces_thresholds(node_watch: Any, tmp_path: Path) -> None:
+    now = 1_800_000_000.0
+    name, hours = node_watch.parse_newest_backup_age(f"{int(now - 3 * 3600)} /var/backups/maktaba-cloud/db-2026.dump\n", now=now)
+    assert name == "db-2026.dump" and abs(hours - 3.0) < 0.01
+    with pytest.raises(ValueError, match="no db-"):
+        node_watch.parse_newest_backup_age("", now=now)
+
+    # fresh backup passes, stale (> 26 h) fails, failing ssh fails
+    ssh = tmp_path / "ssh"
+    ssh.write_text(f'#!/bin/sh\necho "{int(__import__("time").time() - 3600)} /var/backups/maktaba-cloud/db-fresh.dump"\n')
+    ssh.chmod(0o755)
+    ok, detail = node_watch.check_backup_age([str(ssh)], 26.0)
+    assert ok and "db-fresh.dump" in detail, detail
+
+    ssh.write_text(f'#!/bin/sh\necho "{int(__import__("time").time() - 30 * 3600)} /var/backups/maktaba-cloud/db-old.dump"\n')
+    ok, detail = node_watch.check_backup_age([str(ssh)], 26.0)
+    assert not ok and "exceeds 26 h" in detail, detail
+
+    ssh.write_text('#!/bin/sh\necho "restore ok"\n')
+    ok, detail = node_watch.check_backup_restore([str(ssh)])
+    assert ok and detail == "restore ok"
+
+    ssh.write_text('#!/bin/sh\necho "bad dump" >&2; exit 1\n')
+    ok, detail = node_watch.check_backup_restore([str(ssh)])
+    assert not ok and "bad dump" in detail
+
+
+def test_node_watch_checks_cert_expiry_and_readyz(node_watch: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    import datetime
+
+    class FakeTLS:
+        def __init__(self, days: float) -> None:
+            self._days = days
+
+        def __enter__(self) -> "FakeTLS":
+            return self
+
+        def __exit__(self, *a: Any) -> None:
+            return None
+
+        def getpeercert(self) -> dict[str, Any]:
+            exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=self._days)
+            return {
+                "notAfter": exp.strftime("%b %d %H:%M:%S %Y GMT"),
+                "issuer": ((("organizationName", "Let's Encrypt"),),),
+            }
+
+    class FakeSock:
+        def __enter__(self) -> "FakeSock":
+            return self
+
+        def __exit__(self, *a: Any) -> None:
+            return None
+
+    class FakeCtx:
+        def __init__(self, days: float) -> None:
+            self._days = days
+
+        def wrap_socket(self, sock: Any, server_hostname: str) -> FakeTLS:
+            return FakeTLS(self._days)
+
+    monkeypatch.setattr(node_watch.socket, "create_connection", lambda *a, **k: FakeSock())
+    monkeypatch.setattr(node_watch, "tls_context", lambda ca="": FakeCtx(30.0))
+    ok, detail = node_watch.check_cert("relay.maktaba.tv", 14)
+    assert ok and "Let's Encrypt" in detail, detail
+
+    monkeypatch.setattr(node_watch, "tls_context", lambda ca="": FakeCtx(7.0))
+    ok, detail = node_watch.check_cert("relay.maktaba.tv", 14)
+    assert not ok and "below 14 days" in detail, detail
+
+    class FakeResp:
+        def __init__(self, status: int) -> None:
+            self.status = status
+
+        def __enter__(self) -> "FakeResp":
+            return self
+
+        def __exit__(self, *a: Any) -> None:
+            return None
+
+    monkeypatch.setattr(node_watch.urllib.request, "urlopen", lambda *a, **k: FakeResp(200))
+    ok, detail = node_watch.check_readyz("api.maktaba.tv")
+    assert ok and "200 OK" in detail
+
+    monkeypatch.setattr(node_watch.urllib.request, "urlopen", lambda *a, **k: FakeResp(503))
+    ok, detail = node_watch.check_readyz("api.maktaba.tv")
+    assert not ok and "503" in detail
+
+
+# --- single-node rollout minors (#1707, #1734)
+
+
+def run_rollout_fn(tmp: Path, body: str, extra_env: dict[str, str] | None = None) -> tuple[int, str]:
+    """Run functions from ops/rollout.sh in a temporary state/deploy dir with stubbed tools."""
+    src = (NODE / "ops/rollout.sh").read_text()
+    # strip the final main "$@" invocation so we can call functions directly without root/flock
+    head = src[: src.rindex('\nmain "$@"')]
+    (tmp / "bin").mkdir(exist_ok=True)
+    # portable POSIX timeout shim (supports `timeout -k K SECS CMD...`)
+    (tmp / "bin/timeout").write_text(
+        f"#!{sys.executable}\n"
+        "import subprocess, sys\n"
+        "args = sys.argv[1:]\n"
+        "if args[:1] == ['-k']: args = args[2:]\n"
+        "secs = float(args[0]); cmd = args[1:]\n"
+        "try:\n"
+        "    sys.exit(subprocess.run(cmd, timeout=secs).returncode)\n"
+        "except subprocess.TimeoutExpired:\n"
+        "    sys.exit(124)\n"
+    )
+    (tmp / "bin/timeout").chmod(0o755)
+    if sys.platform == "darwin":
+        (tmp / "bin/mv").write_text(
+            "#!/bin/sh\n"
+            'if [ "${1:-}" = -T ]; then shift; fi\n'
+            'exec /bin/mv "$@"\n'
+        )
+        (tmp / "bin/mv").chmod(0o755)
+        (tmp / "bin/sed").write_text(
+            "#!/bin/sh\n"
+            'if [ "${1:-}" = -i ]; then shift; exec /usr/bin/sed -i "" "$@"; fi\n'
+            'exec /usr/bin/sed "$@"\n'
+        )
+        (tmp / "bin/sed").chmod(0o755)
+    (tmp / "state").mkdir(exist_ok=True)
+    (tmp / "deploy").mkdir(exist_ok=True)
+    script = head + "\n" + body + "\n"
+    env = {
+        "PATH": f"{tmp}/bin:{os.environ['PATH']}",
+        "STATE_DIR": str(tmp / "state"),
+        "DEPLOY_DIR": str(tmp / "deploy"),
+        **(extra_env or {}),
+    }
+    p = subprocess.run(["bash", "-c", script], env=env, capture_output=True, text=True)
+    return p.returncode, p.stdout + p.stderr
+
+
+def test_rollout_status_explains_failed_first_node(tmp_path: Path) -> None:
+    (tmp_path / "state").mkdir(parents=True)
+    (tmp_path / "state/no-release").touch()
+    code, out = run_rollout_fn(tmp_path, "cmd_status")
+    assert code == 0, out
+    assert "committed: none" in out
+    assert "skips starting the refused release" in out
+    assert "rm -f" in out and "systemctl start maktaba-relay" in out
+
+
+def test_rollout_docker_info_times_out_promptly(tmp_path: Path) -> None:
+    (tmp_path / "bin").mkdir(parents=True)
+    (tmp_path / "bin/docker").write_text("#!/bin/sh\nexec sleep 30\n")
+    (tmp_path / "bin/docker").chmod(0o755)
+    code, out = run_rollout_fn(tmp_path, "docker_info", {"DOCKER_INFO_TIMEOUT": "1"})
+    assert code == 124, (code, out)
+
+
+def test_rollout_unhold_handles_stopped_non_first_and_failed_first(tmp_path: Path) -> None:
+    # non-first held deploy with stopped stack clears no-release on unhold (#1734)
+    a = tmp_path / "nonfirst"
+    (a / "bin").mkdir(parents=True)
+    (a / "bin/docker").write_text("#!/bin/sh\nexit 0\n")
+    (a / "bin/docker").chmod(0o755)
+    (a / "state/pending").mkdir(parents=True)
+    (a / "state/held").write_text("HELD test\n")
+    (a / "state/no-release").touch()
+    code, out = run_rollout_fn(a, "cmd_unhold")
+    assert code == 0, out
+    assert not (a / "state/held").exists()
+    assert not (a / "state/no-release").exists()
+
+    # failed-first held deploy with stopped stack keeps no-release on unhold
+    b = tmp_path / "first"
+    (b / "bin").mkdir(parents=True)
+    (b / "bin/docker").write_text("#!/bin/sh\nexit 0\n")
+    (b / "bin/docker").chmod(0o755)
+    (b / "state/pending").mkdir(parents=True)
+    (b / "state/pending/first").touch()
+    (b / "state/held").write_text("HELD first\n")
+    code, out = run_rollout_fn(b, "cmd_unhold")
+    assert code == 0, out
+    assert (b / "state/no-release").exists()
+
+
+def test_rollout_boot_runs_stop_held_when_held_and_not_stopped(tmp_path: Path) -> None:
+    (tmp_path / "bin").mkdir(parents=True)
+    (tmp_path / "bin/docker").write_text(
+        f'#!/bin/sh\necho "$*" >> {tmp_path}/docker.log\n'
+        f'if [ "$1" = ps ]; then [ -f {tmp_path}/stopped ] || echo cid1; exit 0; fi\n'
+        f'if [ "$1" = rm ]; then touch {tmp_path}/stopped; exit 0; fi\n'
+        'exit 0\n'
+    )
+    (tmp_path / "bin/docker").chmod(0o755)
+    (tmp_path / "state").mkdir(parents=True)
+    (tmp_path / "state/held").write_text(
+        "HELD test\nNOT ALL of the relay, api and worker could be stopped yet (the node goes on trying): see docker ps. The database is left alone.\n"
+    )
+    (tmp_path / "state/not-stopped").write_text("api\n")
+    code, out = run_rollout_fn(tmp_path, "cmd_boot")
+    assert code == 1, out  # boot refuses to start a held stack
+    assert not (tmp_path / "state/not-stopped").exists()
+    assert "The relay, api and worker are stopped." in (tmp_path / "state/held").read_text()
+
+
+def test_rollout_begin_trap_cleans_pending_new_on_failure(tmp_path: Path) -> None:
+    (tmp_path / "state/pending.new").mkdir(parents=True)
+    (tmp_path / "state/pending.new/id").write_text("leftover\n")
+    (tmp_path / "bin").mkdir(parents=True)
+    (tmp_path / "bin/docker").write_text("#!/bin/sh\nexit 0\n")
+    (tmp_path / "bin/docker").chmod(0o755)
+    # cmd_begin fails on missing DEPLOY_ID or docker-compose.yml after setting its EXIT trap;
+    # run a subshell with the same trap to verify pending.new is removed when begin fails partway
+    code, out = run_rollout_fn(
+        tmp_path,
+        'DEPLOY_ID=test-1 MAKTABA_CLOUD_TAG=v1@sha256:' + ("a" * 64) + ' MAKTABA_CADDY_TAG=v1@sha256:' + ("b" * 64) + ' SRC_DIR="' + str(tmp_path / "src") + '" cmd_begin',
+    )
+    assert code != 0
+    assert not (tmp_path / "state/pending.new").exists(), out

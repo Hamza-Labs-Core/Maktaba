@@ -36,8 +36,9 @@ export function broadcastingOn(env: Env): boolean {
  * state, guides, the control socket, the speed test, plans and viewer access are refused, a
  * valid token or signature included.
  */
-function openWhileOff(host: Host, path: string): boolean {
-  return host === "ingest" && path === "/v1/control/revocations";
+function openWhileOff(env: Env, url: URL): boolean {
+  const ingestHost = (env.INGEST_HOST || DEFAULT_INGEST_HOST).toLowerCase();
+  return url.hostname.toLowerCase() === ingestHost && url.pathname === "/v1/control/revocations";
 }
 
 /** The answer of everything else while broadcasting is off: nothing about any channel. */
@@ -74,7 +75,7 @@ export default {
     try {
       const host = hostOf(env, url);
       // broadcasting is off (2026-11-24): checked before any route, token or stored state
-      if (!broadcastingOn(env) && !openWhileOff(host, url.pathname)) return offResponse();
+      if (!broadcastingOn(env) && !openWhileOff(env, url)) return offResponse();
       switch (host) {
         case "ingest":
           // the viewer-access control posts (50.26) beside 50.21's

@@ -27,8 +27,8 @@
 # ACME_EMAIL, RELAY_TLS, RELAY_PLANS_ENFORCE, MAKTABA_CLOUD_TAG, MAKTABA_CADDY_TAG (and
 # MAKTABA_CLOUD_IMAGE, MAKTABA_CADDY_IMAGE: another registry, the rehearsal's), MAIL_ALLOW,
 # MAIL_SUBJECT_PREFIX, MAIL_DAILY_LIMIT, MAIL_MONTHLY_LIMIT and the secrets CF_API_TOKEN,
-# LICENSE_SIGNING_KEY, RESEND_API_KEY and TURNSTILE_SECRET_KEY (with TURNSTILE_SITE_KEY); the
-# last three set but empty: this node has none any more.
+# LICENSE_SIGNING_KEY, RESEND_API_KEY, RESEND_WEBHOOK_SECRET and TURNSTILE_SECRET_KEY (with
+# TURNSTILE_SITE_KEY); the last four set but empty: this node has none any more.
 set -euo pipefail
 
 DEPLOY_DIR=${DEPLOY_DIR:-/opt/maktaba-relay}
@@ -250,6 +250,14 @@ if [ -n "${RESEND_API_KEY:-}" ]; then
 	mv "$RESEND_KEY.new" "$RESEND_KEY"
 elif [ -n "${RESEND_API_KEY+x}" ]; then
 	rm -f "$RESEND_KEY"
+fi
+RESEND_WEBHOOK_KEY="$DEPLOY_DIR/secrets/resend-webhook.key"
+if [ -n "${RESEND_WEBHOOK_SECRET:-}" ]; then
+	[[ "$RESEND_WEBHOOK_SECRET" == whsec_* ]] && [[ "$RESEND_WEBHOOK_SECRET" != *[[:space:]]* ]] || die "RESEND_WEBHOOK_SECRET is not a Resend webhook secret (it begins with whsec_)"
+	( umask 077; printf '%s' "$RESEND_WEBHOOK_SECRET" > "$RESEND_WEBHOOK_KEY.new" )
+	mv "$RESEND_WEBHOOK_KEY.new" "$RESEND_WEBHOOK_KEY"
+elif [ -n "${RESEND_WEBHOOK_SECRET+x}" ]; then
+	rm -f "$RESEND_WEBHOOK_KEY"
 fi
 # release_sends: the release's image says it has the driver. One from before the question exits 2
 # at once (it serves, and no role is named); anything else is no answer, and nothing goes on.

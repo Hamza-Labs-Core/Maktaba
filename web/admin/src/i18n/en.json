@@ -444,6 +444,8 @@
   "admin.moderation.error.restore_window_closed": "No counter-notice whose 10 business days have passed without a lawsuit, and the notice was not withdrawn.",
   "admin.moderation.error.notice_incomplete": "The notice is missing a required element.",
   "admin.moderation.error.not_on_maktaba": "None of the links is a Maktaba channel.",
+  "admin.moderation.broadcastOff": "Broadcasting is off.",
+  "admin.moderation.broadcastOffBody": "Moderation queues are unavailable while home broadcasting is disabled.",
   "admin.broadcast.version": "List version {version}, changed {at}",
   "admin.broadcast.unsigned": "No broadcast signing key is set: changes are saved but no signed list reaches the edge or homes.",
   "admin.broadcast.addTitle": "Stop a broadcast",

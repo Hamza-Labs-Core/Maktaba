@@ -25,22 +25,36 @@ type mailer struct {
 	mu   sync.Mutex
 	errs []error
 	sent []mail.Message
+	ids  []string
 	hook func(context.Context) error
 }
 
 func (m *mailer) Send(ctx context.Context, msg mail.Message) error {
+	_, err := m.SendID(ctx, msg)
+	return err
+}
+
+func (m *mailer) SendID(ctx context.Context, msg mail.Message) (string, error) {
 	m.mu.Lock()
 	n := len(m.sent)
 	m.sent = append(m.sent, msg)
+	var id string
+	if n < len(m.ids) {
+		id = m.ids[n]
+	} else {
+		id = fmt.Sprintf("re-msg-%d", n+1)
+	}
 	hook := m.hook
 	m.mu.Unlock()
 	if hook != nil {
-		return hook(ctx)
+		return "", hook(ctx)
 	}
 	if n < len(m.errs) {
-		return m.errs[n]
+		if m.errs[n] != nil {
+			return "", m.errs[n]
+		}
 	}
-	return nil
+	return id, nil
 }
 
 type world struct {
@@ -1059,5 +1073,103 @@ func TestAFullQueueDropsRequestsAndKeepsTheAccount(t *testing.T) {
 	var n int
 	if err := w.o.DB.QueryRow(`SELECT count(*) FROM mail_outbox`).Scan(&n); err != nil || n != MaxQueued {
 		t.Fatalf("%d rows: %v", n, err)
+	}
+}
+
+// Hard bounce and complaint suppress future sign-ups and notices by hash, while password resets
+// are still attempted; soft bounces do not suppress; events are idempotent and raise rate alerts.
+func TestWebhookEventsSuppressAndAlert(t *testing.T) {
+	ctx := context.Background()
+	w := newWorld(t, DefaultLimits(1000, 10000))
+	w.register("hard@example.test", "en")
+	w.register("soft@example.test", "en")
+	w.register("complainer@example.test", "en")
+	w.work()
+	if len(w.m.sent) != 3 {
+		t.Fatalf("sent %d, want 3", len(w.m.sent))
+	}
+	// provider_id was stored on each sent row
+	var gotID string
+	if err := w.o.DB.QueryRow(`SELECT provider_id FROM mail_outbox WHERE state = 'sent' ORDER BY created_at LIMIT 1`).Scan(&gotID); err != nil || gotID != "re-msg-1" {
+		t.Fatalf("provider_id = %q, err = %v", gotID, err)
+	}
+
+	// Hard bounce on re-msg-1 -> suppressed; duplicate event is a no-op.
+	evHard := mail.WebhookEvent{EventID: "svix_1", Type: mail.EventBounced, EmailID: "re-msg-1", BounceType: mail.BounceHard, OccurredAt: w.at}
+	out, err := w.o.RecordEvent(ctx, evHard)
+	if err != nil || !out.Matched || !out.Suppressed || out.Duplicate {
+		t.Fatalf("hard bounce: %+v %v", out, err)
+	}
+	dup, err := w.o.RecordEvent(ctx, evHard)
+	if err != nil || !dup.Duplicate {
+		t.Fatalf("duplicate: %+v %v", dup, err)
+	}
+
+	// Soft bounce on re-msg-2 -> recorded, NOT suppressed.
+	out, err = w.o.RecordEvent(ctx, mail.WebhookEvent{EventID: "svix_2", Type: mail.EventBounced, EmailID: "re-msg-2", BounceType: mail.BounceSoft, OccurredAt: w.at})
+	if err != nil || !out.Matched || out.Suppressed {
+		t.Fatalf("soft bounce: %+v %v", out, err)
+	}
+
+	// Complaint on re-msg-3 -> suppressed and raises complaint rate alert.
+	out, err = w.o.RecordEvent(ctx, mail.WebhookEvent{EventID: "svix_3", Type: mail.EventComplained, EmailID: "re-msg-3", OccurredAt: w.at})
+	if err != nil || !out.Matched || !out.Suppressed {
+		t.Fatalf("complaint: %+v %v", out, err)
+	}
+	if !strings.Contains(w.logs.String(), mail.AlertComplaintRate) {
+		t.Fatalf("expected %s alert in logs: %s", mail.AlertComplaintRate, w.logs.String())
+	}
+
+	// Delivery delayed & failed events are counted without suppressing.
+	for i, typ := range []string{mail.EventDeliveryDelayed, mail.EventFailed} {
+		out, err = w.o.RecordEvent(ctx, mail.WebhookEvent{EventID: fmt.Sprintf("svix_extra_%d", i), Type: typ, EmailID: "re-msg-2", OccurredAt: w.at})
+		if err != nil || out.Suppressed {
+			t.Fatalf("%s: %+v %v", typ, out, err)
+		}
+	}
+
+	// Advance past per-address cooldowns: verify_email, already_registered, and notices are
+	// suppressed for hard-bounced and complained hashes, while password_reset still sends.
+	w.at = w.at.Add(24 * time.Hour)
+	before := len(w.m.sent)
+	w.ask(mail.KindVerifyEmail, "hard@example.test", "en")
+	w.register("hard@example.test", "en")
+	if err := w.o.Send(ctx, mail.Message{To: "hard@example.test", Kind: "payment_failed"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.o.Send(ctx, mail.Message{To: "complainer@example.test", Kind: "payment_failed"}); err != nil {
+		t.Fatal(err)
+	}
+	w.ask(mail.KindPasswordReset, "hard@example.test", "en")
+	w.ask(mail.KindPasswordReset, "complainer@example.test", "en")
+	w.ask(mail.KindVerifyEmail, "soft@example.test", "en")
+	w.work()
+
+	// Only the 2 password resets + 1 soft-bounced verify_email should have been sent.
+	if got := len(w.m.sent) - before; got != 3 {
+		t.Fatalf("sent %d after suppression, want 3 (sent: %+v)", got, w.m.sent[before:])
+	}
+	if w.to("hard@example.test", mail.KindPasswordReset) != 1 || w.to("complainer@example.test", mail.KindPasswordReset) != 1 || w.to("soft@example.test", mail.KindVerifyEmail) != 2 {
+		t.Fatalf("unexpected sends: %+v", w.m.sent[before:])
+	}
+	if w.to("hard@example.test", "payment_failed") != 0 || w.to("complainer@example.test", "payment_failed") != 0 {
+		t.Fatalf("notice was not suppressed")
+	}
+
+	counts, err := Count(ctx, w.o.DB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.Events.Bounced != 2 || counts.Events.HardBounced != 1 || counts.Events.Complained != 1 ||
+		counts.Events.DeliveryDelayed != 1 || counts.Events.Failed != 1 || counts.Events.SuppressedAddresses != 2 {
+		t.Fatalf("counts.Events = %+v", counts.Events)
+	}
+	// Never store raw emails in mail_events or mail_suppressions.
+	var leaked int
+	if err := w.o.DB.QueryRow(`SELECT count(*) FROM mail_events WHERE provider_id LIKE '%@%' OR to_hash LIKE '%@%'`).Scan(&leaked); err != nil || leaked != 0 {
+		t.Fatalf("mail_events leaked address: %d %v", leaked, err)
+	}
+	if err := w.o.DB.QueryRow(`SELECT count(*) FROM mail_suppressions WHERE to_hash LIKE '%@%'`).Scan(&leaked); err != nil || leaked != 0 {
+		t.Fatalf("mail_suppressions leaked address: %d %v", leaked, err)
 	}
 }

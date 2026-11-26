@@ -12,12 +12,9 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/broadcast"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
@@ -29,80 +26,21 @@ import (
 // moderation route of the api role's real routers answers what an unknown path answers, whoever
 // asks, but broadcastgate's exceptions.
 
-// routeRow is one registered route of a listener.
-type routeRow struct {
-	listener, method, pattern, handler string
-}
-
 // routeTable walks both listeners' routers.
-func routeTable(t *testing.T, e *env) []routeRow {
+func routeTable(t *testing.T, e *env) []routeKey {
 	t.Helper()
-	var out []routeRow
-	for name, h := range map[string]http.Handler{"user": e.router, "console": e.admin} {
-		mux, ok := h.(chi.Routes)
-		if !ok {
-			t.Fatalf("the %s listener is a %T", name, h)
-		}
-		if err := chi.Walk(mux, func(method, pattern string, h http.Handler, _ ...func(http.Handler) http.Handler) error {
-			out = append(out, routeRow{name, method, pattern, handlerName(h)})
-			return nil
-		}); err != nil {
-			t.Fatal(err)
-		}
+	rows := walkAPIListeners(t, e.router, e.admin)
+	if len(rows) < 100 {
+		t.Fatalf("only %d routes", len(rows))
 	}
-	if len(out) < 100 {
-		t.Fatalf("only %d routes", len(out))
-	}
-	return out
+	return rows
 }
 
-// handlerName is the Go name of a route's handler, behind its inline middleware.
-func handlerName(h http.Handler) string {
-	if c, ok := h.(*chi.ChainHandler); ok {
-		h = c.Endpoint
-	}
-	if f, ok := h.(http.HandlerFunc); ok {
-		return runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name()
-	}
-	return reflect.TypeOf(h).String()
-}
-
-// aboutBroadcasting: a handler of the broadcast, edge or moderation packages, or any with
-// broadcasting in its name or path.
-var aboutBroadcasting = regexp.MustCompile(`(?i)handlers/(broadcast|edge|moderation)\.|broadcast|moderation|takedown|geodeny|/_edge`)
-
-func (r routeRow) aboutBroadcasting() bool {
-	return aboutBroadcasting.MatchString(r.handler) || aboutBroadcasting.MatchString(r.pattern)
-}
-
-// A broadcast or moderation handler is mounted only under the gate's paths, so a new one is
-// closed without doing anything; every exception names a route that exists.
+// Every route on both listeners is explicitly classified in apiRouteClassification
+// (broadcast_routes_test.go): an unclassified route fails the test, broadcast/moderation routes
+// must live under broadcastgate.Paths, and every exception must name a registered route.
 func TestBroadcastRoutesAreAllBehindTheGate(t *testing.T) {
-	rows := routeTable(t, newEnv(t))
-	n := 0
-	have := map[string]bool{}
-	for _, r := range rows {
-		have[r.method+" "+r.pattern] = true
-		if !r.aboutBroadcasting() {
-			if broadcastgate.Covers(r.pattern) {
-				t.Errorf("%s %s (%s) is under the gate but not about broadcasting", r.method, r.pattern, r.handler)
-			}
-			continue
-		}
-		n++
-		if !broadcastgate.Covers(r.pattern) {
-			t.Errorf("%s listener: %s %s (%s) answers while broadcasting is off: mount it under one of %v",
-				r.listener, r.method, r.pattern, r.handler, broadcastgate.Paths)
-		}
-	}
-	if n < 55 {
-		t.Errorf("only %d broadcast routes found: the table no longer sees them", n)
-	}
-	for _, ex := range broadcastgate.Exceptions() {
-		if !have[ex.Method+" "+ex.Path] {
-			t.Errorf("the exception %s %s names no route", ex.Method, ex.Path)
-		}
-	}
+	assertBroadcastRouteClassification(t, routeTable(t, newEnv(t)))
 }
 
 // raw sends one request to a listener as the console or the portal would.
