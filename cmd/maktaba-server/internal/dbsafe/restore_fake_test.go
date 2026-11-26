@@ -120,9 +120,25 @@ func fakeProgram(args []string) {
 		}
 	}
 	for _, a := range args {
-		if a == "-l" {
+		if a == "-l" || a == "--list" {
+			if os.Getenv("DBSAFE_FAKE_VERIFY_DIR") == "1" {
+				// Return a minimal TOC listing one table so VerifyDump/VerifyAside proceed to --file=-.
+				_, _ = os.Stdout.WriteString("1; 1259 100 TABLE public videos maktaba\n2; 0 100 TABLE DATA public videos maktaba\n")
+				os.Exit(0)
+			}
 			return // a dump with nothing in it
 		}
+	}
+	if os.Getenv("DBSAFE_FAKE_VERIFY_DIR") == "1" {
+		// Simulate pg_restore --file=- verifying every .dat.gz table-data member in a directory dump.
+		dumpPath := args[len(args)-1]
+		raw, err := os.ReadFile(filepath.Join(dumpPath, "100.dat.gz"))
+		if err != nil || string(raw) != "VALID-GZIP-MEMBER" {
+			_, _ = os.Stderr.WriteString("pg_restore: error: could not open input file 100.dat.gz: corrupt or missing\n")
+			os.Exit(1)
+		}
+		_, _ = os.Stdout.WriteString("COPY public.videos FROM stdin;\n\\.\n")
+		os.Exit(0)
 	}
 	switch os.Getenv("DBSAFE_FAKE_RESTORE") {
 	case "script-once":
@@ -130,6 +146,29 @@ func fakeProgram(args []string) {
 		if _, err := os.Stdout.Write([]byte("INSERT INTO videos VALUES (1, 'x');\n")); err != nil {
 			os.Exit(1)
 		}
+		os.Exit(0)
+	case "revoke-public":
+		// Emit a REVOKE ALL ON SCHEMA public FROM PUBLIC in post-data so tests verify
+		// how.after re-grants USAGE ON SCHEMA public TO PUBLIC afterwards.
+		isPost := true
+		for _, a := range args {
+			if a == "--section=data" {
+				isPost = false
+			}
+		}
+		if isPost {
+			_, _ = os.Stdout.WriteString("REVOKE ALL ON SCHEMA public FROM PUBLIC;\n")
+		} else {
+			_, _ = os.Stdout.WriteString("INSERT INTO videos VALUES (1, 'x');\n")
+		}
+		os.Exit(0)
+	case "slow-then-exit":
+		// Block longer than childWaitDelay BEFORE emitting final bytes and exiting 0,
+		// so pr.Read starts pre-exit and returns its final bytes after gen.Wait() flips doneAt.
+		if d, err := time.ParseDuration(os.Getenv("DBSAFE_FAKE_RESTORE_DELAY")); err == nil && d > 0 {
+			time.Sleep(d)
+		}
+		_, _ = os.Stdout.WriteString("INSERT INTO videos VALUES (1, 'x');\n")
 		os.Exit(0)
 	case "bulk":
 		// Write a large deterministic payload (larger than kernel pipe buffer) and exit 0.
@@ -189,7 +228,7 @@ func TestRestoreAtomicPsqlStopsFirst(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	began := time.Now()
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", func(step string) error {
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(step string) error {
 		t.Errorf("told %q of a script that never ended", step)
 		return nil
 	}, io.Discard)
@@ -225,7 +264,7 @@ func TestRestoreAtomicAKilledPsqlAfterCommitIsNotKnownCommitted(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	told := make(chan string, 4)
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", func(step string) error {
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(step string) error {
 		told <- step
 		return nil
 	}, io.Discard)
@@ -255,7 +294,7 @@ func TestRestoreAtomicCommitWriteFailureSaysNothingChanged(t *testing.T) {
 	tg := Target{URL: "postgres://u:p@127.0.0.1:1/db?sslmode=disable", Bin: func(string) string { return self }}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", func(string) error {
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(string) error {
 		// Give pre-commit-exit a moment to exit before COMMIT is written.
 		time.Sleep(20 * time.Millisecond)
 		return nil
@@ -266,8 +305,59 @@ func TestRestoreAtomicCommitWriteFailureSaysNothingChanged(t *testing.T) {
 }
 
 // Full successful pg_restore output arrives completely without truncation even under heavy
-// psql backpressure that drains slower than childWaitDelay.
+// psql backpressure that drains slower than childWaitDelay, on both deadline-capable pipes
+// (Unix) and non-deadline pipes (Windows watchdog fallback).
 func TestRestoreAtomicFullOutputUnderHeavyPsqlBackpressure(t *testing.T) {
+	fastRaceSubprocess(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, noDeadline := range []bool{false, true} {
+		name := "deadline-pipe"
+		if noDeadline {
+			name = "no-deadline-watchdog"
+		}
+		t.Run(name, func(t *testing.T) {
+			if noDeadline {
+				prev := pipeSetReadDeadline
+				pipeSetReadDeadline = func(*os.File, time.Time) error { return os.ErrNoDeadline }
+				t.Cleanup(func() { pipeSetReadDeadline = prev })
+			}
+			outFile := filepath.Join(t.TempDir(), "psql-received.sql")
+			t.Setenv("DBSAFE_FAKE", "1")
+			t.Setenv("DBSAFE_FAKE_PSQL", "slow-backpressure")
+			t.Setenv("DBSAFE_FAKE_PSQL_OUT", outFile)
+			t.Setenv("DBSAFE_FAKE_PSQL_DELAY", "3ms")
+			t.Setenv("DBSAFE_FAKE_RESTORE", "bulk")
+			t.Setenv("DBSAFE_FAKE_RESTORE_LINES", "3000") // ~340 KiB per part > OS pipe buffer
+			old := childWaitDelay
+			childWaitDelay = 20 * time.Millisecond // shorter than total slow drain time
+			t.Cleanup(func() { childWaitDelay = old })
+			tg := Target{URL: "postgres://u:p@127.0.0.1:1/db?sslmode=disable", Bin: func(string) string { return self }}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(string) error { return nil }, io.Discard); err != nil {
+				t.Fatalf("restoreAtomic failed under backpressure: %v", err)
+			}
+			got, err := os.ReadFile(outFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+			s := string(got)
+			for _, want := range []string{"-- data-line-0 ", "-- data-line-2999 ", "-- data-end-marker\n", "-- post-line-0 ", "-- post-line-2999 ", "-- post-end-marker\n", "COMMIT;\n"} {
+				if !strings.Contains(s, want) {
+					t.Errorf("missing %q in %d bytes received by psql", want, len(s))
+				}
+			}
+		})
+	}
+}
+
+// A pr.Read that started before pg_restore exited (blocking > childWaitDelay while pg_restore
+// works) and returns its final bytes after pg_restore exits must NOT charge pre-exit wait
+// against the post-exit budget.
+func TestRestoreAtomicReadStartedBeforeExitAndReturningAfterExitSucceeds(t *testing.T) {
 	fastRaceSubprocess(t)
 	self, err := os.Executable()
 	if err != nil {
@@ -277,27 +367,97 @@ func TestRestoreAtomicFullOutputUnderHeavyPsqlBackpressure(t *testing.T) {
 	t.Setenv("DBSAFE_FAKE", "1")
 	t.Setenv("DBSAFE_FAKE_PSQL", "slow-backpressure")
 	t.Setenv("DBSAFE_FAKE_PSQL_OUT", outFile)
-	t.Setenv("DBSAFE_FAKE_PSQL_DELAY", "3ms")
-	t.Setenv("DBSAFE_FAKE_RESTORE", "bulk")
-	t.Setenv("DBSAFE_FAKE_RESTORE_LINES", "3000") // ~340 KiB per part > OS pipe buffer
+	t.Setenv("DBSAFE_FAKE_PSQL_DELAY", "0ms")
+	t.Setenv("DBSAFE_FAKE_RESTORE", "slow-then-exit")
+	t.Setenv("DBSAFE_FAKE_RESTORE_DELAY", "80ms") // > childWaitDelay (30ms)
 	old := childWaitDelay
-	childWaitDelay = 20 * time.Millisecond // shorter than total slow drain time
+	childWaitDelay = 30 * time.Millisecond
 	t.Cleanup(func() { childWaitDelay = old })
 	tg := Target{URL: "postgres://u:p@127.0.0.1:1/db?sslmode=disable", Bin: func(string) string { return self }}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", func(string) error { return nil }, io.Discard); err != nil {
-		t.Fatalf("restoreAtomic failed under backpressure: %v", err)
+	if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(string) error { return nil }, io.Discard); err != nil {
+		t.Fatalf("restoreAtomic aborted on pre-exit read duration: %v", err)
+	}
+}
+
+// publicAfresh's GRANT USAGE ON SCHEMA public TO PUBLIC (how.after) is emitted AFTER any
+// archived REVOKE in post-data and BEFORE COMMIT so a dump's REVOKE cannot undo it.
+func TestRestoreAtomicPublicAfreshGrantRunsAfterDumpRevoke(t *testing.T) {
+	fastRaceSubprocess(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	outFile := filepath.Join(t.TempDir(), "psql-received.sql")
+	t.Setenv("DBSAFE_FAKE", "1")
+	t.Setenv("DBSAFE_FAKE_PSQL", "slow-backpressure")
+	t.Setenv("DBSAFE_FAKE_PSQL_OUT", outFile)
+	t.Setenv("DBSAFE_FAKE_PSQL_DELAY", "0ms")
+	t.Setenv("DBSAFE_FAKE_RESTORE", "revoke-public")
+	tg := Target{URL: "postgres://u:p@127.0.0.1:1/db?sslmode=disable", Bin: func(string) string { return self }}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, publicUsageGrant, "", func(string) error { return nil }, io.Discard); err != nil {
+		t.Fatalf("restoreAtomic failed: %v", err)
 	}
 	got, err := os.ReadFile(outFile)
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(got)
-	for _, want := range []string{"-- data-line-0 ", "-- data-line-2999 ", "-- data-end-marker\n", "-- post-line-0 ", "-- post-line-2999 ", "-- post-end-marker\n", "COMMIT;\n"} {
-		if !strings.Contains(s, want) {
-			t.Errorf("missing %q in %d bytes received by psql", want, len(s))
+	revIdx := strings.Index(s, "REVOKE ALL ON SCHEMA public FROM PUBLIC;")
+	grantIdx := strings.LastIndex(s, publicUsageGrant)
+	commitIdx := strings.LastIndex(s, "COMMIT;")
+	if revIdx < 0 || grantIdx < revIdx || commitIdx < grantIdx {
+		t.Fatalf("wrong order: revoke=%d grant=%d commit=%d\n%s", revIdx, grantIdx, commitIdx, s)
+	}
+}
+
+// VerifyAside streams the full archive payload through pg_restore --file=- so a directory
+// dump with intact toc.dat and counts.json but a missing or truncated table-data member is
+// rejected instead of reused as the sole safety copy.
+func TestVerifyAsideRejectsCorruptOrMissingTableDataMember(t *testing.T) {
+	fastRaceSubprocess(t)
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DBSAFE_FAKE", "1")
+	t.Setenv("DBSAFE_FAKE_VERIFY_DIR", "1")
+	tg := Target{URL: "postgres://u:p@127.0.0.1:1/db?sslmode=disable", Bin: func(string) string { return self }}
+	ctx := context.Background()
+
+	makeDirDump := func(t *testing.T, dataContent *string) string {
+		t.Helper()
+		dir := filepath.Join(t.TempDir(), "replaced-v0.4.0-20261126T000000.dump")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(dir, "toc.dat"), []byte("PGDMP\x01\x0e"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, pgbundle.CountsFile), []byte(`{"public.videos":1}`), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if dataContent != nil {
+			if err := os.WriteFile(filepath.Join(dir, "100.dat.gz"), []byte(*dataContent), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+
+	if err := tg.VerifyAside(ctx, makeDirDump(t, nil)); err == nil || !strings.Contains(err.Error(), "dump_corrupt") {
+		t.Fatalf("missing table-data member accepted: %v", err)
+	}
+	trunc := "TRUNCATED"
+	if err := tg.VerifyAside(ctx, makeDirDump(t, &trunc)); err == nil || !strings.Contains(err.Error(), "dump_corrupt") {
+		t.Fatalf("truncated table-data member accepted: %v", err)
+	}
+	good := "VALID-GZIP-MEMBER"
+	if err := tg.VerifyAside(ctx, makeDirDump(t, &good)); err != nil {
+		t.Fatalf("valid directory dump rejected: %v", err)
 	}
 }
 
@@ -320,7 +480,7 @@ func TestRestoreAtomicDoesNotWaitForAPgRestoreChildHoldingStdout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	began := time.Now()
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", func(step string) error {
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(step string) error {
 		t.Errorf("told %q of a script that never ended", step)
 		return nil
 	}, io.Discard)

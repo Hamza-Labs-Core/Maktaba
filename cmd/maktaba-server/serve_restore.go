@@ -456,7 +456,7 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 	}
 	rec := apppayload.Database{Version: held, State: apppayload.DatabaseRestoring, From: pl.Release, Dump: p, By: by,
 		Error: "restore asked by " + by, Before: was, Data: data.Data, DataID: data.DataID, DataTable: data.DataTable}
-	if data.Aside = pgbundle.MovedDump(r.db.Backups, data.Aside); asideThere(data) {
+	if data.Aside = pgbundle.MovedDump(r.db.Backups, data.Aside); asideThere(data) && validAsideCandidate(ctx, data.Aside, r.verifyAside) {
 		rec.Aside, rec.AsideBytes = data.Aside, data.AsideBytes
 	}
 	if withoutCopy && !older { // an older release keeps one whatever it is told

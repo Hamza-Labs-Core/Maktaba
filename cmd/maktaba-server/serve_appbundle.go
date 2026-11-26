@@ -1684,7 +1684,10 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 	}
 	report(detail("db_restoring_backup", fmt.Sprintf("Putting the library database back from %s, as %s asked",
 		rec.Dump, rec.By), rec.Dump, rec.By))
-	if !asideThere(rec) && rec.Data != apppayload.DataReplaced && rec.Data != apppayload.DataGone {
+	asideOK := asideThere(rec) && validAsideCandidate(tctx, rec.Aside, func(vctx context.Context, p string) error {
+		return verifyAside(vctx, g, p)
+	})
+	if !asideOK && rec.Data != apppayload.DataReplaced && rec.Data != apppayload.DataGone {
 		if rec.Aside, err = g.setAsideReplaced(tctx, rec); err != nil && ctx.Err() == nil && tctx.Err() == nil {
 			if !goOnWithoutCopy(rec, err) {
 				// the only copy of the newest data: never lost unasked

@@ -648,19 +648,24 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 	b.ClearStaleLock()
 	began := time.Now()
 	deadline := began.Add(shmWait)
-	for try := 0; ; try++ {
+	var lastShmErr error
+	for {
 		wctx, cancel := waitCtx(ctx, deadline)
 		awaitShmFree(b, wctx)
 		cancel()
-		startCtx, startCancel := ctx, func() {}
-		if try > 0 {
-			// private retries share the one shmWait deadline so a stuck retry cannot
-			// add a second full readyTimeout on top of it
-			startCtx, startCancel = waitCtx(ctx, deadline)
+		err := b.runServer(ctx, deadline, log, fn)
+		if errors.Is(err, errShmInUse) {
+			lastShmErr = err
+		} else {
+			// If a retry was cut short by the shared shmWait deadline (not caller
+			// cancellation) before Postgres could finish starting or exiting, preserve
+			// the shared-memory cause alongside the readiness error.
+			if err != nil && lastShmErr != nil && ctx.Err() == nil && !time.Now().Before(deadline) {
+				return fmt.Errorf("%w (%w)", err, lastShmErr)
+			}
+			return err
 		}
-		err := b.runServer(startCtx, log, fn)
-		startCancel()
-		if !errors.Is(err, errShmInUse) || ctx.Err() != nil || !time.Now().Before(deadline) {
+		if ctx.Err() != nil || !time.Now().Before(deadline) {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "[postgres] the shared memory of %s is still in use: started again\n", b.Data)
@@ -717,8 +722,9 @@ func (e *startError) Is(target error) bool {
 	return target == errShmInUse && strings.Contains(e.said, "pre-existing shared memory block")
 }
 
-// runServer is withServer's one start.
-func (b Bundle) runServer(ctx context.Context, log io.Writer, fn func() error) error {
+// runServer is withServer's one start. startDeadline bounds startup readiness and startup
+// teardown to withServer's shared shmWait budget while leaving ctx untouched for fn once ready.
+func (b Bundle) runServer(ctx context.Context, startDeadline time.Time, log io.Writer, fn func() error) error {
 	srv, err := b.serverCommand(b.serverArgs(false))
 	if err != nil {
 		return err
@@ -733,17 +739,35 @@ func (b Bundle) runServer(ctx context.Context, log io.Writer, fn func() error) e
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- srv.Wait() }()
+	ready := false
 	defer func() {
 		b.stop(srv.Process) // fast shutdown
+		wait := 30 * time.Second
+		if !ready && !startDeadline.IsZero() {
+			if left := time.Until(startDeadline); left < wait {
+				wait = max(left, 0)
+			}
+		}
+		if wait == 0 {
+			_ = srv.Process.Kill()
+			<-exited
+			return
+		}
+		t := time.NewTimer(wait)
+		defer t.Stop()
 		select {
 		case <-exited:
-		case <-time.After(30 * time.Second):
+		case <-t.C:
 			_ = srv.Process.Kill()
 			<-exited
 		}
 	}()
 
-	rctx, cancel := context.WithTimeout(ctx, readyTimeout)
+	readyDeadline := time.Now().Add(readyTimeout)
+	if !startDeadline.IsZero() && startDeadline.Before(readyDeadline) {
+		readyDeadline = startDeadline
+	}
+	rctx, cancel := waitCtx(ctx, readyDeadline)
 	defer cancel()
 	for {
 		err := readyCheck(rctx, b.Addr(), SuperUser, "postgres")
@@ -755,10 +779,17 @@ func (b Bundle) runServer(ctx context.Context, log io.Writer, fn func() error) e
 			exited <- werr // for the deferred stop
 			return &startError{werr, tail.said()}
 		case <-rctx.Done():
+			select {
+			case werr := <-exited:
+				exited <- werr
+				return &startError{werr, tail.said()}
+			default:
+			}
 			return fmt.Errorf("postgres did not get ready: %w", err)
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
+	ready = true
 	return fn()
 }
 

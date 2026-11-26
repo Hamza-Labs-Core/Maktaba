@@ -528,16 +528,13 @@ func validAsideCandidate(ctx context.Context, path string, verify func(context.C
 }
 
 // replacedDumpThere is a copy of the database a restore replaces that is there already (""
-// when there is none): the record's own path — verified whole (either matching a previously
-// recorded AsideBytes > 0, or validated via verify when a kill happened before AsideBytes
-// was recorded) — or, the data not known (asked on a release that kept no record of it), a
-// verified replaced-* dump of that version taken since the ask.
+// when there is none): the record's own path — verified whole via validAsideCandidate
+// (checking both recorded AsideBytes when > 0 and full archive content, so same-size
+// corruption is never trusted) — or, the data not known (asked on a release that kept no
+// record of it), a verified replaced-* dump of that version taken since the ask.
 func replacedDumpThere(ctx context.Context, dir string, rec apppayload.Database, verify func(context.Context, string) error) string {
 	if rec.Aside != "" {
-		if asideThere(rec) {
-			return rec.Aside
-		}
-		if rec.AsideBytes <= 0 && validAsideCandidate(ctx, rec.Aside, verify) {
+		if (rec.AsideBytes <= 0 || asideThere(rec)) && validAsideCandidate(ctx, rec.Aside, verify) {
 			return rec.Aside
 		}
 	}
@@ -636,16 +633,18 @@ func unprotectedAdvice(err error) string {
 func (r *restorer) protect(pl restorePlan, rec apppayload.Database) (string, error) {
 	dir := r.db.Backups
 	names := []string{pl.Backup}
+	otherRequired := false
 	for _, b := range r.list().Backups {
-		if slices.Contains(asideKeeps(rec), b.Name) {
+		if slices.Contains(asideKeeps(rec), b.Name) && b.Name != pl.Backup {
 			names = append(names, b.Name)
+			otherRequired = true
 		}
 	}
 	err := pgbundle.KeepForRestore(dir, names...)
 	switch {
 	case err == nil:
 		return pgbundle.KeptPath(dir, pl.Backup), nil
-	case pgbundle.IsUpdateDump(pl.Backup) && pgbundle.NewestOfKind(dir, pl.Backup):
+	case !otherRequired && pgbundle.IsUpdateDump(pl.Backup) && pgbundle.NewestOfKind(dir, pl.Backup):
 		return rec.Dump, nil
 	}
 	return "", refuse("restore_unprotected", "%s, the release that puts this backup back, may remove it first (under its own "+
@@ -733,7 +732,7 @@ func stuckOf(r *restorer) *recovery.Stuck {
 		return nil // not tried yet: the restart that was asked does
 	}
 	if !s.Running && s.Why == "" {
-		s.Why = fmt.Sprintf("waiting for release %s to start (running %s)", rec.From, r.running())
+		s.WaitingFor = layout.NormalizeVersion(rec.From)
 	}
 	if s.CanGiveUp {
 		base, release, _ := giveUpTo(rec, r.running())

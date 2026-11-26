@@ -252,6 +252,40 @@ func TestElsewhereObjectsCollectsNonPublicDefinitions(t *testing.T) {
 	}
 }
 
+// Routine signature matching strips OUT/TABLE parameters to match proargtypes (e.g.
+// pgrowlocks), handles function names containing '(' (quoted or unquoted), and never
+// loops on nested '=' inside parentheses.
+func TestRoutineSignatureOUTParensAndNestedEquals(t *testing.T) {
+	// Real pg_dump ACL tag for pgrowlocks includes OUT params; oidvectortypes has input only.
+	aclTag := "pgrowlocks(relname text, OUT locked_row tid, OUT locker xid, OUT multi boolean, OUT xids xid[], OUT modes text[], OUT pids integer[])"
+	if _, aclSig := grantedOn("FUNCTION", aclTag); aclSig != "pgrowlocks(text)" {
+		t.Errorf("pgrowlocks ACL sig = %q, want pgrowlocks(text)", aclSig)
+	}
+	if _, defSig := grantedOn("FUNCTION", "pgrowlocks(text)"); defSig != "pgrowlocks(text)" {
+		t.Errorf("pgrowlocks def sig = %q, want pgrowlocks(text)", defSig)
+	}
+	if _, outOnly := grantedOn("FUNCTION", "f(OUT a integer, OUT b text)"); outOnly != "f()" {
+		t.Errorf("OUT-only sig = %q, want f()", outOnly)
+	}
+	if _, mixed := grantedOn("FUNCTION", "f(IN a integer, OUT b text, INOUT c boolean, TABLE d int)"); mixed != "f(integer,boolean)" {
+		t.Errorf("mixed modes sig = %q, want f(integer,boolean)", mixed)
+	}
+	// Function names containing '(' (both quoted and unquoted).
+	if _, q := grantedOn("FUNCTION", `"f(x)"(integer)`); q != "f(x)(integer)" {
+		t.Errorf("quoted paren name = %q, want f(x)(integer)", q)
+	}
+	if _, u := grantedOn("FUNCTION", `f(x)(integer, numeric(10, 2))`); u != "f(x)(integer,numeric(10,2))" {
+		t.Errorf("unquoted paren name = %q, want f(x)(integer,numeric(10,2))", u)
+	}
+	// Nested '=' inside parentheses must terminate cleanly without stalling.
+	if typ, ok := argType("a text DEFAULT foo(x=1)"); !ok || typ != "text" {
+		t.Errorf("nested '=' in DEFAULT = (%q, %v), want (text, true)", typ, ok)
+	}
+	if toks := scanArgTokens("numeric(a=1)"); len(toks) == 0 {
+		t.Errorf("scanArgTokens(numeric(a=1)) returned empty")
+	}
+}
+
 // stubSQLDriver is a minimal in-memory database/sql driver for testing howTo's planner
 // logic (non-public object collisions, pg_catalog ACL filtering before withoutOthers, and
 // missing psql refusal in afresh mode) without a live Postgres server.

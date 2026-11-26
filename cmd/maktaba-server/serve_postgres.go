@@ -205,23 +205,15 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 	need, why, err := u.Needed(ctx)
 	if err == nil && need {
 		err = u.Run(ctx, log)
-		if err == nil {
-			// the new cluster's record starts as the old one's: the same release's
-			// migrations, the same dumps (a second try takes it again: the old moved on).
-			// Reconcile any pending untouched restore's DataID from the verified old
-			// cluster to the new upgraded cluster so its new system_identifier is not
-			// misclassified as replaced.
-			var oldSys, newSys string
-			if m, ok, merr := pgbundle.ReadUpgradedFrom(b.Data); merr == nil && ok {
-				oldSys = m.SystemID
-			}
-			if nc, cerr := pgbundle.ReadControl(ctx, b.Bin("pg_controldata"), b.Data); cerr == nil {
-				newSys = nc.SystemID
-			}
-			seedClusterRecord(root, oldMajor, newMajor, oldSys, newSys, log)
-		}
 	} else if err == nil {
 		fmt.Fprintf(log, "[postgres] the library database runs on PostgreSQL %s (%s)\n", newMajor, why)
+	}
+	if err == nil {
+		// Seed and reconcile the new cluster's record idempotently against UpgradeMarker's
+		// checkpoint: if a previous start crashed after u.Run wrote UpgradeMarker but before
+		// seeding finished, Needed() returns up-to-date on restart and this still finishes
+		// seeding and reconciliation.
+		seedClusterRecordIfNeeded(ctx, root, b, oldMajor, newMajor, log)
 	}
 	if err != nil {
 		fmt.Fprintf(log, "[postgres] level=error the library database could not be upgraded to PostgreSQL %s, so it "+
@@ -236,31 +228,67 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 	return b
 }
 
+// recordSeededMarker tracks which upgraded cluster checkpoint has already had its database
+// record seeded and reconciled, so a kill between writing UpgradeMarker and seeding retries
+// cleanly on the next startup.
+const recordSeededMarker = "maktaba-record-seeded"
+
+// seedClusterRecordIfNeeded copies and reconciles the old cluster's database record for b
+// once per UpgradeMarker checkpoint.
+func seedClusterRecordIfNeeded(ctx context.Context, root string, b pgbundle.Bundle, oldMajor, newMajor string, log io.Writer) {
+	m, ok, err := pgbundle.ReadUpgradedFrom(b.Data)
+	if err != nil || !ok || m.Checkpoint == "" {
+		return
+	}
+	stamp := m.SystemID + "@" + m.Checkpoint
+	markerPath := filepath.Join(b.Data, recordSeededMarker)
+	if raw, err := os.ReadFile(markerPath); err == nil && strings.TrimSpace(string(raw)) == stamp {
+		return
+	}
+	var newSys string
+	if nc, cerr := pgbundle.ReadControl(ctx, b.Bin("pg_controldata"), b.Data); cerr == nil {
+		newSys = nc.SystemID
+	}
+	if err := seedClusterRecord(root, oldMajor, newMajor, m.Identity, m.Table, newSys, log); err != nil {
+		return
+	}
+	if err := layout.WriteFileAtomic(markerPath, []byte(stamp+"\n"), 0o600); err != nil {
+		fmt.Fprintf(log, "[postgres] level=warn could not record seeded marker (%v): next start will re-seed\n", err)
+	}
+}
+
 // seedClusterRecord copies the old cluster's database record to the new one's. When a
-// pending restore recorded untouched data on the verified old cluster (oldSys), its old
+// pending restore recorded untouched data matching the verified old cluster's full identity
+// (oldID = <sys>/<db_oid>/<public_ns_oid> and oldTable = goose_db_version OID), its old
 // DataID/DataTable are cleared so the upgraded cluster (newSys, with a new system
-// identifier and possibly new database OID) adopts its own live identity on the next
-// settleData probe instead of falsely classifying untouched data as replaced.
-func seedClusterRecord(root, oldMajor, newMajor, oldSys, newSys string, log io.Writer) {
+// identifier) adopts its own live identity on the next settleData probe instead of falsely
+// classifying untouched data as replaced.
+func seedClusterRecord(root, oldMajor, newMajor, oldID, oldTable, newSys string, log io.Writer) error {
 	dir := filepath.Join(root, "state")
 	from, to := filepath.Join(dir, apppayload.ClusterRecordName(oldMajor)), filepath.Join(dir, apppayload.ClusterRecordName(newMajor))
 	raw, err := os.ReadFile(from)
 	if errors.Is(err, os.ErrNotExist) {
 		_ = os.Remove(to)
-		return
+		return nil
 	}
 	if err == nil {
-		raw = reconcileUpgradedRecord(raw, oldSys, newSys, log)
+		raw = reconcileUpgradedRecord(raw, oldID, oldTable, newSys, log)
 		err = layout.WriteFileAtomic(to, raw, 0o644)
 	}
 	if err != nil {
 		fmt.Fprintf(log, "[postgres] level=warn the upgraded library database's record is not seeded (%v): "+
 			"this start takes it as an update from the release that ran last\n", err)
+		return err
 	}
+	return nil
 }
 
-func reconcileUpgradedRecord(raw []byte, oldSys, newSys string, log io.Writer) []byte {
-	if oldSys == "" || newSys == "" || oldSys == newSys {
+func reconcileUpgradedRecord(raw []byte, oldID, oldTable, newSys string, log io.Writer) []byte {
+	if oldID == "" || newSys == "" {
+		return raw
+	}
+	oldSys, oldRest, ok := strings.Cut(oldID, "/")
+	if !ok || oldSys == "" || oldRest == "" || oldSys == newSys {
 		return raw
 	}
 	var rec apppayload.Database
@@ -270,8 +298,12 @@ func reconcileUpgradedRecord(raw []byte, oldSys, newSys string, log io.Writer) [
 	if !asked(rec) || rec.Data != apppayload.DataUntouched || rec.DataID == "" || strings.HasSuffix(rec.DataID, insideMark) {
 		return raw
 	}
-	recSys, _, ok := strings.Cut(rec.DataID, "/")
-	if !ok || recSys != oldSys {
+	// Verify the full old identity (cluster system ID, database OID, public schema OID,
+	// and migration-table OID when recorded), never system ID alone.
+	if rec.DataID != oldID {
+		return raw
+	}
+	if rec.DataTable != "" && (oldTable == "" || rec.DataTable != oldTable) {
 		return raw
 	}
 	rec.DataID, rec.DataTable = "", ""

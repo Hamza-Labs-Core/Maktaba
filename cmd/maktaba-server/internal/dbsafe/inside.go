@@ -27,10 +27,14 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
+// publicUsageGrant keeps PUBLIC's USAGE on public even if an archived ACL - SCHEMA public
+// entry ran REVOKE ALL ON SCHEMA public FROM PUBLIC.
+const publicUsageGrant = "GRANT USAGE ON SCHEMA public TO PUBLIC;\n"
+
 // publicAfresh makes the public schema again, with the use of it every role has in a new
 // database (a dump holds a grant on it only where it is another: no role is left out of a
 // schema it could use).
-const publicAfresh = "DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\nGRANT USAGE ON SCHEMA public TO PUBLIC;\n"
+const publicAfresh = "DROP SCHEMA public CASCADE;\nCREATE SCHEMA public;\n" + publicUsageGrant
 
 // withPublic are the extensions that go with the public schema: those in it, and those in other
 // schemas that depend on one that goes.
@@ -162,6 +166,9 @@ type howToRestore struct {
 	inside bool
 	// empty is the script that empties public
 	empty string
+	// after is SQL run after the dump's post-data section and before COMMIT (e.g.
+	// re-granting USAGE ON SCHEMA public TO PUBLIC after any retained ACL - SCHEMA public).
+	after string
 	// list is pg_restore's list of what it restores ("": all the dump holds)
 	list string
 }
@@ -288,6 +295,7 @@ func (t Target) howTo(ctx context.Context, d *sql.DB, dump, list string, psql bo
 				"(install the PostgreSQL client programs, or set MAKTABA_PG_BIN)")
 		}
 		h.empty = publicAfresh
+		h.after = publicUsageGrant
 		skip["SCHEMA - public"] = true // publicAfresh creates public; keep any ACL - SCHEMA public in the dump
 		for name, e := range exts {
 			if e.there && !e.goes {
@@ -690,9 +698,10 @@ func columnOf(name string) (table, column string, ok bool) {
 
 // functionSig is a function's (or aggregate's, procedure's) name and canonical input argument
 // types as one key, matching both PG 16/18 definition tags (types only), ACL tags (which may
-// carry argument names, modes, and defaults), and pg_catalog.oidvectortypes(proargtypes).
-// Quoted identifier contents are preserved verbatim while whitespace outside quotes is
-// normalized.
+// carry argument names, IN/OUT/INOUT/VARIADIC modes, and defaults), and
+// pg_catalog.oidvectortypes(proargtypes). OUT and TABLE parameters are omitted so ACL tags
+// match input-only definition/catalog keys. Quoted identifier contents are preserved verbatim
+// while whitespace outside quotes is normalized.
 func functionSig(tag string) string {
 	name, args, ok := splitSig(tag)
 	if !ok {
@@ -701,18 +710,29 @@ func functionSig(tag string) string {
 	var sb strings.Builder
 	sb.WriteString(unquote(name))
 	sb.WriteByte('(')
-	for i, arg := range splitArgs(args) {
-		if i > 0 {
+	n := 0
+	for _, arg := range splitArgs(args) {
+		typ, isInput := argType(arg)
+		if !isInput {
+			continue
+		}
+		if n > 0 {
 			sb.WriteByte(',')
 		}
-		sb.WriteString(argType(arg))
+		sb.WriteString(typ)
+		n++
 	}
 	sb.WriteByte(')')
 	return sb.String()
 }
 
 // splitSig is a signature's name and its arguments as written (ok false: no parentheses).
+// Quoted names ("...") scan forward to the closing quote; unquoted names locate the outer
+// parameter list from the trailing ')' backwards so names containing '(' split cleanly too.
 func splitSig(tag string) (name, args string, ok bool) {
+	if !strings.HasSuffix(tag, ")") {
+		return "", "", false
+	}
 	if strings.HasPrefix(tag, `"`) {
 		for i := 1; i < len(tag); i++ {
 			if tag[i] != '"' {
@@ -723,18 +743,47 @@ func splitSig(tag string) (name, args string, ok bool) {
 				continue
 			}
 			rest := tag[i+1:]
-			if strings.HasPrefix(rest, "(") && strings.HasSuffix(rest, ")") {
+			if strings.HasPrefix(rest, "(") {
 				return tag[:i+1], rest[1 : len(rest)-1], true
 			}
 			return "", "", false
 		}
 		return "", "", false
 	}
-	i := strings.IndexByte(tag, '(')
-	if i < 0 || !strings.HasSuffix(tag, ")") {
-		return "", "", false
+	// Scan backwards from the trailing ')' to its matching '(' while respecting quotes.
+	depth, dquot, squot := 0, false, false
+	for i := len(tag) - 1; i >= 0; i-- {
+		c := tag[i]
+		switch {
+		case dquot && c == '"':
+			if i > 0 && tag[i-1] == '"' {
+				i--
+				continue
+			}
+			dquot = false
+		case squot && c == '\'':
+			if i > 0 && tag[i-1] == '\'' {
+				i--
+				continue
+			}
+			squot = false
+		case !dquot && !squot && c == '"':
+			dquot = true
+		case !dquot && !squot && c == '\'':
+			squot = true
+		case !dquot && !squot && c == ')':
+			depth++
+		case !dquot && !squot && c == '(':
+			depth--
+			if depth == 0 {
+				if i == 0 {
+					return "", "", false
+				}
+				return tag[:i], tag[i+1 : len(tag)-1], true
+			}
+		}
 	}
-	return tag[:i], tag[i+1 : len(tag)-1], true
+	return "", "", false
 }
 
 // splitArgs is a signature's argument list split at its top-level commas (a default's
@@ -852,12 +901,21 @@ func scanArgTokens(arg string) []sqlTok {
 			i++
 			continue
 		}
-		if c == '=' && depth == 0 {
-			break
+		if c == '=' {
+			if depth == 0 {
+				break
+			}
+			toks = append(toks, sqlTok{kind: tokPunct, text: "="})
+			i++
+			continue
 		}
 		start := i
 		for i < len(arg) && !strings.ContainsRune(" \t\n\r\"'()[],.*=", rune(arg[i])) {
 			i++
+		}
+		if i == start {
+			i++
+			continue
 		}
 		word := arg[start:i]
 		if depth == 0 && strings.EqualFold(word, "DEFAULT") {
@@ -891,14 +949,21 @@ func isMultiWordTypeStart(toks []sqlTok) bool {
 	return false
 }
 
-// argType is one argument as its canonical input type: leading modes (IN, INOUT, VARIADIC),
-// parameter name (bare or quoted), and DEFAULT expression are stripped, while quoted type
-// identifiers keep their internal spaces and case verbatim.
-func argType(arg string) string {
+// argType is one argument as its canonical input type: OUT and TABLE parameters return
+// isInput=false (PostgreSQL proargtypes / function identity keys carry input parameters
+// only). Leading input modes (IN, INOUT, VARIADIC), parameter name (bare or quoted), and
+// DEFAULT expression are stripped, while quoted type identifiers keep their internal spaces
+// and case verbatim.
+func argType(arg string) (string, bool) {
 	toks := scanArgTokens(arg)
-	// Strip leading parameter mode keywords (IN, INOUT, VARIADIC).
+	if len(toks) == 0 {
+		return "", false
+	}
+	// Strip leading parameter mode keywords; omit OUT and TABLE parameters.
 	for len(toks) > 1 && toks[0].kind == tokWord {
 		switch toks[0].text {
+		case "out", "table":
+			return "", false
 		case "in", "inout", "variadic":
 			toks = toks[1:]
 			continue
@@ -925,7 +990,7 @@ func argType(arg string) string {
 		}
 		sb.WriteString(tk.text)
 	}
-	return sb.String()
+	return sb.String(), true
 }
 
 func unquote(name string) string {

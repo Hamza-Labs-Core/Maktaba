@@ -919,3 +919,53 @@ func TestWithServerBoundsRetryRunServerToSharedDeadline(t *testing.T) {
 		t.Fatalf("retry runServer took %s (not bounded by shmWait %s)", took, shmWait)
 	}
 }
+
+// WithServer carries one shared shmWait deadline across the first startup settle, the first
+// runServer readiness wait, and startup teardown, while keeping the caller's original ctx
+// uncanceled for fn once ready.
+func TestWithServerBoundsFirstStartAndTeardownToSharedDeadline(t *testing.T) {
+	t.Run("first start and stuck teardown share shmWait", func(t *testing.T) {
+		b, _ := fakeBundle(t)
+		oldWait, oldReady, oldCheck, oldAwait := shmWait, readyTimeout, readyCheck, awaitShmFree
+		t.Cleanup(func() { shmWait, readyTimeout, readyCheck, awaitShmFree = oldWait, oldReady, oldCheck, oldAwait })
+		shmWait, readyTimeout = 250*time.Millisecond, 10*time.Second
+		awaitShmFree = func(_ Bundle, _ context.Context) {
+			time.Sleep(120 * time.Millisecond)
+		}
+		readyCheck = func(ctx context.Context, _, _, _ string) error {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		// Ignore SIGINT/SIGTERM so an unbounded 30s teardown would exceed our assertion.
+		script := "#!/bin/sh\ntrap '' INT TERM\nsleep 30 </dev/null >/dev/null 2>&1\n"
+		if err := os.WriteFile(b.Bin("postgres"), []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		start := time.Now()
+		err := b.WithServer(context.Background(), io.Discard, func() error { return nil })
+		if err == nil || !strings.Contains(err.Error(), "postgres did not get ready") {
+			t.Fatalf("err = %v, want readiness timeout", err)
+		}
+		if took := time.Since(start); took > 2*time.Second {
+			t.Fatalf("first start + teardown took %s (not bounded by shmWait %s)", took, shmWait)
+		}
+	})
+
+	t.Run("caller ctx stays uncanceled for fn after shmWait passes", func(t *testing.T) {
+		b, _ := fakeBundle(t)
+		oldWait, oldAwait := shmWait, awaitShmFree
+		t.Cleanup(func() { shmWait, awaitShmFree = oldWait, oldAwait })
+		shmWait = 350 * time.Millisecond
+		awaitShmFree = func(_ Bundle, _ context.Context) {}
+		ctx := context.Background()
+		if err := b.WithServer(ctx, io.Discard, func() error {
+			time.Sleep(400 * time.Millisecond)
+			if ctx.Err() != nil {
+				t.Errorf("caller ctx canceled during fn: %v", ctx.Err())
+			}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	})
+}

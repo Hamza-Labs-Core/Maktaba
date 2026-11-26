@@ -321,8 +321,8 @@ func TestAnAskWhoseSwitchWasCutShortWaitsForItsRelease(t *testing.T) {
 	if !pgbundle.BackupsHeld(e.backups) {
 		t.Fatal("the backups are not held while it waits")
 	}
-	// the way out is on the recovery page: give it up, and this release goes on, with a non-empty Why
-	if s := stuckOf(e.r); s == nil || !s.CanGiveUp || !strings.Contains(s.Why, "v0.2.0") {
+	// the way out is on the recovery page: dedicated WaitingFor (no English Why in Arabic)
+	if s := stuckOf(e.r); s == nil || !s.CanGiveUp || s.WaitingFor != "0.2.0" || s.Why != "" {
 		t.Fatalf("stuck %+v", s)
 	}
 	// the release it is for starts: the restore runs there, as it was asked
@@ -1126,7 +1126,7 @@ func manyBackups(t *testing.T, dir string) []string {
 	for i, n := range []string{"maktaba-20261101-030000.dump", "maktaba-20261102-030000.dump", "maktaba-20261103-030000.dump",
 		"pre-v0.1.0-to-v0.1.1.dump", "pre-v0.1.1-to-v0.2.0.dump", "replaced-v0.1.0-x.dump", "replaced-v0.1.1-x.dump"} {
 		p := filepath.Join(dir, n)
-		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+		if err := os.WriteFile(p, []byte("PGDMP"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Chtimes(p, old.Add(time.Duration(i)*time.Minute), old.Add(time.Duration(i)*time.Minute)); err != nil {
@@ -1313,7 +1313,7 @@ func TestOnlyWhatTheRestoreNeedsIsKept(t *testing.T) {
 	manyBackups(t, e.backups)
 	rec := e.asked()
 	rec.Before.Dump = filepath.Join(e.backups, "pre-v0.1.1-to-v0.2.0.dump")
-	rec.Aside, rec.AsideBytes, rec.Data = filepath.Join(e.backups, "replaced-v0.1.1-x.dump"), 1, apppayload.DataReplaced
+	rec.Aside, rec.AsideBytes, rec.Data = filepath.Join(e.backups, "replaced-v0.1.1-x.dump"), 5, apppayload.DataReplaced
 	e.write(rec)
 	e.f.id, e.f.schema = "9/9/9", 149
 	if _, err := e.r.restoreAs(context.Background(), otherBackup, "admin", restoreAsk{confirm: true, withoutCopy: true}); err != nil {
@@ -1361,8 +1361,8 @@ func TestARestoreGoesOnWhereTheBackupsMoved(t *testing.T) {
 	rec := e.asked()
 	old := t.TempDir()
 	const aside = "replaced-v0.3.0-x.dump"
-	rec.Dump, rec.Aside, rec.AsideBytes = pgbundle.KeptPath(old, firstBackup), filepath.Join(old, aside), 4
-	if err := os.WriteFile(filepath.Join(e.backups, aside), []byte("copy"), 0o600); err != nil {
+	rec.Dump, rec.Aside, rec.AsideBytes = pgbundle.KeptPath(old, firstBackup), filepath.Join(old, aside), 5
+	if err := os.WriteFile(filepath.Join(e.backups, aside), []byte("PGDMP"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	e.write(rec)
@@ -1794,24 +1794,30 @@ func TestUnvalidatedReplacedDumpsAreNotReused(t *testing.T) {
 	}
 
 	for _, kind := range []string{"empty-file", "empty-dir", "dir-no-toc", "corrupt-file", "corrupt-archive"} {
-		for _, mode := range []string{"named-zero-bytes", "legacy-unknown"} {
+		for _, mode := range []string{"named-zero-bytes", "named-same-size", "legacy-unknown"} {
+			if mode == "named-same-size" && kind != "corrupt-file" && kind != "corrupt-archive" {
+				continue
+			}
 			t.Run(mode+"/"+kind, func(t *testing.T) {
 				e := newExitsRig(t)
 				e.inst.running = "0.2.0"
 				if kind == "corrupt-archive" {
 					verifyAside = func(context.Context, *migrationGate, string) error {
-						return errors.New("pg_restore --list: corrupt archive")
+						return errors.New("pg_restore --file=-: corrupt archive")
 					}
 					e.r.verifyAside = func(context.Context, string) error {
-						return errors.New("pg_restore --list: corrupt archive")
+						return errors.New("pg_restore --file=-: corrupt archive")
 					}
 				}
 				p := filepath.Join(e.backups, "replaced-v0.3.0-20261126T000000.dump")
 				makeCandidate(t, p, kind)
 				rec := e.asked()
-				if mode == "named-zero-bytes" {
+				switch mode {
+				case "named-zero-bytes":
 					rec.Aside, rec.AsideBytes = p, 0
-				} else {
+				case "named-same-size":
+					rec.Aside, rec.AsideBytes = p, pgbundle.DumpBytes(p)
+				default:
 					rec.Data = apppayload.DataUnknown
 				}
 				e.write(rec)
@@ -1825,14 +1831,42 @@ func TestUnvalidatedReplacedDumpsAreNotReused(t *testing.T) {
 					t.Fatalf("plan treated invalid %s as valid copy: pl=%+v err=%v", kind, pl, err)
 				}
 
-				// setAsideReplaced must take a fresh copy instead of reusing the invalid candidate.
+				// setAsideReplaced / restore must take a fresh copy instead of reusing the invalid candidate.
 				e.f.restoreErr = errors.New("stop after aside")
 				_ = haltCode(t, e.start("v0.2.0"))
 				if len(e.f.asides) != 1 {
-					t.Fatalf("expected 1 fresh aside taken for invalid %s, got %v", kind, e.f.asides)
+					t.Fatalf("expected 1 fresh aside taken for invalid %s (%s), got %v", kind, mode, e.f.asides)
 				}
 			})
 		}
+	}
+}
+
+// Even when pl.Backup is the newest update dump, a failed KeepForRestore must NOT fall back
+// silently when another required copy (rec.Aside or before(rec).Dump) also needs protection.
+func TestProtectRefusesNewestUpdateFallbackWhenOtherRequiredCopiesExist(t *testing.T) {
+	e := newExitsRig(t)
+	// Put a second required backup (Aside) alongside otherBackup (the newest update dump in newExitsRig).
+	aside := filepath.Join(e.backups, "replaced-v0.3.0-20261126T000000.dump")
+	if err := os.WriteFile(aside, []byte("PGDMP"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Make KeepForRestore fail by placing a regular file where its kept directory would be created.
+	if err := os.WriteFile(filepath.Dir(pgbundle.KeptPath(e.backups, otherBackup)), []byte("blocker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rec := e.asked()
+	rec.Dump = filepath.Join(e.backups, otherBackup)
+	rec.Aside, rec.AsideBytes = aside, int64(len("PGDMP"))
+	pl := restorePlan{Backup: otherBackup, Release: "v0.2.0"}
+	if _, err := e.r.protect(pl, rec); restoreCode(err) != "restore_unprotected" {
+		t.Fatalf("protect allowed fallback despite unprotected aside copy: %v", err)
+	}
+	// Without any other required copy, the newest update dump alone may still fall back.
+	rec.Aside, rec.AsideBytes, rec.Before = "", 0, nil
+	got, err := e.r.protect(pl, rec)
+	if err != nil || got != rec.Dump {
+		t.Fatalf("newest update dump alone failed fallback: got=%q err=%v", got, err)
 	}
 }
 

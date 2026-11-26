@@ -384,7 +384,7 @@ func installFakeDB(t *testing.T, cfg config.Config) *fakeDB {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.asides = append(f.asides, filepath.Base(path))
-		return os.WriteFile(path, []byte("aside"), 0o600)
+		return os.WriteFile(path, []byte("PGDMP"), 0o600)
 	}
 	dumpBeforeUpdate = func(_ context.Context, b pgbundle.Bundle, from, to string, keep int) (string, error) {
 		f.mu.Lock()

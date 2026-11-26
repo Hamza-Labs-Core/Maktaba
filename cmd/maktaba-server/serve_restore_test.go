@@ -374,8 +374,8 @@ func TestTheCopyIsAskedForOnlyWhenNeeded(t *testing.T) {
 	roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }
 	for name, set := range map[string]func(rec *apppayload.Database){
 		"kept already": func(rec *apppayload.Database) {
-			rec.Aside, rec.AsideBytes = filepath.Join(e.backups, "replaced-v0.3.0-x.dump"), 4
-			if err := os.WriteFile(rec.Aside, []byte("copy"), 0o600); err != nil {
+			rec.Aside, rec.AsideBytes = filepath.Join(e.backups, "replaced-v0.3.0-x.dump"), 5
+			if err := os.WriteFile(rec.Aside, []byte("PGDMP"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 		},

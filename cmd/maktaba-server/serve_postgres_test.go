@@ -11,6 +11,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
 )
 
 // A home on a Postgres of its own is told at its start that its machines keep no copy of
@@ -67,7 +68,7 @@ func TestSeedClusterRecordReconcilesUntouchedPendingRestoreIdentity(t *testing.T
 		return rec
 	}
 
-	t.Run("untouched pending restore matching old system id is reconciled", func(t *testing.T) {
+	t.Run("untouched pending restore matching full old identity is reconciled", func(t *testing.T) {
 		root := t.TempDir()
 		writeOld(t, root, apppayload.Database{
 			Version:   "v0.4.0",
@@ -80,7 +81,9 @@ func TestSeedClusterRecordReconcilesUntouchedPendingRestoreIdentity(t *testing.T
 			DataTable: "16400",
 		})
 		var log bytes.Buffer
-		seedClusterRecord(root, "16", "18", "111111", "222222", &log)
+		if err := seedClusterRecord(root, "16", "18", "111111/16384/2200", "16400", "222222", &log); err != nil {
+			t.Fatal(err)
+		}
 		got := readNew(t, root)
 		if got.Data != apppayload.DataUntouched || got.DataID != "" || got.DataTable != "" {
 			t.Fatalf("seeded record = %+v, want DataUntouched with cleared DataID/DataTable", got)
@@ -97,7 +100,77 @@ func TestSeedClusterRecordReconcilesUntouchedPendingRestoreIdentity(t *testing.T
 		}
 	})
 
-	t.Run("mismatched old system id is preserved and still detected as replaced", func(t *testing.T) {
+	t.Run("same cluster system id but changed db, schema, or migration table is not cleared", func(t *testing.T) {
+		cases := map[string]struct {
+			oldID, oldTable string
+		}{
+			"changed-db":     {"111111/16399/2200", "16400"},
+			"changed-schema": {"111111/16384/2299", "16400"},
+			"changed-table":  {"111111/16384/2200", "16999"},
+			"missing-table":  {"111111/16384/2200", ""},
+			"missing-old-id": {"", "16400"},
+			"other-cluster":  {"999999/16384/2200", "16400"},
+		}
+		for name, c := range cases {
+			t.Run(name, func(t *testing.T) {
+				root := t.TempDir()
+				writeOld(t, root, apppayload.Database{
+					Version:   "v0.4.0",
+					State:     apppayload.DatabaseRestoring,
+					From:      "v0.3.0",
+					By:        "admin",
+					Dump:      "/backups/pre-v0.3.0-to-v0.4.0.dump",
+					Data:      apppayload.DataUntouched,
+					DataID:    "111111/16384/2200",
+					DataTable: "16400",
+				})
+				var log bytes.Buffer
+				if err := seedClusterRecord(root, "16", "18", c.oldID, c.oldTable, "222222", &log); err != nil {
+					t.Fatal(err)
+				}
+				got := readNew(t, root)
+				if got.DataID != "111111/16384/2200" || got.DataTable != "16400" {
+					t.Fatalf("mismatched identity was cleared: %+v", got)
+				}
+				settled, err := settleData(context.Background(), got, dataProbe{
+					identity: func(context.Context) (string, int64, error) { return "222222/16385/2200#16400", 150, nil },
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if settled.Data != apppayload.DataReplaced {
+					t.Fatalf("settled = %+v, want DataReplaced", settled)
+				}
+			})
+		}
+	})
+
+	t.Run("already replaced or inside-marked record is never cleared", func(t *testing.T) {
+		for name, rec := range map[string]apppayload.Database{
+			"replaced": {
+				Version: "v0.4.0", State: apppayload.DatabaseRestoring, From: "v0.3.0", By: "admin",
+				Dump: "/b/d.dump", Data: apppayload.DataReplaced, DataID: "111111/16384/2200", DataTable: "16400",
+			},
+			"inside-mark": {
+				Version: "v0.4.0", State: apppayload.DatabaseRestoring, From: "v0.3.0", By: "admin",
+				Dump: "/b/d.dump", Data: apppayload.DataUntouched, DataID: "111111/16384/2200" + insideMark, DataTable: "16400",
+			},
+		} {
+			t.Run(name, func(t *testing.T) {
+				root := t.TempDir()
+				writeOld(t, root, rec)
+				if err := seedClusterRecord(root, "16", "18", "111111/16384/2200", "16400", "222222", &bytes.Buffer{}); err != nil {
+					t.Fatal(err)
+				}
+				got := readNew(t, root)
+				if got.DataID != rec.DataID {
+					t.Fatalf("DataID changed: %+v, want %q", got, rec.DataID)
+				}
+			})
+		}
+	})
+
+	t.Run("crash between UpgradeMarker write and seeding retries idempotently on restart", func(t *testing.T) {
 		root := t.TempDir()
 		writeOld(t, root, apppayload.Database{
 			Version:   "v0.4.0",
@@ -106,46 +179,46 @@ func TestSeedClusterRecordReconcilesUntouchedPendingRestoreIdentity(t *testing.T
 			By:        "admin",
 			Dump:      "/backups/pre-v0.3.0-to-v0.4.0.dump",
 			Data:      apppayload.DataUntouched,
-			DataID:    "999999/16384/2200",
+			DataID:    "111111/16384/2200",
 			DataTable: "16400",
 		})
-		var log bytes.Buffer
-		seedClusterRecord(root, "16", "18", "111111", "222222", &log)
-		got := readNew(t, root)
-		if got.DataID != "999999/16384/2200" {
-			t.Fatalf("mismatched DataID was cleared: %+v", got)
-		}
-		settled, err := settleData(context.Background(), got, dataProbe{
-			identity: func(context.Context) (string, int64, error) { return "222222/16385/2200#16400", 150, nil },
-		})
-		if err != nil {
+		pg18Data := filepath.Join(root, "postgres-18")
+		pg18Home := filepath.Join(root, "pg18")
+		if err := os.MkdirAll(pg18Data, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if settled.Data != apppayload.DataReplaced {
-			t.Fatalf("settled = %+v, want DataReplaced", settled)
+		if err := os.MkdirAll(filepath.Join(pg18Home, "bin"), 0o755); err != nil {
+			t.Fatal(err)
 		}
-	})
-
-	t.Run("already replaced or inside-marked record is never cleared", func(t *testing.T) {
-		for name, rec := range map[string]apppayload.Database{
-			"replaced": {
-				Version: "v0.4.0", State: apppayload.DatabaseRestoring, From: "v0.3.0", By: "admin",
-				Dump: "/b/d.dump", Data: apppayload.DataReplaced, DataID: "111111/16384/2200",
-			},
-			"inside-mark": {
-				Version: "v0.4.0", State: apppayload.DatabaseRestoring, From: "v0.3.0", By: "admin",
-				Dump: "/b/d.dump", Data: apppayload.DataUntouched, DataID: "111111/16384/2200" + insideMark,
-			},
-		} {
-			t.Run(name, func(t *testing.T) {
-				root := t.TempDir()
-				writeOld(t, root, rec)
-				seedClusterRecord(root, "16", "18", "111111", "222222", &bytes.Buffer{})
-				got := readNew(t, root)
-				if got.DataID != rec.DataID {
-					t.Fatalf("DataID changed: %+v, want %q", got, rec.DataID)
-				}
-			})
+		ctrl := "#!/bin/sh\necho 'Database cluster state: shut down'\necho 'Database system identifier: 222222'\necho 'Latest checkpoint location: 0/2'\n"
+		if err := os.WriteFile(filepath.Join(pg18Home, "bin", "pg_controldata"), []byte(ctrl), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		// Simulate crash right after UpgradeMarker was written (no recordSeededMarker yet).
+		markerRaw, _ := json.Marshal(pgbundle.UpgradedFrom{
+			Major: "16", SystemID: "111111", Checkpoint: "0/1", Identity: "111111/16384/2200", Table: "16400",
+		})
+		if err := os.WriteFile(filepath.Join(pg18Data, pgbundle.UpgradeMarker), markerRaw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		b := pgbundle.Bundle{Home: pg18Home, Data: pg18Data}
+		var log bytes.Buffer
+		seedClusterRecordIfNeeded(context.Background(), root, b, "16", "18", &log)
+		got := readNew(t, root)
+		if got.Data != apppayload.DataUntouched || got.DataID != "" || got.DataTable != "" {
+			t.Fatalf("after restart recovery, seeded record = %+v", got)
+		}
+		// Mutate the PG 18 record as live operation would, then verify a subsequent restart
+		// does not overwrite it once recordSeededMarker matches the checkpoint.
+		got.DataID = "222222/16385/2200"
+		mut, _ := json.Marshal(got)
+		if err := os.WriteFile(filepath.Join(root, "state", apppayload.ClusterRecordName("18")), mut, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		seedClusterRecordIfNeeded(context.Background(), root, b, "16", "18", &log)
+		after := readNew(t, root)
+		if after.DataID != "222222/16385/2200" {
+			t.Fatalf("subsequent restart overwrote PG 18 record: %+v", after)
 		}
 	})
 }

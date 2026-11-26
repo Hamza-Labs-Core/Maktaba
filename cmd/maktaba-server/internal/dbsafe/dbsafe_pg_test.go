@@ -1374,7 +1374,25 @@ func TestRestoreLeavesWhatIsOutsidePublic(t *testing.T) {
 		must(d, `INSERT INTO own VALUES (3)`) // a row since
 		_ = d.Close()
 		var log bytes.Buffer
-		if err := rt.Restore(ctx, dump, &log); err != nil {
+		err = rt.Restore(ctx, dump, &log)
+		if !psql {
+			if err == nil || !CannotRestore(err) || !strings.Contains(err.Error(), "(nothing changed)") {
+				t.Fatalf("%s: want refusal without psql, got %v\n%s", name, err, log.String())
+			}
+			if d, err = r.t.open(ctx, "outside_check"); err != nil {
+				t.Fatal(err)
+			}
+			var rows int
+			if err := d.QueryRow(`SELECT count(*) FROM own`).Scan(&rows); err != nil {
+				t.Fatal(err)
+			}
+			_ = d.Close()
+			if rows != 3 {
+				t.Errorf("%s: %d rows, want 3 (nothing changed)", name, rows)
+			}
+			continue
+		}
+		if err != nil {
 			t.Fatalf("%s: %v\n%s", name, err, log.String())
 		}
 		if d, err = r.t.open(ctx, "outside_check"); err != nil {
@@ -1540,8 +1558,12 @@ func TestRestoreOfAnExtensionItMayNotMakeTouchesNothing(t *testing.T) {
 		t.Fatalf("with psql: %d rows, %v", n, err)
 	}
 	_ = d.Close()
-	// a backup from before it was made needs none of it
-	if err := without.Restore(ctx, earlier, nil); err != nil {
+	// without psql, even a backup from before the extension is refused up front (one transaction takes psql)
+	if err := without.Restore(ctx, earlier, nil); err == nil || !CannotRestore(err) || !strings.Contains(err.Error(), "psql") {
+		t.Fatalf("without psql on earlier backup: %v", err)
+	}
+	// with psql, a backup from before it was made succeeds
+	if err := tg.Restore(ctx, earlier, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := super.Restore(ctx, dump, nil); err != nil || ext() == was {
