@@ -302,50 +302,63 @@ func seedClusterRecordIfPending(ctx context.Context, root string, ob, b pgbundle
 func seedClusterRecord(root, oldMajor, newMajor, oldID, oldTable, newSys string, log io.Writer) error {
 	dir := filepath.Join(root, "state")
 	from, to := filepath.Join(dir, apppayload.ClusterRecordName(oldMajor)), filepath.Join(dir, apppayload.ClusterRecordName(newMajor))
-	// A restore can be requested on 18 after rollback switches releases but
-	// before 16 starts and changes its checkpoint. Keep that request intact.
-	// When 18 has just been rebuilt from 16, an untried request must take a
-	// fresh safety copy of the rebuilt database, even if it observed the
-	// previous 18 cluster's identity when it was written.
-	if existing, err := os.ReadFile(to); err == nil {
-		var rec apppayload.Database
-		if json.Unmarshal(existing, &rec) == nil && asked(rec) {
-			if rec.TriedBy != "" || rec.Data != apppayload.DataUntouched || rec.Aside != "" ||
-				strings.HasSuffix(rec.DataID, insideMark) || (rec.DataID == "" && rec.DataTable == "") {
-				return nil
-			}
-			var fields map[string]json.RawMessage
-			if err := json.Unmarshal(existing, &fields); err != nil {
-				return err
-			}
-			delete(fields, "data_id")
-			delete(fields, "data_table")
-			raw, err := json.MarshalIndent(fields, "", "  ")
-			if err != nil {
-				return err
-			}
-			return layout.WriteFileAtomic(to, append(raw, '\n'), 0o644)
+	raw, err := os.ReadFile(from)
+	var source *apppayload.Database
+	if err == nil {
+		source = new(apppayload.Database)
+		if err := json.Unmarshal(raw, source); err != nil {
+			return fmt.Errorf("read PostgreSQL %s database record: %w", oldMajor, err)
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	raw, err := os.ReadFile(from)
-	if errors.Is(err, os.ErrNotExist) {
-		if rerr := os.Remove(to); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-			return rerr
+	existing, err := os.ReadFile(to)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	var request apppayload.Database
+	if json.Unmarshal(existing, &request) == nil && asked(request) &&
+		request.TriedBy == "" && request.Data != apppayload.DataReplaced && request.Data != apppayload.DataGone &&
+		!strings.HasSuffix(request.DataID, insideMark) && !request.At.IsZero() &&
+		(source == nil || request.At.After(source.At) && (!asked(*source) || !source.At.IsZero())) {
+		return seedNewerRestore(to, existing, source)
+	}
+	if source == nil {
+		if err := os.Remove(to); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
 		}
 		return nil
 	}
-	if err == nil {
-		raw = reconcileUpgradedRecord(raw, oldID, oldTable, newSys, log)
-		err = layout.WriteFileAtomic(to, raw, 0o644)
-	}
-	if err != nil {
-		fmt.Fprintf(log, "[postgres] level=warn the upgraded library database's record is not seeded (%v): "+
-			"this start takes it as an update from the release that ran last\n", err)
+	return layout.WriteFileAtomic(to, reconcileUpgradedRecord(raw, oldID, oldTable, newSys, log), 0o644)
+}
+
+// seedNewerRestore carries an untried request from the rollback-switch window
+// onto the rebuilt cluster. Its safety copy and identity belong to that cluster.
+func seedNewerRestore(to string, existing []byte, source *apppayload.Database) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(existing, &fields); err != nil {
 		return err
 	}
-	return nil
+	for _, field := range []string{"data_id", "data_table", "aside", "aside_bytes", "before", "no_copy", "copy_error", "maybe_schemas"} {
+		delete(fields, field)
+	}
+	fields["data"] = json.RawMessage(`"untouched"`)
+	if source != nil {
+		prior := *source
+		if asked(prior) {
+			prior = before(prior)
+		}
+		raw, err := json.Marshal(prior)
+		if err != nil {
+			return err
+		}
+		fields["before"] = raw
+	}
+	raw, err := json.MarshalIndent(fields, "", "  ")
+	if err != nil {
+		return err
+	}
+	return layout.WriteFileAtomic(to, append(raw, '\n'), 0o644)
 }
 
 func reconcileUpgradedRecord(raw []byte, oldID, oldTable, newSys string, log io.Writer) []byte {

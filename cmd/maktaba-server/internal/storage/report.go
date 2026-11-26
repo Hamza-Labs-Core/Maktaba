@@ -20,11 +20,12 @@ type Folder struct {
 // MoveState is the last move's, or the one under way.
 type MoveState struct {
 	// State: none | requested | moving | failed | done.
-	State  string     `json:"state"`
-	Target string     `json:"target,omitempty"`
-	Error  string     `json:"error,omitempty"`
-	At     *time.Time `json:"at,omitempty"`
-	Old    []string   `json:"old,omitempty"`
+	State    string     `json:"state"`
+	Target   string     `json:"target,omitempty"`
+	Error    string     `json:"error,omitempty"`
+	At       *time.Time `json:"at,omitempty"`
+	Old      []string   `json:"old,omitempty"`
+	SetAside []string   `json:"set_aside,omitempty"`
 }
 
 // Doc is where the install keeps its data (storage show, Settings → Storage).
@@ -89,13 +90,18 @@ func moveState(configDir string) MoveState {
 		if !r.OK {
 			return MoveState{State: "failed", Target: r.Target, Error: r.Error, At: &at}
 		}
-		var old []string
-		for _, o := range r.Old {
-			if exists(o) {
-				old = append(old, o)
-			}
-		}
-		return MoveState{State: "done", Target: r.Target, At: &at, Old: old}
+		return MoveState{State: "done", Target: r.Target, At: &at,
+			Old: existingCopies(r.Old), SetAside: existingCopies(r.SetAside)}
 	}
 	return MoveState{State: "none"}
+}
+
+func existingCopies(paths []string) []string {
+	var out []string
+	for _, path := range paths {
+		if exists(path) {
+			out = append(out, path)
+		}
+	}
+	return out
 }

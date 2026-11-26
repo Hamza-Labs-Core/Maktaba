@@ -301,7 +301,7 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	}
 	if !need {
 		if why == replacedUpgradeSource {
-			fmt.Fprintf(log, "[postgres] level=warn %s has a different system ID than the upgrade marker; keeping the existing PostgreSQL 18 cluster in %s\n", u.Old.Data, u.New.Data)
+			fmt.Fprintf(log, "[postgres] level=warn %s has a different system ID than the upgrade marker; keeping the existing %s cluster\n", u.Old.Data, filepath.Base(u.New.Data))
 		} else {
 			fmt.Fprintf(log, "[postgres] the library database uses %s (%s)\n", u.New.Data, why)
 		}
@@ -717,7 +717,7 @@ func removeUpgradeLeftover(dir string) error {
 	pid := filepath.Join(dir, "postmaster.pid")
 	if _, err := os.Lstat(pid); err == nil {
 		// A stale PID is safe to remove only when it can be read and its
-		// process is gone. A malformed or unreadable PID leaves the folder alone.
+		// process is gone or unrelated. A malformed or unreadable PID leaves the folder alone.
 		raw, err := os.ReadFile(pid)
 		if !errors.Is(err, fs.ErrNotExist) {
 			if err != nil {
@@ -728,7 +728,7 @@ func removeUpgradeLeftover(dir string) error {
 			if err != nil || id <= 0 {
 				return fmt.Errorf("cannot verify the postmaster in %s", dir)
 			}
-			if _, alive := processName(id); alive {
+			if name, alive := lookProcess(id); alive && (name == "" || isPostgres(name)) {
 				return fmt.Errorf("a process still holds the postmaster PID in %s", dir)
 			}
 		}
@@ -743,11 +743,10 @@ func (u MajorUpgrade) sweepUpgradeLeftovers(log io.Writer) {
 	for _, dir := range []string{u.New.Data + ".upgrading", u.New.Data + ".stale"} {
 		if err := removeUpgradeLeftover(dir); err != nil {
 			fmt.Fprintf(log, "[postgres] level=warn cannot remove upgrade leftover %s: %v\n", dir, err)
-			return
 		}
 	}
-	// An old postmaster can still be using a work directory from an interrupted run.
-	if u.Old.Running() {
+	// Either postmaster started by pg_upgrade can still be using its work directory.
+	if u.Old.Running() || (Bundle{Data: u.New.Data + ".upgrading"}).Running() {
 		return
 	}
 	entries, err := os.ReadDir(root)

@@ -221,7 +221,7 @@ func (b Bundle) Running() bool {
 	if err != nil || pid <= 0 {
 		return false
 	}
-	name, alive := processName(pid)
+	name, alive := lookProcess(pid)
 	return alive && (name == "" || isPostgres(name))
 }
 

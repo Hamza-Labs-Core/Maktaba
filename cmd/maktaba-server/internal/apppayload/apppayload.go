@@ -3,7 +3,9 @@
 // keeps two records under <state>/state (Epic 38 story 38.12, Epic 36's
 // contract-update.md):
 //
-//   - database.json, the release whose migrations the library database holds,
+//   - the database record selected by ClusterMajorIn (state/database.json on
+//     PostgreSQL 16 or state/database-pg18.json on 18), with the release whose
+//     migrations the library database holds,
 //     written at the server's start before any role runs: a new version dumps
 //     the database before its migrations, an older one is refused;
 //   - payload.json, the copy of the last payload that ran healthy (three

@@ -166,7 +166,7 @@ func TestMoveMacLayoutToAnotherDisk(t *testing.T) {
 		t.Errorf("the new place reads as missing (%s)", p)
 	}
 	doc := Report(InstallFrom(in, target), "")
-	if doc.Move.State != "done" || len(doc.Move.Old) != 5 {
+	if doc.Move.State != "done" || len(doc.Move.Old) != 5 || !slices.Equal(doc.Move.SetAside, res.SetAside) {
 		t.Errorf("report's move %+v", doc.Move)
 	}
 }
@@ -428,5 +428,36 @@ func TestMoveVerifiesAPostgres18Cluster(t *testing.T) {
 	}
 	if !exists(filepath.Join(target, "postgres-18", "PG_VERSION")) {
 		t.Error("postgres-18 is not in the new place")
+	}
+}
+
+func TestMoveCustomToDefaultLeavesSetAsideInRetiredRoot(t *testing.T) {
+	fakeDisk(t, 100<<30, "apfs", true)
+	in, base := macInstall(t)
+	custom := filepath.Join(base, "Custom")
+	in.From = Layout{Data: custom, Root: custom}
+	in.ToLayout = func(target string) Layout { return Layout{Data: target, Root: filepath.Dir(target)} }
+	target := filepath.Join(base, "Default", "data")
+	name := "postgres.pg16-20261126-120000"
+	write(t, filepath.Join(custom, name, "PG_VERSION"), "16")
+	write(t, filepath.Join(custom, "postgres-18", "PG_VERSION"), "18")
+	write(t, filepath.Join(custom, "library", "file"), "library")
+	res, err := Move(context.Background(), in, target, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Old) != 1 || !slices.Equal(res.SetAside, []string{filepath.Join(res.Old[0], name)}) {
+		t.Fatalf("old paths: %v, set aside: %v", res.Old, res.SetAside)
+	}
+	if got := read(t, filepath.Join(res.SetAside[0], "PG_VERSION")); got != "16" ||
+		exists(filepath.Join(target, name)) || exists(filepath.Join(filepath.Dir(target), name)) {
+		t.Fatal("set-aside cluster did not remain in the retired source")
+	}
+	if read(t, filepath.Join(target, "library", "file")) != "library" ||
+		read(t, filepath.Join(filepath.Dir(target), "postgres-18", "PG_VERSION")) != "18" {
+		t.Fatal("move lost active data")
+	}
+	if got := Report(InstallFrom(in, target), "").Move.SetAside; !slices.Equal(got, res.SetAside) {
+		t.Fatalf("storage report set aside: %v", got)
 	}
 }

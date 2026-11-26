@@ -44,6 +44,11 @@ var stateFolders = []string{"models", "cache", "chroma", "postgres", "postgres-1
 
 var setAsideClusterName = regexp.MustCompile(`^postgres(-[0-9]+)?(\.pg[0-9]+-[0-9]{8}-[0-9]{6}|\.before-copy-[0-9]{8}-[0-9]{6}|\.stale)$`)
 
+// IsSetAsideClusterName reports whether name matches a Maktaba cluster aside.
+func IsSetAsideClusterName(name string) bool {
+	return setAsideClusterName.MatchString(name)
+}
+
 // SetAsideClusters lists the known set-aside cluster directories directly under root.
 func SetAsideClusters(root string) ([]string, error) {
 	entries, err := os.ReadDir(root)
@@ -52,7 +57,7 @@ func SetAsideClusters(root string) ([]string, error) {
 	}
 	var out []string
 	for _, e := range entries {
-		if e.IsDir() && setAsideClusterName.MatchString(e.Name()) {
+		if e.IsDir() && IsSetAsideClusterName(e.Name()) {
 			out = append(out, e.Name())
 		}
 	}

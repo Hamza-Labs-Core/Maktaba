@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
@@ -244,16 +245,16 @@ func moveRestore(stateDir, dir string) error {
 // room, or not writable.
 func backupsFolderProblem(dir string, cfg config.Config) string {
 	root := cfg.StateDir()
-	resolved, err := filepath.EvalSymlinks(root)
+	resolvedRoot, err := storage.ResolvePath(root)
 	if err != nil {
-		resolved = root
+		return fmt.Sprintf("cannot resolve the database's state folder %s: %v", root, err)
 	}
-	for _, state := range []string{root, resolved} {
-		rel, err := filepath.Rel(strings.ToLower(state), strings.ToLower(dir))
-		top, _, _ := strings.Cut(rel, string(filepath.Separator))
-		if err == nil && (top == "postgres" || strings.HasPrefix(top, "postgres-")) {
-			return "the backups cannot go inside the database's own folder"
-		}
+	resolvedDir, err := storage.ResolvePath(dir)
+	if err != nil {
+		return fmt.Sprintf("cannot resolve the backups folder %s: %v", dir, err)
+	}
+	if insideBundledCluster(root, dir) || insideBundledCluster(resolvedRoot, resolvedDir) {
+		return "the backups cannot go inside the database's own folder"
 	}
 	disk, err := storageDiskOf(dir)
 	if err != nil {
@@ -275,6 +276,20 @@ func backupsFolderProblem(dir string, cfg config.Config) string {
 	_ = f.Close()
 	_ = os.Remove(f.Name())
 	return ""
+}
+
+func insideBundledCluster(root, dir string) bool {
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" {
+		root, dir = strings.ToLower(root), strings.ToLower(dir)
+	}
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return false
+	}
+	top, _, _ := strings.Cut(rel, string(filepath.Separator))
+	major, versioned := strings.CutPrefix(top, "postgres-")
+	return top == "postgres" || versioned && major != "" && strings.Trim(major, "0123456789") == "" ||
+		config.IsSetAsideClusterName(top)
 }
 
 // deleteBackup removes one dump of the server.toml at path's backups folder, never the

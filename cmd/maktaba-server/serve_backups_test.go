@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -297,7 +298,7 @@ func TestMovingTheBackupsMovesTheRestore(t *testing.T) {
 func TestBackupsFolderRejectsBundledClusters(t *testing.T) {
 	cfg := config.Defaults()
 	cfg.Server.DataDir = t.TempDir()
-	for _, cluster := range []string{"postgres", "postgres-18", "postgres-19"} {
+	for _, cluster := range []string{"postgres", "postgres-18", "postgres-19", "postgres.pg16-20261126-120000", "postgres-18.pg18-20261126-120000"} {
 		for _, path := range []string{cluster, filepath.Join(cluster, "nested", "backups")} {
 			dir := filepath.Join(cfg.StateDir(), path)
 			if got := backupsFolderProblem(dir, cfg); got != "the backups cannot go inside the database's own folder" {
@@ -307,5 +308,39 @@ func TestBackupsFolderRejectsBundledClusters(t *testing.T) {
 				t.Errorf("%s should not be created: %v", path, err)
 			}
 		}
+	}
+}
+
+func TestBackupsFolderAllowsPostgresNamedSiblings(t *testing.T) {
+	prev := storageDiskOf
+	t.Cleanup(func() { storageDiskOf = prev })
+	storageDiskOf = func(string) (storage.Disk, error) { return storage.Disk{Suitable: true}, nil }
+	cfg := config.Defaults()
+	cfg.Server.DataDir = t.TempDir()
+	for _, name := range []string{"postgres-backups", "postgres-dumps"} {
+		if got := backupsFolderProblem(filepath.Join(cfg.StateDir(), name), cfg); got != "" {
+			t.Errorf("%s: %q", name, got)
+		}
+	}
+}
+
+func TestBackupsFolderRejectsAliasedUncreatedState(t *testing.T) {
+	parent := t.TempDir()
+	actual := filepath.Join(parent, "actual")
+	if err := os.Mkdir(actual, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(parent, "alias")
+	if err := os.Symlink(actual, alias); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("creating symlinks requires privileges: %v", err)
+		}
+		t.Fatal(err)
+	}
+	cfg := config.Defaults()
+	cfg.Server.DataDir = filepath.Join(alias, "not-yet-created")
+	dir := filepath.Join(actual, "not-yet-created", "postgres-18", "backups")
+	if got := backupsFolderProblem(dir, cfg); got != "the backups cannot go inside the database's own folder" {
+		t.Fatalf("aliased database directory: %q", got)
 	}
 }

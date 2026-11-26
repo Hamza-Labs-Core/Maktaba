@@ -264,6 +264,13 @@ func entries(from, to Layout) ([]Entry, []Note) {
 		e := Entry{Name: "data", From: from.Data, To: to.Data, Exclude: []string{config.StorageMarkerFile}}
 		if same {
 			e.Exclude = append(e.Exclude, config.StateRootFolders...)
+			if to.Data != to.Root {
+				asides, err := config.SetAsideClusters(from.Root)
+				if err != nil {
+					clash = append(clash, note("read_folder", fmt.Sprintf("cannot list set-aside database folders in %s: %v", from.Root, err), "path", from.Root))
+				}
+				e.Exclude = append(e.Exclude, asides...)
+			}
 		} else if to.Data == to.Root {
 			// data/ goes into the folder the root's folders go into: a name in both
 			// would be two folders in one place
@@ -455,7 +462,7 @@ func planMove(in Install, target string, roots []string) Plan {
 
 // resolvedOr is p with its links resolved (p when they cannot be).
 func resolvedOr(p string) string {
-	if r, err := resolve(p); err == nil {
+	if r, err := ResolvePath(p); err == nil {
 		return r
 	}
 	return p
@@ -594,13 +601,17 @@ func Move(ctx context.Context, in Install, target string, o Options) (Result, er
 	if err != nil {
 		return res, err
 	}
-	if j.From.Root != j.From.Data {
-		names, err := config.SetAsideClusters(j.From.Root)
+	if j.From.Root != j.From.Data || j.To.Root != j.To.Data {
+		root := j.From.Root
+		if j.From.Root == j.From.Data {
+			root += movedInfix + j.Stamp
+		}
+		names, err := config.SetAsideClusters(root)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			o.logf("level=warn cannot list set-aside database folders in %s: %v", j.From.Root, err)
+			o.logf("level=warn cannot list set-aside database folders in %s: %v", root, err)
 		}
 		for _, name := range names {
-			path := filepath.Join(j.From.Root, name)
+			path := filepath.Join(root, name)
 			res.SetAside = append(res.SetAside, path)
 			o.logf("set-aside database folder kept at %s; remove it after verifying the move and confirming it is no longer needed", path)
 		}
