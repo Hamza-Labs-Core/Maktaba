@@ -553,6 +553,20 @@ def test_in_a_repository_the_nightly_cve_gate_blocks_unchanged_main(
     assert nt.main(["--check-cve", r_c, "--cve-runs", str(rev_repo / ".cve-revert.json")]) == 1
     assert "truncated" in capsys.readouterr().err
 
+    # Shallow-clone regression: `git clone --depth=2` hides A beyond the shallow graft while
+    # keeping B -> C. `git_earliest_same_non_trail` must return None (fail closed) so C is
+    # still refused as truncated rather than cleared on seeing strict ancestor B.
+    shallow_repo = tmp_path / "revert-shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth=2", f"file://{rev_repo}", str(shallow_repo)],
+        check=True,
+    )
+    (shallow_repo / ".cve-revert.json").write_text(json.dumps(b_cancelled))
+    monkeypatch.chdir(shallow_repo)
+    assert nt.git_earliest_same_non_trail(r_c) is None
+    assert nt.main(["--check-cve", r_c, "--cve-runs", str(shallow_repo / ".cve-revert.json")]) == 1
+    assert "truncated" in capsys.readouterr().err
+
 
 def test_the_runs_are_fetched_with_gh_when_no_file_is_given(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

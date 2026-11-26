@@ -475,8 +475,18 @@ def git_earliest_same_non_trail(sha: str) -> str | None:
     """The earliest first-parent commit in sha's history sharing sha's non-trail tree.
 
     Handles reverts (`A -> B -> C` where `C` reverts `B` back to `A`'s tree): returns `A`
-    rather than `C`. Returns None if git cannot read the history (caller fails closed).
+    rather than `C`. Returns None on a shallow clone (incomplete first-parent history could
+    hide an earlier same-tree commit beyond the graft) or if git cannot read the history
+    (caller fails closed).
     """
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if shallow.returncode != 0 or shallow.stdout.strip() != "false":
+        return None
     r = subprocess.run(
         ["git", "log", "--first-parent", "--format=%H %T", sha],
         check=False,
