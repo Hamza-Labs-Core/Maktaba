@@ -19,13 +19,20 @@ run, and such a run's headSha is main's head when it started, not the commit it 
 is named "Update rehearsal of <sha>" (REHEARSAL_TITLE), and that sha is its commit. A rehearsal
 push run (main's before 2026-11-07) counts for its headSha.
 
-A green commit is tag-eligible only when the broadcast rehearsal's nightly passed on its
-broadcast code (story 50.29 §4, broadcast_verdict; the runs from `--broadcast-runs FILE`, or
-fetched with gh: fetch_broadcast_runs, no tag when that fails): among the nightly
-runs of broadcast-rehearsal.yml on a commit whose broadcast code (BROADCAST_CODE, the workflow's
-pull-request paths) is the same as this commit's, the newest one that finished passed. A commit
-with no such run is not eligible (fail closed); one whose broadcast code has not changed since a
-green nightly is.
+A green commit is tag-eligible only when:
+  - the broadcast rehearsal's nightly passed on its broadcast code (story 50.29 §4,
+    broadcast_verdict; the runs from `--broadcast-runs FILE`, or fetched with gh:
+    fetch_broadcast_runs, no tag when that fails): among the nightly runs of
+    broadcast-rehearsal.yml on a commit whose broadcast code (BROADCAST_CODE, the workflow's
+    pull-request paths) is the same as this commit's, the newest one that finished passed. A
+    commit with no such run is not eligible (fail closed); one whose broadcast code has not
+    changed since a green nightly is.
+  - the newest finished nightly CVE gate run (cve-gate-nightly.yml, story 23.7 follow-up
+    #1472; `--cve-runs FILE`, or fetched with gh: fetch_cve_runs, no tag when that fails) on
+    this commit — or on a main commit that differs from it only in trail files — did not fail.
+    A newly merged commit with no nightly CVE gate run yet stays eligible because its CI push
+    run already passed `cve-gate`; if a later nightly fails on an unchanged main, the commit is
+    held back until main fixes or suppresses the advisory.
 
 The commit is the newest green and eligible one on main (first-parent order: main's own
 commits, newest first). It is tagged only when:
@@ -99,6 +106,11 @@ _NIGHTLY_TITLED = re.compile("^" + re.escape(BROADCAST_NIGHTLY_TITLE) + r"([0-9a
 
 # A run that ended so is no result either way (stopped, or never ran): it is passed over.
 NO_RESULT = frozenset({"cancelled", "skipped", "neutral", "stale", ""})
+
+CVE_WORKFLOW = "cve-gate-nightly.yml"
+CVE_EVENTS = ("schedule", "workflow_dispatch")
+CVE_LIMIT = 100
+CVE_FIELDS = "headSha,headBranch,event,status,conclusion,createdAt"
 
 
 def trail_only(path: str) -> bool:
@@ -218,6 +230,129 @@ def broadcast_verdict(sha: str, nightlies: Sequence[tuple[str, bool]], code: Cal
     return f"no broadcast rehearsal nightly ran on {sha}'s broadcast code"
 
 
+def _cve_nightly_entries(runs: Iterable[Mapping[str, Any]]) -> list[tuple[str, bool, str]]:
+    """The finished nightly CVE gate runs on main (schedule or workflow_dispatch), newest first,
+    as (commit, passed, created_at). Runs still going, cancelled or skipped are passed over."""
+    done: list[tuple[str, str, bool]] = []
+    for r in runs:
+        if r.get("headBranch", "main") != "main":
+            continue
+        if r.get("event") not in CVE_EVENTS:
+            continue
+        if r.get("status", "completed") != "completed":
+            continue
+        conclusion = str(r.get("conclusion") or "")
+        if conclusion in NO_RESULT:
+            continue
+        commit = str(r.get("headSha", ""))
+        if not commit:
+            continue
+        done.append((str(r.get("createdAt", "")), commit, conclusion == "success"))
+    done = sorted(done, key=lambda d: d[0], reverse=True)
+    return [(c, ok, ts) for ts, c, ok in done]
+
+
+def cve_nightly_results(runs: Iterable[Mapping[str, Any]]) -> list[tuple[str, bool]]:
+    """The finished nightly CVE gate runs on main (schedule or workflow_dispatch), newest first,
+    as (commit, passed). A run still going, or one cancelled or skipped, is passed over."""
+    return [(c, ok) for c, ok, _ in _cve_nightly_entries(runs)]
+
+
+def _cve_truncation_cutoffs(
+    runs: Iterable[Mapping[str, Any]],
+    sha: str,
+    same_non_trail: Callable[[str, str], bool],
+    is_ancestor: Callable[[str, str], bool],
+    earliest_same_tree: Callable[[str], str | None],
+    limit: int = CVE_LIMIT,
+) -> dict[str, str]:
+    """Events whose query hit `limit` without reaching strictly before the earliest commit on
+    main sharing `sha`'s non-trail tree.
+
+    Maps each such event name to the oldest `createdAt` seen in its window (or "" if any run
+    lacked a timestamp): a failed nightly older than that cutoff (including an earlier commit
+    before a revert `A -> B -> C`) may have been pushed out of the window, so only a
+    conclusive pass on `sha` (or a same-tree commit) at or after every cutoff clears `sha`.
+    """
+    by_event: dict[str, list[Mapping[str, Any]]] = {}
+    for r in runs:
+        if r.get("headBranch", "main") != "main":
+            continue
+        ev = str(r.get("event") or "")
+        if ev in CVE_EVENTS:
+            by_event.setdefault(ev, []).append(r)
+    truncated = {ev: ev_runs for ev, ev_runs in by_event.items() if len(ev_runs) >= limit}
+    if not truncated:
+        return {}
+    earliest = earliest_same_tree(sha)
+    cutoffs: dict[str, str] = {}
+    for ev, ev_runs in truncated.items():
+        times = [str(r.get("createdAt") or "") for r in ev_runs]
+        if all(times):
+            min_time = min(times)
+            oldest_runs = [r for r, t in zip(ev_runs, times, strict=True) if t == min_time]
+        else:
+            min_time = ""
+            oldest_runs = [ev_runs[-1]]
+        # Safe only when the oldest run(s) in the window ran on a strict ancestor of the
+        # earliest commit sharing sha's non-trail tree (so no earlier run could match sha, an
+        # earlier pre-revert commit with sha's tree, or any descendant of sha).
+        reached_before_earliest = bool(
+            earliest
+            and all(
+                (oldest_sha := str(r.get("headSha") or ""))
+                and oldest_sha != earliest
+                and not same_non_trail(earliest, oldest_sha)
+                and is_ancestor(oldest_sha, earliest)
+                for r in oldest_runs
+            )
+        )
+        if not reached_before_earliest:
+            cutoffs[ev] = min_time
+    return cutoffs
+
+
+def cve_verdict(
+    sha: str,
+    nightlies: Sequence[tuple[str, bool] | tuple[str, bool, str]],
+    same_non_trail: Callable[[str, str], bool],
+    is_ancestor: Callable[[str, str], bool],
+    raw_runs: Iterable[Mapping[str, Any]] = (),
+    limit: int = CVE_LIMIT,
+    earliest_same_tree: Callable[[str], str | None] | None = None,
+) -> str | None:
+    """Why sha is not tag-eligible on the nightly CVE gate, or None when it is.
+
+    Walks finished nightly CVE gate runs on main (newest first):
+    - If a run matches sha (same commit, or differing only in trail files): a pass makes sha
+      eligible unless a truncated event window could hide a newer failure; a failure blocks sha.
+    - If a newer descendant commit (is_ancestor(sha, commit)) failed a nightly CVE gate run and
+      no newer passing nightly exists on sha itself, do not fall back to the older commit sha
+      (it may carry the same newly-disclosed vulnerability); wait for a fix commit or a newer
+      passing nightly/dispatch.
+    - If an event query hit `limit` without reaching strictly before the earliest commit on
+      main sharing sha's non-trail tree (e.g., across a revert `A -> B -> C`) and no
+      conclusive pass at or after the truncation cutoff exists, fail closed.
+    """
+    earliest_fn = earliest_same_tree or (lambda _s: None)
+    cutoffs = _cve_truncation_cutoffs(raw_runs, sha, same_non_trail, is_ancestor, earliest_fn, limit)
+    for item in nightlies:
+        commit, passed = item[0], item[1]
+        created_at = item[2] if len(item) > 2 else ""
+        if commit == sha or same_non_trail(sha, commit):
+            if not passed:
+                return f"the newest nightly CVE gate run on {sha} (run on {commit}) failed"
+            if not cutoffs or (created_at and all(c and created_at >= c for c in cutoffs.values())):
+                return None
+            break
+        if not passed and is_ancestor(sha, commit):
+            return f"cannot fall back to {sha}: a newer nightly CVE gate run on {commit} failed"
+    if cutoffs:
+        events = ", ".join(sorted(cutoffs))
+        return f"the nightly CVE gate history for {sha} is truncated ({events} hit the {limit}-run limit without a conclusive verdict)"
+    return None
+
+
 def newest_eligible(main_order: Sequence[str], green: Iterable[str], verdict: Callable[[str], str | None]) -> tuple[str | None, list[str]]:
     """The first commit of main_order (newest first) that is green and whose verdict is None,
     and why each newer green commit was passed over."""
@@ -308,6 +443,93 @@ def git_broadcast_code(sha: str) -> str | None:
     return r.stdout if r.returncode == 0 else None
 
 
+def git_same_non_trail(a: str, b: str) -> bool:
+    """Whether commits a and b differ only in trail-only files (or not at all)."""
+    if a == b:
+        return True
+    r = subprocess.run(["git", "diff", "--name-only", "--no-renames", a, b], check=False, capture_output=True, text=True)
+    if r.returncode != 0:
+        return False
+    return all(trail_only(p) for p in r.stdout.splitlines() if p)
+
+
+_TRAIL_ROOTS = frozenset(p.split("/", 1)[0].encode("utf-8") for p in TRAIL_ONLY)
+
+
+def _strip_trail_roots_from_tree(raw: bytes) -> bytes:
+    """Top-level git tree entries excluding any root directory/file containing TRAIL_ONLY paths."""
+    out = bytearray()
+    i, n = 0, len(raw)
+    while i < n:
+        sp = raw.index(b" ", i)
+        nul = raw.index(b"\x00", sp + 1)
+        end = nul + 21
+        name = raw[sp + 1 : nul]
+        if name not in _TRAIL_ROOTS:
+            out.extend(raw[i:end])
+        i = end
+    return bytes(out)
+
+
+def git_earliest_same_non_trail(sha: str) -> str | None:
+    """The earliest first-parent commit in sha's history sharing sha's non-trail tree.
+
+    Handles reverts (`A -> B -> C` where `C` reverts `B` back to `A`'s tree): returns `A`
+    rather than `C`. Returns None on a shallow clone (incomplete first-parent history could
+    hide an earlier same-tree commit beyond the graft) or if git cannot read the history
+    (caller fails closed).
+    """
+    shallow = subprocess.run(
+        ["git", "rev-parse", "--is-shallow-repository"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if shallow.returncode != 0 or shallow.stdout.strip() != "false":
+        return None
+    r = subprocess.run(
+        ["git", "log", "--first-parent", "--format=%H %T", sha],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    commits = [tuple(ln.split(" ", 1)) for ln in r.stdout.splitlines() if " " in ln]
+    if not commits:
+        return None
+    unique_trees = list(dict.fromkeys(t for _, t in commits))
+    batch = subprocess.run(
+        ["git", "cat-file", "--batch"],
+        input=("\n".join(unique_trees) + "\n").encode("ascii"),
+        check=False,
+        capture_output=True,
+    )
+    if batch.returncode != 0:
+        return None
+    buf = batch.stdout
+    pos = 0
+    tree_keys: dict[str, bytes] = {}
+    for tree_sha in unique_trees:
+        nl = buf.index(b"\n", pos)
+        header = buf[pos:nl].decode("ascii").split()
+        pos = nl + 1
+        if len(header) != 3 or header[1] != "tree":
+            return None
+        size = int(header[2])
+        body = buf[pos : pos + size]
+        pos += size + 1  # trailing LF
+        tree_keys[tree_sha] = _strip_trail_roots_from_tree(body)
+    target_key = tree_keys.get(commits[0][1])
+    if target_key is None:
+        return None
+    # Walk from oldest to newest: the first commit matching sha's non-trail tree is the earliest.
+    for commit_sha, tree_sha in reversed(commits):
+        if tree_keys.get(tree_sha) == target_key and git_same_non_trail(sha, commit_sha):
+            return commit_sha
+    return sha
+
+
 # The broadcast rehearsal's runs the gate reads, when no --broadcast-runs file is given: only a
 # schedule's or a hand run counts (nightly_commit), so those two events are asked for, each
 # with a month and more of history (a push run on every merge would crowd a mixed list out).
@@ -317,7 +539,7 @@ BROADCAST_FIELDS = "headSha,headBranch,event,status,conclusion,displayTitle,crea
 
 
 class FetchError(Exception):
-    """The broadcast rehearsal's runs could not be had: no tag (fail closed)."""
+    """A workflow's runs could not be had: no tag (fail closed)."""
 
 
 Runner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
@@ -327,14 +549,18 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=120)
 
 
-def fetch_broadcast_runs(run: Runner = _run) -> list[dict[str, Any]]:
-    """broadcast-rehearsal.yml's runs on main, every status, as `gh run list --json` gives
-    them. Raises FetchError when gh is missing, fails, or prints something that is not a list."""
+def _fetch_workflow_runs(
+    workflow: str,
+    events: Sequence[str],
+    limit: int,
+    fields: str,
+    run: Runner = _run,
+) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
-    for event in BROADCAST_EVENTS:
+    for event in events:
         cmd = [
-            "gh", "run", "list", "--workflow", "broadcast-rehearsal.yml", "--branch", "main",
-            "--event", event, "--limit", str(BROADCAST_LIMIT), "--json", BROADCAST_FIELDS,
+            "gh", "run", "list", "--workflow", workflow, "--branch", "main",
+            "--event", event, "--limit", str(limit), "--json", fields,
         ]  # fmt: skip
         try:
             r = run(cmd)
@@ -351,6 +577,18 @@ def fetch_broadcast_runs(run: Runner = _run) -> list[dict[str, Any]]:
             raise FetchError("gh run list printed JSON that is not a list of runs")
         runs.extend(got)
     return runs
+
+
+def fetch_broadcast_runs(run: Runner = _run) -> list[dict[str, Any]]:
+    """broadcast-rehearsal.yml's runs on main, every status, as `gh run list --json` gives
+    them. Raises FetchError when gh is missing, fails, or prints something that is not a list."""
+    return _fetch_workflow_runs("broadcast-rehearsal.yml", BROADCAST_EVENTS, BROADCAST_LIMIT, BROADCAST_FIELDS, run)
+
+
+def fetch_cve_runs(run: Runner = _run, workflow: str = CVE_WORKFLOW) -> list[dict[str, Any]]:
+    """cve-gate-nightly.yml's runs on main, every status, as `gh run list --json` gives
+    them. Raises FetchError when gh is missing, fails, or prints something that is not a list."""
+    return _fetch_workflow_runs(workflow, CVE_EVENTS, CVE_LIMIT, CVE_FIELDS, run)
 
 
 def load_broadcast_runs(path: str) -> list[dict[str, Any]]:
@@ -374,9 +612,44 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         help="a file: broadcast-rehearsal.yml's runs, every status (gh run list --json); "
         "without it they are fetched with gh. A commit is eligible only on a green nightly",
     )
+    ap.add_argument(
+        "--cve-runs",
+        help="a file: cve-gate-nightly.yml's runs, every status (gh run list --json); "
+        "without it they are fetched with gh. A failed newest nightly on the commit blocks the tag",
+    )
+    ap.add_argument(
+        "--check-cve",
+        metavar="SHA",
+        help="check only the nightly CVE gate verdict for SHA (used by tag-guard.sh); "
+        "exit 0 when eligible, exit 1 with reason on stderr when blocked or unreadable",
+    )
+    ap.add_argument(
+        "--cve-workflow",
+        default=CVE_WORKFLOW,
+        help=f"workflow file name for nightly CVE gate runs (default {CVE_WORKFLOW})",
+    )
     ap.add_argument("--main", default="origin/main", help="main's ref (default origin/main)")
     ap.add_argument("--depth", type=int, default=200, help="how many of main's commits to look through")
     args = ap.parse_args(argv)
+
+    if args.check_cve:
+        try:
+            cve_runs = load_broadcast_runs(args.cve_runs) if args.cve_runs else fetch_cve_runs(run, args.cve_workflow)
+        except FetchError as e:
+            print(f"the nightly CVE gate's runs could not be read: {e}", file=sys.stderr)
+            return 1
+        why = cve_verdict(
+            args.check_cve,
+            _cve_nightly_entries(cve_runs),
+            git_same_non_trail,
+            git_is_ancestor,
+            raw_runs=cve_runs,
+            earliest_same_tree=git_earliest_same_non_trail,
+        )
+        if why is not None:
+            print(why, file=sys.stderr)
+            return 1
+        return 0
 
     if args.green and not (args.ci_runs or args.rehearsal_runs):
         with open(args.green, encoding="utf-8") as f:
@@ -397,7 +670,15 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         print("sha=")
         print(f"reason=no tag: the broadcast rehearsal's runs could not be read: {e}")
         return 0
+    try:
+        cve_runs = load_broadcast_runs(args.cve_runs) if args.cve_runs else fetch_cve_runs(run, args.cve_workflow)
+    except FetchError as e:
+        print("tag=")
+        print("sha=")
+        print(f"reason=no tag: the nightly CVE gate's runs could not be read: {e}")
+        return 0
     nightlies = nightly_results(runs)
+    cve_nightlies = _cve_nightly_entries(cve_runs)
     codes: dict[str, str | None] = {}
 
     def code(c: str) -> str | None:
@@ -405,9 +686,19 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
             codes[c] = git_broadcast_code(c)
         return codes[c]
 
-    sha, passed_over = newest_eligible(order, green, lambda c: broadcast_verdict(c, nightlies, code))
+    def verdict(c: str) -> str | None:
+        return broadcast_verdict(c, nightlies, code) or cve_verdict(
+            c,
+            cve_nightlies,
+            git_same_non_trail,
+            git_is_ancestor,
+            raw_runs=cve_runs,
+            earliest_same_tree=git_earliest_same_non_trail,
+        )
+
+    sha, passed_over = newest_eligible(order, green, verdict)
     if sha is None:
-        why = f"no commit of {args.main}'s newest {args.depth} passed CI, the update rehearsal and the broadcast rehearsal"
+        why = f"no commit of {args.main}'s newest {args.depth} passed CI, the update rehearsal, the broadcast rehearsal and the nightly CVE gate"
         d = Decision("", "", "; ".join([why, *passed_over]))
     else:
         d = decide(sha, git_tags(), git_is_ancestor, git_changed)

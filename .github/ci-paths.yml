@@ -716,12 +716,15 @@ build_artifacts:
   - '.github/workflows/_build-artifacts.yml'
 
 # Story 23.7 AC2: the CVE gate (_cve-gate.yml) over the shipped components' locked
-# dependencies. On a pull request, what changes them: the dependency manifests and
-# lockfiles, the Go that builds the release (api/go.mod), the suppressions and the gate; a
-# push to main runs it always, so an advisory published after a merge stops the tag.
+# dependencies. On a pull request, `cve_gate` runs every ecosystem when manifests,
+# lockfiles, the Go toolchain pin (api/go.mod), suppressions or the gate itself change;
+# `cve_gate_go` runs govulncheck alone when Go sources in shipped modules (or shared Go
+# libraries) change, catching newly called vulnerable symbols before merge. A push to main
+# runs both (every ecosystem), and cve-gate-nightly.yml re-runs it nightly on main.
 cve_gate:
   - *ci
   - '.github/workflows/_cve-gate.yml'
+  - '.github/workflows/cve-gate-nightly.yml'
   - 'tools/security/**'
   - 'security/**'
   - 'api/go.mod'
@@ -742,6 +745,20 @@ cve_gate:
   - 'pipeline/uv.lock'
   - 'web/package.json'
   - 'web/pnpm-lock.yaml'
+  - 'plugind/Cargo.toml'
+  - 'plugind/Cargo.lock'
+  - 'plugind/crates/*/Cargo.toml'
+
+cve_gate_go:
+  - *ci
+  - '.github/workflows/_cve-gate.yml'
+  - 'api/**/*.go'
+  - 'streaming/**/*.go'
+  - 'cmd/maktaba-server/**/*.go'
+  - 'cloud/**/*.go'
+  - 'cmd/maktaba-launcher/**/*.go'
+  - 'tools/healthcheck/**/*.go'
+  - 'shared/**/*.go'
 
 # Story 22.3 AC4 / TC3: the four compose images built and held to their size budgets
 # (_images.yml). A budget measures the whole image, so every input of it: each tree the

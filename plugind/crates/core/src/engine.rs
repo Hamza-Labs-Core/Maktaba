@@ -24,7 +24,7 @@ use crate::protocol::{b64, unb64, Health, Outcome, Run, RunResult};
 
 /// The pinned Wasmtime (plugind/Cargo.toml); a cache file built by another one is never
 /// loaded (54.02 §6).
-pub const WASMTIME_VERSION: &str = "50.0.1";
+pub const WASMTIME_VERSION: &str = "50.0.3";
 /// The epoch tick: a deadline ends a job within one tick plus unwind (N7: ≤ 200 ms).
 pub const TICK: Duration = Duration::from_millis(100);
 const MAX_SUMMARY: usize = 64 << 10;

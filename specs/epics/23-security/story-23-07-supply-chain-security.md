@@ -5,12 +5,17 @@ auditable.
 
 ## Acceptance criteria
 
-- AC1. SBOM (`cyclonedx-go`, `cyclonedx-py`, npm SBOM) generated for
-  every release artifact; published alongside.
-- AC2. CVE scanning gate in CI (`govulncheck`, `pip-audit`, `npm
-  audit --audit-level=high`); a high-severity vuln blocks merge
-  unless explicitly suppressed with a recorded reason and a date
-  ceiling.
+- AC1. SBOM (`cyclonedx-gomod`, `cargo-cyclonedx`, `cyclonedx-py`, pnpm
+  lockfile SBOM) generated for every shipped release artifact (Go
+  binaries, Rust `maktaba-plugind`, Python pipeline default + CUDA
+  sets, and web); published alongside.
+- AC2. CVE scanning gate in CI (`govulncheck` over shipped Go main
+  packages with release build tags, `cargo-audit` over
+  `plugind/Cargo.lock`, `pip-audit` over shipped non-dev Python sets,
+  `pnpm audit --prod` over web production dependencies, plus a nightly
+  main run); a called Go vulnerability or high/critical advisory blocks
+  merge and release unless explicitly suppressed with a recorded reason
+  and a date ceiling.
 - AC3. Base images pinned by digest; `Dockerfile`s use
   `--platform=$BUILDPLATFORM` correctly; no `:latest`.
 - AC4. Dependency upgrades are managed by `dependabot` /
@@ -19,8 +24,9 @@ auditable.
 
 ## Test cases
 
-- TC1. SBOM: every release tag publishes four SBOM files (api,
-  streaming, pipeline, web); each contains all transitive deps
+- TC1. SBOM: every release tag publishes SBOM files for every shipped
+  component (Go binaries, Rust `maktaba-plugind`, Python pipeline
+  default + CUDA sets, and web); each contains all transitive deps
   with versions.
 - TC2. CVE block: a deliberate `pin` of an old `golang.org/x/net`
   with a known high CVE fails the merge gate.

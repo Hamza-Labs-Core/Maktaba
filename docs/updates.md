@@ -967,6 +967,17 @@ whatever their name: a pull request runs its own copy of the workflow. When the
 newest green commit is not eligible, the newest one that is gets the tag, and `reason=` names
 the commits passed over and why.
 
+**The nightly CVE gate stops an unchanged main when a new advisory lands** (story 23.7):
+[`cve-gate-nightly.yml`](../.github/workflows/cve-gate-nightly.yml) runs `_cve-gate.yml`
+every night (04:23 UTC) on `main` (and takes a manual `workflow_dispatch` to re-check after a
+fix or suppression without waiting for night). Both `next_tag.py` (which fetches its `schedule`
+and `workflow_dispatch` runs with `gh`, or reads `--cve-runs FILE`; failing closed if `gh`
+fails) and `tools/release/tag-guard.sh` check the newest finished run on the candidate commit
+(or on a `main` commit differing from it only in trail files). A freshly merged commit with no
+nightly run yet remains eligible because its `ci.yml` push run already passed `cve-gate`; if a
+newer nightly fails on it, the tag is held back until `main` upgrades or suppresses the
+advisory (or a newer dispatch passes).
+
 A rehearsal run of main is named `Update rehearsal of <sha>`, after the commit it rehearsed:
 its own `headSha` is main's head at the moment it started, so `next_tag.py` reads the commit
 from the name. (`--green FILE`, one SHA a line, still takes the commits directly.) It

@@ -142,12 +142,75 @@ def test_the_check_fails_an_empty_expectation_or_a_non_cyclonedx_file(tmp_path: 
     assert _run_check(tmp_path, {"bomFormat": "SPDX", "components": []}, "a@1\n").returncode == 1
 
 
-def test_sbom_sh_covers_the_four_spec_components_and_requires_its_tools() -> None:
+def test_sbom_sh_covers_the_spec_components_plus_plugind_and_requires_its_tools() -> None:
     text = (ROOT / "tools" / "sbom.sh").read_text()
-    for call in ("emit_go api ", "emit_go streaming ", "emit_python", "emit_web"):
+    for call in ("emit_go api ", "emit_go streaming ", "emit_rust plugind ", "emit_python", "emit_web"):
         assert f"\n{call}" in text
     assert "skipping" not in text  # no best effort: a missing tool fails
     assert "need cyclonedx-gomod" in text
+    assert "need cargo-cyclonedx" in text
+    assert "--all-extras" not in text
+    assert "< <(python3" not in text  # never swallow sbom.py exit status in process substitution
+    assert 'sbom.py" pipeline-extras' in text
+    assert "--group cuda" in text
+    assert "emit_python_set pipeline-cuda" in text
+    # Rust lockfile integrity: cargo metadata --locked runs before cargo cyclonedx, and
+    # plugind/Cargo.lock is hashed before and after cargo cyclonedx
+    assert text.index("cargo metadata --manifest-path") < text.index("cargo cyclonedx --manifest-path")
+    assert text.index('hash_before="$(file_sha256 "${lockfile}")"') < text.index("cargo cyclonedx --manifest-path")
+    assert text.index("cargo cyclonedx --manifest-path") < text.index('hash_after="$(file_sha256 "${lockfile}")"')
+
+
+def test_pipeline_extras_fallback_parser_matches_tomllib() -> None:
+    pyproject = ROOT / "pipeline" / "pyproject.toml"
+    via_api = sbom.pipeline_extras(pyproject)
+    via_fallback = sorted(k for k in sbom._parse_optional_dep_keys(pyproject.read_text(encoding="utf-8")) if k != "dev")
+    assert via_fallback == via_api
+    # sbom.py has no top-level `import tomllib` (safe on Python 3.10)
+    src = (ROOT / "tools" / "security" / "sbom.py").read_text(encoding="utf-8")
+    assert "\nimport tomllib\n" not in src
+
+
+def test_cargo_expect_walks_normal_transitive_deps_and_skips_dev_and_build() -> None:
+    meta = {
+        "packages": [
+            {"id": "p-root", "name": "maktaba-plugind", "version": "1.0.0"},
+            {"id": "p-core", "name": "plugind-core", "version": "1.0.0"},
+            {"id": "p-wt", "name": "wasmtime", "version": "50.0.3"},
+            {"id": "p-dev", "name": "tempfile", "version": "3.0.0"},
+            {"id": "p-build", "name": "cc", "version": "1.11.1"},
+            {"id": "p-other", "name": "mkp", "version": "1.0.0"},
+        ],
+        "resolve": {
+            "nodes": [
+                {
+                    "id": "p-root",
+                    "deps": [
+                        {"pkg": "p-core", "dep_kinds": [{"kind": None}]},
+                        {"pkg": "p-dev", "dep_kinds": [{"kind": "dev"}]},
+                    ],
+                },
+                {
+                    "id": "p-core",
+                    "deps": [
+                        {"pkg": "p-wt", "dep_kinds": [{"kind": None}]},
+                        {"pkg": "p-build", "dep_kinds": [{"kind": "build"}]},
+                    ],
+                },
+                {"id": "p-wt", "deps": []},
+                {"id": "p-dev", "deps": []},
+                {"id": "p-build", "deps": []},
+                {"id": "p-other", "deps": []},
+            ]
+        },
+    }
+    assert sbom.cargo_expect(meta, "maktaba-plugind") == ["plugind-core@1.0.0", "wasmtime@50.0.3"]
+
+
+def test_pipeline_extras_excludes_dev_and_matches_shipped_extras() -> None:
+    extras = sbom.pipeline_extras(ROOT / "pipeline" / "pyproject.toml")
+    assert "dev" not in extras
+    assert {"lang", "mediaintel", "search", "stt"} <= set(extras)
 
 
 # every Go binary a release ships: the archives' and packages' (api, streaming, the server,
@@ -191,6 +254,10 @@ def test_the_release_attaches_the_sboms() -> None:
     jobs = wf["jobs"]
     job = jobs["sbom"]
     assert any("tools/sbom.sh" in str(s.get("run", "")) for s in job["steps"])
+    setup_py = [s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/setup-python@")]
+    assert setup_py and setup_py[0]["with"]["python-version-file"] == "pipeline/.python-version"
+    assert any(str(s.get("uses", "")).startswith("dtolnay/rust-toolchain@") for s in job["steps"])
+    assert any("install-rust-tool.sh cargo-cyclonedx" in str(s.get("run", "")) for s in job["steps"])
     assert any(str(s.get("uses", "")).startswith("actions/upload-artifact@") and s["with"]["name"] == "release-sbom" for s in job["steps"])
     # a re-run of a published tag builds nothing, like every other build job
     assert job["if"] == "needs.guard.outputs.published != 'true'"

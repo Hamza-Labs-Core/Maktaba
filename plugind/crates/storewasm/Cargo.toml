@@ -16,5 +16,5 @@ maktaba-plugin-audit = { path = "../audit" }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
-ruzstd = { version = "=0.8.1", default-features = false, features = ["std"] }
+ruzstd = { version = "=0.9.1", default-features = false, features = ["std"] }
 unicode-normalization = "0.1"

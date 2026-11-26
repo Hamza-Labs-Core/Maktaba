@@ -119,6 +119,7 @@ jobs:
       perf_ci: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.perf_ci == 'true' }}
       build_artifacts: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.build_artifacts == 'true' }}
       cve_gate: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cve_gate == 'true' }}
+      cve_gate_go: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.cve_gate_go == 'true' }}
       images: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.images == 'true' }}
       node_packaging: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.node_packaging == 'true' }}
       components_packs: ${{ steps.scope.outputs.full == 'true' || steps.filter.outputs.components_packs == 'true' }}
@@ -337,12 +338,16 @@ jobs:
     uses: ./.github/workflows/_build-artifacts.yml
 
   cve-gate:
-    # Story 23.7 AC2: govulncheck, pip-audit and pnpm audit over the shipped components; a
-    # called Go vulnerability or a high/critical Python or npm one fails it unless
-    # security/suppressions/ records why, until a date (see _cve-gate.yml)
+    # Story 23.7 AC2: govulncheck, pip-audit, pnpm audit --prod and cargo-audit over the
+    # shipped components; a called Go vulnerability or a high/critical Python, npm or Rust
+    # one fails it unless security/suppressions/ records why, until a date (see _cve-gate.yml).
+    # Go-source-only PRs run govulncheck alone (`all: false`) to catch newly called symbols.
     needs: [changes]
-    if: needs.changes.outputs.cve_gate == 'true'
+    if: needs.changes.outputs.cve_gate == 'true' || needs.changes.outputs.cve_gate_go == 'true'
     uses: ./.github/workflows/_cve-gate.yml
+    with:
+      all: ${{ needs.changes.outputs.cve_gate == 'true' }}
+      go: ${{ needs.changes.outputs.cve_gate_go == 'true' }}
 
   images:
     # Story 22.3 AC4 / TC3: the four compose images built and held to their size budgets

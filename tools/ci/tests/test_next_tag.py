@@ -323,6 +323,7 @@ def choose(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
     nightlies: list[dict[str, str]] | None = None,
+    cve_runs: list[dict[str, str]] | None = None,
 ) -> dict[str, str]:
     import json
 
@@ -330,8 +331,23 @@ def choose(
     # by default a green nightly on every green commit: these cases are about the other rules
     runs = [nightly(c) for c in green] if nightlies is None else nightlies
     (repo / ".bc.json").write_text(json.dumps(runs))
+    (repo / ".cve.json").write_text(json.dumps([] if cve_runs is None else cve_runs))
     monkeypatch.chdir(repo)
-    assert nt.main(["--green", str(repo / ".green"), "--broadcast-runs", str(repo / ".bc.json"), "--main", "HEAD"]) == 0
+    assert (
+        nt.main(
+            [
+                "--green",
+                str(repo / ".green"),
+                "--broadcast-runs",
+                str(repo / ".bc.json"),
+                "--cve-runs",
+                str(repo / ".cve.json"),
+                "--main",
+                "HEAD",
+            ]
+        )
+        == 0
+    )
     return dict(line.split("=", 1) for line in capsys.readouterr().out.splitlines())
 
 
@@ -413,6 +429,145 @@ def fake_gh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, script: str) -> Pat
     return bin_dir
 
 
+def cve_nightly(sha: str, conclusion: str = "success", event: str = "schedule", created: str = "", **extra: str) -> dict[str, str]:
+    return {"headSha": sha, "headBranch": "main", "event": event, "status": "completed", "conclusion": conclusion, "createdAt": created, **extra}
+
+
+def test_in_a_repository_the_nightly_cve_gate_blocks_unchanged_main(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import json
+
+    repo = tmp_path / "r"
+    repo.mkdir()
+    run(repo, "init", "-q", "-b", "main")
+    a = commit(repo, "api/main.go")
+    run(repo, "tag", "-a", "v0.3.82", "-m", "v0.3.82", a)
+    b = commit(repo, "web/app.ts")
+    t = commit(repo, "docs/trail/events/0001-x.md")
+
+    # no nightly CVE run yet: b is eligible (its CI push run already passed cve-gate)
+    assert choose(repo, [b], monkeypatch, capsys, cve_runs=[])["tag"] == "v0.3.83"
+
+    # a failed nightly CVE run on b blocks b
+    out = choose(repo, [b], monkeypatch, capsys, cve_runs=[cve_nightly(b, "failure", created="2026-11-26T04:23:00Z")])
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "nightly CVE gate" in out["reason"] and "failed" in out["reason"]
+
+    # a failed nightly CVE run on trail-only commit t above b also blocks b
+    out = choose(repo, [b], monkeypatch, capsys, cve_runs=[cve_nightly(t, "failure", created="2026-11-26T04:23:00Z")])
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert t in out["reason"]
+
+    # a newer green workflow_dispatch overrides an older failure
+    out = choose(
+        repo,
+        [b],
+        monkeypatch,
+        capsys,
+        cve_runs=[
+            cve_nightly(b, "success", event="workflow_dispatch", created="2026-11-26T06:00:00Z"),
+            cve_nightly(b, "failure", event="schedule", created="2026-11-26T04:23:00Z"),
+        ],
+    )
+    assert (out["tag"], out["sha"]) == ("v0.3.83", b)
+
+    # a failed nightly on an older code commit (a) does not block newer code commit (b)
+    out = choose(repo, [b], monkeypatch, capsys, cve_runs=[cve_nightly(a, "failure", created="2026-11-25T04:23:00Z")])
+    assert (out["tag"], out["sha"]) == ("v0.3.83", b)
+
+    # >20 intervening cancelled runs do not hide a failed nightly
+    intervening = [cve_nightly(b, "cancelled", created=f"2026-11-26T05:{i:02d}:00Z") for i in range(1, 26)]
+    out = choose(repo, [b], monkeypatch, capsys, cve_runs=[*intervening, cve_nightly(b, "failure", created="2026-11-26T04:23:00Z")])
+    assert (out["tag"], out["sha"]) == ("", "") and "nightly CVE gate" in out["reason"]
+
+    # two untagged green commits (b <- c): when the newer commit c fails the nightly CVE gate,
+    # next_tag.py must NOT fall back and tag the older commit b (which ships the same deps)
+    c = commit(repo, "web/other.ts")
+    out = choose(repo, [b, c], monkeypatch, capsys, cve_runs=[cve_nightly(c, "failure", created="2026-11-26T04:23:00Z")])
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "cannot fall back" in out["reason"] and c in out["reason"]
+
+    # --check-cve mode (shared with tag-guard.sh) gives the exact same verdict
+    (repo / ".cve-fail.json").write_text(json.dumps([cve_nightly(c, "failure", created="2026-11-26T04:23:00Z")]))
+    monkeypatch.chdir(repo)
+    assert nt.main(["--check-cve", c, "--cve-runs", str(repo / ".cve-fail.json")]) == 1
+    assert nt.main(["--check-cve", b, "--cve-runs", str(repo / ".cve-fail.json")]) == 1
+    assert "cannot fall back" in capsys.readouterr().err
+    (repo / ".cve-ok.json").write_text(json.dumps([cve_nightly(c, "success", created="2026-11-26T06:00:00Z")]))
+    assert nt.main(["--check-cve", c, "--cve-runs", str(repo / ".cve-ok.json")]) == 0
+
+    # A full CVE_LIMIT window of cancelled runs on c (never reaching an earlier commit) must
+    # fail closed rather than silently permitting a tag
+    full_cancelled = [
+        cve_nightly(c, "cancelled", event="schedule", created=f"2026-11-26T05:{i // 60:02d}:{i % 60:02d}Z")
+        for i in range(nt.CVE_LIMIT)
+    ]
+    out = choose(repo, [c], monkeypatch, capsys, cve_runs=full_cancelled)
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "truncated" in out["reason"] and "schedule" in out["reason"]
+    (repo / ".cve-trunc.json").write_text(json.dumps(full_cancelled))
+    monkeypatch.chdir(repo)
+    assert nt.main(["--check-cve", c, "--cve-runs", str(repo / ".cve-trunc.json")]) == 1
+    assert "truncated" in capsys.readouterr().err
+
+    # An older passing workflow_dispatch before the truncated schedule window cannot clear c,
+    # whereas a passing dispatch AFTER the oldest run in the truncated window clears c
+    older_pass = [*full_cancelled, cve_nightly(c, "success", event="workflow_dispatch", created="2026-11-26T04:00:00Z")]
+    assert choose(repo, [c], monkeypatch, capsys, cve_runs=older_pass)["tag"] == ""
+    newer_pass = [cve_nightly(c, "success", event="workflow_dispatch", created="2026-11-26T06:00:00Z"), *full_cancelled]
+    assert choose(repo, [c], monkeypatch, capsys, cve_runs=newer_pass)["tag"] == "v0.3.83"
+
+    # A full CVE_LIMIT window of historical runs that reaches a strict ancestor (a, before c)
+    # does NOT block fresh commit c (normal steady state after 100+ nightly runs)
+    historical_full = [
+        cve_nightly(a, "success", event="schedule", created=f"2026-11-20T04:{i // 60:02d}:{i % 60:02d}Z")
+        for i in range(nt.CVE_LIMIT)
+    ]
+    assert choose(repo, [c], monkeypatch, capsys, cve_runs=historical_full)["tag"] == "v0.3.83"
+
+    # Revert regression: A (failed nightly, pushed out of window) -> B (different tree, 100
+    # cancelled runs filling the window) -> C (reverts B, restoring A's non-trail tree).
+    # Seeing strict ancestor B in the truncated window must NOT clear C!
+    rev_repo = tmp_path / "revert"
+    rev_repo.mkdir()
+    run(rev_repo, "init", "-q", "-b", "main")
+    r_base = commit(rev_repo, "api/main.go")
+    run(rev_repo, "tag", "-a", "v0.3.82", "-m", "v0.3.82", r_base)
+    r_a = commit(rev_repo, "web/app.ts")  # A: vulnerable tree (its failure fell off the 100-run window)
+    r_b = commit(rev_repo, "web/other.ts")  # B: different tree with 100 cancelled runs
+    (rev_repo / "web/other.ts").unlink()
+    run(rev_repo, "add", "-A")
+    run(rev_repo, "commit", "-q", "-m", "revert B")
+    r_c = run(rev_repo, "rev-parse", "HEAD")  # C: reverts B, identical non-trail tree to A
+    b_cancelled = [
+        cve_nightly(r_b, "cancelled", event="schedule", created=f"2026-11-26T05:{i // 60:02d}:{i % 60:02d}Z")
+        for i in range(nt.CVE_LIMIT)
+    ]
+    out = choose(rev_repo, [r_c], monkeypatch, capsys, cve_runs=b_cancelled)
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "truncated" in out["reason"] and "schedule" in out["reason"]
+    (rev_repo / ".cve-revert.json").write_text(json.dumps(b_cancelled))
+    monkeypatch.chdir(rev_repo)
+    assert nt.git_earliest_same_non_trail(r_c) == r_a
+    assert nt.main(["--check-cve", r_c, "--cve-runs", str(rev_repo / ".cve-revert.json")]) == 1
+    assert "truncated" in capsys.readouterr().err
+
+    # Shallow-clone regression: `git clone --depth=2` hides A beyond the shallow graft while
+    # keeping B -> C. `git_earliest_same_non_trail` must return None (fail closed) so C is
+    # still refused as truncated rather than cleared on seeing strict ancestor B.
+    shallow_repo = tmp_path / "revert-shallow"
+    subprocess.run(
+        ["git", "clone", "-q", "--depth=2", f"file://{rev_repo}", str(shallow_repo)],
+        check=True,
+    )
+    (shallow_repo / ".cve-revert.json").write_text(json.dumps(b_cancelled))
+    monkeypatch.chdir(shallow_repo)
+    assert nt.git_earliest_same_non_trail(r_c) is None
+    assert nt.main(["--check-cve", r_c, "--cve-runs", str(shallow_repo / ".cve-revert.json")]) == 1
+    assert "truncated" in capsys.readouterr().err
+
+
 def test_the_runs_are_fetched_with_gh_when_no_file_is_given(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -421,22 +576,25 @@ def test_the_runs_are_fetched_with_gh_when_no_file_is_given(
     repo, _, b = broadcast_repo(tmp_path)
     (tmp_path / "schedule.json").write_text(json.dumps([nightly(b, event="schedule")]))
     calls = tmp_path / "calls"
-    # the fake gh answers the schedule list with b's green nightly, the dispatch list with none
+    # the fake gh answers broadcast schedule with b's green nightly, everything else with []
     fake_gh(
         tmp_path,
         monkeypatch,
         f'echo "$@" >> "{calls}"\n'
-        f'case "$*" in *"--event schedule"*) cat "{tmp_path / "schedule.json"}";; *) echo "[]";; esac\n',
+        f'case "$*" in *"broadcast-rehearsal.yml"*"--event schedule"*) cat "{tmp_path / "schedule.json"}";; *) echo "[]";; esac\n',
     )
     monkeypatch.chdir(repo)
     assert nt.main(["--green", ".green", "--main", "HEAD"]) == 0
     out = outcome(capsys)
     assert (out["tag"], out["sha"]) == ("v0.3.83", b)
     asked = calls.read_text().splitlines()
-    assert len(asked) == 2
-    for line, event in zip(asked, nt.BROADCAST_EVENTS):
+    assert len(asked) == 4
+    for line, event in zip(asked[:2], nt.BROADCAST_EVENTS, strict=True):
         assert "run list --workflow broadcast-rehearsal.yml --branch main" in line
         assert f"--event {event}" in line and f"--json {nt.BROADCAST_FIELDS}" in line
+    for line, event in zip(asked[2:], nt.CVE_EVENTS, strict=True):
+        assert f"run list --workflow {nt.CVE_WORKFLOW} --branch main" in line
+        assert f"--event {event}" in line and f"--json {nt.CVE_FIELDS}" in line
 
 
 def test_the_fetch_counts_a_red_nightly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -447,12 +605,30 @@ def test_the_fetch_counts_a_red_nightly(tmp_path: Path, monkeypatch: pytest.Monk
 
     def runner(cmd: list[str]) -> subprocess.CompletedProcess[str]:
         assert cmd[:3] == ["gh", "run", "list"]
-        return subprocess.CompletedProcess(cmd, 0, red if "schedule" in cmd else "[]", "")
+        return subprocess.CompletedProcess(cmd, 0, red if "broadcast-rehearsal.yml" in cmd and "schedule" in cmd else "[]", "")
 
     monkeypatch.chdir(repo)
     assert nt.main(["--green", ".green", "--main", "HEAD"], run=runner) == 0
     out = outcome(capsys)
     assert out["tag"] == "" and "failed" in out["reason"]
+
+
+def test_a_failed_cve_fetch_gives_no_tag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import json
+
+    repo, _, b = broadcast_repo(tmp_path)
+    bc_ok = json.dumps([nightly(b, event="schedule")])
+
+    def runner(cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        if nt.CVE_WORKFLOW in cmd:
+            return subprocess.CompletedProcess(cmd, 1, "", "HTTP 500\n")
+        return subprocess.CompletedProcess(cmd, 0, bc_ok if "schedule" in cmd else "[]", "")
+
+    monkeypatch.chdir(repo)
+    assert nt.main(["--green", ".green", "--main", "HEAD"], run=runner) == 0
+    out = outcome(capsys)
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "nightly CVE gate's runs could not be read" in out["reason"]
 
 
 @pytest.mark.parametrize(
@@ -527,12 +703,13 @@ def test_in_a_repository_from_both_run_lists(tmp_path: Path, monkeypatch: pytest
     (repo / ".ci.json").write_text(json.dumps([ci_run(c), ci_run(b)]))
     (repo / ".rh.json").write_text(json.dumps([main_rehearsal(b, head=c)]))
     (repo / ".bc.json").write_text(json.dumps([nightly(c, event="schedule")]))
+    (repo / ".cve.json").write_text("[]")
     monkeypatch.chdir(repo)
-    assert nt.main(["--ci-runs", ".ci.json", "--rehearsal-runs", ".rh.json", "--broadcast-runs", ".bc.json", "--main", "HEAD"]) == 0
+    assert nt.main(["--ci-runs", ".ci.json", "--rehearsal-runs", ".rh.json", "--broadcast-runs", ".bc.json", "--cve-runs", ".cve.json", "--main", "HEAD"]) == 0
     out = dict(line.split("=", 1) for line in capsys.readouterr().out.splitlines())
     assert (out["tag"], out["sha"]) == ("v0.3.83", b)
     with pytest.raises(SystemExit):
-        nt.main(["--ci-runs", ".ci.json", "--broadcast-runs", ".bc.json", "--main", "HEAD"])
+        nt.main(["--ci-runs", ".ci.json", "--broadcast-runs", ".bc.json", "--cve-runs", ".cve.json", "--main", "HEAD"])
 
 
 # --- the workflows its tag push starts -----------------------------------------------------------

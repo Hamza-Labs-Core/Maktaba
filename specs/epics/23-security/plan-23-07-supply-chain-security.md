@@ -9,8 +9,8 @@
 
 | Concern | Decision |
 |---|---|
-| SBOM | `cyclonedx-go` (Go), `cyclonedx-py` (Python), `@cyclonedx/cyclonedx-npm` (Node). Generated per release artifact; published as `*.cdx.json` alongside the binary/image. |
-| CVE scanning | `govulncheck` (Go), `pip-audit` (Python), `npm audit` (Node). Wired into CI lint gate's tail; fails on high. Suppression mechanism mirrors Story 22.4's lints.json. |
+| SBOM | `cyclonedx-gomod` (Go binaries), `cargo-cyclonedx` (Rust `maktaba-plugind`), `cyclonedx-py` (Python pipeline default + `--group cuda` sets, excluding `dev`), `tools/security/sbom.py` over `pnpm-lock.yaml` (web, dev-only packages marked `excluded`). Generated per release artifact; published as `*.cdx.json` alongside the release. |
+| CVE scanning | `govulncheck` (shipped Go main packages with release tags), `cargo-audit` (`plugind/Cargo.lock`), `pip-audit` (shipped non-dev Python sets including `--group cuda`), `pnpm audit --prod` (web production dependencies). Wired into CI (`_cve-gate.yml`) and run nightly on `main` (`cve-gate-nightly.yml`); fails on called Go vulns or high/critical advisories. |
 | Base-image pin enforcement | `tools/dockerfile-pin-lint.sh` (lint gate) refuses any `FROM` without `@sha256:`. |
 | Dependency upgrades | `renovate.json` (no Dependabot — Renovate's grouping is more flexible). Weekly schedule + auto-merge for security updates. |
 | Suppressions | `security/suppressions/<cve-id>.md` with rationale, owner, expiry. Expired files fail CI. |
@@ -131,7 +131,10 @@ jobs:
         run: cd pipeline && uv run pip-audit -r <(uv export --frozen --no-hashes) --strict || tools/cve-suppress.sh pip-audit
 
       - name: npm audit (web)
-        run: cd web && pnpm audit --audit-level=high || tools/cve-suppress.sh npm-audit
+        run: cd web && pnpm audit --prod --json || tools/cve-suppress.sh npm-audit
+
+      - name: cargo audit (plugind)
+        run: cargo-audit audit --file plugind/Cargo.lock --json || tools/cve-suppress.sh cargo-audit
 ```
 
 `tools/cve-suppress.sh` parses the failing tool's output and looks up
@@ -340,7 +343,7 @@ Major bumps still require human review.
 - [ ] Bundle signed via minisign.
 
 **CVE gate**
-- [ ] `govulncheck`, `pip-audit`, `npm audit --audit-level=high` in CI.
+- [ ] `govulncheck`, `cargo-audit`, `pip-audit`, `pnpm audit --prod` in CI (plus nightly main run).
 - [ ] High-severity vulns block merge.
 - [ ] Suppression files require rationale + expiry; expired ones fail.
 
