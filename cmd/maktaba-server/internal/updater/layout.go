@@ -24,7 +24,8 @@ type LayoutInstaller struct {
 	Source Source
 	// Version is the running release (the current release directory's).
 	Version string
-	// Record is the home's database record (state/database.json) the launcher's guard
+	// Record is the home's database record (state/database.json on 16 or
+	// state/database-pg18.json on 18, selected by apppayload.ClusterMajorIn) the launcher's guard
 	// marks on a fallback ("" on a node).
 	Record string
 	// PipelinePython is the configured [pipeline] python ("" none): the interpreter its

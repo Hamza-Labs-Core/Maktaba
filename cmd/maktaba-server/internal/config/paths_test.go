@@ -215,6 +215,9 @@ func TestMigrateMovesDefaultInstall(t *testing.T) {
 	writeAt(t, filepath.Join(old.Data, "maktaba.db"), "DB")
 	writeAt(t, filepath.Join(old.Data, "models", "m", "w.bin"), "W")
 	writeAt(t, filepath.Join(old.Data, "cache", "streaming", "seg"), "C")
+	for _, name := range []string{"postgres-18", "postgres.pg16-20261126-120000", "postgres-18.pg18-20261126-120000", "postgres-18.before-copy-20261126-120000", "postgres-18.stale", "postgres-18.stale-notes"} {
+		writeAt(t, filepath.Join(old.Data, name, "PG_VERSION"), name)
+	}
 
 	from, err := migrateDirs(osMover, old, cur)
 	if err != nil || from != old.Config {
@@ -226,6 +229,12 @@ func TestMigrateMovesDefaultInstall(t *testing.T) {
 		t.Fatalf("rewritten server.toml:\n%s", got)
 	}
 	root := filepath.Dir(cur.Data)
+	for _, name := range []string{"postgres-18", "postgres.pg16-20261126-120000", "postgres-18.pg18-20261126-120000", "postgres-18.before-copy-20261126-120000", "postgres-18.stale"} {
+		if got := readAt(t, filepath.Join(root, name, "PG_VERSION")); got != name {
+			t.Errorf("%s content: %q", name, got)
+		}
+	}
+	readAt(t, filepath.Join(cur.Data, "postgres-18.stale-notes", "PG_VERSION"))
 	for path, body := range map[string]string{
 		filepath.Join(cur.Keys, "secrets.key"):           "S",
 		filepath.Join(cur.Keys, "stream-signing.key"):    "K",

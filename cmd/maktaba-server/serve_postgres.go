@@ -57,6 +57,12 @@ func bundledPostgres(ctx context.Context, cfg *config.Config, prepare bool) (*pg
 		return nil, nil
 	}
 	if prepare {
+		// Serializes startup preparation, including upgrades and their staging directories.
+		lock, err := layout.LockFile(filepath.Join(cfg.StateDir(), "state", "postgres-prepare.lock"))
+		if err != nil {
+			return nil, fmt.Errorf("lock bundled PostgreSQL preparation: %w", err)
+		}
+		defer layout.Unlock(lock)
 		if err := postgresPortCheck(b, *cfg, os.Stderr); err != nil {
 			return nil, err
 		}
@@ -202,12 +208,7 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 	ob := b
 	ob.Home, ob.Data = old, pgbundle.DataDirFor(root, oldMajor)
 	u := pgbundle.MajorUpgrade{Old: ob, New: b}
-	need, why, err := u.Needed(ctx)
-	if err == nil && need {
-		err = u.Run(ctx, log)
-	} else if err == nil {
-		fmt.Fprintf(log, "[postgres] the library database runs on PostgreSQL %s (%s)\n", newMajor, why)
-	}
+	err := u.Run(ctx, log)
 	if err == nil {
 		// Seed and reconcile the new cluster's record ONLY when the upgrade wrote
 		// RecordSeedPending and the source cluster still matches UpgradeMarker (fail closed
@@ -301,6 +302,33 @@ func seedClusterRecordIfPending(ctx context.Context, root string, ob, b pgbundle
 func seedClusterRecord(root, oldMajor, newMajor, oldID, oldTable, newSys string, log io.Writer) error {
 	dir := filepath.Join(root, "state")
 	from, to := filepath.Join(dir, apppayload.ClusterRecordName(oldMajor)), filepath.Join(dir, apppayload.ClusterRecordName(newMajor))
+	// A restore can be requested on 18 after rollback switches releases but
+	// before 16 starts and changes its checkpoint. Keep that request intact.
+	// When 18 has just been rebuilt from 16, an untried request must take a
+	// fresh safety copy of the rebuilt database, even if it observed the
+	// previous 18 cluster's identity when it was written.
+	if existing, err := os.ReadFile(to); err == nil {
+		var rec apppayload.Database
+		if json.Unmarshal(existing, &rec) == nil && asked(rec) {
+			if rec.TriedBy != "" || rec.Data != apppayload.DataUntouched || rec.Aside != "" ||
+				strings.HasSuffix(rec.DataID, insideMark) || (rec.DataID == "" && rec.DataTable == "") {
+				return nil
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(existing, &fields); err != nil {
+				return err
+			}
+			delete(fields, "data_id")
+			delete(fields, "data_table")
+			raw, err := json.MarshalIndent(fields, "", "  ")
+			if err != nil {
+				return err
+			}
+			return layout.WriteFileAtomic(to, append(raw, '\n'), 0o644)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	raw, err := os.ReadFile(from)
 	if errors.Is(err, os.ErrNotExist) {
 		if rerr := os.Remove(to); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {

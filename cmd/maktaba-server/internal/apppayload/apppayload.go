@@ -92,7 +92,7 @@ func Confirm(stateDir, payloadDir string) error {
 }
 
 // Database is the record of the release whose migrations the library database
-// holds, <state>/state/database.json. The server writes it at its start before
+// holds, in state/database.json on 16 or state/database-pg18.json on 18. The server writes it at its start before
 // any role runs (serve_appbundle.go): when it has dumped the database before an
 // update's migrations (migrating), once they ran (migrated), and around putting
 // the dump back when they failed (restoring, then restored).

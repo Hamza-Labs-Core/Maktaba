@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -248,5 +249,57 @@ func TestMajorUpgradeDeferredOldSQLSkipsOnCancellation(t *testing.T) {
 	raw, _ := os.ReadFile(calls)
 	if strings.Count(string(raw), "call") != 1 {
 		t.Fatalf("old postgres started %d times, want 1 (deferred oldSQL must not run):\n%s", strings.Count(string(raw), "call"), string(raw))
+	}
+}
+
+func TestMajorUpgradeKeepsExistingClusterAndSweeps(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stand-in for pg_controldata")
+	}
+	root := t.TempDir()
+	u := MajorUpgrade{Old: Bundle{Data: filepath.Join(root, "postgres"), Home: filepath.Join(root, "pg16")},
+		New: Bundle{Data: filepath.Join(root, "postgres-18")}}
+	write := func(path, value string, mode os.FileMode) {
+		t.Helper()
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(value), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(u.Old.Data, "PG_VERSION"), "16", 0o600)
+	write(filepath.Join(u.New.Data, "PG_VERSION"), "18", 0o600)
+	write(u.Old.Bin("pg_controldata"), "#!/bin/sh\nprintf '%s\\n' 'Database cluster state: shut down' 'Database system identifier: 2'\n", 0o700)
+	write(filepath.Join(u.New.Data, UpgradeMarker), `{"system_identifier":"1","checkpoint":"0/1"}`, 0o600)
+	leftovers := []string{u.New.Data + ".upgrading", u.New.Data + ".stale", filepath.Join(root, ".pg_upgrade-123")}
+	for _, dir := range leftovers {
+		write(filepath.Join(dir, "file"), "leftover", 0o600)
+	}
+	active := filepath.Join(root, ".pg_upgrade-456")
+	write(filepath.Join(active, "postmaster.pid"), strconv.Itoa(os.Getpid())+"\n", 0o600)
+	unrelated := filepath.Join(root, ".pg_upgrade-notes")
+	write(filepath.Join(unrelated, "file"), "keep", 0o600)
+	link := filepath.Join(root, ".pg_upgrade-789")
+	if err := os.Symlink(u.New.Data, link); err != nil {
+		t.Fatal(err)
+	}
+	var log bytes.Buffer
+	if err := u.Run(context.Background(), &log); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log.String(), "level=warn "+u.Old.Data+" has a different system ID") ||
+		!strings.Contains(log.String(), "keeping the existing PostgreSQL 18 cluster") {
+		t.Fatal(log.String())
+	}
+	for _, dir := range leftovers {
+		if _, err := os.Lstat(dir); !os.IsNotExist(err) {
+			t.Errorf("%s: want removed, got %v", dir, err)
+		}
+	}
+	for _, path := range []string{u.New.Data, u.Old.Data, active, unrelated, link} {
+		if _, err := os.Lstat(path); err != nil {
+			t.Errorf("%s should remain: %v", path, err)
+		}
 	}
 }

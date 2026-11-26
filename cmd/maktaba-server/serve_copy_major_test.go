@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,5 +60,41 @@ func TestTheOtherDirectorysClusterIsSetAside(t *testing.T) {
 	aside, err := setAsideCluster(dir, "18", true, time.Date(2026, 11, 19, 20, 0, 0, 0, time.UTC))
 	if err != nil || aside != dir+".pg18-20261119-200000" {
 		t.Fatalf("set aside: %q %v", aside, err)
+	}
+}
+
+func TestCopyAsidePreservesAndIdentifiesPreJoinDatabase(t *testing.T) {
+	for _, oldCopy := range []bool{false, true} {
+		dir := filepath.Join(t.TempDir(), "postgres")
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range map[string]string{"PG_VERSION": "16", "data": "the original database"} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		want := "this machine's own database"
+		if oldCopy {
+			if err := os.WriteFile(filepath.Join(dir, "maktaba-copy.json"), []byte("{}"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			want = "the old copy"
+		}
+		aside, err := setAsideCluster(dir, "18", true, time.Now())
+		if err != nil || aside == "" {
+			t.Fatalf("set aside: %q, %v", aside, err)
+		}
+		var log bytes.Buffer
+		logCopyClusterAside(&log, "18", dir, aside)
+		if !strings.Contains(log.String(), want) || !strings.Contains(log.String(), aside) {
+			t.Fatal(log.String())
+		}
+		if err := os.Rename(aside, dir); err != nil {
+			t.Fatalf("put back for rollback: %v", err)
+		}
+		if got, err := os.ReadFile(filepath.Join(dir, "data")); err != nil || string(got) != "the original database" {
+			t.Fatalf("rollback data = %q, %v", got, err)
+		}
 	}
 }

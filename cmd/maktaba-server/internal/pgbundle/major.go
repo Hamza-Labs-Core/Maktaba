@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Hamza-Labs-Core/Maktaba/shared/go/layout"
 )
 
 // The major-version upgrade of the bundled cluster (Epic 49, story 49.2): PostgreSQL 16 → 18.
@@ -234,6 +236,8 @@ type MajorUpgrade struct {
 // ErrUpgradeNoRoom is a copy that does not fit: nothing was changed.
 var ErrUpgradeNoRoom = errors.New("no room for the upgraded copy of the library database")
 
+const replacedUpgradeSource = "the old cluster has a different system ID"
+
 // Needed reports whether New.Data must be made (again) from Old.Data, and why.
 func (u MajorUpgrade) Needed(ctx context.Context) (bool, string, error) {
 	if !u.Old.Initialized() {
@@ -260,7 +264,7 @@ func (u MajorUpgrade) Needed(ctx context.Context) (bool, string, error) {
 	if c.SystemID != m.SystemID {
 		// another cluster stands where the old one was (made anew by hand, or by a release
 		// before the upgrade started on an empty directory): never taken over the upgraded one
-		return false, "the old directory holds another cluster now (" + c.SystemID + ")", nil
+		return false, replacedUpgradeSource, nil
 	}
 	if c.Checkpoint != m.Checkpoint {
 		return true, "the old cluster moved on since the upgrade (" + m.Checkpoint + " → " + c.Checkpoint + ")", nil
@@ -289,11 +293,25 @@ func ReadUpgradedFrom(data string) (UpgradedFrom, bool, error) {
 // Prepare makes one (the same superuser, password, encoding, locale and checksums), pg_upgrade
 // into it (clone, else copy), the old cluster's own settings and Maktaba's markers carried
 // over, the marker written, and the directory renamed into place. A stale New.Data is moved
-// aside (<data>.stale), never deleted. The old cluster is left as it was.
+// aside (<data>.stale) until its replacement is ready or its space is needed. The old cluster is retained.
 func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	need, why, err := u.Needed(ctx)
-	if err != nil || !need {
+	if err != nil {
 		return err
+	}
+	if !need {
+		if why == replacedUpgradeSource {
+			fmt.Fprintf(log, "[postgres] level=warn %s has a different system ID than the upgrade marker; keeping the existing PostgreSQL 18 cluster in %s\n", u.Old.Data, u.New.Data)
+		} else {
+			fmt.Fprintf(log, "[postgres] the library database uses %s (%s)\n", u.New.Data, why)
+		}
+		if u.New.Initialized() {
+			marker, found, err := ReadUpgradedFrom(u.New.Data)
+			if err == nil && (!found || marker.Checkpoint != "") {
+				u.sweepUpgradeLeftovers(log)
+			}
+		}
+		return nil
 	}
 	oldMajor, _ := u.Old.ClusterMajor()
 	fmt.Fprintf(log, "[postgres] upgrading the library database from PostgreSQL %s (%s) to %s: %s\n",
@@ -360,15 +378,19 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	}
 	if u.New.Initialized() {
 		stale := u.New.Data + ".stale"
-		_ = os.RemoveAll(stale)
+		if err := removeUpgradeLeftover(stale); err != nil {
+			return err
+		}
+		if u.New.Running() {
+			return fmt.Errorf("cannot set aside the running cluster in %s", u.New.Data)
+		}
 		if err := os.Rename(u.New.Data, stale); err != nil {
 			return err
 		}
 		fmt.Fprintf(log, "[postgres] the earlier upgraded copy is set aside in %s\n", stale)
 	}
 	tmp := u.New.Data + ".upgrading"
-	u.stopLeftover(ctx, tmp, log)
-	if err := os.RemoveAll(tmp); err != nil {
+	if err := u.clearUpgradeStaging(ctx, tmp, log); err != nil {
 		return err
 	}
 	nb := u.New
@@ -376,15 +398,13 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	// each try on a cluster initdb just made (a try that failed part way leaves roles in it,
 	// which the next refuses)
 	try := func(mode string) error {
-		u.stopLeftover(ctx, tmp, log)
-		if err := os.RemoveAll(tmp); err != nil {
+		if err := u.clearUpgradeStaging(ctx, tmp, log); err != nil {
 			return err
 		}
 		if err := nb.initdbWith(ctx, superPW, log, checksumFlag(c.Checksums)); err != nil {
 			return err
 		}
 		if err := u.upgrade(ctx, nb, mode, log); err != nil {
-			_ = os.RemoveAll(tmp)
 			return err
 		}
 		return nil
@@ -400,7 +420,12 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 		// the copy an earlier upgrade made, set aside above, is abandoned once a new one is
 		// made (the old cluster moved on): its room goes first, or a disk that took one copy
 		// would never take this one beside it
-		_ = os.RemoveAll(u.New.Data + ".stale")
+		if err := removeUpgradeLeftover(u.New.Data + ".stale"); err != nil {
+			return err
+		}
+		if err := u.clearUpgradeStaging(ctx, tmp, log); err != nil {
+			return err
+		}
 		if err := u.room(u.Old.Data, tmp); err != nil {
 			return err
 		}
@@ -420,7 +445,7 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	}
 	// a marker with no checkpoint first: a run that stops before the real one is written is
 	// made again by the next start (Needed), never kept as if it were done
-	if err := os.WriteFile(filepath.Join(tmp, UpgradeMarker), []byte(`{"major":"`+oldMajor+`"}`+"\n"), 0o600); err != nil {
+	if err := layout.WriteFileAtomic(filepath.Join(tmp, UpgradeMarker), []byte(`{"major":"`+oldMajor+`"}`+"\n"), 0o600); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, u.New.Data); err != nil {
@@ -456,16 +481,13 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	// Mark record seeding pending BEFORE finalizing UpgradeMarker: a crash between the two
 	// re-runs Needed()+Run(); a crash after UpgradeMarker still sees RecordSeedPending on
 	// restart and completes seeding/reconciliation before removing it.
-	if err := os.WriteFile(filepath.Join(u.New.Data, RecordSeedPending), []byte(c.SystemID+"@"+c.Checkpoint+"\n"), 0o600); err != nil {
+	if err := layout.WriteFileAtomic(filepath.Join(u.New.Data, RecordSeedPending), []byte(c.SystemID+"@"+c.Checkpoint+"\n"), 0o600); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(u.New.Data, UpgradeMarker), append(raw, '\n'), 0o600); err != nil {
+	if err := layout.WriteFileAtomic(filepath.Join(u.New.Data, UpgradeMarker), append(raw, '\n'), 0o600); err != nil {
 		return err
 	}
-	// the copy an earlier upgrade made, set aside above: this one replaces it
-	if err := os.RemoveAll(u.New.Data + ".stale"); err == nil {
-		fmt.Fprintf(log, "[postgres] the earlier upgraded copy set aside is removed\n")
-	}
+	u.sweepUpgradeLeftovers(log)
 	fmt.Fprintf(log, "[postgres] the library database is upgraded (%s): %s; PostgreSQL %s's cluster is left as it was in %s\n",
 		mode, u.New.Data, oldMajor, u.Old.Data)
 	return nil
@@ -672,14 +694,77 @@ func freePort() (int, error) {
 	return l.Addr().(*net.TCPAddr).Port, nil
 }
 
-// stopLeftover stops a server pg_upgrade started on dir that outlived it (pg_upgrade was
-// stopped hard: its servers are pg_ctl's, not its children), before dir goes: else it
-// would run on, with its files deleted under it.
-func (u MajorUpgrade) stopLeftover(ctx context.Context, dir string, log io.Writer) {
-	if _, err := os.Stat(filepath.Join(dir, "postmaster.pid")); err != nil {
+// clearUpgradeStaging recovers a pg_upgrade staging cluster before reusing its path.
+func (u MajorUpgrade) clearUpgradeStaging(ctx context.Context, dir string, log io.Writer) error {
+	if info, err := os.Lstat(dir); err == nil && info.IsDir() && (Bundle{Data: dir}).Running() {
+		u.stopServer(ctx, u.New, dir, "immediate", log)
+	}
+	return removeUpgradeLeftover(dir)
+}
+
+// removeUpgradeLeftover only removes a real directory whose postmaster is gone.
+func removeUpgradeLeftover(dir string) error {
+	info, err := os.Lstat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("upgrade leftover %s is not a directory", dir)
+	}
+	pid := filepath.Join(dir, "postmaster.pid")
+	if _, err := os.Lstat(pid); err == nil {
+		// A stale PID is safe to remove only when it can be read and its
+		// process is gone. A malformed or unreadable PID leaves the folder alone.
+		raw, err := os.ReadFile(pid)
+		if !errors.Is(err, fs.ErrNotExist) {
+			if err != nil {
+				return err
+			}
+			first, _, _ := strings.Cut(string(raw), "\n")
+			id, err := strconv.Atoi(strings.TrimSpace(first))
+			if err != nil || id <= 0 {
+				return fmt.Errorf("cannot verify the postmaster in %s", dir)
+			}
+			if _, alive := processName(id); alive {
+				return fmt.Errorf("a process still holds the postmaster PID in %s", dir)
+			}
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return os.RemoveAll(dir)
+}
+
+func (u MajorUpgrade) sweepUpgradeLeftovers(log io.Writer) {
+	root := filepath.Dir(u.New.Data)
+	for _, dir := range []string{u.New.Data + ".upgrading", u.New.Data + ".stale"} {
+		if err := removeUpgradeLeftover(dir); err != nil {
+			fmt.Fprintf(log, "[postgres] level=warn cannot remove upgrade leftover %s: %v\n", dir, err)
+			return
+		}
+	}
+	// An old postmaster can still be using a work directory from an interrupted run.
+	if u.Old.Running() {
 		return
 	}
-	u.stopServer(ctx, u.New, dir, "immediate", log)
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		fmt.Fprintf(log, "[postgres] level=warn cannot list upgrade leftovers in %s: %v\n", root, err)
+		return
+	}
+	for _, entry := range entries {
+		suffix, ok := strings.CutPrefix(entry.Name(), ".pg_upgrade-")
+		if !ok || !entry.IsDir() || suffix == "" || strings.Trim(suffix, "0123456789") != "" {
+			continue
+		}
+		dir := filepath.Join(root, entry.Name())
+		if err := removeUpgradeLeftover(dir); err != nil {
+			fmt.Fprintf(log, "[postgres] level=warn cannot remove upgrade leftover %s: %v\n", dir, err)
+		}
+	}
 }
 
 // stopServer stops a server on dir with b's pg_ctl (mode fast or immediate).

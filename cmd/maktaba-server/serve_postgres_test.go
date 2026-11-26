@@ -434,3 +434,37 @@ func TestSeedClusterRecordIfPending(t *testing.T) {
 		}
 	})
 }
+
+func TestSeedKeepsRestoreRequestedOn18BeforeRollbackStarted16(t *testing.T) {
+	for _, withOldRecord := range []bool{true, false} {
+		root := t.TempDir()
+		dir := filepath.Join(root, "state")
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		to := filepath.Join(dir, apppayload.ClusterRecordName("18"))
+		request := []byte(`{"state":"restoring","by":"admin","dump":"/backups/request.dump","data":"untouched","data_id":"123/456/789"}`)
+		if err := os.WriteFile(to, request, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if withOldRecord {
+			if err := os.WriteFile(filepath.Join(dir, apppayload.ClusterRecordName("16")), []byte(`{"state":"migrated"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := seedClusterRecord(root, "16", "18", "", "", "321", &bytes.Buffer{}); err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile(to)
+		var rec apppayload.Database
+		if err != nil || json.Unmarshal(got, &rec) != nil || !asked(rec) || rec.Dump != "/backups/request.dump" {
+			t.Fatalf("restore request lost: %s (%v)", got, err)
+		}
+		settled, err := settleData(context.Background(), rec, dataProbe{
+			identity: func(context.Context) (string, int64, error) { return "321/456/789#123", 150, nil },
+		})
+		if err != nil || settled.Data != apppayload.DataUntouched || settled.DataID != "321/456/789" {
+			t.Fatalf("restored request would skip keeping the rebuilt data: %+v (%v)", settled, err)
+		}
+	}
+}

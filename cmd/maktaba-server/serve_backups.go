@@ -243,8 +243,17 @@ func moveRestore(stateDir, dir string) error {
 // disk the database's dumps can live on, inside the database's own folder, too little
 // room, or not writable.
 func backupsFolderProblem(dir string, cfg config.Config) string {
-	if config.Within(dir, filepath.Join(cfg.StateDir(), "postgres")) {
-		return "the backups cannot go inside the database's own folder"
+	root := cfg.StateDir()
+	resolved, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		resolved = root
+	}
+	for _, state := range []string{root, resolved} {
+		rel, err := filepath.Rel(strings.ToLower(state), strings.ToLower(dir))
+		top, _, _ := strings.Cut(rel, string(filepath.Separator))
+		if err == nil && (top == "postgres" || strings.HasPrefix(top, "postgres-")) {
+			return "the backups cannot go inside the database's own folder"
+		}
 	}
 	disk, err := storageDiskOf(dir)
 	if err != nil {

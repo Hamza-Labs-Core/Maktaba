@@ -6,7 +6,7 @@ package main
 // One code path, in the home's supervisor: the Updates page asks it through the API
 // (admin, audited), `maktaba-server restore --backup <file> --confirm` through its
 // loopback admin, or does the same itself when no server runs. It marks the database's
-// record restoring with the dump (state/database.json), points the install at the
+// record restoring with the dump (selected by apppayload.ClusterMajorIn), points the install at the
 // matching release and restarts (exit 75): that release's database step puts the dump
 // back before any role runs — the put-back a failed update uses (one transaction, the
 // machines' copies made anew), with the database it replaces set aside first

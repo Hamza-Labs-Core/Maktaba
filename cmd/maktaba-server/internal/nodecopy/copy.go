@@ -396,6 +396,12 @@ type Marker struct {
 
 func (c Copy) markerPath() string { return filepath.Join(c.DB.Data, markerFile) }
 
+// HasMark reports whether this cluster was claimed as a copy.
+func (c Copy) HasMark() bool {
+	_, err := os.Stat(c.markerPath())
+	return err == nil
+}
+
 // Mark reads the marker (false: this database is not a copy, or never subscribed).
 func (c Copy) Mark() (Marker, bool) {
 	var m Marker
@@ -420,7 +426,7 @@ func (c Copy) Claim(now time.Time) (string, error) {
 	if !c.DB.Initialized() {
 		return "", nil
 	}
-	if _, err := os.Stat(c.markerPath()); err == nil {
+	if c.HasMark() {
 		return "", nil
 	}
 	aside := c.DB.Data + ".before-copy-" + now.UTC().Format("20060102-150405")

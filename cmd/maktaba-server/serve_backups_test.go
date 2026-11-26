@@ -293,3 +293,19 @@ func TestMovingTheBackupsMovesTheRestore(t *testing.T) {
 		})
 	}
 }
+
+func TestBackupsFolderRejectsBundledClusters(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.Server.DataDir = t.TempDir()
+	for _, cluster := range []string{"postgres", "postgres-18", "postgres-19"} {
+		for _, path := range []string{cluster, filepath.Join(cluster, "nested", "backups")} {
+			dir := filepath.Join(cfg.StateDir(), path)
+			if got := backupsFolderProblem(dir, cfg); got != "the backups cannot go inside the database's own folder" {
+				t.Errorf("%s: %q", path, got)
+			}
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("%s should not be created: %v", path, err)
+			}
+		}
+	}
+}

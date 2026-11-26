@@ -140,6 +140,9 @@ func TestAHomeThatCannotBeVerifiedIsNotAsked(t *testing.T) {
 // A database this machine had before it joined is kept, moved aside, never emptied.
 func TestClaimKeepsADatabaseOfThisMachinesOwn(t *testing.T) {
 	c := testCopy(t)
+	if c.HasMark() {
+		t.Fatal("an unclaimed directory was classified as a copy")
+	}
 	if aside, err := c.Claim(time.Now()); err != nil || aside != "" {
 		t.Fatalf("nothing there: %q %v", aside, err)
 	}
@@ -159,6 +162,9 @@ func TestClaimKeepsADatabaseOfThisMachinesOwn(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(c.DB.Data, "PG_VERSION"), []byte("16\n"), 0o600)
 	if err := c.writeMark(Marker{}); err != nil {
 		t.Fatal(err)
+	}
+	if !c.HasMark() {
+		t.Fatal("a claimed directory was classified as a pre-join database")
 	}
 	if aside, err := c.Claim(time.Now()); err != nil || aside != "" {
 		t.Fatalf("the copy's own: %q %v", aside, err)

@@ -1,11 +1,13 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -84,15 +86,35 @@ func TestMoveMacLayoutToAnotherDisk(t *testing.T) {
 	fakeDisk(t, 100<<30, "apfs", true)
 	in, base := macInstall(t)
 	target := filepath.Join(base, "Big", "Maktaba")
+	write(t, filepath.Join(in.From.Root, "postgres-18", "PG_VERSION"), "18")
+	asides := []string{"postgres.pg16-20261126-120000", "postgres-18.pg18-20261126-120000", "postgres-18.before-copy-20261126-120000", "postgres-18.stale"}
+	for _, name := range append(slices.Clone(asides), "postgres-18.stale-notes") {
+		write(t, filepath.Join(in.From.Root, name, "PG_VERSION"), "retained")
+	}
+	var log bytes.Buffer
+
 	verified := ""
 	var last uint64
 	res, err := Move(context.Background(), in, target, Options{
+		Log:            &log,
 		VerifyPostgres: func(_ context.Context, root string) error { verified = root; return nil },
 		Progress:       func(done, _ uint64) { last = done },
 		Now:            func() time.Time { return time.Date(2026, 10, 26, 9, 30, 0, 0, time.UTC) },
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(res.SetAside) != len(asides) {
+		t.Fatalf("set-aside folders: %v", res.SetAside)
+	}
+	for _, name := range asides {
+		src := filepath.Join(in.From.Root, name)
+		if !slices.Contains(res.SetAside, src) || !strings.Contains(log.String(), src) || exists(filepath.Join(target, name)) {
+			t.Errorf("set-aside %s should stay at source and be reported", name)
+		}
+		if got := read(t, filepath.Join(src, "PG_VERSION")); got != "retained" {
+			t.Errorf("set-aside data changed: %q", got)
+		}
 	}
 	if verified != target {
 		t.Errorf("the database was checked in %q, want %q", verified, target)
@@ -101,7 +123,7 @@ func TestMoveMacLayoutToAnotherDisk(t *testing.T) {
 		t.Errorf("progress ended at %d of %d", last, res.Bytes)
 	}
 	// every folder in its new place: data's contents and the state folders together
-	for _, f := range []string{"supervisor/events.jsonl", "postgres/PG_VERSION", "postgres/base/1/1259",
+	for _, f := range []string{"supervisor/events.jsonl", "postgres/PG_VERSION", "postgres-18/PG_VERSION", "postgres/base/1/1259",
 		"backups/maktaba-2026-10-25.dump", "models/whisper/model.bin", "state/database.json", config.StorageMarkerFile} {
 		if !exists(filepath.Join(target, f)) {
 			t.Errorf("%s is not in the new place", f)
@@ -123,7 +145,7 @@ func TestMoveMacLayoutToAnotherDisk(t *testing.T) {
 	}
 	// the old folders kept aside, never removed; state/ stays (the app's files)
 	stamp := ".moved-20261026-093000"
-	for _, n := range []string{"data", "postgres", "backups", "models"} {
+	for _, n := range []string{"data", "postgres", "postgres-18", "backups", "models"} {
 		if exists(filepath.Join(in.From.Root, n)) || !exists(filepath.Join(in.From.Root, n+stamp)) {
 			t.Errorf("%s was not kept aside as %s", n, n+stamp)
 		}
@@ -131,7 +153,7 @@ func TestMoveMacLayoutToAnotherDisk(t *testing.T) {
 	if !exists(filepath.Join(in.From.Root, "state", "server-paused")) || !exists(filepath.Join(in.From.Root, "keys", "secrets.key")) {
 		t.Error("state/ or keys/ left the old root")
 	}
-	if len(res.Old) != 4 {
+	if len(res.Old) != 5 {
 		t.Errorf("old copies %v", res.Old)
 	}
 	if exists(filepath.Join(in.ConfigDir, JournalFile)) {
@@ -144,7 +166,7 @@ func TestMoveMacLayoutToAnotherDisk(t *testing.T) {
 		t.Errorf("the new place reads as missing (%s)", p)
 	}
 	doc := Report(InstallFrom(in, target), "")
-	if doc.Move.State != "done" || len(doc.Move.Old) != 4 {
+	if doc.Move.State != "done" || len(doc.Move.Old) != 5 {
 		t.Errorf("report's move %+v", doc.Move)
 	}
 }

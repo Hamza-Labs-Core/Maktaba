@@ -1,7 +1,7 @@
 package main
 
 // The ways out of a restore a person asked for that cannot finish (its backup lost or
-// unreadable, a full disk, a try that hangs). One rule: the record (state/database.json)
+// unreadable, a full disk, a try that hangs). One rule: the record (selected by apppayload.ClusterMajorIn)
 // says what state the DATA is in, written before each step that changes it, and each way
 // out is allowed or refused by that alone:
 //

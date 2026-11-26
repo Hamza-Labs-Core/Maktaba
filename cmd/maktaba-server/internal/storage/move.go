@@ -157,6 +157,8 @@ type Result struct {
 	At     time.Time `json:"at"`
 	// Old are the old copies kept aside (<folder>.moved-<stamp>), to remove by hand.
 	Old []string `json:"old,omitempty"`
+	// SetAside lists inactive cluster directories left at the source state root.
+	SetAside []string `json:"set_aside,omitempty"`
 	// Bytes and Files are what was copied.
 	Bytes uint64 `json:"bytes"`
 	Files int    `json:"files"`
@@ -591,6 +593,17 @@ func Move(ctx context.Context, in Install, target string, o Options) (Result, er
 	res.Old = old
 	if err != nil {
 		return res, err
+	}
+	if j.From.Root != j.From.Data {
+		names, err := config.SetAsideClusters(j.From.Root)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			o.logf("level=warn cannot list set-aside database folders in %s: %v", j.From.Root, err)
+		}
+		for _, name := range names {
+			path := filepath.Join(j.From.Root, name)
+			res.SetAside = append(res.SetAside, path)
+			o.logf("set-aside database folder kept at %s; remove it after verifying the move and confirming it is no longer needed", path)
+		}
 	}
 	res.OK, res.At = true, o.Now().UTC()
 	if err := writeJSON(filepath.Join(in.ConfigDir, ResultFile), res); err != nil {
