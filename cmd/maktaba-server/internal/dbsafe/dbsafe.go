@@ -690,10 +690,10 @@ func validIdent(s string) bool { return identRe.MatchString(s) }
 // are ended, and the public schema made afresh with the dump restored in it, all in one
 // transaction (psql over pg_restore's script): a restore that fails leaves the database
 // as it was, never empty. Not its publications, which outlive the schema and are brought
-// up to date with the restored tables at a machine's next grant. Without psql, the schema
-// is made afresh and the dump restored in a transaction of its own (as before). For a
-// Postgres the home does not bundle (the bundled one is restored by
-// pgbundle.RestoreRunning).
+// up to date with the restored tables at a machine's next grant. Without psql beside
+// pg_restore nothing is done at all: such a restore cannot be made whole or nothing, so
+// it is refused (nothing changed). For a Postgres the home does not bundle (the bundled
+// one is restored by pgbundle.RestoreRunning).
 func (t Target) Restore(ctx context.Context, dump string, log io.Writer) error {
 	return t.RestoreWith(ctx, dump, nil, log)
 }
@@ -727,6 +727,13 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 	}
 	defer d.Close()
 	psql := havePSQL(t.bin("psql"))
+	if !psql {
+		// before the copy slots go and the sessions end: missing psql truly changes nothing,
+		// rather than the schema made afresh and the dump restored in a transaction of its
+		// own, which a failure part way through can commit
+		return fmt.Errorf("restore %s (nothing changed): %w", dump, Cannot("the restore runs in one transaction, which "+
+			"takes psql, and there is none beside pg_restore (install the PostgreSQL client programs, or set MAKTABA_PG_BIN)"))
+	}
 	how, err := t.howTo(ctx, d, dump, list, psql)
 	if err != nil {
 		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
@@ -758,36 +765,17 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 		// one it may not end (a superuser's) stops that at once: those it may, then
 		_, _ = d.ExecContext(ctx, pgbundle.EndSessionsSQL(""))
 	}
-	if psql {
-		if err := t.restoreAtomic(ctx, dump, list, how.empty, only, tell, log); err != nil {
-			return err
-		}
-		_, _ = d.ExecContext(ctx, `ANALYZE`)
-		return t.verifyRestore(ctx, d, dump, how.list)
-	}
-	if err := tell(pgbundle.StepGone); err != nil {
-		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
-	}
-	if _, err := d.ExecContext(ctx, how.empty); err != nil {
-		return fmt.Errorf("make the public schema afresh: %w", err)
-	}
-	args := append([]string{"--no-owner", "--no-publications", "--exit-on-error", "--single-transaction"}, useList(only)...)
-	cmd, err := t.command(ctx, "pg_restore", "", append(args, dump)...)
-	if err != nil {
+	if err := t.restoreAtomic(ctx, dump, list, how.empty, only, tell, log); err != nil {
 		return err
-	}
-	if err := tell(pgbundle.StepReplaced); err != nil {
-		return fmt.Errorf("restore %s: %w", dump, err)
-	}
-	var out bytes.Buffer
-	cmd.Stdout = io.MultiWriter(&out, orDiscard(log))
-	cmd.Stderr = cmd.Stdout
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("pg_restore %s: %v: %s", dump, err, tail(out.Bytes()))
 	}
 	_, _ = d.ExecContext(ctx, `ANALYZE`)
 	return t.verifyRestore(ctx, d, dump, how.list)
 }
+
+// childWaitDelay is how long a child's pipes may stay open after the child itself ended
+// (exec.Cmd's WaitDelay): psql's own, and pg_restore's, whose stdout a grandchild may hold
+// (tests shorten it).
+var childWaitDelay = 10 * time.Second
 
 // psqlLookEvery is how often a restore looks at its psql's session (tests look more often),
 // and psqlLooks how many looks in a row that say its transaction is over end it.
@@ -993,7 +981,7 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, only strin
 	var out bytes.Buffer // read once psql ended
 	word := "maktaba-restore-" + randHex(8)
 	ran, at := newSignal(word+"-ran"), &psqlSession{word: word + "-session"}
-	cmd.WaitDelay = 10 * time.Second // its output pipe, should a child outlive it
+	cmd.WaitDelay = childWaitDelay // its output pipe, should a child outlive it
 	cmd.Stdout = io.MultiWriter(&out, orDiscard(log), ran, at)
 	cmd.Stderr = cmd.Stdout
 	if err := cmd.Start(); err != nil {
@@ -1056,23 +1044,34 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, only strin
 		}
 		var genErr bytes.Buffer
 		gen.Stderr = &genErr
-		gen.WaitDelay = 10 * time.Second // as psql's
+		gen.WaitDelay = childWaitDelay // as psql's: a child of pg_restore that holds its stdout is let go of
 		if err := gen.Start(); err != nil {
 			return stopped(fmt.Errorf("pg_restore: %w", err))
 		}
 		var scan copyScan
-		if _, copyErr := io.Copy(io.MultiWriter(in, &scan), script); copyErr != nil {
-			// pg_restore would wait on the pipe for ever: stopped with psql
-			err := stopped(copyErr)
-			_ = script.Close() // what is left of it is written nowhere
-			_ = gen.Wait()
+		// the copy runs beside the wait, never before it: io.Copy alone would block on a
+		// child of pg_restore that holds the pipe open for ever, and WaitDelay would never
+		// apply (Wait is what closes the pipe, at its own delay, once pg_restore is gone).
+		// A copy that fails first (psql stopped reading) is stopped with psql: its context
+		// kills pg_restore too, so the wait ends as well.
+		copyDone := make(chan error, 1)
+		go func() {
+			_, cerr := io.Copy(io.MultiWriter(in, &scan), script)
+			copyDone <- cerr
+		}()
+		waitDone := make(chan error, 1)
+		go func() { waitDone <- gen.Wait() }()
+		if cerr := <-copyDone; cerr != nil {
+			err := stopped(cerr)
+			<-waitDone // psql's end (killed by the same context) ends pg_restore too
+			_ = script.Close()
 			return err
 		}
-		if err := gen.Wait(); err != nil {
+		if werr := <-waitDone; werr != nil {
 			// the script is not whole: psql ends before its input does, with no commit
 			kill()
 			<-ended
-			return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, err, tail(genErr.Bytes()))
+			return fmt.Errorf("pg_restore %s (nothing changed: one transaction): %v: %s", dump, werr, tail(genErr.Bytes()))
 		}
 		if part == dataPart {
 			if err := scan.whole(tables); err != nil {

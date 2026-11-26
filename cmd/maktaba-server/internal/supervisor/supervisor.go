@@ -97,6 +97,13 @@ type Process struct {
 	// BeforeStart, when set, runs before each start (the bundled postgres: a lock file a
 	// postmaster that did not end cleanly left, pgbundle.Bundle.ClearStaleLock).
 	BeforeStart func()
+	// RestartAtOnce, when set, is asked after the child exited in a crash: what it says
+	// ("" for none) is why it is started again at once — no crash policy backoff, and not
+	// one of the crash-loop window's exits — within the hook's own bound. The bundled
+	// postgres on Windows: a start ends while the shared memory of a postmaster that was
+	// killed is still held, and the lock that the pre-start wait goes by is gone with the
+	// start that failed first, so only this tells (BuildPostgres's shmStartRetry).
+	RestartAtOnce func() string
 	// Settle, when set, runs before each start, after BeforeStart, and returns once what
 	// the last run left behind is gone, or its own limit passed, or ctx ended (the bundled
 	// postgres: backends of a killed postmaster that still hold its shared memory, next to

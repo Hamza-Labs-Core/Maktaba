@@ -35,6 +35,11 @@ mkdir -p "$D" && echo 17 > "$D/PG_VERSION"
 `,
 	"postgres": `#!/bin/sh
 echo "$@" >> "$FAKE_LOG/postgres.calls"
+if [ -n "$FAKE_SHM_BUSY" ]; then
+  echo "FATAL:  pre-existing shared memory block is still in use" >&2
+  exit 1
+fi
+echo started >> "$FAKE_LOG/order"
 trap 'rm -f "$FAKE_LOG/up"; echo stopped >> "$FAKE_LOG/postgres.calls"; exit 0' INT TERM
 touch "$FAKE_LOG/up"
 while :; do sleep 0.05; done
@@ -827,5 +832,54 @@ func TestServerArgsPreloadPgTextsearch(t *testing.T) {
 		if len(got) != 1 || got[0] != c.want {
 			t.Errorf("%s: preloads %v, want [%s]", c.setting, got, c.want)
 		}
+	}
+}
+
+// A start of the bundle's own waits for a killed postmaster's shared memory before it
+// starts the server (pgbundle.AwaitShmFree): the wait is pinned to the order, not to the
+// behaviour that follows it, so removing the call fails this on macOS too, where the
+// start's own retry covers it.
+func TestWithServerWaitsForTheMemoryBeforeStarting(t *testing.T) {
+	b, logDir := fakeBundle(t)
+	prev := awaitShmFree
+	awaitShmFree = func(b Bundle, ctx context.Context) {
+		_ = os.WriteFile(filepath.Join(logDir, "order"), []byte("await\n"), 0o600)
+	}
+	t.Cleanup(func() { awaitShmFree = prev })
+	if err := b.WithServer(context.Background(), io.Discard, func() error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(logDir, "order"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(raw) != "await\nstarted\n" {
+		t.Fatalf("the start's order:\n%s", string(raw))
+	}
+}
+
+// The waits of a start that Postgres keeps refusing (the shared memory of a killed
+// postmaster) are bounded by one deadline, from before the first of them: a wait that
+// starts near the bound does not get the whole bound of its own after it, so the start
+// ends within it and not within two of them.
+func TestWithServerBoundsItsWaitsToOneBound(t *testing.T) {
+	b, _ := fakeBundle(t)
+	t.Setenv("FAKE_SHM_BUSY", "1")
+	oldWait, oldEvery := shmWait, shmRetryEvery
+	shmWait, shmRetryEvery = 600*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { shmWait, shmRetryEvery = oldWait, oldEvery })
+	start := time.Now()
+	prev := awaitShmFree
+	awaitShmFree = func(b Bundle, ctx context.Context) {
+		if d, ok := ctx.Deadline(); !ok || d.After(start.Add(shmWait+100*time.Millisecond)) {
+			t.Errorf("a wait's context ends at %v (one there: %v), past the bound %v", d, ok, start.Add(shmWait))
+		}
+	}
+	t.Cleanup(func() { awaitShmFree = prev })
+	if err := b.WithServer(context.Background(), io.Discard, func() error { return nil }); !errors.Is(err, errShmInUse) {
+		t.Fatalf("the error: %v", err)
+	}
+	if took := time.Since(start); took > 3*shmWait {
+		t.Fatalf("took %s, want under %s", took, 3*shmWait)
 	}
 }

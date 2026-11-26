@@ -224,3 +224,8 @@ func (b Bundle) Running() bool {
 	name, alive := processName(pid)
 	return alive && (name == "" || isPostgres(name))
 }
+
+// ShmWaitBound is how long a start waits out the shared memory a postmaster that was
+// killed left (shmWait: tests replace it), for the starts that retry on Postgres's own
+// refusal of it (withServer, the supervisor's at-once restarts).
+func ShmWaitBound() time.Duration { return shmWait }

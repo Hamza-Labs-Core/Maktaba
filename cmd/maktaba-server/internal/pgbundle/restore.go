@@ -155,7 +155,7 @@ func (b Bundle) restoreInto(ctx context.Context, q Querier, dump string, opts Re
 		return err
 	}
 	err = b.restoreOnce(ctx, q, dump, opts, jobs, log)
-	if err != nil && ctx.Err() == nil && jobs > 1 {
+	if err != nil && ctx.Err() == nil && jobs > 1 && retryOneWorker(err) {
 		_, _ = fmt.Fprintf(log, "[postgres] the restore of %s with %d workers failed (%v): it is done again with one\n",
 			dump, jobs, err)
 		err = b.restoreOnce(ctx, q, dump, opts, 1, log)
@@ -299,10 +299,31 @@ func (b Bundle) restoreOnce(ctx context.Context, q Querier, dump string, opts Re
 		return fmt.Errorf("restore %s: %w", dump, err)
 	}
 	if err := q.Exec(ctx, restoringDatabase, "ANALYZE;"); err != nil {
-		return err
+		return &afterRestoreError{err}
 	}
 	_, _ = fmt.Fprintf(log, "[postgres] %s is put back whole: every table, index, key, trigger and grant, and its rows\n", dump)
-	return b.swapIn(ctx, q, opts, log)
+	if err := b.swapIn(ctx, q, opts, log); err != nil {
+		return &afterRestoreError{err}
+	}
+	return nil
+}
+
+// afterRestoreError is a failure of a restore's own last steps (the analysis of what was
+// put back, the save before the swap, the swap into place): the dump's data was in place
+// and checked whole before it, so a parallel try is not what failed and the whole restore
+// is not made again for it.
+type afterRestoreError struct{ err error }
+
+func (e *afterRestoreError) Error() string { return e.err.Error() }
+func (e *afterRestoreError) Unwrap() error { return e.err }
+
+// retryOneWorker says whether a failed try of restoreInto is made again with one worker:
+// only a failure of putting the data in or of checking it (pg_restore, the chunks, the
+// check of what was put back) is; the restore's own last steps are not a parallelism of
+// the restore (retrying them is the whole restore again, for a save a person refused).
+func retryOneWorker(err error) bool {
+	var after *afterRestoreError
+	return err != nil && !errors.As(err, &after)
 }
 
 // swapIn renames the whole scratch database into place as the app database, with the app

@@ -381,6 +381,19 @@ func TestTheCopyIsAskedForOnlyWhenNeeded(t *testing.T) {
 		},
 		"replaced": func(rec *apppayload.Database) { rec.Data = apppayload.DataReplaced },
 		"gone":     func(rec *apppayload.Database) { rec.Data = apppayload.DataGone },
+		"one a release that kept no record of it left": func(rec *apppayload.Database) {
+			// the data not known, and a replaced- dump of that version taken since the ask:
+			// it is found and kept as it is, so the room for one is not asked for
+			rec.Data = apppayload.DataUnknown
+			p := filepath.Join(e.backups, "replaced-v0.3.0-20261120T000000.dump")
+			if err := os.WriteFile(p, []byte("copy"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			at := time.Now().Add(time.Minute) // after the record is written
+			if err := os.Chtimes(p, at, at); err != nil {
+				t.Fatal(err)
+			}
+		},
 	} {
 		rec := e.asked()
 		set(&rec)

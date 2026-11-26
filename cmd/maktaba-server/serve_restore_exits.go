@@ -510,6 +510,36 @@ func asideThere(rec apppayload.Database) bool {
 	return err == nil && pgbundle.IsDump(info) && pgbundle.DumpBytes(rec.Aside) == rec.AsideBytes
 }
 
+// replacedDumpThere is a copy of the database a restore replaces that is there already (""
+// when there is none): the record's own path — a whole dump at it, whatever the record says
+// it is (a try that was killed after the dump, before the record said it was whole: the
+// record still says the data is what it was, so it is the same copy) — or, the data not
+// known (asked on a release that kept no record of it), one of that version taken since the
+// backup was, which that release would find and set aside itself (setAsideReplaced).
+func replacedDumpThere(dir string, rec apppayload.Database) string {
+	if rec.Aside != "" {
+		info, err := os.Lstat(rec.Aside)
+		if err == nil && pgbundle.IsDump(info) && (rec.AsideBytes <= 0 || pgbundle.DumpBytes(rec.Aside) == rec.AsideBytes) {
+			return rec.Aside
+		}
+	}
+	if rec.Data != apppayload.DataUnknown {
+		return ""
+	}
+	prefix, since := pgbundle.ReplacedDumpPrefix+rec.Version+"-", rec.At
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	for _, e := range ents {
+		if info, err := e.Info(); err == nil && strings.HasPrefix(e.Name(), prefix) &&
+			strings.HasSuffix(e.Name(), ".dump") && !info.ModTime().Before(since) && pgbundle.IsDump(info) {
+			return filepath.Join(dir, e.Name())
+		}
+	}
+	return ""
+}
+
 // goOnWithoutCopy reports whether the person who asked for rec confirmed that it goes on with
 // no copy, err being why there is none.
 func goOnWithoutCopy(rec apppayload.Database, err error) bool {
@@ -586,7 +616,9 @@ func (r *restorer) copyNeeded() bool {
 		return true
 	}
 	old.Aside = pgbundle.MovedDump(r.db.Backups, old.Aside)
-	return !asideThere(old) && old.Data != apppayload.DataReplaced && old.Data != apppayload.DataGone
+	// the copy the record names, or one a release that kept no record of it made, is found
+	// and kept as it is (replacedDumpThere): the room for one is not asked for
+	return replacedDumpThere(r.db.Backups, old) == "" && old.Data != apppayload.DataReplaced && old.Data != apppayload.DataGone
 }
 
 // holdFor holds the backups while rec is a restore that is not done, and releases them
@@ -641,7 +673,7 @@ func stuckOf(r *restorer) *recovery.Stuck {
 	}
 	s.NoCopy = rec.CopyError != ""
 	s.WithoutCopy = s.NoCopy && !newerThan(r.running(), rec.From) // refused there (olderRoom)
-	if !s.Running && s.Why == "" {
+	if !s.Running && s.Why == "" && (rec.Before == nil || sameRelease(r.running(), rec.From)) {
 		return nil // not tried yet: the restart that was asked does
 	}
 	if s.CanGiveUp {

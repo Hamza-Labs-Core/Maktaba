@@ -327,11 +327,15 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 		}
 		defer func() {
 			// back on, then the marker (a failed upgrade too: the old cluster is as it was);
-			// nothing when the run put them back itself
+			// nothing when the run put them back itself. Bounded: this runs while the
+			// process stops (the context gone), and a start on the old cluster can wait
+			// out shared memory a killed postmaster left — a stop must not hang for that.
 			if marker == nil {
 				return
 			}
-			if gerr := u.oldSQL(context.WithoutCancel(ctx), log, clusterSQL); gerr != nil {
+			dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), oldSQLBound)
+			defer cancel()
+			if gerr := u.oldSQL(dctx, log, clusterSQL); gerr != nil {
 				fmt.Fprintf(log, "[postgres] level=warn the old cluster's grants are not back (%v): its next start makes them again\n", gerr)
 				return
 			}
@@ -434,6 +438,12 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 		mode, u.New.Data, oldMajor, u.Old.Data)
 	return nil
 }
+
+// oldSQLBound is how long the deferred putting back of the old cluster's grants has
+// (oldSQL): it starts a server of its own, which first may wait out shared memory a killed
+// postmaster left (a full shmWait); a stop in the middle of an upgrade must not hang for
+// that, and its next start makes the grants again anyway (Prepare).
+const oldSQLBound = 30 * time.Second
 
 // oldSQL runs sql as the superuser in the app's database on the old cluster, with a server
 // of its own (never on the LAN).

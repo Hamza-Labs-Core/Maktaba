@@ -56,16 +56,20 @@ const inPublic = `SELECT d.classid, d.objid, i.type, i.identity, coalesce((SELEC
 
 // withInPublic are the things that go with what is in public and are another user's, with the
 // extensions that would (a member of one that uses it): what depends on it, what that is a part
-// of, and so on, as DROP … CASCADE goes.
-const withInPublic = `WITH RECURSIVE top AS (` + inPublic + `), hit(classid, objid, objsubid) AS (
+// of, and so on, as DROP … CASCADE goes. A temporary table (an administrator's open one, of a
+// type in public) is not another user's thing to refuse a restore for: it goes when its session
+// ends, so it is neither counted nor followed.
+var withInPublic = `WITH RECURSIVE top AS (` + inPublic + `), hit(classid, objid, objsubid) AS (
 	SELECT classid, objid, 0 FROM top
 	UNION
 	SELECT n.classid, n.objid, n.objsubid FROM hit h CROSS JOIN LATERAL (
 		SELECT d.classid, d.objid, d.objsubid FROM pg_depend d
 		WHERE d.refclassid = h.classid AND d.refobjid = h.objid AND (h.objsubid = 0 OR d.refobjsubid = h.objsubid)
+		  AND NOT (d.refclassid = 'pg_class'::regclass AND ` + tempRel(`d.refobjid`) + `)
 		UNION ALL
 		SELECT d.refclassid, d.refobjid, d.refobjsubid FROM pg_depend d
-		WHERE d.classid = h.classid AND d.objid = h.objid AND d.objsubid = h.objsubid AND d.deptype IN ('i', 'e')) n)
+		WHERE d.classid = h.classid AND d.objid = h.objid AND d.objsubid = h.objsubid AND d.deptype IN ('i', 'e')
+		  AND NOT (d.classid = 'pg_class'::regclass AND ` + tempRel(`d.objid`) + `)) n)
 SELECT DISTINCT i.type || ' ' || i.identity || ' (' || pg_get_userbyid(o.owner) || ')' FROM hit h
 CROSS JOIN LATERAL pg_identify_object(h.classid, h.objid, h.objsubid) i
 CROSS JOIN LATERAL (SELECT coalesce(
@@ -82,12 +86,21 @@ CROSS JOIN LATERAL (SELECT coalesce(
 	CASE WHEN h.classid IN ('pg_cast'::regclass, 'pg_amop'::regclass, 'pg_amproc'::regclass, 'pg_default_acl'::regclass,
 		'pg_publication_rel'::regclass, 'pg_publication_namespace'::regclass) THEN (SELECT oid FROM pg_roles WHERE rolname = current_user) END,
 	10) AS owner) o
-WHERE h.classid = 'pg_extension'::regclass OR (NOT pg_has_role(current_user, o.owner, 'USAGE')
+WHERE (h.classid <> 'pg_class'::regclass OR NOT ` + tempRel(`h.objid`) + `)
+  AND (h.classid = 'pg_extension'::regclass OR (NOT pg_has_role(current_user, o.owner, 'USAGE')
 	AND NOT EXISTS (SELECT FROM top t WHERE t.classid = h.classid AND t.objid = h.objid)
 	-- what another thing has made (a range's functions are the first superuser's) is that thing's
 	AND NOT EXISTS (SELECT FROM pg_depend x WHERE x.classid = h.classid AND x.objid = h.objid AND x.deptype = 'i'
-		AND NOT (x.refclassid = x.classid AND x.refobjid = x.objid)))
+		AND NOT (x.refclassid = x.classid AND x.refobjid = x.objid))))
 ORDER BY 1`
+
+// tempRel is pg_class's oid being a temporary relation (pg_temp's, or one of the temporary
+// kind): withInPublic leaves those out (a session's own, gone when it ends).
+func tempRel(oid string) string {
+	return `EXISTS (SELECT FROM pg_catalog.pg_class t WHERE t.oid = ` + oid + `
+		AND (t.relpersistence = 't' OR t.relnamespace IN (SELECT oid FROM pg_catalog.pg_namespace
+			WHERE nspname LIKE 'pg_temp%')))`
+}
 
 // publicDefaults are the default privileges in public that the user may change (another's are for
 // what the other makes, and stay): whose, on what, and whom they are for.
@@ -116,8 +129,10 @@ DECLARE
 	n bigint := (SELECT count(*) FROM pg_catalog.pg_extension);
 BEGIN
 	-- all of them first: what one's CASCADE takes along is not there for the next (IF EXISTS)
-	SELECT pg_catalog.array_agg(pg_catalog.format('DROP %s IF EXISTS %s CASCADE', CASE o.type` + kinds.String() + ` END, o.identity)) INTO stmts
-	FROM (` + inPublic + `) o;
+	SELECT pg_catalog.array_agg(pg_catalog.format('DROP %s IF EXISTS %s CASCADE', CASE o.type` + kinds.String() + ` END, o.dropname)) INTO stmts
+	FROM (SELECT o.type, CASE WHEN o.type = 'aggregate' AND right(o.identity, 2) = '()'
+	        THEN pg_catalog.regexp_replace(o.identity, '\(\)$', '(*)') ELSE o.identity END AS dropname
+	      FROM (` + inPublic + `) o) o;
 	FOREACH s IN ARRAY coalesce(stmts, '{}') LOOP
 		EXECUTE s;
 	END LOOP;
@@ -201,6 +216,9 @@ func (t Target) howTo(ctx context.Context, d *sql.DB, dump, list string, psql bo
 	cannot := func(format string, a ...any) (howToRestore, error) {
 		return howToRestore{}, &cannotRestore{fmt.Sprintf(format, a...)}
 	}
+	if why := cannotHold(list); why != "" {
+		return cannot("the backup holds %s: it cannot be put back in the restore's one transaction", why)
+	}
 	if !psql && len(pgbundle.Chunks(dump)) > 0 {
 		return cannot("its vectors are binary chunks that psql loads, and there is no psql beside pg_restore (install the " +
 			"PostgreSQL client programs, or set MAKTABA_PG_BIN)")
@@ -228,9 +246,18 @@ func (t Target) howTo(ctx context.Context, d *sql.DB, dump, list string, psql bo
 	if err := t.mayAdd(ctx, d, list, exts); err != nil {
 		return h, err
 	}
+	if schema, err := t.mayMakeElsewhere(ctx, d, list); err != nil {
+		return h, err
+	} else if schema != "" {
+		return cannot("the backup holds things in the schema %s, and the database user %s may make nothing there (a GRANT "+
+			"of their own, or CREATE on the database to make the schema): nothing was changed", schema, user)
+	}
 	// what the user could only be warned of, or refused: the server grants nothing on what is
-	// another's, and the restore would be found not whole
-	mine := list
+	// another's, and the restore would be found not whole. The dump's grants on the server's
+	// own objects (pg_catalog's, a bundled home's clusterSQL: pg_reload_conf and the like) are
+	// left out: this server's are its own, and a grant another server's user may not be given
+	// would fail the whole transaction
+	mine := withoutCatalogACLs(list)
 	if !super {
 		if mine, err = t.withoutOthers(ctx, d, list, func(ext string) bool {
 			// one made again as a superuser (a trusted one) is the first superuser's
@@ -300,8 +327,83 @@ func (t Target) howTo(ctx context.Context, d *sql.DB, dump, list string, psql bo
 	return h, nil
 }
 
-// mayAdd refuses a backup that needs an extension the database lacks and cannot have: it is
-// tried, and undone (a hosted Postgres may let a user make one its control file says needs a
+// cannotHold is what a dump holds that the restore's one transaction can never put back
+// (Maktaba's own dumps hold none of these): large objects, which pg_restore writes wrapped in
+// transactions of its own, so the one transaction's promise does not hold; an event trigger,
+// which no transaction can make; a foreign server or its wrapper, which the database's user
+// may not make again. Refused up front, nothing is touched for it.
+func cannotHold(list string) string {
+	for _, e := range pgbundle.ParseTOC(list) {
+		switch e.Desc {
+		case "BLOB", "BLOBS", "LO":
+			return "large objects"
+		case "EVENT TRIGGER":
+			return "an event trigger, which no transaction can make"
+		case "SERVER", "FOREIGN DATA WRAPPER", "USER MAPPING":
+			return "a foreign server, which this server's user may not make again"
+		}
+	}
+	return ""
+}
+
+// mayMakeElsewhere is the first of the dump's schemas beside public (Maktaba's own dumps hold
+// nothing in one) that the database's user may make nothing in: the schema is there and the
+// user has no CREATE on it (another's), or it is not there and the dump makes it, which takes
+// CREATE on the database. Making those things is what the restore would fail on, deep in its
+// one transaction; a superuser is refused nothing.
+func (t Target) mayMakeElsewhere(ctx context.Context, d *sql.DB, list string) (string, error) {
+	want := map[string]bool{}
+	for _, e := range pgbundle.ParseTOC(list) {
+		switch e.Schema {
+		case "public", "-", "pg_catalog", "information_schema":
+		default:
+			want[e.Schema] = true
+		}
+	}
+	if len(want) == 0 {
+		return "", nil
+	}
+	ask := make([]string, 0, len(want))
+	for s := range want {
+		ask = append(ask, s)
+	}
+	slices.Sort(ask)
+	rows, err := d.QueryContext(ctx, `SELECT s FROM unnest($1::name[]) s
+		WHERE (EXISTS (SELECT FROM pg_namespace n WHERE n.nspname = s)
+		       AND NOT has_schema_privilege(s, 'CREATE'))
+		   OR (NOT EXISTS (SELECT FROM pg_namespace n WHERE n.nspname = s)
+		       AND NOT has_database_privilege(current_database(), 'CREATE'))
+		ORDER BY 1 LIMIT 1`, pq.Array(ask))
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var schema string
+	if rows.Next() {
+		if err := rows.Scan(&schema); err != nil {
+			return "", err
+		}
+	}
+	return schema, rows.Err()
+}
+
+// withoutCatalogACLs is the dump's list without its grants on the server's own objects
+// (pg_catalog's: a bundled home's clusterSQL grants, pg_reload_conf and the like), commented
+// out as pg_restore's --use-list wants. This server's grants on them are its own to make, and
+// a dump's grant that another server's user may not be given would fail the whole transaction
+// (the bundled restore leaves them out the same way, pgbundle's tableOfContents).
+func withoutCatalogACLs(list string) string {
+	lines := strings.Split(list, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, ";") || !strings.Contains(line, " ACL pg_catalog ") {
+			continue
+		}
+		lines[i] = ";" + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+// mayAdd refuses a backup that needs an extension the database lacks and cannot have: it is// tried, and undone (a hosted Postgres may let a user make one its control file says needs a
 // superuser, one that has to be preloaded may not load).
 func (t Target) mayAdd(ctx context.Context, d *sql.DB, list string, exts map[string]extension) error {
 	for _, e := range pgbundle.ParseTOC(list) {
@@ -343,9 +445,12 @@ func (t Target) withoutOthers(ctx context.Context, d *sql.DB, list string, lost 
 	if err != nil {
 		return "", err
 	}
-	// the members of extensions that are the user's own all the same
+	// the members of extensions that are the user's own all the same: a function by its
+	// signature, the argument types alone with no spaces, as grantedOn's key spells them
 	own, err := column(ctx, d, `SELECT e.extname || '/' || n.nspname || ' ' || o.kind || ' ' || o.name FROM (
-			SELECT 'pg_proc'::regclass AS cls, oid, pronamespace AS ns, proowner AS owner, 'FUNCTION' AS kind, proname AS name FROM pg_proc
+			SELECT 'pg_proc'::regclass AS cls, oid, pronamespace AS ns, proowner AS owner, 'FUNCTION' AS kind,
+				CASE WHEN prokind = 'a' AND pg_get_function_identity_arguments(oid) = '' THEN proname || '(*)'
+					ELSE proname || '(' || regexp_replace(pg_get_function_identity_arguments(oid), '[[:space:]]', '', 'g') || ')' END AS name FROM pg_proc
 			UNION ALL SELECT 'pg_class'::regclass, oid, relnamespace, relowner, 'TABLE', relname FROM pg_class
 			UNION ALL SELECT 'pg_type'::regclass, oid, typnamespace, typowner, 'TYPE', typname FROM pg_type) o
 		JOIN pg_namespace n ON n.oid = o.ns
@@ -389,18 +494,22 @@ func (t Target) withoutOthers(ctx context.Context, d *sql.DB, list string, lost 
 }
 
 // grantedOn is the kind of thing, and its name, a grant on an item of a dump is on: what a
-// function's grant names is its name alone (its arguments are written in two ways), and a
-// column's the table ("" for what has no grants).
+// function's grant names is the function's signature — its arguments are written two ways (the
+// definition's tag carries the argument names, the grant's the types alone), so both are made
+// one key here (functionSig), and a function that shares only a name with another does not take
+// its grants — and a column's the table, the column's own name taken whole however it is
+// spelled, dots included ("" for what has no grants).
 func grantedOn(desc, name string) (kind, of string) {
 	switch desc {
 	case "FUNCTION", "PROCEDURE", "AGGREGATE":
-		kind = "FUNCTION"
-		name, _, _ = strings.Cut(name, "(")
+		return "FUNCTION", functionSig(name)
 	case "TABLE", "VIEW", "MATERIALIZED VIEW", "FOREIGN TABLE", "SEQUENCE":
 		kind = "TABLE"
 	case "COLUMN":
 		kind = "TABLE"
-		if i := strings.LastIndex(name, "."); i > 0 {
+		if table, _, ok := columnOf(name); ok {
+			name = table
+		} else if i := strings.LastIndex(name, "."); i > 0 {
 			name = name[:i]
 		}
 	case "TYPE", "DOMAIN":
@@ -412,6 +521,147 @@ func grantedOn(desc, name string) (kind, of string) {
 		name = strings.ReplaceAll(name[1:len(name)-1], `""`, `"`)
 	}
 	return kind, name
+}
+
+// columnOf is the table and the column of a grant's name for a column ("<table> <column>",
+// each name as pg_dump quotes it): ok false when it is not that.
+func columnOf(name string) (table, column string, ok bool) {
+	ident := func(s string) (string, string, bool) { // one name, quoted or bare
+		if strings.HasPrefix(s, `"`) {
+			for i := 1; i < len(s); i++ {
+				if s[i] == '"' {
+					if i+1 < len(s) && s[i+1] == '"' {
+						i++
+						continue
+					}
+					return s[1:i], s[i+1:], true
+				}
+			}
+			return "", s, false
+		}
+		if s == "" {
+			return "", s, false
+		}
+		i := strings.IndexAny(s, " \t")
+		if i < 0 {
+			return s, "", true
+		}
+		return s[:i], s[i:], true
+	}
+	rest := strings.TrimLeft(name, " \t")
+	first, rest, ok1 := ident(rest)
+	rest = strings.TrimLeft(rest, " \t")
+	second, _, ok2 := ident(rest)
+	if !ok1 || !ok2 || first == "" || second == "" {
+		return "", "", false
+	}
+	return first, second, true
+}
+
+// functionSig is a function's (or aggregate's, procedure's) name and arguments as one key,
+// the same for the two spellings a dump's list carries (the definition's tag, with the
+// argument names and defaults, and the grant's, the types alone): the argument names go, the
+// spaces go, and what follows DEFAULT goes.
+func functionSig(tag string) string {
+	name, args, ok := splitSig(tag)
+	if !ok {
+		return unquote(tag)
+	}
+	var sb strings.Builder
+	sb.WriteString(unquote(name))
+	sb.WriteByte('(')
+	for i, arg := range splitArgs(args) {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteString(argType(arg))
+	}
+	sb.WriteByte(')')
+	return sb.String()
+}
+
+// splitSig is a signature's name and its arguments as written (ok false: no parentheses).
+func splitSig(tag string) (name, args string, ok bool) {
+	if strings.HasPrefix(tag, `"`) {
+		for i := 1; i < len(tag); i++ {
+			if tag[i] != '"' {
+				continue
+			}
+			if i+1 < len(tag) && tag[i+1] == '"' {
+				i++
+				continue
+			}
+			rest := tag[i+1:]
+			if strings.HasPrefix(rest, "(") && strings.HasSuffix(rest, ")") {
+				return tag[:i+1], rest[1 : len(rest)-1], true
+			}
+			return "", "", false
+		}
+		return "", "", false
+	}
+	i := strings.IndexByte(tag, '(')
+	if i < 0 || !strings.HasSuffix(tag, ")") {
+		return "", "", false
+	}
+	return tag[:i], tag[i+1 : len(tag)-1], true
+}
+
+// splitArgs is a signature's argument list split at its top-level commas (a default's
+// expression may hold commas of its own).
+func splitArgs(args string) []string {
+	var out []string
+	depth, quoted, last := 0, false, 0
+	for i := 0; i < len(args); i++ {
+		switch c := args[i]; {
+		case quoted && c == '"':
+			if i+1 < len(args) && args[i+1] == '"' {
+				i++
+				continue
+			}
+			quoted = false
+		case !quoted && c == '"':
+			quoted = true
+		case !quoted && (c == '(' || c == '['):
+			depth++
+		case !quoted && (c == ')' || c == ']'):
+			depth--
+		case !quoted && c == ',' && depth == 0:
+			out = append(out, args[last:i])
+			last = i + 1
+		}
+	}
+	if a := strings.TrimSpace(args[last:]); a != "" || len(out) > 0 {
+		out = append(out, a)
+	}
+	return out
+}
+
+// typeHeads are the words a type may begin with, which are never an argument's name.
+var typeHeads = map[string]bool{"double": true, "character": true, "bit": true, "timestamp": true,
+	"time": true, "interval": true, "variadic": true}
+
+// argType is one argument as its type alone, the spaces of it gone: its name (a bare word
+// before the type, which a multi-word type never begins with) goes, and so does a default.
+func argType(arg string) string {
+	if i := strings.Index(arg, "DEFAULT"); i >= 0 {
+		arg = arg[:i]
+	}
+	words := strings.Fields(arg)
+	for i, w := range words {
+		if typeHeads[strings.ToLower(w)] || strings.HasPrefix(w, `"`) || i == len(words)-1 {
+			continue
+		}
+		words = append(words[:i], words[i+1:]...) // its name
+		break
+	}
+	return strings.Join(words, "")
+}
+
+func unquote(name string) string {
+	if len(name) > 1 && name[0] == '"' && name[len(name)-1] == '"' {
+		return strings.ReplaceAll(name[1:len(name)-1], `""`, `"`)
+	}
+	return name
 }
 
 // notMine names what is in public that the database user may not drop.
@@ -480,11 +730,21 @@ func (t Target) mayNotMakeIn(ctx context.Context, d *sql.DB, scratch string) (st
 		}
 		_ = tx.Rollback()
 		var pe *pq.Error
-		if errors.As(err, &pe) && pe.Code == "42501" { // insufficient_privilege; any other the restore says
+		// 42501 insufficient_privilege, and 42939: the schema's name is reserved
+		// (pg_catalog, where an untrusted extension may sit) — one the user may not make it
+		// in either way
+		if errors.As(err, &pe) && mayNotMakeCode(pe.Code) {
 			return ext, nil
 		}
 	}
 	return "", rows.Err()
+}
+
+// mayNotMakeCode is a CREATE EXTENSION error that says the database user may not make the
+// extension there: insufficient_privilege (42501), or the schema's name being a reserved one
+// (42939) — an untrusted extension in pg_catalog, which only a superuser may make again.
+func mayNotMakeCode(code pq.ErrorCode) bool {
+	return code == "42501" || code == "42939"
 }
 
 // column is a query's one column.

@@ -2,6 +2,7 @@ package supervisor
 
 import (
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -60,5 +61,40 @@ func TestRestartComponent(t *testing.T) {
 	})
 	if n := s.RestartComponent("llm"); n != 0 {
 		t.Fatalf("a component with no process: %d", n)
+	}
+}
+
+// A start that met what its own pre-start wait (Settle) could not see — the bundled
+// postgres on Windows, whose start ends while the shared memory of a postmaster that was
+// killed is still held, the lock that wait goes by gone with the first failed start — is
+// started again at once (RestartAtOnce): no backoff, not an exit of the crash loop, for
+// as long as the hook says; then the crash policy takes over as for any crash.
+func TestRestartAtOnceForAStartThatMetWhatTheWaitCouldNotSee(t *testing.T) {
+	p, _ := fakeProc(t, RolePipeline, "crash", "FAKE_CODE=1")
+	var atOnce atomic.Int32
+	atOnce.Store(3)
+	p.RestartAtOnce = func() string {
+		if atOnce.Add(-1) < 0 {
+			return ""
+		}
+		return "the shared memory a postmaster that was killed left is still in use"
+	}
+	log := &syncBuffer{}
+	s := New([]Process{p}, testPolicy(), WithLog(log))
+	running(t, s)
+	waitFor(t, s, "the at-once restarts done and the policy's backoff", func(sn Snapshot) bool {
+		return strings.Count(log.String(), "started again at once") >= 3 &&
+			strings.Contains(log.String(), "restarting in") && proc(sn, RolePipeline).Restarts >= 1
+	})
+	snap := s.Snapshot()
+	c := proc(snap, RolePipeline)
+	if c.Restarts < 1 {
+		t.Errorf("the crashes after the hook said no did not count: %+v", c)
+	}
+	if c.CrashLoop {
+		t.Errorf("the at-once restarts drove it to a crash loop: %+v", c)
+	}
+	if !strings.Contains(log.String(), "started again at once (the shared memory a postmaster that was killed left is still in use)") {
+		t.Errorf("the log does not say why:\n%s", log.String())
 	}
 }

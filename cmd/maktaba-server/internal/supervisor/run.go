@@ -638,6 +638,19 @@ func (s *Supervisor) loop(ctx context.Context, c *child) {
 // afterExit records a run's end (info) and waits as the policy says before the next
 // start. true: the loop ends (a shutdown, a policy that leaves the child stopped).
 func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, backoff *time.Duration) bool {
+	// a start that met what its own pre-start wait (Settle) could not see is not a crash
+	// of the child: the bundled postgres on Windows, whose start ends while the shared
+	// memory of a postmaster that was killed is still held — the lock that wait goes by
+	// is gone with the start that failed first (RestartAtOnce, BuildPostgres's
+	// shmStartRetry). It is started again at once, within the hook's own bound, and not
+	// as an exit of the crash loop.
+	atOnce := ""
+	if info.Reason == ReasonCrash && c.proc.RestartAtOnce != nil {
+		atOnce = c.proc.RestartAtOnce()
+		if atOnce != "" {
+			info.Reason = ReasonRestarted
+		}
+	}
 	s.mu.Lock()
 	stopping := s.stopping
 	if stopping {
@@ -681,8 +694,13 @@ func (s *Supervisor) afterExit(ctx context.Context, c *child, info ExitInfo, bac
 		return false // waits until it is wanted again
 	}
 	if info.Reason == ReasonRestarted && !stopping {
-		// asked for: no backoff, and not an exit of a crash loop
-		s.logf("%s stopped to start again (pid %d)", c.proc.Name(), info.PID)
+		// asked for, or a start that met what its own pre-start wait could not see
+		// (RestartAtOnce): no backoff, and not an exit of a crash loop
+		if atOnce != "" {
+			s.logf("%s exited while starting (pid %d): started again at once (%s)", c.proc.Name(), info.PID, atOnce)
+		} else {
+			s.logf("%s stopped to start again (pid %d)", c.proc.Name(), info.PID)
+		}
 		*backoff = s.policy.BackoffInitial
 		return false
 	}

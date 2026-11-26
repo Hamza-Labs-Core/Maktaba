@@ -241,6 +241,83 @@ func TestOneAsideAndNoBackupGoes(t *testing.T) {
 	}
 }
 
+// R2b: the set-aside a kill left between the dump and the record that names it: one more
+// start finds the dump at the record's path and takes no second one (the record still says
+// the data is what it was, so it is the same copy).
+func TestTheAsideAKillLeftIsNotTakenAgain(t *testing.T) {
+	e := newExitsRig(t)
+	rec := e.asked()
+	rec.Aside = filepath.Join(e.backups, "replaced-v0.3.0-20261126T000000.dump")
+	e.write(rec)
+	if err := os.WriteFile(rec.Aside, []byte("aside"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e.f.restoreErr = errors.New("no such file")
+	for i := 1; i <= 2; i++ { // the try fails, and a plain restart tries again
+		if code := haltCode(t, e.start("v0.2.0")); code != "db_restore_backup_failed" {
+			t.Fatalf("start %d: %s", i, code)
+		}
+		if len(e.f.asides) != 0 {
+			t.Fatalf("start %d: set aside again: %v", i, e.f.asides)
+		}
+		if got := e.rec(); filepath.Base(got.Aside) != filepath.Base(rec.Aside) || got.AsideBytes != 5 {
+			t.Fatalf("start %d: record %+v", i, got)
+		}
+	}
+}
+
+// R6: an ask whose record was written but whose switch to the release it is for was cut
+// short by a stop (a new mark: the record says what was there before): the newer release
+// still the one that starts does not put the backup back and migrate it — it waits for
+// that release's own start, which the person makes or gives up waiting for.
+func TestAnAskWhoseSwitchWasCutShortWaitsForItsRelease(t *testing.T) {
+	e := newExitsRig(t)
+	e.inst.running = "0.4.0"
+	kept := filepath.Join(t.TempDir(), "migrations")
+	if err := os.MkdirAll(kept, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kept, "0140_m.sql"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	start := func(version string) error {
+		e.fresh()
+		g := &migrationGate{stateDir: e.dir, version: version, pg: &pgbundle.Bundle{Backups: e.backups},
+			api: exec.Command("maktaba-api"), keep: 3, log: e.log, prev: func(v string) string {
+				if sameRelease(v, "0.2.0") {
+					return kept
+				}
+				return ""
+			}}
+		return g.run(context.Background(), noReport)
+	}
+	e.write(e.asked())
+	e.f.restoreErr = errors.New("no such file")
+	if code := haltCode(t, start("v0.4.0")); code != "db_restore_for_release" {
+		t.Fatal(code)
+	}
+	if d, m, r := e.f.counts(); d != 0 || m != 0 || r != 0 {
+		t.Fatalf("%d dumps, %d migrations, %d restores: nothing was done", d, m, r)
+	}
+	if rec := e.rec(); rec.State != apppayload.DatabaseRestoring || rec.TriedBy != "" || rec.RestoreError != "" {
+		t.Fatalf("record %+v: it waits as it was asked", rec)
+	}
+	if !pgbundle.BackupsHeld(e.backups) {
+		t.Fatal("the backups are not held while it waits")
+	}
+	// the way out is on the recovery page: give it up, and this release goes on
+	if s := stuckOf(e.r); s == nil || !s.CanGiveUp {
+		t.Fatalf("stuck %+v", s)
+	}
+	// the release it is for starts: the restore runs there, as it was asked
+	if code := haltCode(t, start("v0.2.0")); code != "db_restore_backup_failed" {
+		t.Fatal(code)
+	}
+	if rec := e.rec(); rec.TriedBy != "v0.2.0" || len(e.f.asides) != 1 {
+		t.Fatalf("record %+v, asides %v", rec, e.f.asides)
+	}
+}
+
 // R3: a restore asked on a release that recorded nothing of it (v0.3.162's mark), that
 // cannot finish: the next release sees from the database's schema that it is still the one
 // from before, and every way out is there; when it cannot see that, another backup is.

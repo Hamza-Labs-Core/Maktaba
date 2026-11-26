@@ -53,8 +53,34 @@ func BuildPostgres(b pgbundle.Bundle) (Process, error) {
 		// (which costs a crash recovery at the next start); unlike the CTRL_BREAK
 		// the other roles get, it needs no console
 		p.Stop = func() { _ = b.StopCommand().Run() }
+		// a start that fails on the shared memory of a killed postmaster is started
+		// again at once: the lock the pre-start wait goes by is gone with the first
+		// failed start, so only Postgres's own exit tells there
+		p.RestartAtOnce = shmStartRetry(b)
 	}
 	return patient(p), nil
+}
+
+// shmStartRetry is postgres's at-once restart rule, for a start that ends while the
+// shared memory a killed postmaster left is still held (Windows: the mapping is named
+// after the cluster's directory, so it is asked without the postmaster's lock). Bounded
+// to pgbundle's own wait, as a private start's retries are (withServer): after that the
+// crash policy's backoff takes over, and the holders are not ending on their own.
+func shmStartRetry(b pgbundle.Bundle) func() string {
+	var until time.Time
+	return func() string {
+		if !pgbundle.ShmHeld(b.Data) {
+			until = time.Time{}
+			return ""
+		}
+		if until.IsZero() {
+			until = time.Now().Add(pgbundle.ShmWaitBound())
+		}
+		if time.Now().After(until) {
+			return ""
+		}
+		return "the shared memory a postmaster that was killed left is still in use"
+	}
 }
 
 // The bounds of a Postgres the supervisor runs (the home's, a node's copy). Stopping one

@@ -642,12 +642,15 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, sql string, log io.Write
 // end cleanly left, and waits for the shared memory of one that was killed (a power cut, a
 // hard stop, then a start at once). Where that cannot be seen before (Windows, once a start
 // replaced the lock), Postgres says it, and it is started again until the memory is free:
-// shmWait at most.
+// shmWait at most, counted from before the first wait, so a start retried near the bound
+// cannot wait shmWait a second time after it.
 func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
 	b.ClearStaleLock()
 	began := time.Now()
 	for {
-		b.AwaitShmFree(ctx)
+		wctx, cancel := waitCtx(ctx, began.Add(shmWait))
+		awaitShmFree(b, wctx)
+		cancel()
 		err := b.runServer(ctx, log, fn)
 		if !errors.Is(err, errShmInUse) || ctx.Err() != nil || time.Since(began) >= shmWait {
 			return err
@@ -659,6 +662,22 @@ func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) 
 		case <-time.After(shmRetryEvery):
 		}
 	}
+}
+
+// waitCtx is ctx, ended by latest at the latest (a deadline of its own already sooner
+// stays): the waits of one start share a bound, so a wait that begins near it does not
+// get the whole bound of its own after it.
+func waitCtx(ctx context.Context, latest time.Time) (context.Context, context.CancelFunc) {
+	if d, ok := ctx.Deadline(); ok && !d.After(latest) {
+		return ctx, func() {}
+	}
+	return context.WithDeadline(ctx, latest)
+}
+
+// awaitShmFree is b.AwaitShmFree, on a context the caller has bounded (tests replace it,
+// to prove the wait runs before the server starts).
+var awaitShmFree = func(b Bundle, ctx context.Context) {
+	b.AwaitShmFree(ctx)
 }
 
 // errShmInUse is a server that did not start because processes of a postmaster that was
