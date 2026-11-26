@@ -171,15 +171,15 @@ func Verify(set *keys.Set, tok, audience string) (*Claims, error) {
 	if err := json.Unmarshal(claimBytes, &c); err != nil {
 		return nil, ErrMalformed
 	}
+	if audience != "" && c.Aud != audience {
+		return nil, ErrAudience
+	}
 	now := time.Now().UTC().Unix()
 	if c.Exp != 0 && now > c.Exp+30 {
 		return nil, ErrExpired
 	}
 	if c.Iat != 0 && now+30 < c.Iat {
 		return nil, ErrNotYetValid
-	}
-	if audience != "" && c.Aud != audience {
-		return nil, ErrAudience
 	}
 	return &c, nil
 }

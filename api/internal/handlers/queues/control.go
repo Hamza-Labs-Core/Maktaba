@@ -199,7 +199,7 @@ const maxBulkRetry = 20000
 // failedForRetrySQL: latest-failed rows of a stage whose coded cause
 // equals $2, plus uncoded legacy rows (filtered in Go by legacyCause).
 var failedForRetrySQL = latestFailedCTE + `
-SELECT id, subject_kind, subject_id::text, error_cause, error
+SELECT id, subject_kind, subject_id::text, error_cause, error, payload, force_cascade
   FROM latest
  WHERE state = 'failed' AND (error_cause = $2::text OR error_cause IS NULL)
  ORDER BY id
@@ -209,7 +209,7 @@ SELECT id, subject_kind, subject_id::text, error_cause, error
 // row of its subject and stage (a failure a later run has superseded is
 // history, not something to redo - with force, for external writes).
 const failedByIDsSQL = `
-SELECT j.id, j.subject_kind, j.subject_id::text, j.state
+SELECT j.id, j.subject_kind, j.subject_id::text, j.state, j.payload, j.force_cascade
   FROM processing_jobs j
  WHERE j.stage = $1 AND j.id = ANY($2::bigint[])
    AND NOT EXISTS (SELECT 1 FROM processing_jobs n
@@ -229,10 +229,12 @@ SELECT j.id, j.subject_kind, j.subject_id::text,
  LIMIT ` + "20000"
 
 type target struct {
-	jobID int64
-	kind  string
-	id    string
-	hash  string
+	jobID        int64
+	kind         string
+	id           string
+	hash         string
+	payload      []byte
+	forceCascade bool
 }
 
 // Retry implements POST /api/queues/{stage}/retry {cause?, job_ids?}.
@@ -276,7 +278,7 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var t target
 			var cause, errTxt sql.NullString
-			if err := rows.Scan(&t.jobID, &t.kind, &t.id, &cause, &errTxt); err != nil {
+			if err := rows.Scan(&t.jobID, &t.kind, &t.id, &cause, &errTxt, &t.payload, &t.forceCascade); err != nil {
 				rows.Close()
 				writeErr(w, r, "find failures", err)
 				return
@@ -304,7 +306,7 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var t target
 			var state string
-			if err := rows.Scan(&t.jobID, &t.kind, &t.id, &state); err != nil {
+			if err := rows.Scan(&t.jobID, &t.kind, &t.id, &state, &t.payload, &t.forceCascade); err != nil {
 				rows.Close()
 				writeErr(w, r, "find jobs", err)
 				return
@@ -416,6 +418,26 @@ UPDATE processing_jobs
                      COALESCE(payload -> 'plan_digests', '[]'::jsonb) || $2::jsonb) AS d))
  WHERE id = $1`
 
+// approvalDigestsJSON marshals a payload's plan_digests as a JSON array for
+// mergeApprovalSQL, defaulting nil or non-array values to "[]" so
+// jsonb_array_elements never receives null or turns a missing field into [null].
+func approvalDigestsJSON(v any) ([]byte, error) {
+	switch d := v.(type) {
+	case []string:
+		if len(d) == 0 {
+			return []byte("[]"), nil
+		}
+		return json.Marshal(d)
+	case []any:
+		if len(d) == 0 {
+			return []byte("[]"), nil
+		}
+		return json.Marshal(d)
+	default:
+		return []byte("[]"), nil
+	}
+}
+
 // enqueueTargets enqueues every target in ONE transaction and tallies
 // the outcomes: enqueued = inserted, coalesced = coalesced or
 // rerun_requested. Targets whose stage is disabled / invalid are
@@ -431,6 +453,12 @@ func (h *Handler) enqueueTargets(r *http.Request, stage string, targets []target
 	for _, t := range targets {
 		p := base
 		p.SubjectKind, p.SubjectID, p.Stage = t.kind, t.id, stage
+		if t.forceCascade {
+			p.ForceCascade = true
+		}
+		if p.Payload == nil {
+			p.Payload = RetryPayload(t.payload)
+		}
 		ex := map[string]any{"of_job": t.jobID}
 		for k, v := range extra {
 			ex[k] = v
@@ -443,8 +471,8 @@ func (h *Handler) enqueueTargets(r *http.Request, stage string, targets []target
 		if err != nil {
 			return 0, 0, err
 		}
-		if res.JobID != nil && p.Payload != nil && p.Payload["apply"] == true {
-			digests, err := json.Marshal(p.Payload["plan_digests"])
+		if res.JobID != nil && res.Outcome != OutcomeInserted && p.Payload != nil && p.Payload["apply"] == true {
+			digests, err := approvalDigestsJSON(p.Payload["plan_digests"])
 			if err != nil {
 				return 0, 0, err
 			}

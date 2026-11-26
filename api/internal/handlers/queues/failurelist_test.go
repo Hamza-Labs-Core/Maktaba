@@ -2,6 +2,7 @@ package queues
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -88,18 +89,18 @@ func TestItemReasons(t *testing.T) {
 	}
 }
 
-var targetCols = []string{"id", "stage", "kind", "sid", "state", "status", "parked", "lib", "path"}
+var targetCols = []string{"id", "stage", "kind", "sid", "state", "status", "parked", "lib", "path", "payload", "force_cascade"}
 
 func targetsRule(rows ...[]driver.Value) *queuestest.Rule {
-	return &queuestest.Rule{Match: "i.status, i.parked_on, i.lib_id::text, i.path from items i", Cols: targetCols, Rows: rows}
+	return &queuestest.Rule{Match: "i.status, i.parked_on, i.lib_id::text, i.path, i.payload, i.force_cascade from items i", Cols: targetCols, Rows: rows}
 }
 
 func failedTarget(id int64, kind, sid string) []driver.Value {
-	return []driver.Value{id, "content_hash", kind, sid, "failed", "needs_you", nil, uidL, "smb://nas/O/a.mp4"}
+	return []driver.Value{id, "content_hash", kind, sid, "failed", "needs_you", nil, uidL, "smb://nas/O/a.mp4", nil, false}
 }
 
 func TestFailureActions(t *testing.T) {
-	parked := []driver.Value{int64(12), "check_tags", "season", uidB, "pending", "waiting", "dependency:model:tagcheck", uidL, nil}
+	parked := []driver.Value{int64(12), "check_tags", "season", uidB, "pending", "waiting", "dependency:model:tagcheck", uidL, nil, nil, false}
 	tests := []struct {
 		name, body string
 		rules      []*queuestest.Rule
@@ -187,5 +188,60 @@ func TestFailureActionsRefuse(t *testing.T) {
 		if rec.Code != 400 || !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("%s: %d %s", body, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+// Issue #1763: retry from the failures page (and fix_path / path_map which delegate to
+// retryTargets) carries the failed job's payload and force_cascade while stripping run_now.
+func TestFailureActions_RetryPreservesPayloadAndForceCascade(t *testing.T) {
+	row := []driver.Value{
+		int64(11), "style_sample", "video", uidV, "failed", "needs_you", nil, uidL, "smb://nas/O/a.mp4",
+		[]byte(`{"payload_seasons":["s1"],"fp_gate":"edge1","relisten":true,"backfill":true,"run_now":true}`),
+		true,
+	}
+	runNowOnly := []driver.Value{
+		int64(12), "fingerprint", "video", uidB, "failed", "needs_you", nil, uidL, "smb://nas/O/b.mp4",
+		[]byte(`{"run_now":true}`),
+		false,
+	}
+	f := newFixture(
+		stagesRule(stageRow("style_sample", "episodes", 0, "cpu"), stageRow("fingerprint", "episodes", 0, "cpu")),
+		targetsRule(row, runNowOnly),
+		enqueueRule([]driver.Value{int64(101), "inserted"}),
+	)
+	rec := f.do("POST", "/api/queues/failures/actions", `{"action":"retry","job_ids":[11,12]}`, admin())
+	if rec.Code != 200 {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	calls := f.db.Find("processing_jobs_enqueue")
+	if len(calls) != 2 {
+		t.Fatalf("enqueue calls = %d, want 2", len(calls))
+	}
+	// First job: force_cascade=true, payload keys preserved, run_now stripped
+	a0 := calls[0].Args
+	if a0[4] != true || a0[5] != true {
+		t.Fatalf("job 11 force=%v force_cascade=%v, want true/true", a0[4], a0[5])
+	}
+	raw, ok := a0[8].(string)
+	if !ok {
+		t.Fatalf("job 11 payload = %#v, want JSON string", a0[8])
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("unmarshal payload %q: %v", raw, err)
+	}
+	if _, has := got["run_now"]; has {
+		t.Fatalf("run_now was not stripped: %+v", got)
+	}
+	if got["fp_gate"] != "edge1" || got["relisten"] != true || got["backfill"] != true {
+		t.Fatalf("payload lost fields: %+v", got)
+	}
+	if ps, _ := got["payload_seasons"].([]any); len(ps) != 1 || ps[0] != "s1" {
+		t.Fatalf("payload_seasons lost: %+v", got)
+	}
+	// Second job: run_now-only payload becomes nil, force_cascade=false
+	a1 := calls[1].Args
+	if a1[5] != false || a1[8] != nil {
+		t.Fatalf("job 12 force_cascade=%v payload=%#v, want false/nil", a1[5], a1[8])
 	}
 }

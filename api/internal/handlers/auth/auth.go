@@ -71,7 +71,7 @@ const DefaultAccessTTL = 15 * time.Minute
 // spec's `type:` strings so clients can branch on the URL fragment.
 var (
 	TypeInvalidCredentials = httperror.TypeInvalidCredentials
-	TypeTokenExpired       = httperror.Type("token-expired")
+	TypeTokenExpired       = httperror.TypeTokenExpired
 	TypeRefreshExpired     = httperror.Type("refresh-expired")
 	TypeRefreshReplayed    = httperror.Type("refresh-replayed")
 	TypeRefreshInvalid     = httperror.Type("refresh-invalid")

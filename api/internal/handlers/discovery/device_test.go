@@ -141,8 +141,16 @@ func TestDeviceCodeExpires(t *testing.T) {
 	_, _, r, now := newDeviceHandler(t)
 	s := startDevice(t, r)
 	*now = now.Add(DeviceCodeTTL + time.Second)
-	if rec := poll(r, s.DeviceCode); rec.Code != http.StatusGone {
+	rec := poll(r, s.DeviceCode)
+	if rec.Code != http.StatusGone {
 		t.Fatalf("poll of an expired code = %d, want 410", rec.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["type"] != TypePairingCodeExpired {
+		t.Fatalf("410 problem type = %v, want %s", body["type"], TypePairingCodeExpired)
 	}
 }
 

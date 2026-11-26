@@ -164,16 +164,16 @@ func TestRetry(t *testing.T) {
 			}
 		})
 	}
-	// Epic 47: a retry asks for what the failed job was asked (a dry run stays a
-	// dry run) at its stage's priority
+	// Epic 47 + #1763: a retry asks for what the failed job was asked (a dry run stays a
+	// dry run, force_cascade is kept, run_now is stripped) at its stage's priority
 	t.Run("payload and priority carried", func(t *testing.T) {
 		row := jobRow(9, "convert_mp4", "failed")
 		row[5] = int64(150)
 		row[15], row[16] = "library", vid
 		db, r := newJobsFixture(
 			&queuestest.Rule{Match: "from processing_jobs where id = $1", Cols: jobCols, Rows: [][]driver.Value{row}},
-			&queuestest.Rule{Match: "select payload from processing_jobs j", Cols: []string{"payload"},
-				Rows: [][]driver.Value{{[]byte(`{"dry_run":true}`)}}},
+			&queuestest.Rule{Match: "select payload, force_cascade from processing_jobs j", Cols: []string{"payload", "force_cascade"},
+				Rows: [][]driver.Value{{[]byte(`{"dry_run":true,"run_now":true}`), true}}},
 			&queuestest.Rule{Match: "processing_jobs_enqueue", Cols: []string{"job_id", "outcome"},
 				Rows: [][]driver.Value{{int64(57), "inserted"}}},
 		)
@@ -181,8 +181,8 @@ func TestRetry(t *testing.T) {
 			t.Fatalf("status %d %s", rec.Code, rec.Body.String())
 		}
 		a := db.Find("processing_jobs_enqueue")[0].Args
-		if a[3] != int64(150) || a[8] != `{"dry_run":true}` {
-			t.Fatalf("priority %v payload %v", a[3], a[8])
+		if a[3] != int64(150) || a[5] != true || a[8] != `{"dry_run":true}` {
+			t.Fatalf("priority %v force_cascade %v payload %v", a[3], a[5], a[8])
 		}
 	})
 	t.Run("unknown job", func(t *testing.T) {

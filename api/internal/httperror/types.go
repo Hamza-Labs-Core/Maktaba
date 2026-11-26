@@ -31,6 +31,7 @@ var (
 	TypeMethodNotAllowed     = Type("method-not-allowed")
 	TypeUnauthorized         = Type("unauthorized")
 	TypeAuthRequired         = Type("auth-required")
+	TypeTokenExpired         = Type("token-expired")
 	TypeCSRFMismatch         = Type("csrf-mismatch")
 	TypeInvalidCredentials   = Type("invalid-credentials")
 	TypeAccountLocked        = Type("account-locked")

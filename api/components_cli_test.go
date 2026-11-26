@@ -9,6 +9,7 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	componentsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/components"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	catalog "github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
@@ -241,5 +242,23 @@ func TestComponentsCLIRestart(t *testing.T) {
 	}
 	if code := runCLI(c, "restart"); code != exitComponentsFailed {
 		t.Fatalf("no id: exit %d", code)
+	}
+}
+
+func TestComponentsCLIFailFormatsPluginProblem(t *testing.T) {
+	c, _, errOut := cli(nil, false, "")
+	code := c.fail(&plugins.Problem{
+		Status: 409,
+		Code:   plugins.CodeRevoked,
+		Detail: "the plugin store withdrew dev.example.x",
+	})
+	if code != exitComponentsFailed || !strings.Contains(errOut.String(), "Refused (plugin_revoked): the plugin store withdrew dev.example.x") {
+		t.Fatalf("code=%d errOut=%q", code, errOut.String())
+	}
+	// Typed nil *plugins.Problem must not panic
+	errOut.Reset()
+	var nilProb *plugins.Problem
+	if code := c.fail(nilProb); code != exitComponentsFailed {
+		t.Fatalf("typed nil code=%d", code)
 	}
 }

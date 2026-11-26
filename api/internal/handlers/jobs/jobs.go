@@ -17,7 +17,6 @@ package jobs
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -388,23 +387,22 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 	// The retry asks for what the failed job was asked: its payload (a dry run
 	// stays a dry run, an approval stays the same approval) and, for an Epic 47
 	// stage, its place in the queue (the pipeline's follow-ups keep it too).
-	var payload map[string]any
 	var raw []byte
-	err = h.DB.QueryRowContext(r.Context(), `SELECT payload FROM processing_jobs j WHERE j.id = $1`, id).Scan(&raw)
+	var forceCascade bool
+	err = h.DB.QueryRowContext(r.Context(), `SELECT payload, force_cascade FROM processing_jobs j WHERE j.id = $1`, id).Scan(&raw, &forceCascade)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		httperror.Write(w, r, httperror.Internal("retry").Wrap(err))
 		return
 	}
-	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &payload)
-	}
+	payload := queues.RetryPayload(raw)
 	var prio *int
 	if _, ok := queues.Epic47Priorities[j.Stage]; ok {
 		p := j.Priority
 		prio = &p
 	}
 	res, err := queues.Enqueue(r.Context(), h.DB, queues.EnqueueParams{
-		SubjectKind: j.SubjectKind, SubjectID: j.SubjectID, Stage: j.Stage, Force: true, Priority: prio,
+		SubjectKind: j.SubjectKind, SubjectID: j.SubjectID, Stage: j.Stage,
+		Force: true, ForceCascade: forceCascade, Priority: prio,
 		Reason:  queues.ReasonFor(r.Context(), "retry", map[string]any{"of_job": id}),
 		Payload: payload,
 	})

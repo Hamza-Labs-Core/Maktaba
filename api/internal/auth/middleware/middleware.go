@@ -20,7 +20,9 @@
 package middleware
 
 import (
+	"context"
 	"crypto/subtle"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -29,10 +31,33 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	mw "github.com/Hamza-Labs-Core/Maktaba/api/internal/middleware"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/updates/dltoken"
 )
+
+type tokenExpiredKey struct{}
+
+// WithTokenExpired marks ctx as having carried an expired access JWT so the
+// downstream auth gate can emit 401 token-expired when no other credential
+// authenticates the request.
+func WithTokenExpired(ctx context.Context) context.Context {
+	return context.WithValue(ctx, tokenExpiredKey{}, true)
+}
+
+func isTokenExpired(ctx context.Context) bool {
+	v, _ := ctx.Value(tokenExpiredKey{}).(bool)
+	return v
+}
+
+func writeUnauthorized(w http.ResponseWriter, r *http.Request) {
+	if isTokenExpired(r.Context()) {
+		writeProblem(w, http.StatusUnauthorized, httperror.TypeTokenExpired, "access token expired")
+		return
+	}
+	writeProblem(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+}
 
 // MinAdminTokenLen is Story 10.9 EC-2: refuse `MAKTABA_ADMIN_TOKEN`
 // values shorter than 32 chars.
@@ -110,6 +135,9 @@ func JWTBearer(set *keys.Set, expectedAud string) func(http.Handler) http.Handle
 			}
 			c, err := jwt.Verify(set, tok, expectedAud)
 			if err != nil {
+				if errors.Is(err, jwt.ErrExpired) {
+					r = r.WithContext(WithTokenExpired(r.Context()))
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -136,7 +164,7 @@ func JWTBearer(set *keys.Set, expectedAud string) func(http.Handler) http.Handle
 func RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if principal.FromContext(r.Context()) == nil {
-			writeProblem(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+			writeUnauthorized(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -301,7 +329,7 @@ func RequireAuthExcept(public map[string]struct{}) func(http.Handler) http.Handl
 				return
 			}
 			if principal.FromContext(r.Context()) == nil {
-				writeProblem(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+				writeUnauthorized(w, r)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -367,7 +395,7 @@ func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := principal.FromContext(r.Context())
 		if p == nil {
-			writeProblem(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+			writeUnauthorized(w, r)
 			return
 		}
 		if !p.IsAdmin {

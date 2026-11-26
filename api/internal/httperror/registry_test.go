@@ -181,9 +181,21 @@ func TestTypeAndTypeForCode(t *testing.T) {
 	if got := TypeForCode("no_such_code_at_all"); Registered(got) || got != Type("no-such-code-at-all") {
 		t.Fatalf("an unknown code: %q", got)
 	}
-	for _, typ := range []string{TypeBadRequest, TypeConflict, TypeInternal, TypeUnauthorized, TypeNotFound} {
+	for _, typ := range []string{
+		TypeBadRequest, TypeConflict, TypeInternal, TypeUnauthorized, TypeNotFound,
+		TypeTokenExpired, Type("pairing-code-expired"), Type("cloud-link-refused"),
+	} {
 		if !Registered(typ) {
 			t.Errorf("%s is not registered", typ)
+		}
+	}
+	for slug, wantStatus := range map[string]int{
+		"token-expired":        http.StatusUnauthorized,
+		"pairing-code-expired": http.StatusGone,
+		"cloud-link-refused":   http.StatusUnprocessableEntity,
+	} {
+		if e := Lookup(Type(slug)); e == nil || e.Status != wantStatus {
+			t.Errorf("Lookup(%q) = %+v, want status %d", slug, e, wantStatus)
 		}
 	}
 	if Registered("about:blank") || Lookup("about:blank") != nil {

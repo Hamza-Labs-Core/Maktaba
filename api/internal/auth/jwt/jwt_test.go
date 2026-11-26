@@ -151,6 +151,18 @@ func TestVerify_AudienceMismatch(t *testing.T) {
 	if _, err := Verify(s, tok, "streaming"); err != ErrAudience {
 		t.Errorf("audience: got %v, want ErrAudience", err)
 	}
+	// An expired token for a different audience must report ErrAudience, not ErrExpired.
+	expTok, err := Sign(s, Claims{
+		Iss: "maktaba", Aud: "streaming", Sub: "x",
+		Iat: time.Now().Add(-2 * time.Hour).Unix(),
+		Exp: time.Now().Add(-1 * time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Verify(s, expTok, "api"); err != ErrAudience {
+		t.Errorf("expired wrong-audience token: got %v, want ErrAudience", err)
+	}
 }
 
 func TestVerify_RejectsHS256(t *testing.T) {

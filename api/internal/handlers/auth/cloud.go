@@ -58,6 +58,10 @@ var TypeNotCloudLinked = httperror.Type("not-cloud-linked")
 // needs a sign-in made on the home.
 var TypeCloudSession = httperror.Type("cloud-session")
 
+// TypeCloudLinkRefused: a Maktaba Cloud account-linking assertion was refused,
+// expired, or already spent (422).
+var TypeCloudLinkRefused = httperror.Type("cloud-link-refused")
+
 func notCloudLinked() *httperror.Error {
 	return &httperror.Error{Type: TypeNotCloudLinked, Title: "not linked to Maktaba Cloud",
 		Status: http.StatusNotFound, Detail: "this home is not claimed in Maktaba Cloud"}
@@ -398,14 +402,14 @@ func (h *Handler) CompleteCloudLink(w http.ResponseWriter, r *http.Request) {
 	}
 	a, err := cloudlink.VerifyAssertion(req.Assertion, pub, cloudlink.PurposeLink, id.ServerID, h.now())
 	if err != nil {
-		httperror.Write(w, r, &httperror.Error{Type: TypeInvalidCredentials, Title: "link refused",
+		httperror.Write(w, r, &httperror.Error{Type: TypeCloudLinkRefused, Title: "link refused",
 			Status: http.StatusUnprocessableEntity, Detail: "the cloud's link answer was refused; start again"})
 		return
 	}
 	link, err := h.Cloud.Store.CompleteLink(r.Context(), p.UserID, a)
 	switch {
 	case errors.Is(err, cloudlink.ErrNonce), errors.Is(err, cloudlink.ErrReplayed):
-		httperror.Write(w, r, &httperror.Error{Type: TypeInvalidCredentials, Title: "link refused",
+		httperror.Write(w, r, &httperror.Error{Type: TypeCloudLinkRefused, Title: "link refused",
 			Status: http.StatusUnprocessableEntity, Detail: "this link step expired or was used; start again"})
 		return
 	case errors.Is(err, cloudlink.ErrCloudAccountTaken):

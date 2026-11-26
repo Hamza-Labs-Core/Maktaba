@@ -17,6 +17,8 @@ import (
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/store"
 )
@@ -729,5 +731,141 @@ func TestCorePipelineStaysNotSwitchable(t *testing.T) {
 	}
 	if f.revision(t) != rev || f.audits(t) != 0 {
 		t.Fatalf("a refusal wrote: revision %d -> %d, %d audit rows", rev, f.revision(t), f.audits(t))
+	}
+}
+
+type stubPluginHooks struct {
+	check func(context.Context, svc.Change) error
+	purge func(context.Context, string, svc.Actor) (int, error)
+}
+
+func (s stubPluginHooks) Check(ctx context.Context, ch svc.Change) error {
+	if s.check != nil {
+		return s.check(ctx, ch)
+	}
+	return nil
+}
+
+func (s stubPluginHooks) Written(context.Context, *sql.Tx, store.Desired, svc.Actor) error {
+	return nil
+}
+
+func (s stubPluginHooks) Names(string) map[string]map[string]string { return nil }
+
+func (s stubPluginHooks) Purge(ctx context.Context, id string, actor svc.Actor) (int, error) {
+	if s.purge != nil {
+		return s.purge(ctx, id, actor)
+	}
+	return 0, nil
+}
+
+// Issue #1172: a plugin lifecycle refusal (*plugins.Problem) raised through
+// /api/components must be rendered with its HTTP status, problem type, code,
+// and params — never as 500 internal error.
+func TestPluginRefusalThroughComponents(t *testing.T) {
+	f := newFixture(t)
+	cat, skipped := components.WithPlugins(components.Default(), []components.PluginSpec{
+		{ID: "dev.example.revoked"},
+		{ID: "dev.example.caps"},
+		{ID: "dev.example.zerostatus"},
+		{ID: "dev.example.reserved"},
+	})
+	if len(skipped) != 0 {
+		t.Fatalf("skipped plugins: %v", skipped)
+	}
+	s := &svc.Service{
+		Store:    f.st,
+		Catalog:  cat,
+		Licensed: func(string) bool { return true },
+		Plugins: stubPluginHooks{
+			check: func(_ context.Context, ch svc.Change) error {
+				switch ch.ID {
+				case "plugin.dev.example.revoked":
+					return &pl.Problem{
+						Status: http.StatusConflict,
+						Code:   pl.CodeRevoked,
+						Detail: "the plugin store withdrew dev.example.revoked: it can only be removed",
+					}
+				case "plugin.dev.example.caps":
+					return &pl.Problem{
+						Status: http.StatusBadRequest,
+						Code:   pl.CodeRequiredCapability,
+						Detail: "grant library.read first",
+						Params: map[string]any{"capabilities": []string{"library.read"}},
+					}
+				case "plugin.dev.example.zerostatus":
+					return &pl.Problem{
+						Status: 0,
+						Code:   pl.CodeRevoked,
+						Detail: "invalid status falls back to 500",
+					}
+				case "plugin.dev.example.reserved":
+					return &pl.Problem{
+						Status: http.StatusBadRequest,
+						Code:   pl.CodeRequiredCapability,
+						Detail: "grant library.read first",
+						Params: map[string]any{
+							"capabilities": []string{"library.read"},
+							"type":         "https://evil.invalid/override",
+							"status":       200,
+							"title":        "forged",
+							"detail":       "forged",
+							"instance":     "/forged",
+							"requestId":    "forged",
+							"code":         "forged_code",
+						},
+					}
+				}
+				return nil
+			},
+		},
+	}
+	r := chi.NewRouter()
+	(&Handler{Service: s}).Mount(r)
+	f.r = r
+
+	// PUT /api/components/plugin.dev.example.revoked -> 409 plugin_revoked
+	rec := f.do("PUT", "/api/components/plugin.dev.example.revoked", `{"want":"enabled"}`, admin())
+	var body map[string]any
+	decode(t, rec, http.StatusConflict, &body)
+	if body["code"] != pl.CodeRevoked || body["type"] != httperror.TypeForCode(pl.CodeRevoked) {
+		t.Fatalf("revoked problem = %+v", body)
+	}
+
+	// POST /api/components/apply -> 400 plugin_required_capability with capabilities extra
+	rec = f.do("POST", "/api/components/apply", `{"changes":[{"id":"plugin.dev.example.caps","want":"enabled"}]}`, admin())
+	body = nil
+	decode(t, rec, http.StatusBadRequest, &body)
+	if body["code"] != pl.CodeRequiredCapability || body["type"] != httperror.TypeForCode(pl.CodeRequiredCapability) {
+		t.Fatalf("caps problem = %+v", body)
+	}
+	caps, _ := body["capabilities"].([]any)
+	if len(caps) != 1 || caps[0] != "library.read" {
+		t.Fatalf("caps params = %+v", body)
+	}
+
+	// Status == 0 falls back to 500
+	rec = f.do("PUT", "/api/components/plugin.dev.example.zerostatus", `{"want":"enabled"}`, admin())
+	body = nil
+	decode(t, rec, http.StatusInternalServerError, &body)
+	if body["status"] != float64(http.StatusInternalServerError) {
+		t.Fatalf("zero-status problem = %+v", body)
+	}
+
+	// Reserved RFC 9457 keys in Params cannot overwrite envelope fields
+	rec = f.do("PUT", "/api/components/plugin.dev.example.reserved", `{"want":"enabled"}`, admin())
+	body = nil
+	decode(t, rec, http.StatusBadRequest, &body)
+	if body["type"] != httperror.TypeForCode(pl.CodeRequiredCapability) ||
+		body["status"] != float64(http.StatusBadRequest) ||
+		body["code"] != pl.CodeRequiredCapability ||
+		body["detail"] != "grant library.read first" ||
+		body["instance"] != "/api/components/plugin.dev.example.reserved" ||
+		body["title"] == "forged" || body["requestId"] == "forged" {
+		t.Fatalf("reserved keys overwritten: %+v", body)
+	}
+	caps, _ = body["capabilities"].([]any)
+	if len(caps) != 1 || caps[0] != "library.read" {
+		t.Fatalf("non-reserved param lost: %+v", body)
 	}
 }

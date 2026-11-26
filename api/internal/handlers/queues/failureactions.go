@@ -65,11 +65,13 @@ type fixTarget struct {
 	stage, kind, id    string
 	state, status      string
 	parkedOn, lib, pth sql.NullString
+	payload            []byte
+	forceCascade       bool
 }
 
 const fixTargetCols = `
 SELECT i.id, i.stage, i.subject_kind, i.subject_id::text, i.state, i.status, i.parked_on,
-       i.lib_id::text, i.path
+       i.lib_id::text, i.path, i.payload, i.force_cascade
   FROM items i`
 
 func (h *Handler) fixTargets(ctx context.Context, req FixRequest) ([]fixTarget, error) {
@@ -97,7 +99,7 @@ func (h *Handler) fixTargets(ctx context.Context, req FixRequest) ([]fixTarget, 
 	var out []fixTarget
 	for rows.Next() {
 		var t fixTarget
-		if err := rows.Scan(&t.jobID, &t.stage, &t.kind, &t.id, &t.state, &t.status, &t.parkedOn, &t.lib, &t.pth); err != nil {
+		if err := rows.Scan(&t.jobID, &t.stage, &t.kind, &t.id, &t.state, &t.status, &t.parkedOn, &t.lib, &t.pth, &t.payload, &t.forceCascade); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -352,8 +354,11 @@ func retryTargets(ctx context.Context, tx *sql.Tx, ts []fixTarget) (int, error) 
 			pending = append(pending, t.jobID)
 			continue
 		}
-		res, err := Enqueue(ctx, tx, EnqueueParams{SubjectKind: t.kind, SubjectID: t.id, Stage: t.stage, Force: true,
-			Reason: ReasonFor(ctx, "retry from the failures page", map[string]any{"of_job": t.jobID})})
+		res, err := Enqueue(ctx, tx, EnqueueParams{
+			SubjectKind: t.kind, SubjectID: t.id, Stage: t.stage, Force: true, ForceCascade: t.forceCascade,
+			Payload: RetryPayload(t.payload),
+			Reason:  ReasonFor(ctx, "retry from the failures page", map[string]any{"of_job": t.jobID}),
+		})
 		if err != nil {
 			return n, err
 		}
