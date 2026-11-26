@@ -429,7 +429,8 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 		if !s.copySince.IsZero() {
 			// look outside the window too: a copy that ended after the window ends its
 			// hold so a separate day's copy gets its own CopyHoldMax budget (#1753).
-			if why, _, berr := s.blockedFor(ctx, ""); berr == nil && why == "" {
+			// Only check for machine copies — never ActiveRun, SwitchoverBlocker, or HomeHealth.
+			if copying, berr := s.machineCopying(ctx); berr == nil && !copying {
 				s.copySince = time.Time{}
 			}
 		}
@@ -488,6 +489,44 @@ func (s *Service) pastCopies() []string {
 		return nil
 	}
 	return []string{BlockMachineCopying}
+}
+
+// machineCopying reports whether a machine is copying a table now, without checking
+// ActiveRun, SwitchoverBlocker, or polling HomeHealth. When s.Blockers holds a
+// CopyingBlocker (production), only that blocker is queried; otherwise (tests with
+// BlockerFunc fakes), every non-health/non-switchover blocker is checked for
+// BlockMachineCopying.
+func (s *Service) machineCopying(ctx context.Context) (bool, error) {
+	hasCopying := false
+	for _, b := range s.Blockers {
+		if _, ok := b.(CopyingBlocker); ok {
+			hasCopying = true
+			why, err := b.Blocked(ctx)
+			if err != nil {
+				return false, err
+			}
+			if why == BlockMachineCopying {
+				return true, nil
+			}
+		}
+	}
+	if hasCopying {
+		return false, nil
+	}
+	for _, b := range s.Blockers {
+		switch b.(type) {
+		case *HomeHealth, SwitchoverBlocker:
+			continue
+		}
+		why, err := b.Blocked(ctx)
+		if err != nil {
+			return false, err
+		}
+		if why == BlockMachineCopying {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // noteCopies keeps when the machines' copies began to hold a due automatic run.

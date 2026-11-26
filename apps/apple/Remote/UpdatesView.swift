@@ -63,7 +63,7 @@ struct UpdatesView: View {
         } else if o.lastCheckError.map({ !$0.isEmpty }) == true || o.lastCheckCode.map({ !$0.isEmpty }) == true {
             Section {
                 Callout(systemImage: "exclamationmark.icloud", tint: .secondary,
-                        title: o.lastCheckCode.map { UpdateWords.checkFailed($0) } ?? String(localized: "The last update check did not work."),
+                        title: o.lastCheckCode.flatMap { $0.isEmpty ? nil : $0 }.map { UpdateWords.checkFailed($0) } ?? String(localized: "The last update check did not work."),
                         detail: o.lastCheckError)
             }
         }

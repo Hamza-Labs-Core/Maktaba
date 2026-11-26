@@ -753,6 +753,7 @@ func (m *Manager) watchState(ctx context.Context, detail string) Status {
 // counting login refusals and returns as soon as the pause lifts.
 func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 	end := m.now().Add(d)
+	everPaused := m.isHomePaused()
 	for {
 		s := m.withSlot(m.observe(ctx))
 		m.mu.Lock()
@@ -763,9 +764,10 @@ func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 		wasPaused := m.isHomePaused()
 		s = m.copyLogin(ctx, s)
 		nowPaused := m.isHomePaused()
+		everPaused = everPaused || wasPaused || nowPaused
 		s = m.asRebuild(s)
 		m.set(ctx, s)
-		if wasPaused && !nowPaused {
+		if everPaused && !nowPaused {
 			return true
 		}
 		if due {

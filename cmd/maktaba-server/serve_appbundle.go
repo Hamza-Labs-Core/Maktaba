@@ -1541,9 +1541,8 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, upd *ap
 			// back on the kept, newer schema the release before ran on: still kept for it, or
 			// it refuses it as ahead of its own (db_ahead). Preserve the schema's own release
 			// so intermediate releases between kept_for and schema_release are accepted too.
-			rec.KeptFor = layout.NormalizeVersion(update.From)
+			rec.KeptFor = layout.NormalizeVersion(update.DumpKeptFor)
 			if update.DumpSchemaRelease != "" {
-				rec.KeptFor = layout.NormalizeVersion(update.DumpKeptFor)
 				rec.SchemaRelease = update.DumpSchemaRelease
 			}
 			rec.KeptReason = "kept before the update to " + cur + ", which failed"
@@ -1783,12 +1782,13 @@ func heldUpdate(rec apppayload.Database) error {
 
 // downgrade is the detail of a release older than the database's.
 func downgrade(cur string, rec apppayload.Database) error {
+	owner := rec.SchemaOwner()
 	msg := fmt.Sprintf("this Maktaba (%s) is older than the one whose changes the library database holds (%s): it "+
-		"would not know them. Install %s or later", cur, rec.Version, rec.Version)
+		"would not know them. Install %s or later", cur, owner, owner)
 	if rec.Dump != "" {
-		msg += fmt.Sprintf(" (the database as it was before the update to %s is in %s)", rec.Version, rec.Dump)
+		msg += fmt.Sprintf(" (the database as it was before the update to %s is in %s)", owner, rec.Dump)
 	}
-	return detailErr("db_refused_older", msg, cur, rec.Version, rec.Dump)
+	return detailErr("db_refused_older", msg, cur, owner, rec.Dump)
 }
 
 func orUnknown(v string) string {

@@ -153,6 +153,7 @@ BEGIN
         RAISE EXCEPTION 'this database keeps no copies for machines (wal_level is %, not logical)',
             current_setting('wal_level') USING ERRCODE = 'feature_not_supported';
     END IF;
+    -- a machine's own row is published by a row filter, without its keys by a column list
     IF current_setting('server_version_num')::int < 150000 THEN
         RAISE EXCEPTION 'this database keeps no copies for machines (Postgres %: they need 15 or later)',
             current_setting('server_version') USING ERRCODE = 'feature_not_supported';

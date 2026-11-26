@@ -92,6 +92,17 @@ class StatusTest {
     }
 
     @Test
+    fun updatesOverviewDecodesLastCheckCode() {
+        val withCode = ApiClient.json.decodeFromString<UpdatesOverview>(
+            """{"last_check_code":"feed_old","last_check_error":"feed older than a week"}""",
+        )
+        assertEquals("feed_old", withCode.lastCheckCode)
+        assertEquals("feed older than a week", withCode.lastCheckError)
+        val withoutCode = ApiClient.json.decodeFromString<UpdatesOverview>("""{}""")
+        assertNull(withoutCode.lastCheckCode)
+    }
+
+    @Test
     fun anUpdateRunDecodesItsStepsAndMachines() = runBlocking {
         val run = client().updateRun("8d7c1f1e-5b8a-4c1e-9d0e-0a1b2c3d4e5f")
         assertEquals("tv_busy", run.detail.waiting)

@@ -386,7 +386,7 @@ describe("update action refusals", () => {
         )
       ).toBe(cat["updates.refused.no_such_run"]);
 
-      // Check now 503 rate limited & 502 with checkFailed code & 502 without code
+      // Check now 503 rate limited & 502 with checkFailed code & codeless 502/503 (check=true)
       expect(
         updateRefusal(
           new ApiError({
@@ -396,7 +396,9 @@ describe("update action refusals", () => {
             code: "rate_limited",
           }),
           locale,
-          tl
+          tl,
+          false,
+          true
         )
       ).toBe(cat["updates.checkFailed.rate_limited"]);
       expect(
@@ -409,7 +411,9 @@ describe("update action refusals", () => {
             detail: "check GitHub",
           }),
           locale,
-          tl
+          tl,
+          false,
+          true
         )
       ).toBe(cat["updates.checkFailed.feed_old"]);
       expect(
@@ -421,9 +425,50 @@ describe("update action refusals", () => {
             detail: "check GitHub",
           }),
           locale,
-          tl
+          tl,
+          false,
+          true
         )
       ).toBe(cat["updates.checkFailed.unreachable"]);
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank",
+            title: "service unavailable",
+            status: 503,
+          }),
+          locale,
+          tl,
+          false,
+          true
+        )
+      ).toBe(cat["updates.checkFailed.rate_limited"]);
+
+      // Non-Check actions (Update now / Cancel / TV) with codeless 502/503 fall back to common.error, never GitHub words
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank",
+            title: "bad gateway",
+            status: 502,
+            detail: "supervisor unreachable",
+          }),
+          locale,
+          tl,
+          true
+        )
+      ).toBe(cat["common.error"]);
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank",
+            title: "service unavailable",
+            status: 503,
+          }),
+          locale,
+          tl
+        )
+      ).toBe(cat["common.error"]);
 
       // 500 without a code never shows raw English server detail
       expect(

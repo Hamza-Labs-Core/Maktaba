@@ -1071,6 +1071,9 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 		waited = d.now().Sub(*det.DrainSince)
 	}
 	if n := d.runningJobs(ctx); n > 0 && waited < time.Duration(pol.DrainTimeoutMinutes)*time.Minute {
+		if d.pauseCopyWait(&det, d.now()) {
+			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
+		}
 		return nil // jobs finish (or checkpoint at the restart once the timeout passes)
 	}
 	// the gates again, right before the restart: viewers may have come during the drain
@@ -1220,6 +1223,9 @@ func (d *Driver) homeStaged(ctx context.Context, run Run, det RunDetail) error {
 		waited = d.now().Sub(*det.DrainSince)
 	}
 	if n := d.runningJobs(ctx); n > 0 && waited < time.Duration(pol.DrainTimeoutMinutes)*time.Minute {
+		if d.pauseCopyWait(&det, d.now()) {
+			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
+		}
 		return nil
 	}
 	if d.switchoverOpen(ctx) {

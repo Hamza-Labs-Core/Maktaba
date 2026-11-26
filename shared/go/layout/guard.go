@@ -539,11 +539,9 @@ func MarkRecordDown(path, failed, from, reason string) (bool, error) {
 		delete(rec, k)
 	}
 	if onKept {
+		rec["kept_for"] = NormalizeVersion(dumpKeptFor)
 		if dumpSchemaRelease != "" {
-			rec["kept_for"] = NormalizeVersion(dumpKeptFor)
 			rec["schema_release"] = dumpSchemaRelease
-		} else {
-			rec["kept_for"] = NormalizeVersion(from)
 		}
 		rec["kept_reason"] = "kept before the update to " + failed + ", which was undone"
 	}

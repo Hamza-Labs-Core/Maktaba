@@ -254,6 +254,44 @@ func TestHoldClearsOutsideWindowSoNextDayGetsFreshHold(t *testing.T) {
 	}
 }
 
+// #1753 Major 1: outside the quiet window, an unrelated blocker (e.g. role_not_running)
+// or a HomeHealth check must not stop copySince from clearing, and HomeHealth is not polled.
+func TestHoldClearsOutsideWindowWithUnrelatedBlockerAndNoHealthPoll(t *testing.T) {
+	t.Parallel()
+	enableAutoInstall(t)
+	ctx := context.Background()
+	f := newFixture(t, sqliteDB(t))
+	seed(t, f.store, rel("1.5.0"))
+	copying, other := BlockMachineCopying, ""
+	healthHits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		healthHits++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	f.svc.Blockers = []Blocker{
+		BlockerFunc(func(context.Context) (string, error) { return copying, nil }),
+		BlockerFunc(func(context.Context) (string, error) { return other, nil }),
+		&HomeHealth{BaseURL: srv.URL, HTTP: srv.Client()},
+	}
+	if d, err := f.svc.Tick(ctx); err != nil || d.Action != "blocked" || d.Reason != BlockMachineCopying {
+		t.Fatalf("day 1 window: %+v %v", d, err)
+	}
+	// Outside the window: copy ends while an unrelated blocker is active
+	f.now = f.now.Add(3 * time.Hour)
+	copying, other = "", BlockRoleNotRunning
+	healthHits = 0
+	if d, err := f.svc.Tick(ctx); err != nil || d.Action != "none" {
+		t.Fatalf("outside window: %+v %v", d, err)
+	}
+	if !f.svc.copySince.IsZero() {
+		t.Fatalf("copySince was not cleared with unrelated blocker active: %s", f.svc.copySince)
+	}
+	if healthHits != 0 {
+		t.Fatalf("HomeHealth was polled %d times outside the window", healthHits)
+	}
+}
+
 // A blocker that fails after one was gone past: no run starts, and nothing is audited.
 func TestUpdateNowStopsAtABlockersErrorPastACopy(t *testing.T) {
 	t.Parallel()

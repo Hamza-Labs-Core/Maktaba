@@ -2235,6 +2235,10 @@ func TestAppBundleDownScriptsLeaveAKeptSchemaKept(t *testing.T) {
 	if keptFor(recorded(t, cfg), "v0.1.9") {
 		t.Fatalf("keptFor accepted release older than kept_for on %+v", recorded(t, cfg))
 	}
+	// Minor 5 (#1666): downgrade() names the schema's own release (SchemaOwner), not reset Version.
+	if derr := downgrade("v0.1.9", recorded(t, cfg)); !strings.Contains(derr.Error(), "v0.2.5") {
+		t.Fatalf("downgrade message should name schema owner v0.2.5, got %v", derr)
+	}
 	// Backwards-compatible: an older record without SchemaRelease uses Version.
 	if !keptFor(apppayload.Database{Version: "v0.2.5", State: apppayload.DatabaseMigrated, KeptFor: "0.2.0"}, "v0.2.3") {
 		t.Fatal("keptFor should stay backwards-compatible when SchemaRelease is empty")

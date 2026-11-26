@@ -118,8 +118,11 @@ func TestSchemaGuardSharedTable(t *testing.T) {
 }
 
 // Every service ships the same SchemaRev: the API's, the streaming node's and the
-// pipeline's are raised together with each migration (slot 0230: broadcast_channels copied).
+// pipeline's are raised together with each migration (slot 0239: copies_paused and keepalives).
 func TestSchemaRevIsTheSameInEveryService(t *testing.T) {
+	if SchemaRev < 239 {
+		t.Fatalf("SchemaRev = %04d, want >= 0239", SchemaRev)
+	}
 	root := filepath.Join("..", "..", "..")
 	for file, pattern := range map[string]string{
 		filepath.Join(root, "api", "internal", "cluster", "schemaguard", "guard.go"):       `const SchemaRev = (\d+)`,

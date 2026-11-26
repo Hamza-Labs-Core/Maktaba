@@ -150,3 +150,51 @@ func TestManagerCopiesPausedDoesNotBackOff(t *testing.T) {
 			subPaused, m2.copyPaused(), st)
 	}
 }
+
+// #1667 Major 2: if background report() clears homePaused while watch() is sleeping,
+// watch() still detects the transition via its everPaused latch and returns promptly.
+func TestManagerWatchReturnsPromptlyWhenUnpausedDuringSleep(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	now := time.Date(2026, 11, 26, 0, 0, 0, 0, time.UTC)
+	sleeping := make(chan struct{}, 1)
+	unpaused := false
+	m := &Manager{
+		Retry:           time.Minute,
+		Every:           time.Hour,
+		CopyPausedEvery: 15 * time.Millisecond,
+		Now:             func() time.Time { return now },
+		observeFn: func(context.Context, time.Time) Status {
+			return Status{State: StateBehind, enabled: true}
+		},
+		receivingFn: func(context.Context) (bool, error) { return true, nil },
+		copiesPausedFn: func(context.Context) bool {
+			select {
+			case sleeping <- struct{}{}:
+			default:
+			}
+			return !unpaused
+		},
+	}
+	m.homeRefusedLogin()
+	m.setHomePaused(true)
+
+	done := make(chan bool, 1)
+	go func() {
+		done <- m.watch(ctx, time.Hour)
+	}()
+
+	<-sleeping
+	// Simulate background report() clearing homePaused while watch() is sleeping.
+	unpaused = true
+	m.setHomePaused(false)
+
+	select {
+	case ok := <-done:
+		if !ok || m.isHomePaused() {
+			t.Fatalf("watch after concurrent unpause: ok=%v homePaused=%v", ok, m.isHomePaused())
+		}
+	case <-ctx.Done():
+		t.Fatal("watch did not return promptly after concurrent setHomePaused(false) during sleep")
+	}
+}

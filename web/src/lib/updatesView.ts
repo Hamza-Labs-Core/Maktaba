@@ -289,12 +289,19 @@ export function checkFailedWhy(code: string | undefined, t: (k: string) => strin
 
 /**
  * Why an update action was refused, in the reader's language: its blocker, refusal, or
- * check-failure code, falling back to generic words for 404/502/503/5xx without a code so
- * neither Admin -> Updates nor Live TV shows raw English server errors. Only Update now
- * uses no_update (now=true): a server of v0.3.164 or older sent no_update for other
- * actions too.
+ * check-failure code, falling back to generic words for 404/5xx without a code so neither
+ * Admin -> Updates nor Live TV shows raw English server errors. Only Update now uses
+ * no_update (now=true): a server of v0.3.164 or older sent no_update for other actions too.
+ * Only Check now maps codeless 502/503 responses to GitHub check-failure words (check=true);
+ * other actions' codeless 5xx return common.error.
  */
-export function updateRefusal(e: unknown, locale: Locale, t: T, now = false): string {
+export function updateRefusal(
+  e: unknown,
+  locale: Locale,
+  t: T,
+  now = false,
+  check = false
+): string {
   if (!(e instanceof ApiError)) return t("common.error");
   const has = (key: string) => lookupMessage(locale, key) !== undefined;
   const c = e.problem.code ?? "";
@@ -308,8 +315,8 @@ export function updateRefusal(e: unknown, locale: Locale, t: T, now = false): st
     return t(`updates.checkFailed.${c}`);
   }
   if (e.status === 404) return t("updates.refused.no_such_run");
-  if (e.status === 503) return t("updates.checkFailed.rate_limited");
-  if (e.status === 502) return t("updates.checkFailed.unreachable");
+  if (check && e.status === 503) return t("updates.checkFailed.rate_limited");
+  if (check && e.status === 502) return t("updates.checkFailed.unreachable");
   if (e.status >= 500) return t("common.error");
   return e.message || t("common.error");
 }
