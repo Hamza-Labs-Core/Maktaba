@@ -269,26 +269,25 @@ struct TVSignInView: View {
     private var shown: TVStart.Method { offered.contains(method) ? method : offered[0] }
 
     var body: some View {
-        ZStack {
-            LibraryBackdrop()
-            Group {
-                if session.restoring {
-                    // the saved sign-in is being checked: no code asked for meanwhile
-                    ProgressView()
-                } else if let f = session.restoreProblem {
-                    restorePanel(f)
-                } else {
-                    switch shown {
-                    case .code:
-                        codePanel
-                    case .password:
-                        TVPasswordPanel(session: session, words: words, tv: tv,
-                                        useCode: offered.contains(.code) ? { method = .code } : nil)
-                    }
+        Group {
+            if session.restoring {
+                // the saved sign-in is being checked: no code asked for meanwhile
+                ProgressView()
+            } else if let f = session.restoreProblem {
+                restorePanel(f)
+            } else {
+                switch shown {
+                case .code:
+                    codePanel
+                case .password:
+                    TVPasswordPanel(session: session, words: words, tv: tv,
+                                    useCode: offered.contains(.code) ? { method = .code } : nil)
                 }
             }
-            .padding(80)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // behind, so its picture (wider than the screen) never moves the panel off the middle
+        .background { LibraryBackdrop() }
         .environment(\.layoutDirection, words.isRightToLeft ? .rightToLeft : .leftToRight)
         // one code at a time, asked for only while it shows
         .task(id: CodeFlowKey(home: session.current?.url, shown: codeShown)) {
@@ -327,7 +326,7 @@ struct TVSignInView: View {
 
     private var codePanel: some View {
         HStack(alignment: .center, spacing: 64) {
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(alignment: .leading, spacing: 14) {
                 SectionTitle(tv.text(.codeTitle, session.current?.name ?? ""), size: 52)
                 switch codeFlow?.status {
                 case let .showing(p)?:
@@ -337,7 +336,7 @@ struct TVSignInView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("pairing-intro")
                     Text(verbatim: p.code)
-                        .font(.system(size: 110, weight: .bold, design: .monospaced))
+                        .font(.system(size: 96, weight: .bold, design: .monospaced))
                         .foregroundStyle(Theme.goldText)
                         .environment(\.layoutDirection, .leftToRight)
                         .accessibilityLabel(p.code.map(String.init).joined(separator: " "))
@@ -354,6 +353,12 @@ struct TVSignInView: View {
                     HStack(spacing: 16) {
                         ProgressView()
                         Text(words.text(.waiting)).foregroundStyle(Theme.muted)
+                        TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                            let left = max(0, Int(p.expiresAt.timeIntervalSince(ctx.date)))
+                            Text(words.text(.codeChangesIn, String(format: "%d:%02d", left / 60, left % 60)))
+                                .font(Theme.body(24).monospacedDigit())
+                                .foregroundStyle(Theme.faint)
+                        }
                     }
                     // a phone signed in on the home has read this code: approval is next
                     if codeFlow?.lookedUp == true {
@@ -361,12 +366,6 @@ struct TVSignInView: View {
                             .font(Theme.body(28, weight: .semibold))
                             .foregroundStyle(Theme.goldText)
                             .accessibilityIdentifier("pairing-looked-up")
-                    }
-                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                        let left = max(0, Int(p.expiresAt.timeIntervalSince(ctx.date)))
-                        Text(words.text(.codeChangesIn, String(format: "%d:%02d", left / 60, left % 60)))
-                            .font(Theme.body(24).monospacedDigit())
-                            .foregroundStyle(Theme.faint)
                     }
                 case .unsupported?:
                     Text(words.text(.codeUnsupported))
@@ -379,21 +378,14 @@ struct TVSignInView: View {
                 if let problem = codeFlow?.problem {
                     Text(problem).foregroundStyle(.red)
                 }
-                HStack(spacing: 32) {
-                    if offered.contains(.password) || codeFlow?.status == .unsupported {
-                        Button(words.text(.byPassword), systemImage: "keyboard") { method = .password }
-                            .accessibilityIdentifier("signin.password")
-                    }
-                    Button(tv.text(.otherHome), systemImage: "house") { session.switchHome() }
-                        .accessibilityIdentifier("signin.homes")
-                    // last, so the remote's first focus stays where it was
-                    if codeFlow?.pairing != nil {
-                        Button(words.text(.newCode), systemImage: "arrow.clockwise") { codeFlow?.newCode() }
-                            .accessibilityIdentifier("pairing-new-code")
-                    }
+                // one layout, with or without a code: the focus stays on its button when a code
+                // comes or is renewed
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 32) { otherWays }
+                    newCode
                 }
                 .buttonStyle(.gold)
-                .padding(.top, 20)
+                .padding(.top, 8)
             }
             .frame(maxWidth: 1050, alignment: .leading)
             if let p = codeFlow?.pairing, let url = verifyURL(p) {
@@ -403,7 +395,27 @@ struct TVSignInView: View {
                     .accessibilityHint(tv.text(.codeAlt))
             }
         }
-        .readingPanel(padding: 56)
+        .readingPanel(padding: 40)
+    }
+
+    @ViewBuilder private var otherWays: some View {
+        if offered.contains(.password) || codeFlow?.status == .unsupported {
+            Button(words.text(.byPassword), systemImage: "keyboard") { method = .password }
+                .lineLimit(1)
+                .accessibilityIdentifier("signin.password")
+        }
+        Button(tv.text(.otherHome), systemImage: "house") { session.switchHome() }
+            .lineLimit(1)
+            .accessibilityIdentifier("signin.homes")
+    }
+
+    /// Last, so the remote's first focus stays where it was.
+    @ViewBuilder private var newCode: some View {
+        if codeFlow?.pairing != nil {
+            Button(words.text(.newCode), systemImage: "arrow.clockwise") { codeFlow?.newCode() }
+                .lineLimit(1)
+                .accessibilityIdentifier("pairing-new-code")
+        }
     }
 
     private func verifyURL(_ p: DevicePairing) -> URL? {

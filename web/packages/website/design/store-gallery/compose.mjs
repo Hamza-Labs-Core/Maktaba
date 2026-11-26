@@ -98,6 +98,9 @@ export function indexCaptures(dirs) {
   return out;
 }
 
+/** The status bar's height in a surface's captures, in pixels: 24 points at 2×. */
+const STATUS_BAR = { ipad: 48 };
+
 const other = (lang) => (lang === "en" ? "ar" : "en");
 const screenOf = (beat, surface) => (beat.capture?.[surface] ?? "").replace(/ new$/, "");
 
@@ -128,9 +131,15 @@ export function plan({ only } = {}) {
             listing.app,
             set.surface === "android-tablet-7" ? "android-tablet" : set.surface
           );
+          // a beat that reads better on its side (the phone's player) takes the asset's landscape
+          // size, where the store accepts one (App Store iPhone sizes, Google Play's 16:9)
+          const turn = (beat) =>
+            beat.canvas?.[set.surface] === "landscape" &&
+            (spec.accepts ?? []).some(([w, h]) => w === H && h === W);
           beats.forEach((beat, i) =>
             jobs.push({
               ...base,
+              ...(turn(beat) ? { W: H, H: W } : {}),
               n: i + 1,
               name: beat.id,
               beat,
@@ -202,7 +211,7 @@ function html(job, src) {
   const l = lang === "all" ? "en" : lang;
   switch (set.style) {
     case "captioned":
-      return captioned({ W, H, lang: l, beat, surface: set.surface, src });
+      return captioned({ W, H, lang: l, beat, surface: set.surface, src, screenW: job.screenW });
     case "plain":
       return plain({ W, H, lang: l, beat, surface: set.surface, src });
     case "tile":
@@ -238,8 +247,13 @@ function serve(captureDir, pages) {
     const path = resolve(root, "." + (rel.startsWith("/") ? rel : "/" + rel));
     if (path !== root && !path.startsWith(root + sep)) return res.writeHead(403).end();
     try {
+      let body = readFileSync(path);
+      // the site's faces are `font-display: optional`, which leaves the fallback face in place
+      // when the face comes a moment late; an image waits for it
+      if (url.endsWith("/design/fonts.css"))
+        body = body.toString().replaceAll("font-display: optional", "font-display: block");
       res.writeHead(200, { "content-type": TYPES[extname(path)] ?? "application/octet-stream" });
-      res.end(readFileSync(path));
+      res.end(body);
     } catch {
       res.writeHead(404).end();
     }
@@ -268,14 +282,29 @@ async function encode(sharp, buf, spec) {
   return null;
 }
 
-/** A file against its manifest entry. */
-export async function check(sharp, file, spec) {
+/** In the page: the screen narrowed until all of it, and a margin under it, is on the canvas. */
+function fitScreen() {
+  const shot = document.querySelector(".shot");
+  const screen = document.querySelector(".screen");
+  if (!shot || !screen) return;
+  const r = screen.getBoundingClientRect();
+  const room = shot.getBoundingClientRect().bottom - r.top - 0.055 * shot.clientHeight;
+  if (r.height > room) screen.style.inlineSize = `${(r.width * room) / r.height}px`;
+}
+
+/** A file against its manifest entry: `size` is the one it was drawn at (the asset's, or a
+ * landscape size the store also accepts). */
+export async function check(sharp, file, spec, size = spec.size) {
   const problems = [];
   const meta = await sharp(file).metadata();
   const bytes = readFileSync(file).length;
   const fmt = meta.format === "jpeg" ? "jpeg" : meta.format;
-  if (meta.width !== spec.size[0] || meta.height !== spec.size[1])
-    problems.push(`${meta.width}x${meta.height}, want ${spec.size.join("x")}`);
+  const accepted = [spec.size, ...(spec.accepts ?? [])].some(
+    ([w, h]) => w === size[0] && h === size[1]
+  );
+  if (!accepted) problems.push(`drawn at ${size.join("x")}, which the store does not take`);
+  if (meta.width !== size[0] || meta.height !== size[1])
+    problems.push(`${meta.width}x${meta.height}, want ${size.join("x")}`);
   if (!spec.formats.includes(fmt)) problems.push(`${fmt}, want ${spec.formats.join(" or ")}`);
   if (spec.alpha === false && meta.hasAlpha) problems.push("has an alpha channel");
   if (spec.maxBytes && bytes > spec.maxBytes)
@@ -319,8 +348,21 @@ export async function compose({ captureDirs, out, only, allowMissing = false, lo
           continue;
         }
         const link = `${job.capture}.png`;
-        writeFileSync(join(linkDir, link), readFileSync(file));
+        const m = await sharp(file).metadata();
+        // the iPad's own status bar is the simulator's, in its language: an Arabic screen showed
+        // an English date, so the panel starts under it
+        const top = job.set.style === "captioned" ? (STATUS_BAR[job.set.surface] ?? 0) : 0;
+        if (top)
+          await sharp(file)
+            .extract({ left: 0, top, width: m.width, height: m.height - top })
+            .toFile(join(linkDir, link));
+        else writeFileSync(join(linkDir, link), readFileSync(file));
         src = `/captures/${link}`;
+        // a portrait screen on a landscape canvas (the iPad Player upright, in the iPad 13" set)
+        // is sized by the height, so its panel shows most of the screen instead of its top
+        if (job.set.style === "captioned" && job.W > job.H) {
+          if (m.height > m.width) job.screenW = (1.05 * job.H * (m.width / m.height)) / job.W;
+        }
       }
       let buf;
       const body = html(job, src);
@@ -335,6 +377,20 @@ export async function compose({ captureDirs, out, only, allowMissing = false, lo
         const p = await ctx.newPage();
         await p.goto(`${base}/page.html`, { waitUntil: "networkidle" });
         await p.evaluate(() => document.fonts.ready);
+        // every face the page asks for is loaded: no caption is drawn in a fallback face
+        const faces = await p.evaluate(() =>
+          [...document.fonts]
+            .filter((f) => f.status !== "unloaded" && !f.family.includes("Fallback"))
+            .map((f) => ({ family: f.family.replaceAll('"', ""), status: f.status }))
+        );
+        for (const f of faces)
+          if (f.status !== "loaded") problems.push(`${rel}: ${f.family} is ${f.status}`);
+        for (const [sel, family] of [
+          [".cap .h", "Maktaba Display"],
+          [".cap .sub", "Maktaba Text"],
+        ])
+          if ((await p.locator(sel).count()) && !faces.some((f) => f.family === family))
+            problems.push(`${rel}: ${family} was not loaded`);
         await p.waitForFunction(
           () => [...document.images].every((i) => i.complete && i.naturalWidth > 0),
           null,
@@ -342,6 +398,8 @@ export async function compose({ captureDirs, out, only, allowMissing = false, lo
             timeout: 15000,
           }
         );
+        // a subtitle is the screen's last line: on a landscape canvas its screen shows whole
+        if (job.beat?.fit && job.W > job.H && !job.screenW) await p.evaluate(fitScreen);
         for (const m of await p.evaluate(measure)) {
           if (m.share > MAX_CAPTION_SHARE)
             problems.push(`${rel}: caption ${(m.share * 100).toFixed(1)}%, over 20%`);
@@ -361,7 +419,7 @@ export async function compose({ captureDirs, out, only, allowMissing = false, lo
       const file = join(out, `${rel}.${enc.ext}`);
       mkdirSync(dirname(file), { recursive: true });
       writeFileSync(file, enc.data);
-      const c = await check(sharp, file, job.spec);
+      const c = await check(sharp, file, job.spec, [job.W, job.H]);
       for (const pr of c.problems) problems.push(`${rel}.${enc.ext}: ${pr}`);
       report.push({
         file: `${rel}.${enc.ext}`,

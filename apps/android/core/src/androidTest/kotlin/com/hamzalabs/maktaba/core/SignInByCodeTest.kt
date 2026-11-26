@@ -51,7 +51,7 @@ class SignInByCodeTest {
         show(request, onApprove = { approved++ })
         rule.onNodeWithText("Amina's Pixel").assertIsDisplayed()
         rule.onNodeWithText("Player · Android · Phone").assertIsDisplayed()
-        rule.onNodeWithText("Code ABCD-1234").assertIsDisplayed()
+        rule.onNodeWithText("Code \u2066ABCD-1234\u2069").assertIsDisplayed()
         rule.onNodeWithText("amina", substring = true).assertIsDisplayed()
         assertEquals("nothing is approved by looking", 0, approved)
         rule.onNodeWithTag("approve-button").performClick()

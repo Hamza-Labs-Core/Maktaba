@@ -53,6 +53,42 @@ final class TVConnectUITests: XCTestCase {
         XCTAssertTrue(home.seen.contains("GET /api/auth/me"))
     }
 
+    /// The code's panel with its most said (a phone has read the code) is whole inside the safe
+    /// area, and the focus stays where it was when the code runs out and a new one comes.
+    func testTheCodesPanelFitsAndKeepsTheFocus() throws {
+        home.stub("POST", "/api/pairing/device", status: 201, body: """
+        {"code":"K7M4-P2XR","device_code":"dc","expires_at":"{{now+25}}","verify_path":"/pair?code=K7M4-P2XR","interval":1}
+        """)
+        home.stub("POST", "/api/pairing/device/token", status: 202, body: #"{"status":"pending","looked_up":true}"#)
+        launch()
+        type(home.url, into: app.textFields["picker.address"])
+        pressIfStillThere(app.buttons["picker.connect"], with: .right)
+        XCTAssertTrue(app.staticTexts["pairing-code"].waitForExistence(timeout: 20), "the code; the home saw \(home.seen)")
+        let read = app.descendants(matching: .any)["pairing-looked-up"].firstMatch
+        XCTAssertTrue(read.waitForExistence(timeout: 15), "a phone has read the code")
+        // the safe area of a 1920 × 1080 screen: 80 at the sides, 60 above and below
+        let safe = CGRect(x: 80, y: 60, width: 1760, height: 960)
+        let newCode = app.buttons["pairing-new-code"], homes = app.buttons["signin.homes"]
+        for (what, frame) in [("the intro", app.staticTexts["pairing-intro"].frame), ("the line", read.frame),
+                              ("another home", homes.frame), ("a new code", newCode.frame)] {
+            XCTAssertTrue(safe.contains(frame), "\(what) at \(frame)")
+        }
+        // room for a problem's line of two under it all
+        XCTAssertLessThanOrEqual(newCode.frame.maxY - app.staticTexts["pairing-intro"].frame.minY, 800)
+        for _ in 0..<6 where !homes.hasFocus {
+            XCUIRemote.shared.press(.right)
+            usleep(500_000)
+        }
+        XCTAssertTrue(homes.hasFocus, "Choose another home has the focus")
+        let asked = home.seen.filter { $0 == "POST /api/pairing/device" }.count
+        let end = Date().addingTimeInterval(60)
+        while Date() < end, home.seen.filter({ $0 == "POST /api/pairing/device" }).count == asked { usleep(500_000) }
+        XCTAssertGreaterThan(home.seen.filter { $0 == "POST /api/pairing/device" }.count, asked, "a new code came")
+        sleep(2)
+        XCTAssertTrue(homes.hasFocus, "the focus stayed on Choose another home")
+        shot("tv-code-read")
+    }
+
     /// A `maktaba://connect` link is asked about before anything is fetched; Connect tries
     /// its addresses in order (the first answers nothing) and signs in there.
     func testConnectLinkAsksFirst() throws {

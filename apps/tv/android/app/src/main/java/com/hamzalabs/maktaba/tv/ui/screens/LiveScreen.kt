@@ -146,7 +146,7 @@ private fun NowCard(api: TvApi, e: NowEntry, nowMs: Long, modifier: Modifier, on
     val next = if (current === e.next) null else e.next
     Card(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(168.dp).testTag("live-channel-${e.channel.id}"),
+        modifier = modifier.fillMaxWidth().height(184.dp).testTag("live-channel-${e.channel.id}"),
         shape = CardDefaults.shape(CardCorner),
         colors = maktabaCardColors(),
         scale = CardDefaults.scale(focusedScale = 1.05f),

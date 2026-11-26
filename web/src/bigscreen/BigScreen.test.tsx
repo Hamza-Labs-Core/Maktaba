@@ -424,6 +424,18 @@ describe("Back and leaving", () => {
     }
   });
 
+  it("the hints name the TV remote's buttons in the TV build, a keyboard's keys on a computer", async () => {
+    const keys = () => [...document.querySelectorAll(".bs-hints kbd")].map((k) => k.textContent);
+    const tv = renderBig("/big", [], "tv");
+    await screen.findByTestId("big-hero");
+    expect(keys()).toEqual(["OK", "↩"]);
+    expect(screen.queryByText(E["big.hint.search"]!, { selector: ".bs-hints *" })).toBeNull();
+    tv.unmount();
+    renderBig("/big");
+    await screen.findByTestId("big-hero");
+    expect(keys()).toEqual(["Enter", "Esc", "/"]);
+  });
+
   it("the TV build's leave question in Arabic", async () => {
     localStorage.setItem("mkt:locale", "ar");
     renderBig("/big", [], "tv");

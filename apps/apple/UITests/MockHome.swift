@@ -733,7 +733,7 @@ final class MockHome: @unchecked Sendable {
             return (200, #"{"groups":[]}"#)
         case ("GET", "/api/queues"):
             // two stages for the Remote's queue (story 42.8: the list beside a stage's page)
-            return (200, #"{"paused_all":false,"issues_count":0,"stages":[{"stage":"probe","label":"Probe","lane":"a","lane_order":1,"hidden":false,"enabled":true,"paused":false},{"stage":"transcribe","label":"Transcribe","lane":"a","lane_order":2,"hidden":false,"enabled":true,"paused":false}],"queues":[{"stage":"probe","counts":{"pending":3,"ready":1,"running":1,"failed_open":0,"done_24h":12},"rate_per_min":0,"no_worker":false}]}"#)
+            return (200, #"{"paused_all":false,"issues_count":0,"stages":[{"stage":"probe","label":"Length","lane":"a","lane_order":1,"hidden":false,"enabled":true,"paused":false},{"stage":"transcribe","label":"Transcribe","lane":"a","lane_order":2,"hidden":false,"enabled":true,"paused":false}],"queues":[{"stage":"probe","counts":{"pending":3,"ready":1,"running":1,"failed_open":0,"done_24h":12},"rate_per_min":0,"no_worker":false}]}"#)
         case ("GET", "/api/queues/probe/failures"), ("GET", "/api/queues/transcribe/failures"):
             return (200, #"{"groups":[]}"#)
         case ("GET", "/api/cluster"):
@@ -839,10 +839,12 @@ final class MockHome: @unchecked Sendable {
     static var running: String {
         #"""
         {"host":"","jobs":[
-          {"id":7,"stage":"probe","state":"running","subject_kind":"video","subject_id":"v1","subject_label":"Seerah, lecture 12",
-           "attempts":1,"max_attempts":3,"started_at":"\#(time(-3905))","progress":{"step":"ffprobe","steps":[],"done_units":3,"total_units":4}},
+          {"id":7,"stage":"index","state":"running","subject_kind":"video","subject_id":"v1","subject_label":"Seerah, lecture 12",
+           "attempts":1,"max_attempts":3,"started_at":"\#(time(-3905))",
+           "progress":{"step":"embed","steps":[],"done_units":3,"total_units":4}},
           {"id":8,"stage":"transcribe","state":"running","subject_kind":"video","subject_id":"v2","subject_label":"Tafsir, Surat al-Kahf part 2",
-           "attempts":2,"max_attempts":3,"started_at":"\#(time(-725))","progress":{"step":"whisper","steps":[],"done_units":30,"total_units":120}},
+           "attempts":2,"max_attempts":3,"started_at":"\#(time(-725))",
+           "progress":{"step":"transcribe","steps":["decode","transcribe","store"],"done_units":30,"total_units":120}},
           {"id":9,"stage":"probe","state":"claimed","subject_kind":"video","subject_id":"v3","subject_label":"Fiqh of fasting",
            "attempts":0,"max_attempts":3,"started_at":null,"progress":null}]}
         """#

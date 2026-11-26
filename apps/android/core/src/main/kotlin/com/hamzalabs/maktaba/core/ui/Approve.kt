@@ -247,12 +247,7 @@ fun ApproveCard(
                 }
             }
         }
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Text(
-                stringResource(R.string.approve_code_line, PairingCode.shown(code)),
-                style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
-            )
-        }
+        CodeLine(code)
         request?.expiresMillis?.let { exp ->
             val minutes = ((exp - now()) / 60_000L).coerceAtLeast(0L).toInt() + 1
             Text(stringResource(R.string.approve_expires, minutes), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
@@ -318,12 +313,7 @@ fun CloudApproveCard(
                 modifier = Modifier.weight(1f).testTag("approve-cloud-confirm"),
             )
         }
-        CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-            Text(
-                stringResource(R.string.approve_code_line, PairingCode.shown(code)),
-                style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
-            )
-        }
+        CodeLine(code)
         tv.expiresMillis?.let { exp ->
             val minutes = ((exp - now()) / 60_000L).coerceAtLeast(0L).toInt() + 1
             Text(stringResource(R.string.approve_expires, minutes), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
@@ -340,6 +330,22 @@ fun CloudApproveCard(
         }
     }
 }
+
+/**
+ * "Code ABCD-1234": the sentence in the app's own direction (in Arabic, الرمز on the right), the
+ * code inside it set apart left to right ([LRI]).
+ */
+@Composable
+private fun CodeLine(code: String) {
+    Text(
+        stringResource(R.string.approve_code_line, "$LRI${PairingCode.shown(code)}$PDI"),
+        style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+    )
+}
+
+/** Unicode's left-to-right isolate and the mark that ends it. */
+private const val LRI = '\u2066'
+private const val PDI = '\u2069'
 
 /** "Player · android · phone": what the home says the asking app is. */
 internal fun describe(r: PairingRequest): String =

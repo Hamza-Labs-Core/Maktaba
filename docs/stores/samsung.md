@@ -58,8 +58,9 @@ is sold in it, and it has no purchase links and no store billing (Epic 58 decisi
 the app itself is not 18+. Samsung does not allow 18+ apps in Korea, Saudi Arabia or the UAE
 (research.md §3.4). The submission describes the home's parental filter (story 58.14).
 
-**Screenshots:** 1920×1080, dark, English and Arabic, from the review home (story 58.04): Home,
-a series, the player with Arabic subtitles, the cloud code screen.
+**Screenshots:** 1920×1080, dark, English and Arabic: the store gallery's Samsung set (story
+60.14), the TV web UI on the demo library (`store-shots-tvweb`, from the website's shots job):
+Home, Home in Arabic, Live TV, the player with Arabic subtitles.
 
 **Icon:** `apps/tv/web/tizen/icon.png` (512×423), cut from the icon master by
 `tools/icons/make-icons.py`.

@@ -1,7 +1,8 @@
 import XCTest
 
 /// The product screenshots of the Player on iPhone and iPad (story 60.09): Home, Curiosity's
-/// page and the player with Arabic subtitles, in English and in Arabic, dark, on the demo
+/// page and the player with Arabic subtitles; and the store gallery's (story 60.14): Search,
+/// the series Caminandes, Live TV and a guardian's Family; in English and in Arabic, dark, on the demo
 /// library (`MockHome(demo:)`, from `tests/fixtures/demo-library/`) with its clock pinned
 /// (`library.json`'s noon; Home's On now row, drawn against the device's clock, counts from
 /// now's quarter hour).
@@ -36,8 +37,10 @@ final class PlayerDemoShots: PlayerUITestCase {
     }
 
     /// Curiosity playing with the Arabic subtitles on (in both languages: the Arabic line is what
-    /// the page shows off), the controls gone so the line reads clear of them: on the iPhone in
-    /// landscape, on the iPad upright (its sidebar floats over a landscape player).
+    /// the page shows off), the controls gone so the line reads clear of them; upright on both
+    /// (the store's iPhone shots are portrait, and on the iPad the sidebar floats over a
+    /// landscape player): the picture across the screen's width, the line on it. The iPhone's is
+    /// taken in landscape as well (`player-landscape`), the picture filling the screen.
     func testPlayer() throws {
         defer { XCUIDevice.shared.orientation = .portrait }
         for language in ["en", "ar"] {
@@ -45,18 +48,12 @@ final class PlayerDemoShots: PlayerUITestCase {
             // the stream as long as the film (the demo's `duration_sec`): the player seeks to 7:00
             // in it (`Playback.load`); the cue lasts the whole film
             if let seconds = home.demoVideo("v-curiosity")?["duration_sec"] as? Int { home.streamSeconds = seconds / 2 * 2 }
-            // signed in upright (in landscape the keyboard covers the sign-in's choices), turned
-            // once the player is open
             XCUIDevice.shared.orientation = .portrait
             launchSignedIn(language, section: "home", open: "watch/v-curiosity@420", controlsStay: false,
                            extra: ["-playback.subtitles_on", "YES", "-playback.subtitle_language", "ar"])
             let surface = element("player.surface")
             XCTAssertTrue(surface.waitForExistence(timeout: 30), "the player")
-            // on the iPhone (on the iPad its sidebar floats over a landscape player)
-            if !isPad {
-                XCUIDevice.shared.orientation = .landscapeLeft
-                XCTAssertTrue(waitUntil(timeout: 10) { surface.frame.width > surface.frame.height }, "the player in landscape")
-            }
+            XCTAssertTrue(waitUntil(timeout: 10) { surface.frame.height > surface.frame.width }, "the player upright: \(surface.frame)")
             XCTAssertTrue(waitUntil(timeout: 30) { self.state["playing"] == "true" && self.state["subtitle"] == "ar" },
                           "playing with the Arabic subtitles: \(state)")
             // a frame of the picture and the cue drawn: the position moves past where it opened
@@ -75,17 +72,135 @@ final class PlayerDemoShots: PlayerUITestCase {
             // the line drawn: the test stream starts its timestamps again every 4 s (two segments
             // in turn), and the player can drop the line there, so the shot waits for its white
             // letters (where the player puts it: on the iPad in English, under the picture); the
-            // iPad's top edge left out, where a status bar's clock is white too
+            // top edge left out, where a status bar's clock is white too
             let screen = app.frame
-            let area = isPad ? CGRect(x: 0, y: 40, width: screen.width, height: screen.height - 40) : nil
-            var shot = XCUIScreen.main.screenshot()
-            let end = Date().addingTimeInterval(30)
-            while brightPixels(shot, in: area) < 500, Date() < end {
-                usleep(500_000)
-                shot = XCUIScreen.main.screenshot()
+            demoShot("player", subtitled(in: CGRect(x: 0, y: 60, width: screen.width, height: screen.height - 60)))
+
+            // and on the iPhone in landscape too (`player-landscape`): the picture fills the
+            // screen, for the store's landscape iPhone size (upright it is a band across the
+            // middle). The same playback, turned; the screen's picture as seen (`demoShot`)
+            guard !isPad else { continue }
+            XCUIDevice.shared.orientation = .landscapeLeft
+            XCTAssertTrue(waitUntil(timeout: 10) { surface.frame.width > surface.frame.height }, "the player in landscape: \(surface.frame)")
+            // a frame drawn at the new size: the position moves on after the turn
+            let turned = Int(state["position"] ?? "") ?? 0
+            XCTAssertTrue(waitUntil(timeout: 40) { (Int(self.state["position"] ?? "") ?? 0) >= turned + 2 },
+                          "it plays on in landscape: \(state)")
+            XCTAssertTrue(app.buttons["player.playPause"].waitForNonExistence(timeout: 15), "the controls gone")
+            // the screen's picture comes as the panel's (upright): the whole of it is read
+            demoShot("player-landscape", subtitled(in: nil))
+            XCUIDevice.shared.orientation = .portrait
+        }
+    }
+
+    /// The screen once the subtitle line's white letters are drawn in `area` (the app's
+    /// points, upright; nil: all of it), at most 30 s.
+    private func subtitled(in area: CGRect?) -> XCUIScreenshot {
+        var shot = XCUIScreen.main.screenshot()
+        let end = Date().addingTimeInterval(30)
+        while brightPixels(shot, in: area) < 500, Date() < end {
+            usleep(500_000)
+            shot = XCUIScreen.main.screenshot()
+        }
+        XCTAssertGreaterThanOrEqual(brightPixels(shot, in: area), 500, "the subtitle line")
+        return shot
+    }
+
+    // MARK: the store gallery's screens (story 60.14 part 2)
+
+    /// Search for the demo's query ("Mars", «المريخ»): Curiosity among the titles, and the
+    /// lines that say it under In the transcript.
+    func testSearch() throws {
+        for language in ["en", "ar"] {
+            try demo(language)
+            launchSignedIn(language, section: "search")
+            XCTAssertTrue(element("screen.search").waitForExistence(timeout: 20), "Search")
+            let field = app.searchFields.firstMatch
+            XCTAssertTrue(field.waitForExistence(timeout: 10), "the search field")
+            field.typeExactly(language == "ar" ? "المريخ" : "Mars", in: app)
+            field.typeText("\n")
+            XCTAssertTrue(element("search.title.v-curiosity").waitForExistence(timeout: 20),
+                          "Curiosity among the titles; the home saw \(home.seen)")
+            XCTAssertTrue(element("search.transcripts").waitForExistence(timeout: 10), "In the transcript")
+            XCTAssertTrue(waitUntil(timeout: 10) { !self.app.keyboards.firstMatch.exists }, "the keyboard gone")
+            waitForArt(atLeast: 1)
+            demoShot("search")
+        }
+    }
+
+    /// The series Caminandes: its seasons and its episodes, with their pictures.
+    func testSeries() throws {
+        for language in ["en", "ar"] {
+            try demo(language)
+            launchSignedIn(language, section: "libraries", open: "series/s-caminandes")
+            XCTAssertTrue(element("screen.series").waitForExistence(timeout: 20), "Caminandes; the home saw \(home.seen)")
+            XCTAssertTrue(element("episode.v-llama-drama").waitForExistence(timeout: 20), "its first episode")
+            XCTAssertTrue(element("episode.v-gran-dillama").exists, "and the second")
+            // the two episodes' pictures at least (on the iPhone the page asks for no more)
+            waitForArt(atLeast: 2)
+            demoShot("series")
+        }
+    }
+
+    /// Live TV's Now: the demo's three channels, what is on each with its progress and what
+    /// is next. Drawn against the device's clock, so the demo's times count from now's quarter
+    /// hour.
+    func testLive() throws {
+        for language in ["en", "ar"] {
+            try demo(language, clock: MockHome.quarterHour())
+            launchSignedIn(language, section: "live")
+            XCTAssertTrue(element("screen.liveTV").waitForExistence(timeout: 20), "Live TV")
+            for channel in ["ch-space", "ch-kids", "ch-earth"] {
+                XCTAssertTrue(element("live.channel.\(channel)").waitForExistence(timeout: 20),
+                              "\(channel) on Now; the home saw \(home.seen)")
             }
-            XCTAssertGreaterThanOrEqual(brightPixels(shot, in: area), 500, "the subtitle line")
-            demoShot("player", shot)
+            waitUntilHomeIsQuiet(2, timeout: 30)
+            demoShot("live")
+        }
+    }
+
+    /// Epic 57, a guardian's side: Family, with two children of the household and what they
+    /// asked for (a Caminandes episode, and more time). The account and the requests are this
+    /// test's own answers, built from the demo's titles; the children's names are boys'.
+    func testParental() throws {
+        for language in ["en", "ar"] {
+            try demo(language)
+            let (yusuf, omar) = language == "ar" ? ("يوسف", "عمر") : ("Yusuf", "Omar")
+            let title = home.demoVideo("v-big-buck-bunny")?["title"] as? String ?? ""
+            XCTAssertFalse(title.isEmpty, "the demo has Big Buck Bunny")
+            func json(_ s: String) -> String {
+                String(String(decoding: (try? JSONSerialization.data(withJSONObject: [s])) ?? Data(), as: UTF8.self).dropFirst().dropLast())
+            }
+            home.parental(#"{"restricted":false}"#, children: """
+            [{"id":"c-yusuf","username":\(json(yusuf)),"user_id":"c-yusuf","max_tier":0,"unrated":"hide","allow_only":false,"version":2,"updated_at":"{{now-864000}}"},
+             {"id":"c-omar","username":\(json(omar)),"user_id":"c-omar","max_tier":13,"unrated":"hide","allow_only":false,"version":3,"updated_at":"{{now-864000}}"}]
+            """)
+            home.stub("GET", "/api/parental/requests", body: """
+            {"requests":[
+             {"id":"r1","child_id":"c-yusuf","subject_kind":"video","subject_id":"v-big-buck-bunny","status":"pending",
+              "created_at":"{{now-600}}","expires_at":"{{now+86400}}","child":{"id":"c-yusuf","username":\(json(yusuf))},
+              "subject":{"kind":"video","id":"v-big-buck-bunny","title":\(json(title)),"poster_url":"/api/videos/v-big-buck-bunny/poster","tier":7}},
+             {"id":"r2","child_id":"c-omar","subject_kind":"time","subject_id":"30","minutes":30,"status":"pending",
+              "created_at":"{{now-1500}}","expires_at":"{{now+3600}}","child":{"id":"c-omar","username":\(json(omar))},
+              "subject":{"kind":"time","id":"30"}}]}
+            """)
+            home.stub("GET", "/api/me/parental-pin", body: #"{"set":true}"#)
+            home.stub("GET", "/api/parental/settings",
+                      body: #"{"enabled":true,"restricted_accounts":2,"can_disable":false,"child_devices":0,"child_device_notice":false}"#)
+            launchSignedIn(language, section: "profile")
+            let family = element("profile.family")
+            XCTAssertTrue(family.waitForExistence(timeout: 20), "Family, for a guardian; the home saw \(home.seen)")
+            waitUntilStill(family, timeout: 5)
+            open(family, shows: element("screen.family"), "the Family screen")
+            XCTAssertTrue(element("family.child.c-yusuf").waitForExistence(timeout: 10), "the first child")
+            XCTAssertTrue(element("family.child.c-omar").exists, "the second")
+            XCTAssertTrue(element("family.request.r1").waitForExistence(timeout: 10), "what Yusuf asked for")
+            XCTAssertTrue(element("family.request.r2").exists, "and Omar's more time")
+            XCTAssertTrue(waitUntil(timeout: 20) {
+                self.home.requests.contains { $0.method == "GET" && $0.path == "/api/videos/v-big-buck-bunny/poster" }
+            }, "the request's poster asked for; the home saw \(home.seen)")
+            waitUntilHomeIsQuiet(2, timeout: 30)
+            demoShot("parental")
         }
     }
 

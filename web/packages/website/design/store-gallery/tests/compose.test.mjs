@@ -64,6 +64,21 @@ test("a capture key names the surface, the Remote and the screen's language", ()
   );
 });
 
+test("the phone's player beat is drawn on the landscape size the store also takes", () => {
+  const jobs = plan({ only: ["apple-player", "google-player"] });
+  const sub = jobs.filter((j) => j.name === "subtitles");
+  for (const j of sub.filter((j) => j.set.asset === "iphone-6.9"))
+    assert.deepEqual([j.W, j.H], [2868, 1320]);
+  for (const j of sub.filter((j) => j.set.asset === "iphone-6.3"))
+    assert.deepEqual([j.W, j.H], [2622, 1206]);
+  for (const j of sub.filter((j) => j.set.asset === "phone"))
+    assert.deepEqual([j.W, j.H], [1920, 1080]);
+  // the tablets keep their own size
+  for (const j of sub.filter((j) => j.set.asset === "tablet-10"))
+    assert.deepEqual([j.W, j.H], [2560, 1440]);
+  assert.equal(captureKey("player", sub[0].beat, "iphone", "en"), "iphone-player-landscape-en");
+});
+
 test("every listing's images go where fastlane and the store folders expect them", () => {
   const paths = plan().map(pathOf);
   assert.ok(
@@ -124,7 +139,10 @@ test(
       assert.equal(iphone.length, 2 * 2 * 7, "two sizes, two languages, seven beats");
       const ipad = player.filter((x) => x.asset === "ipad-13");
       assert.equal(ipad.length, 2 * 7, "the iPad's 13-inch set, two languages, seven beats");
-      for (const x of iphone) assert.ok(!x.hasAlpha && [1206, 1320].includes(x.width));
+      for (const x of iphone) {
+        const turned = x.beat === "subtitles";
+        assert.ok(!x.hasAlpha && (turned ? [2622, 2868] : [1206, 1320]).includes(x.width), x.file);
+      }
       assert.ok(existsSync(join(root, "out", "contact", "google-tv.png")));
       const checklist = readFileSync(join(root, "out", "checklist.md"), "utf8");
       assert.equal(

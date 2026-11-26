@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import en from "../i18n/en.json";
 import ar from "../i18n/ar.json";
 import { lookupMessage, type Locale } from "./i18n";
-import { stageTitle, titledSnapshot } from "./stageWords";
+import { stageTitle, stepTitle, titledSnapshot } from "./stageWords";
 import type { QueuesSnapshot, StageInfo } from "./queueApi";
 import { firstPartyStages, graphFirstPartyNames } from "../test/firstPartyStages";
 
@@ -54,6 +54,16 @@ describe("stage titles", () => {
       expect(AR[key], `ar ${key}`).toMatch(/[؀-ۿ]/);
       expect(AR[key], `ar ${key}`).not.toBe(label);
     }
+  });
+
+  it("says a running job's step in the reader's language", () => {
+    expect(stepTitle(tFor("ar"), "embed")).toBe("الفهرسة للبحث");
+    expect(stepTitle(tFor("en"), "read vectors")).toBe("Read the search index");
+    // a stage reporting a stage's name
+    expect(stepTitle(tFor("ar"), "transcribe")).toBe("التفريغ");
+    expect(stepTitle(tFor("ar"), "exact dates")).toBe("التواريخ الدقيقة");
+    // a step this app has no words for
+    expect(stepTitle(tFor("ar"), "warp_drive")).toBe("warp drive");
   });
 
   it("titles a stage in the reader's language, and keeps an unknown stage's label", () => {

@@ -14,6 +14,7 @@
 #     shared/playback/caps-vectors.json), the unsigned .wgt and its lint (T03), and Playwright
 #     on the launcher with a webapis/AVPlay shim (AVPlay's calls, Arabic subtitles drawn by
 #     the launcher, errors, keys), en and ar.
+#   - the Samsung and LG store shots' capture (story 60.14, capture-tvweb.mjs) runs on it.
 #   - LG webOS (story 58.11): the package's tests, the .ipk packed by ares-package and linted
 #     (T02), and Playwright playing a video from /tv/ through the launcher's <video> (T04).
 #
@@ -123,6 +124,15 @@ jobs:
         env:
           CI: 'true'
         run: pnpm e2e:launcher
+
+      # the Samsung and LG store shots (story 60.14) are taken by the website's job, which a change
+      # of the launcher or the big screen does not run: a break in their capture shows here (at a
+      # version given, so nothing asks the remote for its tags)
+      - name: The store shots of it can be taken (60.14)
+        working-directory: web/packages/website
+        run: |
+          npm ci --no-audit --no-fund
+          timeout 600 node scripts/capture-tvweb.mjs --version 0.0.1 --out ../../test-results/tv/store-shots
 
       # the screenshots, the console and network logs, the traces and the report, passed or
       # failed (.github/actions/tv-logs: 30 days, linked from the job summary; story 58.16)

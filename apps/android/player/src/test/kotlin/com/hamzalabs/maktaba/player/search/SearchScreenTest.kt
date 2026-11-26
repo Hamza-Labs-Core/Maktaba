@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.hamzalabs.maktaba.core.AiStreams
 import com.hamzalabs.maktaba.core.api.Feature
+import com.hamzalabs.maktaba.core.ui.isolated
 import androidx.compose.ui.test.assertIsSelected
 import kotlinx.serialization.json.jsonArray
 import mockwebserver3.MockResponse
@@ -478,8 +479,8 @@ class SearchScreenTest {
         assertTrue("no sentence before the sources", compose.onAllNodesWithTag("ai-sentence-1-0").fetchSemanticsNodes().isEmpty())
         compose.onNodeWithText("Writing the answer…").assertIsDisplayed()
         compose.settledUntil(15_000) { compose.onAllNodesWithTag("ai-sentence-1-1").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Patience is half of faith.").assertIsDisplayed()
-        compose.onNodeWithText("Its reward comes without measure.").assertIsDisplayed()
+        compose.onNodeWithText(isolated("Patience is half of faith.")).assertIsDisplayed()
+        compose.onNodeWithText(isolated("Its reward comes without measure.")).assertIsDisplayed()
     }
 
     @Test
@@ -532,7 +533,7 @@ class SearchScreenTest {
         search("patience")
         openAi()
         waitFor("The answer stopped. What was written stands.")
-        compose.onNodeWithText("Patience is half of faith.").assertIsDisplayed()
+        compose.onNodeWithText(isolated("Patience is half of faith.")).assertIsDisplayed()
         compose.onNodeWithTag("ai-again").assertIsDisplayed()
     }
 
@@ -596,7 +597,7 @@ class SearchScreenTest {
         compose.onNodeWithText("وضع الذكاء الاصطناعي").performClick()
         waitForTag("ai-sentence-1-1")
         assertEquals(l.query, aiBodies().single()["q"]!!.jsonPrimitive.content)
-        compose.onNodeWithText("الصبر نصف الإيمان.").assertIsDisplayed()
+        compose.onNodeWithText(isolated("الصبر نصف الإيمان.")).assertIsDisplayed()
         compose.onNodeWithText("المقاطع المقروءة").assertIsDisplayed()
         // TalkBack reads each citation's video and moment (the digits are the locale's)
         compose.onNode(hasTestTag("ai-cite-1-0-1") and hasContentDescription("، الإسراء والمعراج، تشغيل من ", substring = true)).assertExists()

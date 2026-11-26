@@ -111,13 +111,25 @@ function lockup(lang) {
   return `<span class="wm">${icon(64)}${lang === "ar" ? ar : en}<span class="rule"></span>${lang === "ar" ? en : ar}</span>`;
 }
 
-/** One captioned shot: the screen is `src` (the full set's capture), or the beat's stand-in. */
-export function captioned({ W, H, lang, beat, surface, src = standinOf(beat, surface, lang) }) {
+/** One captioned shot: the screen is `src` (the full set's capture), or the beat's stand-in.
+ * `screenW` (a share of the width) overrides the layout's, for a capture whose shape differs
+ * from the canvas's (compose.mjs sets it). */
+export function captioned({
+  W,
+  H,
+  lang,
+  beat,
+  surface,
+  src = standinOf(beat, surface, lang),
+  screenW,
+}) {
   const c = beat[lang];
   const screen = src
     ? `<div class="screen" data-nomirror><img src="${src}" alt=""></div>`
     : `<div class="screen todo" style="--ratio:${RATIO[surface] ?? "16 / 9"}" data-nomirror><span>full set: ${esc(beat.capture?.[surface] ?? beat.id)}<br>(${esc(surface)})</span></div>`;
-  return `<div class="shot captioned" lang="${lang}" dir="${dirOf(lang)}" style="${vars(W, H, layout(W, H, lang))}">
+  const l = layout(W, H, lang);
+  if (screenW) l["screen-w"] = screenW;
+  return `<div class="shot captioned" lang="${lang}" dir="${dirOf(lang)}" style="${vars(W, H, l)}">
   <div class="cap" data-cap>${beat.wordmark ? lockup(lang) : ""}<h2 class="h">${esc(c.h)}</h2><p class="sub">${esc(c.sub)}</p></div>
   ${screen}
 </div>`;

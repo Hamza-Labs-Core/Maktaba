@@ -63,6 +63,7 @@ import com.hamzalabs.maktaba.core.api.AiState
 import com.hamzalabs.maktaba.core.ui.MaktabaTokens
 import com.hamzalabs.maktaba.core.ui.formatDuration
 import com.hamzalabs.maktaba.core.search.SearchModel
+import com.hamzalabs.maktaba.core.ui.isolated
 import kotlinx.coroutines.CoroutineScope
 
 /** How many passages an answer shows before Show more. */
@@ -163,7 +164,7 @@ private fun Answer(e: AiExchange, play: (String, Double) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("ai-answer-${e.id}"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         e.sentences.forEachIndexed { si, s ->
             Column(Modifier.testTag("ai-sentence-${e.id}-$si")) {
-                Text(s.text, style = MaterialTheme.typography.bodyLarge)
+                Text(isolated(s.text), style = MaterialTheme.typography.bodyLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     s.citations.forEach { c -> Citation(e, c, Modifier.testTag("ai-cite-${e.id}-$si-${c.n}")) { play(c.videoId, c.startSec) } }
                 }
@@ -235,12 +236,12 @@ private fun PassageRow(p: AiPassage, modifier: Modifier, onClick: () -> Unit) {
         )
         Column(Modifier.weight(1f)) {
             Text(
-                listOf(p.title, time).filter { it.isNotBlank() }.joinToString(" · "),
+                listOf(isolated(p.title), time).filter { it.isNotBlank() }.joinToString(" · "),
                 style = MaterialTheme.typography.labelLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(p.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            Text(isolated(p.text), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
         }
     }
 }

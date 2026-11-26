@@ -259,7 +259,7 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
             return@buildList
         }
         val f = h.failing
-        if (h.state == "failing" && f != null) add(w.text(R.string.say_health_failing, f.count, f.signature))
+        if (h.state == "failing" && f != null) add(w.text(R.string.say_health_failing, f.count, causeTitle(f.signature)))
         val first: HealthWaiting? = h.waiting.firstOrNull()
         if (h.state == "waiting" && first != null) {
             add(w.text(R.string.say_health_waiting, h.waiting.sumOf { it.count }, waitingOn(first.on)))

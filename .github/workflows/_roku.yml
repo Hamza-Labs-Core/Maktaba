@@ -13,7 +13,9 @@
 #     its screens drawn by brs-engine's SceneGraph against a mock home and a mock cloud, keys
 #     sent over ECP, focus read from the channel's log and screenshots compared with the
 #     references in tests/screens (T03). Find on this network runs here only: the /24 probe
-#     needs 127.0.0.x to refuse at once, as Linux does.
+#     needs 127.0.0.x to refuse at once, as Linux does;
+#   - the channel's screens on the demo library for the store gallery (story 60.14), the
+#     player's picture a still of the film decoded with ffmpeg (Ubuntu's, installed here).
 #
 # The run keeps brs-engine's stdout, the channel's log of each screen run, the mock home's
 # requests and the screenshots for 30 days, passed or failed. No secret, no network call beyond
@@ -76,6 +78,16 @@ jobs:
       - name: Install brs-engine
         working-directory: apps/tv/roku
         run: npm ci --no-audit --no-fund
+
+      # the demo screens' player (story 60.14): brs-engine plays no video, so the film's still is
+      # decoded from the fixture's test stream (tests/demo/demo.test.mjs, tests/video_frame.cjs)
+      - name: Install ffmpeg
+        timeout-minutes: 10
+        env:
+          APT_INSTALL_TIMEOUT: "300"
+        run: |
+          tools/ci/apt-install.sh ffmpeg >/dev/null
+          ffmpeg -hide_banner -version | sed -n 1p
 
       - name: BrightScript on brs-engine (58.15 T03, T04; 58.12 T01, T02, T03)
         working-directory: apps/tv/roku

@@ -82,8 +82,8 @@ fun splitRange(total: Float, listMin: Float = ListPaneMinWidth.value, detailMin:
  * yet, then [preferred] but never more than 40 % of the row, so the page keeps the room), always
  * inside [splitRange].
  */
-fun splitListWidth(total: Float, chosen: Float?, preferred: Float = ListPaneWidth.value): Float {
-    val range = splitRange(total)
+fun splitListWidth(total: Float, chosen: Float?, preferred: Float = ListPaneWidth.value, listMin: Float = ListPaneMinWidth.value): Float {
+    val range = splitRange(total, listMin)
     val want = if (chosen != null && !chosen.isNaN()) chosen * total else minOf(preferred, total * 0.4f)
     return want.coerceIn(range.start, range.endInclusive)
 }
@@ -93,7 +93,7 @@ private fun splits(context: Context) = context.getSharedPreferences("maktaba.spl
 
 /**
  * A list beside a page (Panes.ListDetail) with a divider that can be dragged to give either
- * more room, inside [ListPaneMinWidth] and [DetailPaneMinWidth]. The divider has a visible
+ * more room, inside [minList] (by default [ListPaneMinWidth]) and [DetailPaneMinWidth]. The divider has a visible
  * handle with a 48 dp target; TalkBack offers "Widen the list" and "Narrow the list", and the
  * arrow keys move it when it has focus. Right to left the list is on the right and dragging is
  * mirrored. The chosen split is kept per [key] (saved state, and across launches).
@@ -105,6 +105,7 @@ fun ListDetailSplit(
     key: String,
     modifier: Modifier = Modifier,
     preferredList: Dp = ListPaneWidth,
+    minList: Dp = ListPaneMinWidth,
     list: @Composable () -> Unit,
     detail: @Composable () -> Unit,
 ) {
@@ -117,12 +118,12 @@ fun ListDetailSplit(
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val total = maxWidth.value
-        val range = splitRange(total)
-        val listWidth = splitListWidth(total, share, preferredList.value)
+        val range = splitRange(total, minList.value)
+        val listWidth = splitListWidth(total, share, preferredList.value, minList.value)
         val movable = range.endInclusive - range.start >= 1f
         // from the state, not this composition's width: several drags can land in one frame
         val nudge = { dp: Float ->
-            share = (splitListWidth(total, share, preferredList.value) + dp).coerceIn(range.start, range.endInclusive) / total
+            share = (splitListWidth(total, share, preferredList.value, minList.value) + dp).coerceIn(range.start, range.endInclusive) / total
         }
         val moveBy = { dp: Float -> nudge(dp); save() }
 

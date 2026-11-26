@@ -124,7 +124,7 @@ def test_the_simulator_log_reads_info_and_debug() -> None:
 
 
 def test_remote_and_tv_keep_their_logs() -> None:
-    for job, name in (("remote-ui-tests", "remote"), ("tv-ui-tests", "tv")):
+    for job, name in (("remote-ui-tests", "remote"), ("remote-ui-ipad", "remote-ipad"), ("tv-ui-tests", "tv")):
         read = next(s for s in _steps(job) if s.get("name") == "Keep the app's log, delete the simulator")
         assert read["if"].startswith("always()")
         assert f'sim-log.py "$UDID" "$RESULTS" {name}' in read["run"]

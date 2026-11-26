@@ -74,9 +74,11 @@ it. The package lint (`apps/tv/web/webos/lint-ipk.mjs`) fails a package whose li
 
 ### Store images
 
-Screenshots come from the launcher's Playwright run (`_tv-web.yml`, `web/test-results/launcher/shots`):
-dark, 1920×1080, English and Arabic, on test data. The set is `webos-<lang>-start`, `-code`,
-`-home`, `-watch` and `-subtitles`. Seller Lounge asks for the sizes it lists at upload time.
+Screenshots are the store gallery's LG set (story 60.14): the TV web UI on the demo library and
+the launcher's cloud code screen, dark, 1920×1080 (`store-shots-tvweb`, from the website's
+shots job): Home, Home in Arabic, a series, the player with Arabic subtitles, Live TV and the
+code. The launcher's Playwright run (`_tv-web.yml`, `web/test-results/launcher/shots`) keeps its
+own on test data. Seller Lounge asks for the sizes it lists at upload time.
 They are cut from those screenshots and from `tools/icons/source/maktaba-icon.png`
 (`tools/icons/make-icons.py` writes the package icons).
 

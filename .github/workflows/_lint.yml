@@ -129,6 +129,12 @@ jobs:
       - name: CI runs what a change touches (the guard)
         run: uv run --no-project --python 3.12 --with pyyaml==6.0.3 python tools/ci/ci_paths.py guard
 
+      # The codes the home sends (stages, job steps, failure causes) have their words on the web
+      # and in both Remotes, English and Arabic. The apps' own tests hold it too, but a pipeline,
+      # plugin or API change runs none of them; this reads only text (tools/ci/app_words.py).
+      - name: Every code the home sends has its words in the apps
+        run: uv run --no-project --python 3.12 python tools/ci/app_words.py
+
       # Caddy orders handle before respond, reverse_proxy, file_server, abort and error: a bare
       # one beside handle blocks never runs behind a catch-all, as two deny rules never did
       # (#927, #930). Every tracked Caddyfile, on every pull request (tools/ci/caddy_deny_first.py)

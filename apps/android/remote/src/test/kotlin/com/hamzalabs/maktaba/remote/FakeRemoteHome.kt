@@ -38,14 +38,16 @@ import org.junit.rules.ExternalResource
  * A home for the Remote's screen tests: a MockWebServer that answers the admin routes with
  * fixtures, and a signed-in [Remote] on it. Nothing leaves the machine.
  */
-class FakeRemoteHome : ExternalResource() {
+class FakeRemoteHome(
+    /** Who is signed in (the demo shots sign in the demo library's own account). */
+    val user: User = User(id = "u1", username = "yusuf", isAdmin = true),
+) : ExternalResource() {
     private val server = MockWebServer()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val routes = linkedMapOf<String, (RecordedRequest) -> MockResponse>()
     private val recorded = mutableListOf<RecordedRequest>()
     private val calls = CallDispatcher()
 
-    val user = User(id = "u1", username = "yusuf", isAdmin = true)
     lateinit var remote: Remote
         private set
     lateinit var session: AppSession

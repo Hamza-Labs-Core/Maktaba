@@ -1,8 +1,11 @@
 {
-  "$comment": "Story 60.14: the story beats of each app's gallery, in order, with each shot's caption in English and Arabic (each written on its own, in the voice of ../../copy/voice.md) and the screen it shows on each surface. 'capture' names the screen the full set captures on the new demo library (60.14 part 2; 'new' marks a screen no CI job captures yet). 'standin' is the test-data screen the mockups draw in its place ({lang} is the shot's language, {other} the other one); a beat with no stand-in on a surface is drawn as an empty, labelled panel in the mockups. 'only' limits a beat to some surfaces. 'ui' says which language the screen is in when it is not the shot's own: the Arabic beat shows the Arabic screen in the English set and the English screen in the Arabic set.",
+  "$comment": "Story 60.14: the story beats of each app's gallery, in order, with each shot's caption in English and Arabic (each written on its own, in the voice of ../../copy/voice.md) and the screen it shows on each surface. 'capture' names the screen the full set captures on the new demo library (60.14 part 2; 'new' marks a screen no CI job captures yet). 'standin' is the test-data screen the mockups draw in its place ({lang} is the shot's language, {other} the other one); a beat with no stand-in on a surface is drawn as an empty, labelled panel in the mockups. 'only' limits a beat to some surfaces. 'fit' (the subtitles) shows the whole of a landscape screen on a landscape canvas: the subtitle is its last line. 'ui' says which language the screen is in when it is not the shot's own: the Arabic beat shows the Arabic screen in the English set and the English screen in the Arabic set.",
   "apps": {
     "player": {
-      "name": { "en": "Maktaba Player", "ar": "مشغل مكتبة" },
+      "name": {
+        "en": "Maktaba Player",
+        "ar": "مشغل مكتبة"
+      },
       "beats": [
         {
           "id": "library",
@@ -57,6 +60,7 @@
         },
         {
           "id": "subtitles",
+          "fit": true,
           "en": {
             "h": "Subtitles, made at home.",
             "sub": "Maktaba listens to each film and writes its subtitles, in Arabic and English."
@@ -66,10 +70,10 @@
             "sub": "يستمع البرنامج إلى كل فيلم ويكتب ترجمته، بالعربية والإنجليزية."
           },
           "capture": {
-            "iphone": "player",
+            "iphone": "player-landscape",
             "ipad": "player",
             "mac": "player",
-            "android-phone": "player new",
+            "android-phone": "player-landscape",
             "android-tablet": "player new"
           },
           "standin": {
@@ -78,6 +82,10 @@
             "mac": "packages/devportal/static/assets/apps/desktop-player-video-{lang}.webp",
             "android-phone": "../apps/android/player/src/test/screenshots/watch_tracks_phone_dark_{lang}.png",
             "android-tablet": "../apps/android/player/src/test/screenshots/watch_controls_tablet_dark_{lang}.png"
+          },
+          "canvas": {
+            "iphone": "landscape",
+            "android-phone": "landscape"
           }
         },
         {
@@ -178,7 +186,10 @@
       ]
     },
     "remote": {
-      "name": { "en": "Maktaba Remote", "ar": "ريموت مكتبة" },
+      "name": {
+        "en": "Maktaba Remote",
+        "ar": "ريموت مكتبة"
+      },
       "beats": [
         {
           "id": "glance",
@@ -307,7 +318,10 @@
       ]
     },
     "tv": {
-      "name": { "en": "Maktaba", "ar": "مكتبة" },
+      "name": {
+        "en": "Maktaba",
+        "ar": "مكتبة"
+      },
       "beats": [
         {
           "id": "library",
@@ -350,7 +364,7 @@
           "capture": {
             "appletv": "series",
             "androidtv": "series new",
-            "firetv": "library",
+            "firetv": "series new",
             "roku": "series new",
             "samsung": "series new",
             "lg": "series new"
@@ -366,6 +380,7 @@
         },
         {
           "id": "subtitles",
+          "fit": true,
           "en": {
             "h": "Subtitles, made at home.",
             "sub": "Arabic drawn right to left, as it should be."
@@ -402,9 +417,9 @@
             "sub": "ولها دليلها، كالتلفاز تمامًا."
           },
           "capture": {
-            "appletv": "guide",
-            "androidtv": "guide",
-            "firetv": "guide",
+            "appletv": "live new",
+            "androidtv": "live new",
+            "firetv": "live new",
             "roku": "guide new",
             "samsung": "guide new",
             "lg": "guide new"
@@ -502,8 +517,8 @@
         }
       ],
       "drop": {
-        "$comment": "Beats a per-language set leaves out where the store takes fewer shots: Roku takes up to 6, and each language's set is already in that language.",
-        "roku": ["arabic"]
+        "$comment": "Beats a per-language set leaves out: the Roku channel has no Live TV screen, which also brings it to the 6 shots Roku takes.",
+        "roku": ["live"]
       },
       "singleSet": {
         "$comment": "Samsung and LG take one set of images for every language: English screens, with the Arabic screen second (Samsung hides number 3 on some TVs).",

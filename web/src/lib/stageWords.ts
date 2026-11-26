@@ -15,6 +15,18 @@ export function stageTitle(t: T, stage: string, label: string): string {
   return words === key ? label : words;
 }
 
+/**
+ * A running job's step (`ctx.progress("<step>", ...)`) in the reader's language: its words under
+ * queue.running.step.<step>, a stage's title when a stage reports a stage's name, else as the
+ * home sent it, its underscores as spaces. A step named with spaces is keyed with underscores.
+ */
+export function stepTitle(t: T, step: string): string {
+  const code = step.trim().replaceAll(" ", "_");
+  const key = `queue.running.step.${code}`;
+  const words = t(key);
+  return words === key ? stageTitle(t, code, code.replaceAll("_", " ")) : words;
+}
+
 /** The stage with its label in the reader's language. */
 export function titledStage(t: T, s: StageInfo): StageInfo {
   const label = stageTitle(t, s.stage, s.label);
