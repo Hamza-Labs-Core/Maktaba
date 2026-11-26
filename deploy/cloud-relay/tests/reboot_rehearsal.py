@@ -396,22 +396,25 @@ def begin_heals_half_removed() -> str:
     before = snapshot()
     c = on(f"cd {DEPLOY} && docker compose --env-file .env ps -q --no-trunc worker")[1].strip()
     assert len(c) == 64, c
-    # Mask maktaba-relay across the power cut so boot's heal_docker does not clear it first;
+    # Disable maktaba-relay across the power cut so boot's heal_docker does not clear it first;
     # Docker 29 then starts with the half-removed folder listed and inspect failing.
     on(f"cp -a /var/lib/docker/containers/{c} /root/half-begin && docker rm -f {c} >/dev/null && "
-       f"mv /root/half-begin /var/lib/docker/containers/{c} && systemctl mask maktaba-relay.service && sync")
+       f"mv /root/half-begin /var/lib/docker/containers/{c} && systemctl disable maktaba-relay.service && sync")
     try:
         power_cut()
         code, _ = on(f"docker ps -aq --no-trunc | grep -qx {c}", check=False)
         assert code == 0, f"docker did not list half-removed container {c}"
         code, insp = on(f"docker inspect --type container {c}", check=False)
         assert code != 0 and "no such" in insp.lower(), f"expected No such container: {code} {insp}"
-        out = begin("expand")
+        try:
+            out = begin("expand")
+        except AssertionError as e:
+            raise AssertionError(f"begin did not heal half-removed container: {e}") from None
         assert "half removed" in out, f"begin did not heal half-removed container: {out[-2000:]}"
         code, listed = on("docker ps -aq --no-trunc | while read -r x; do docker inspect $x >/dev/null 2>&1 || echo half $x; done", check=False)
         assert "half" not in listed, f"begin left half-removed container: {listed}"
     finally:
-        on("systemctl unmask maktaba-relay.service", check=False)
+        on("systemctl enable maktaba-relay.service", check=False)
     must("rollback")
     settled()
     same(before)
