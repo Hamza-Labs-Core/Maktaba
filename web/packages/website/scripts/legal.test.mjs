@@ -51,7 +51,7 @@ const POLICY = {
     "A home's public IP address, for direct connections, and how much it relayed, every 5 minutes and every month: until the home is removed",
     "Sign-in sessions, with the device's name and IP address: up to 31 days after they were last used",
     "The cloud's request log, with the IP address and a code for the account: until it is overwritten",
-    "Security and abuse records, with IP addresses and sometimes an email address: with no fixed end yet, after the account is deleted too",
+    "Security audit records, which may include an IP address or email address, expire after 90 days. Abuse signals, which can be tied to an account, home, or IP address, expire after 30 days. Deleting an account removes records linked directly to it or its homes. Records linked only to an IP address expire on schedule.",
     "Account email: its content sealed until it is sent; then the address as a keyed hash, with the kind, time and outcome, 35 days; the network that asked for it, as a keyed hash, a day",
     "Backups of the database: 14 days",
   ],
@@ -65,7 +65,7 @@ const POLICY = {
     "Legitimate interest (Art. 6(1)(f)) in operating a reliable, abuse-resistant relay, balanced by collecting only anonymous aggregates; for an account and its email, the contract with its owner (Art. 6(1)(b)).",
   retention_days: 90,
   rights: ["Access", "Erasure", "Restriction", "Objection", "Portability"],
-  updated_at: "2026-11-25",
+  updated_at: "2026-11-26",
 };
 
 const sources = (over = {}) => ({
@@ -166,7 +166,7 @@ test("the page's date follows the policy's when the policy is newer", () => {
     legalDoc("privacy", "en", { sources: sources({ policy: later }) }).updated,
     "2099-01-02"
   );
-  assert.equal(legalDoc("privacy", "en", { sources: sources() }).updated, "2026-11-25");
+  assert.equal(legalDoc("privacy", "en", { sources: sources() }).updated, "2026-11-26");
 });
 
 test("T02: docs/app-privacy.md changed without the page fails the build, naming the section", () => {

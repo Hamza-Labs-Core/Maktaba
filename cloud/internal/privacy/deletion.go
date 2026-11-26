@@ -58,11 +58,19 @@ func (s *DataSubjectService) Delete(ctx context.Context, userID string) (Deletio
 		UserID: userID,
 		Note:   "Relay analytics are aggregate-only (no user/server id, no IP); no analytics rows reference this user.",
 	}
-	res, err := s.DB.ExecContext(ctx,
-		`DELETE FROM push_dispatch_log WHERE user_id = $1`, userID)
+	var err error
+	rep.PushRows, err = deletePushLogs(ctx, s.DB, userID)
+	return rep, err
+}
+
+type execer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func deletePushLogs(ctx context.Context, db execer, userID string) (int64, error) {
+	res, err := db.ExecContext(ctx, `DELETE FROM push_dispatch_log WHERE user_id = $1`, userID)
 	if err != nil {
-		return rep, err
+		return 0, err
 	}
-	rep.PushRows, _ = res.RowsAffected()
-	return rep, nil
+	return res.RowsAffected()
 }

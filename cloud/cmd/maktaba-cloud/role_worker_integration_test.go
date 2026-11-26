@@ -69,6 +69,12 @@ func TestWorkerRoleLeads(t *testing.T) {
 	for {
 		body, _ := httpGet("http://" + p.addr + "/metrics")
 		if strings.Contains(body, `worker_leader{node="api-test-1"} 1`) {
+			for _, table := range []string{"audit_log", "abuse_signals"} {
+				if !strings.Contains(body, `maktaba_cloud_security_retention_deleted_total{table="`+table+`"} 0`) ||
+					!strings.Contains(body, `maktaba_cloud_security_retention_errors_total{table="`+table+`"} 0`) {
+					t.Fatalf("worker /metrics missing the security retention series for %s:\n%s", table, body)
+				}
+			}
 			break
 		}
 		if time.Now().After(deadline) {
