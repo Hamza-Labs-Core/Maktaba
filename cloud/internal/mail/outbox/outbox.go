@@ -758,7 +758,9 @@ func (o *Outbox) again(ctx context.Context, id string, at time.Time, why string)
 }
 
 // Forget takes an address out of the outbox, for an account being erased: its mails waiting are
-// not sent, and the ones sent stay in the counts only, with no address.
+// not sent, and the ones sent stay in the counts only, with no address. Any keyed hash already in
+// mail_suppressions is intentionally kept so future sign-ups or notices continue honoring prior
+// hard bounces and spam complaints without storing any plaintext email address.
 func (o *Outbox) Forget(ctx context.Context, addr string) error {
 	hash := o.toHash(addr)
 	if _, err := o.DB.ExecContext(ctx, `DELETE FROM mail_outbox WHERE to_hash = $1 AND state <> 'sent'`, hash); err != nil {

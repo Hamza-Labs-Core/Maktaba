@@ -42,7 +42,7 @@ def check_cert(host: str, min_days: int, ca_file: str = "", timeout: float = 15.
         return False, f"{host}: certificate has no notAfter"
     seconds_left = ssl.cert_time_to_seconds(not_after) - time.time()
     days_left = seconds_left / 86400.0
-    issuer_parts = dict(x[0] for x in cert.get("issuer", ()))
+    issuer_parts = dict(kv for rdn in cert.get("issuer", ()) for kv in rdn)
     issuer = issuer_parts.get("organizationName") or issuer_parts.get("commonName") or "unknown"
     detail = f"{host}: {days_left:.1f} days left (issuer: {issuer})"
     if days_left < min_days:
@@ -85,7 +85,10 @@ def check_backup_age(ssh_cmd: list[str], max_hours: float, backup_dir: str = "/v
         f"newest=$(find {shlex.quote(backup_dir)} -maxdepth 1 -name 'db-*.dump' | sort | tail -n 1); "
         f"[ -n \"$newest\" ] && stat -c '%Y %n' \"$newest\""
     )
-    proc = subprocess.run([*ssh_cmd, remote], capture_output=True, text=True, timeout=60, check=False)
+    try:
+        proc = subprocess.run([*ssh_cmd, remote], capture_output=True, text=True, timeout=60, check=False)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"backup age: ssh failed ({exc})"
     if proc.returncode != 0:
         return False, f"backup age: no dump or ssh failed (exit {proc.returncode}): {(proc.stderr or proc.stdout).strip()[:300]}"
     try:
@@ -102,7 +105,10 @@ def check_backup_age(ssh_cmd: list[str], max_hours: float, backup_dir: str = "/v
 
 def check_backup_restore(ssh_cmd: list[str], deploy_dir: str = "/opt/maktaba-relay") -> tuple[bool, str]:
     remote = f"{shlex.quote(deploy_dir)}/ops/backup.sh --check"
-    proc = subprocess.run([*ssh_cmd, remote], capture_output=True, text=True, timeout=600, check=False)
+    try:
+        proc = subprocess.run([*ssh_cmd, remote], capture_output=True, text=True, timeout=600, check=False)
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, f"backup --check failed ({exc})"
     out = (proc.stdout + proc.stderr).strip()
     if proc.returncode != 0:
         return False, f"backup --check failed (exit {proc.returncode}): {out[-500:]}"

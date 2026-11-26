@@ -147,7 +147,7 @@ func (o *Outbox) RecordEvent(ctx context.Context, ev mail.WebhookEvent) (EventOu
             VALUES ($1, $2, $3, $4)
             ON CONFLICT (to_hash) DO UPDATE
                SET reason = CASE WHEN mail_suppressions.reason = 'complaint' THEN mail_suppressions.reason ELSE EXCLUDED.reason END,
-                   event_id = EXCLUDED.event_id`,
+                   event_id = CASE WHEN mail_suppressions.reason = 'complaint' THEN mail_suppressions.event_id ELSE EXCLUDED.event_id END`,
 			toHash, suppressReason, ev.EventID, now); err != nil {
 			return EventOutcome{}, err
 		}
@@ -169,11 +169,21 @@ func (o *Outbox) RecordEvent(ctx context.Context, ev mail.WebhookEvent) (EventOu
 			"suppressed", out.Suppressed)
 	}
 
-	if ev.Type == mail.EventBounced || ev.Type == mail.EventComplained {
+	var checkAlert string
+	switch {
+	case ev.Type == mail.EventBounced && ev.BounceType == mail.BounceHard:
+		checkAlert = mail.AlertBounceRate
+	case ev.Type == mail.EventComplained:
+		checkAlert = mail.AlertComplaintRate
+	}
+	if checkAlert != "" {
 		counts, err := Count(ctx, o.DB)
 		if err == nil {
-			out.Alerts = counts.Events.Alerts
-			for _, code := range out.Alerts {
+			for _, code := range counts.Events.Alerts {
+				if code != checkAlert {
+					continue
+				}
+				out.Alerts = append(out.Alerts, code)
 				if o.Logger != nil {
 					o.Logger.Error("mail: delivery reputation rate nears Resend limit",
 						"code", code,

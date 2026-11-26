@@ -99,20 +99,23 @@ stop_all() {
 	# a container that is restarting at that moment (it failed, and docker starts it again) can be
 	# missed once
 	for try in 1 2 3 4 5 6 7 8 9 10; do
-		for s in "$@"; do
-			ids="$(containers -a "$s" 2>/dev/null)" || ids=""
-			for c in $ids; do
-				docker stop -t 30 "$c" >/dev/null 2>&1 || true
-				keep="$STATE/last-logs/$s.log" # the first is the refused release's: the next, beside it
-				[ ! -e "$keep" ] || keep="$STATE/last-logs/$s.$c.log"
-				(umask 077; mkdir -p "$STATE/last-logs" && docker logs --tail 500 "$c" > "$keep" 2>&1) 2>/dev/null || true
-				docker rm -f "$c" >/dev/null 2>&1 || true
-			done
-		done
 		left=""
 		for s in "$@"; do
+			if ! ids="$(containers -a "$s" 2>/dev/null)"; then left=" $* (docker does not answer)"; break
+			elif [ -n "$ids" ]; then
+				for c in $ids; do
+					timeout -k 5 "$((DOCKER_INFO_TIMEOUT + 35))" docker stop -t 30 "$c" >/dev/null 2>&1 || true
+					keep="$STATE/last-logs/$s.log" # the first is the refused release's: the next, beside it
+					[ ! -e "$keep" ] || keep="$STATE/last-logs/$s.$c.log"
+					(umask 077; mkdir -p "$STATE/last-logs" && timeout -k 5 "$DOCKER_INFO_TIMEOUT" docker logs --tail 500 "$c" > "$keep" 2>&1) 2>/dev/null || true
+					timeout -k 5 "$DOCKER_INFO_TIMEOUT" docker rm -f "$c" >/dev/null 2>&1 || true
+				done
+			fi
+		done
+		if [ -n "$left" ]; then sleep "$try"; continue; fi
+		for s in "$@"; do
 			# no answer is not "nothing runs"
-			if ! ids="$(containers -a "$s" 2>/dev/null)"; then left="$left $s (docker does not answer)"
+			if ! ids="$(containers -a "$s" 2>/dev/null)"; then left="$left $s (docker does not answer)"; break
 			elif [ -n "$ids" ]; then left="$left $s"
 			fi
 		done
@@ -181,7 +184,7 @@ applied() { # applied COMPOSE(dc|saved) ENVFILE
 VOLUME="${PROJECT}_pg_data"
 has_database() { # no answer is not "no"
 	local volumes
-	volumes="$(docker volume ls -q 2>/dev/null)" || die "docker does not say which volumes there are: nothing was changed"
+	volumes="$(timeout -k 5 "$DOCKER_INFO_TIMEOUT" docker volume ls -q 2>/dev/null)" || die "docker does not say which volumes there are: nothing was changed"
 	case $'\n'"$volumes"$'\n' in *$'\n'"$VOLUME"$'\n'*) return 0 ;; esac
 	return 1
 }

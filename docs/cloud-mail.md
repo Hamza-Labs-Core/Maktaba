@@ -200,7 +200,10 @@ The api listens at `POST /v1/mail/webhook/resend` for Resend's delivery events (
   never storing recipient addresses in the clear.
 - On a hard bounce (`Permanent`) or a complaint, the address's keyed hash is recorded in
   `mail_suppressions`: future sign-up and notice mails to that hash are marked `suppressed`, while
-  password resets are still attempted so nobody is locked out.
+  password resets are still attempted so nobody is locked out. When an account is erased (`Forget`),
+  `mail_outbox` and `mail_events` clear `to_hash`, while `mail_suppressions` keeps the keyed hash
+  so hard-bounce and complaint suppression continues to be honored without storing any plaintext
+  email address.
 - When 30-day rates near Resend's limits (hard bounces 3 % toward 4 %, complaints 0.06 % toward
   0.08 %), the api logs `mail_bounce_rate_high` / `mail_complaint_rate_high` (`maktaba_errors_total`
   and `docs/runbooks/cloud/mail-reputation.md`) and `maktaba-cloud mail status` reports the counts,

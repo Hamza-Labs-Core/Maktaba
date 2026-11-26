@@ -114,6 +114,11 @@ func TestVerifySvixRotationAndRefusals(t *testing.T) {
 	if id, err := VerifySvix(sec, h, body, now); err != nil || id != "msg_rot" {
 		t.Fatalf("rotated sig: id=%q err=%v", id, err)
 	}
+	// Repeated/split svix-signature header values are joined and checked.
+	hSplit := http.Header{"Svix-Id": {"msg_rot"}, "Svix-Timestamp": {tsStr}, "Svix-Signature": {badSig, goodSig}}
+	if id, err := VerifySvix(sec, hSplit, body, now); err != nil || id != "msg_rot" {
+		t.Fatalf("split sig headers: id=%q err=%v", id, err)
+	}
 
 	// Wrong secret / tampered body / missing header / stale timestamp / future timestamp.
 	goodH := signedHeaders(t, sec, "msg_1", now, body)

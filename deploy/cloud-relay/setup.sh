@@ -253,7 +253,7 @@ elif [ -n "${RESEND_API_KEY+x}" ]; then
 fi
 RESEND_WEBHOOK_KEY="$DEPLOY_DIR/secrets/resend-webhook.key"
 if [ -n "${RESEND_WEBHOOK_SECRET:-}" ]; then
-	[[ "$RESEND_WEBHOOK_SECRET" == whsec_* ]] && [[ "$RESEND_WEBHOOK_SECRET" != *[[:space:]]* ]] || die "RESEND_WEBHOOK_SECRET is not a Resend webhook secret (it begins with whsec_)"
+	[[ "$RESEND_WEBHOOK_SECRET" =~ ^whsec_[A-Za-z0-9+/=]+$ ]] || die "RESEND_WEBHOOK_SECRET is not a Resend webhook secret (it begins with whsec_)"
 	( umask 077; printf '%s' "$RESEND_WEBHOOK_SECRET" > "$RESEND_WEBHOOK_KEY.new" )
 	mv "$RESEND_WEBHOOK_KEY.new" "$RESEND_WEBHOOK_KEY"
 elif [ -n "${RESEND_WEBHOOK_SECRET+x}" ]; then

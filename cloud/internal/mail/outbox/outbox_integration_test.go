@@ -1082,20 +1082,32 @@ func TestWebhookEventsSuppressAndAlert(t *testing.T) {
 	ctx := context.Background()
 	w := newWorld(t, DefaultLimits(1000, 10000))
 	w.register("hard@example.test", "en")
+	w.at = w.at.Add(time.Second)
 	w.register("soft@example.test", "en")
+	w.at = w.at.Add(time.Second)
 	w.register("complainer@example.test", "en")
 	w.work()
 	if len(w.m.sent) != 3 {
 		t.Fatalf("sent %d, want 3", len(w.m.sent))
 	}
-	// provider_id was stored on each sent row
-	var gotID string
-	if err := w.o.DB.QueryRow(`SELECT provider_id FROM mail_outbox WHERE state = 'sent' ORDER BY created_at LIMIT 1`).Scan(&gotID); err != nil || gotID != "re-msg-1" {
-		t.Fatalf("provider_id = %q, err = %v", gotID, err)
+	// provider_id was stored on each sent row; look up each recipient's own ID by to_hash.
+	providerID := func(addr string) string {
+		t.Helper()
+		var id string
+		if err := w.o.DB.QueryRow(`SELECT provider_id FROM mail_outbox WHERE state = 'sent' AND to_hash = $1 ORDER BY created_at LIMIT 1`, w.o.toHash(addr)).Scan(&id); err != nil || id == "" {
+			t.Fatalf("provider_id for %s = %q, err = %v", addr, id, err)
+		}
+		return id
+	}
+	hardID := providerID("hard@example.test")
+	softID := providerID("soft@example.test")
+	compID := providerID("complainer@example.test")
+	if hardID == softID || hardID == compID || softID == compID {
+		t.Fatalf("expected distinct provider_ids, got %q %q %q", hardID, softID, compID)
 	}
 
-	// Hard bounce on re-msg-1 -> suppressed; duplicate event is a no-op.
-	evHard := mail.WebhookEvent{EventID: "svix_1", Type: mail.EventBounced, EmailID: "re-msg-1", BounceType: mail.BounceHard, OccurredAt: w.at}
+	// Hard bounce on hardID -> suppressed; duplicate event is a no-op.
+	evHard := mail.WebhookEvent{EventID: "svix_1", Type: mail.EventBounced, EmailID: hardID, BounceType: mail.BounceHard, OccurredAt: w.at}
 	out, err := w.o.RecordEvent(ctx, evHard)
 	if err != nil || !out.Matched || !out.Suppressed || out.Duplicate {
 		t.Fatalf("hard bounce: %+v %v", out, err)
@@ -1105,14 +1117,14 @@ func TestWebhookEventsSuppressAndAlert(t *testing.T) {
 		t.Fatalf("duplicate: %+v %v", dup, err)
 	}
 
-	// Soft bounce on re-msg-2 -> recorded, NOT suppressed.
-	out, err = w.o.RecordEvent(ctx, mail.WebhookEvent{EventID: "svix_2", Type: mail.EventBounced, EmailID: "re-msg-2", BounceType: mail.BounceSoft, OccurredAt: w.at})
+	// Soft bounce on softID -> recorded, NOT suppressed.
+	out, err = w.o.RecordEvent(ctx, mail.WebhookEvent{EventID: "svix_2", Type: mail.EventBounced, EmailID: softID, BounceType: mail.BounceSoft, OccurredAt: w.at})
 	if err != nil || !out.Matched || out.Suppressed {
 		t.Fatalf("soft bounce: %+v %v", out, err)
 	}
 
-	// Complaint on re-msg-3 -> suppressed and raises complaint rate alert.
-	out, err = w.o.RecordEvent(ctx, mail.WebhookEvent{EventID: "svix_3", Type: mail.EventComplained, EmailID: "re-msg-3", OccurredAt: w.at})
+	// Complaint on compID -> suppressed and raises complaint rate alert.
+	out, err = w.o.RecordEvent(ctx, mail.WebhookEvent{EventID: "svix_3", Type: mail.EventComplained, EmailID: compID, OccurredAt: w.at})
 	if err != nil || !out.Matched || !out.Suppressed {
 		t.Fatalf("complaint: %+v %v", out, err)
 	}
@@ -1122,7 +1134,7 @@ func TestWebhookEventsSuppressAndAlert(t *testing.T) {
 
 	// Delivery delayed & failed events are counted without suppressing.
 	for i, typ := range []string{mail.EventDeliveryDelayed, mail.EventFailed} {
-		out, err = w.o.RecordEvent(ctx, mail.WebhookEvent{EventID: fmt.Sprintf("svix_extra_%d", i), Type: typ, EmailID: "re-msg-2", OccurredAt: w.at})
+		out, err = w.o.RecordEvent(ctx, mail.WebhookEvent{EventID: fmt.Sprintf("svix_extra_%d", i), Type: typ, EmailID: softID, OccurredAt: w.at})
 		if err != nil || out.Suppressed {
 			t.Fatalf("%s: %+v %v", typ, out, err)
 		}

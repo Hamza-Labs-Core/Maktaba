@@ -743,6 +743,12 @@ def test_node_watch_parses_backup_age_and_enforces_thresholds(node_watch: Any, t
     ok, detail = node_watch.check_backup_restore([str(ssh)])
     assert not ok and "bad dump" in detail
 
+    # missing binary (OSError) and timeout return (False, ...) instead of raising
+    ok, detail = node_watch.check_backup_age([str(tmp_path / "no-such-ssh")], 26.0)
+    assert not ok and "ssh failed" in detail
+    ok, detail = node_watch.check_backup_restore([str(tmp_path / "no-such-ssh")])
+    assert not ok and "backup --check failed" in detail
+
 
 def test_node_watch_checks_cert_expiry_and_readyz(node_watch: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     import datetime
@@ -761,7 +767,7 @@ def test_node_watch_checks_cert_expiry_and_readyz(node_watch: Any, monkeypatch: 
             exp = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=self._days)
             return {
                 "notAfter": exp.strftime("%b %d %H:%M:%S %Y GMT"),
-                "issuer": ((("organizationName", "Let's Encrypt"),),),
+                "issuer": ((("countryName", "US"), ("organizationName", "Let's Encrypt")),),
             }
 
     class FakeSock:
@@ -870,6 +876,19 @@ def test_rollout_docker_info_times_out_promptly(tmp_path: Path) -> None:
     (tmp_path / "bin/docker").chmod(0o755)
     code, out = run_rollout_fn(tmp_path, "docker_info", {"DOCKER_INFO_TIMEOUT": "1"})
     assert code == 124, (code, out)
+
+
+def test_rollout_stop_all_short_circuits_when_docker_fails(tmp_path: Path) -> None:
+    (tmp_path / "bin").mkdir(parents=True)
+    # stub sleep to a no-op and count how many times docker ps is invoked across 3 services
+    (tmp_path / "bin/sleep").write_text("#!/bin/sh\nexit 0\n")
+    (tmp_path / "bin/sleep").chmod(0o755)
+    (tmp_path / "bin/docker").write_text(f'#!/bin/sh\necho "$*" >> {tmp_path}/docker.calls\nexit 124\n')
+    (tmp_path / "bin/docker").chmod(0o755)
+    code, out = run_rollout_fn(tmp_path, "stop_all maktaba-cloud api worker")
+    assert code == 1 and "docker does not answer" in out, out
+    calls = (tmp_path / "docker.calls").read_text().splitlines()
+    assert len(calls) == 10, f"expected 10 probes (1 per try), got {len(calls)}"
 
 
 def test_rollout_unhold_handles_stopped_non_first_and_failed_first(tmp_path: Path) -> None:

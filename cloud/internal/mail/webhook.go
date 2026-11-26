@@ -90,7 +90,7 @@ func VerifySvix(secret string, headers http.Header, body []byte, now time.Time) 
 	}
 	id := strings.TrimSpace(headers.Get("svix-id"))
 	tsRaw := strings.TrimSpace(headers.Get("svix-timestamp"))
-	sigHeader := strings.TrimSpace(headers.Get("svix-signature"))
+	sigHeader := strings.TrimSpace(strings.Join(headers.Values("svix-signature"), " "))
 	if id == "" || tsRaw == "" || sigHeader == "" {
 		return "", fmt.Errorf("%w: missing headers", ErrBadWebhookSignature)
 	}
