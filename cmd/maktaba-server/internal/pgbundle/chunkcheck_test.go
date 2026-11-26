@@ -150,4 +150,39 @@ func TestCheckChunksAndAsideCountsRowTotals(t *testing.T) {
 	if err := CheckChunks(dir, toc); err == nil {
 		t.Fatal("chunk with trailing bytes after trailer accepted")
 	}
+	// Non-zero critical header flag bit (bits 16..31) is rejected as PostgreSQL rejects it.
+	badFlags := "PGCOPY\n\xff\r\n\x00\x00\x01\x00\x00\x00\x00\x00\x00" + row + end
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(badFlags), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "critical flags") {
+		t.Fatalf("chunk with critical header flags accepted: %v", err)
+	}
+	// Negative signed int32 header extension length is rejected.
+	negExt := "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x00\xff\xff\xff\xff" + row + end
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(negExt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "extension length") {
+		t.Fatalf("chunk with negative header extension length accepted: %v", err)
+	}
+	// Truncated header extension area is rejected.
+	truncExt := "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x00\x00\x00\x00\x0a" + "xx"
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(truncExt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err == nil {
+		t.Fatal("chunk with truncated header extension area accepted")
+	}
+	// Non-critical flags (bits 0..15) with valid extension area pass.
+	if err := os.WriteFile(filepath.Join(dir, CountsFile), []byte(`{"public.segment_embeddings":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	okFlagsExt := "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x01\x00\x00\x00\x02ab" + row + end
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(okFlagsExt), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckAsideChunks(dir, toc); err != nil {
+		t.Fatalf("chunk with valid non-critical flags and extension rejected: %v", err)
+	}
 }

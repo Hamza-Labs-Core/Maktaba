@@ -328,7 +328,16 @@ func countChunkRows(path string) (int64, error) {
 	if string(hdr[:len(signature)]) != signature {
 		return 0, fmt.Errorf("it is cut short, or no binary COPY")
 	}
-	extLen := binary.BigEndian.Uint32(hdr[15:19])
+	// PostgreSQL ReceiveCopyBinaryHeader: bits 16..31 of flags are critical flags and
+	// must be zero; header extension length is signed int32 and must be >= 0.
+	flags := binary.BigEndian.Uint32(hdr[11:15])
+	if flags&0xffff0000 != 0 {
+		return 0, fmt.Errorf("unsupported critical flags 0x%08x in binary COPY header", flags)
+	}
+	extLen := int32(binary.BigEndian.Uint32(hdr[15:19]))
+	if extLen < 0 {
+		return 0, fmt.Errorf("invalid binary COPY header extension length %d", extLen)
+	}
 	if extLen > 0 {
 		if _, err := io.CopyN(io.Discard, br, int64(extLen)); err != nil {
 			return 0, fmt.Errorf("it is cut short, or no binary COPY")

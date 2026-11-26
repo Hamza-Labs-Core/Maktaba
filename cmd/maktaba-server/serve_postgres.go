@@ -210,9 +210,10 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 	}
 	if err == nil {
 		// Seed and reconcile the new cluster's record ONLY when the upgrade wrote
-		// RecordSeedPending (fail closed on error). Legacy clusters upgraded before this
-		// marker existed have no pending file, so their live database record is never touched.
-		err = seedClusterRecordIfPending(ctx, root, b, oldMajor, newMajor, log)
+		// RecordSeedPending and the source cluster still matches UpgradeMarker (fail closed
+		// on error). Legacy clusters upgraded before this marker existed have no pending
+		// file, so their live database record is never touched.
+		err = seedClusterRecordIfPending(ctx, root, ob, b, oldMajor, newMajor, log)
 	}
 	if err != nil {
 		fmt.Fprintf(log, "[postgres] level=error the library database could not be upgraded to PostgreSQL %s, so it "+
@@ -229,10 +230,13 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 
 // seedClusterRecordIfPending copies and reconciles the old cluster's database record into
 // b's major record ONLY when pgbundle.RecordSeedPending is present (written by MajorUpgrade
-// before finalizing UpgradeMarker). Legacy PG 18 homes upgraded by earlier releases have no
-// pending marker and keep their live record untouched. Any failure fails closed so the
-// pending marker stays for the next start and the upgrade does not proceed unseeded.
-func seedClusterRecordIfPending(ctx context.Context, root string, b pgbundle.Bundle, oldMajor, newMajor string, log io.Writer) error {
+// before finalizing UpgradeMarker) AND the old cluster directory still holds the exact
+// cluster (SystemID and Checkpoint) named by UpgradeMarker. Legacy PG 18 homes upgraded by
+// earlier releases have no pending marker and keep their live record untouched; if the old
+// cluster was replaced or moved on before seeding ran, the pending marker is cleared without
+// touching PG 18's record. Any I/O or control-read failure fails closed so the pending marker
+// stays for the next start and the upgrade does not proceed unseeded.
+func seedClusterRecordIfPending(ctx context.Context, root string, ob, b pgbundle.Bundle, oldMajor, newMajor string, log io.Writer) error {
 	pendingPath := filepath.Join(b.Data, pgbundle.RecordSeedPending)
 	if _, err := os.Stat(pendingPath); errors.Is(err, os.ErrNotExist) {
 		return nil
@@ -245,6 +249,25 @@ func seedClusterRecordIfPending(ctx context.Context, root string, b pgbundle.Bun
 	}
 	if !ok || m.Checkpoint == "" {
 		return fmt.Errorf("pending record seed marker present in %s without completed %s", b.Data, pgbundle.UpgradeMarker)
+	}
+	if !ob.Initialized() {
+		fmt.Fprintf(log, "[postgres] level=warn old cluster %s is gone before record seeding: leaving PostgreSQL %s's record as it is\n", ob.Data, newMajor)
+		if err := os.Remove(pendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("clear pending cluster record seed %s: %w", pendingPath, err)
+		}
+		return nil
+	}
+	oc, oerr := pgbundle.ReadControl(ctx, ob.Bin("pg_controldata"), ob.Data)
+	if oerr != nil {
+		return fmt.Errorf("read source cluster identity for pending record seed: %w", oerr)
+	}
+	if oc.SystemID != m.SystemID || oc.Checkpoint != m.Checkpoint {
+		fmt.Fprintf(log, "[postgres] level=warn old cluster %s no longer matches upgrade marker (%s@%s vs %s@%s): leaving PostgreSQL %s's record as it is\n",
+			ob.Data, oc.SystemID, oc.Checkpoint, m.SystemID, m.Checkpoint, newMajor)
+		if err := os.Remove(pendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("clear pending cluster record seed %s: %w", pendingPath, err)
+		}
+		return nil
 	}
 	nc, cerr := pgbundle.ReadControl(ctx, b.Bin("pg_controldata"), b.Data)
 	if cerr != nil {
