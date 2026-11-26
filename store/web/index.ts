@@ -234,6 +234,7 @@ export default {
     switch (controller.cron) {
       case "0 */6 * * *":
         await admin.finishMfaResets(env);
+        await admin.flushCatalogAuditOutbox(env);
         await env.CATALOG_WRITER.get(env.CATALOG_WRITER.idFromName("main")).regenerate();
         break;
       case "15 3 * * *":

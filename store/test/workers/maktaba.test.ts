@@ -3,13 +3,18 @@
 // aside); its native packages are read in the trusted mode, their shape checked, nothing run,
 // and a person reviews each.
 import { describe, expect, it } from "vitest";
+import { flushCatalogAuditOutbox, moveMaktabaPublisher } from "../../web/admin";
+import { context } from "../../web/auth";
 import { prefixCovers } from "../../web/developers";
+import type { Env } from "../../web/env";
+import { Refusal } from "../../web/http";
 import { runChecks } from "../../web/checks";
 import { countersign, resignPage } from "../../web/publish";
+import { approve as approveSubmission } from "../../web/review";
 import { pack, inspect } from "../../web/wasm";
 import { Signer, capabilitiesSHA256, signEnvelope, toB64 } from "../../signing/sig";
 import { Root, emptyState } from "../../signing/verify";
-import { type Dev, E, account, addPasskey, addTotp, ageFactor, call, developer, grant, submit } from "./helpers";
+import { type Dev, E, ORIGIN, account, addPasskey, addTotp, ageFactor, call, developer, grant, submit } from "./helpers";
 
 const enc = new TextEncoder();
 const VERSION = "0.9.0";
@@ -70,6 +75,33 @@ async function storeAdmin(): Promise<string> {
   const a = await account();
   await grant(a.id, "store_admin");
   return (await addPasskey(a.cookie)).cookie;
+}
+
+function makeBarrier(parties: number): () => Promise<void> {
+  let arrived = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return async () => {
+    arrived += 1;
+    if (arrived === parties) release();
+    await gate;
+  };
+}
+
+function authedRequest(method: string, path: string, cookie: string, body?: unknown): Request {
+  const headers = new Headers({
+    Origin: ORIGIN,
+    "CF-Connecting-IP": `10.10.${(Math.random() * 255) | 0}.${(Math.random() * 255) | 0}`,
+    Cookie: `__Host-mks_session=${cookie}`,
+  });
+  if (body !== undefined) headers.set("Content-Type", "application/json");
+  return new Request(`${ORIGIN}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
 }
 
 // one publisher per store: made once, shared by the tests
@@ -293,15 +325,70 @@ describe("the Maktaba publisher", () => {
         ),
       ]);
 
-      // Concurrent conflicting moves (d1 -> d2 and d1 -> owner): one wins, one gets 409,
-      // prefix and first-party plugin agree on the winner, and the community plugin stays with d1.
+      // Concurrent conflicting moves (d1 -> d2 and d1 -> owner) synchronized on the initial
+      // developer_prefixes SELECT via a 2-party barrier so both observe prev = d1 before either
+      // executes the guarded D1 batch: one wins (200), one gets 409, prefix and first-party
+      // plugin agree on the winner, community plugin stays with d1, and only 1 audit row lands.
+      const waitBoth = makeBarrier(2);
+      const barrierCatalog = new Proxy(E.DB_CATALOG, {
+        get(target, prop, receiver) {
+          if (prop === "prepare") {
+            return (sql: string) => {
+              const stmt = target.prepare(sql);
+              if (!sql.includes("SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba' AND kind = 'maktaba'")) {
+                return stmt;
+              }
+              return new Proxy(stmt, {
+                get(sTarget, sProp, sReceiver) {
+                  if (sProp === "first") {
+                    return async (...args: unknown[]) => {
+                      const row = await (sTarget.first as (...a: unknown[]) => Promise<unknown>)(...args);
+                      await waitBoth();
+                      return row;
+                    };
+                  }
+                  const val = Reflect.get(sTarget, sProp, sReceiver);
+                  return typeof val === "function" ? val.bind(sTarget) : val;
+                },
+              });
+            };
+          }
+          const val = Reflect.get(target, prop, receiver);
+          return typeof val === "function" ? val.bind(target) : val;
+        },
+      });
+      const barrierEnv = { ...E, DB_CATALOG: barrierCatalog } as Env;
+      const runMove = async (cookie: string, payload: { account: string; reason: string }) => {
+        const ctx = await context(barrierEnv, authedRequest("POST", "/v1/admin/maktaba-publisher/move", cookie, payload));
+        try {
+          const res = await moveMaktabaPublisher(ctx);
+          return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+        } catch (e) {
+          if (e instanceof Refusal) return { status: e.status, body: { error: e.code } };
+          throw e;
+        }
+      };
+      const moveAuditBefore = (await E.DB_ACCOUNTS.prepare(
+        "SELECT count(*) AS n FROM audit WHERE action = 'maktaba_publisher.move' AND target LIKE ?",
+      )
+        .bind(`${d1.id}->%`)
+        .first<{ n: number }>())!.n;
       const [m1, m2] = await Promise.all([
-        call("POST", "/v1/admin/maktaba-publisher/move", { cookie: admin, body: { account: d2.id, reason: "race1" } }),
-        call("POST", "/v1/admin/maktaba-publisher/move", { cookie: admin2, body: { account: owner.id, reason: "race2" } }),
+        runMove(admin, { account: d2.id, reason: "race1" }),
+        runMove(admin2, { account: owner.id, reason: "race2" }),
       ]);
       expect([m1.status, m2.status].sort((a, b) => a - b)).toEqual([200, 409]);
       const loser = m1.status === 409 ? m1 : m2;
       expect(loser.body.error).toBe("maktaba_publisher_taken");
+
+      const moveAuditAfter = (await E.DB_ACCOUNTS.prepare(
+        "SELECT count(*) AS n FROM audit WHERE action = 'maktaba_publisher.move' AND target LIKE ?",
+      )
+        .bind(`${d1.id}->%`)
+        .first<{ n: number }>())!.n;
+      expect(moveAuditAfter - moveAuditBefore).toBe(1);
+      const outboxLeft = (await E.DB_CATALOG.prepare("SELECT count(*) AS n FROM catalog_audit_outbox").first<{ n: number }>())!.n;
+      expect(outboxLeft).toBe(0);
 
       const winner = (await E.DB_CATALOG.prepare("SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba'").first<{
         account: string;
@@ -459,6 +546,208 @@ describe("the Maktaba publisher", () => {
       } else {
         expect(row?.developer).toBe(replacement.id);
       }
+    } finally {
+      const back = await call("POST", "/v1/admin/maktaba-publisher/move", { cookie: admin, body: { account: owner.id } });
+      expect(back.status).toBe(200);
+    }
+  });
+
+  it("rejects approval with 409 and cleans up R2 artifact when tv.maktaba moves mid-countersign (#1458)", async () => {
+    const owner = await publisher();
+    const replacement = await developer();
+    const admin = await storeAdmin();
+    const reviewer = await account();
+    await grant(reviewer.id, "store_reviewer");
+    const reviewerCookie = (await addPasskey(reviewer.cookie)).cookie;
+
+    const midVer = `0.5.${(Date.now() % 1e6) + 1}`;
+    const midSid = await submit(owner, ID, midVer, await signed(owner, files(ID, midVer), ID, midVer));
+    await runChecks(E, midSid);
+
+    let movedMidFlight = false;
+    const writtenKeys: string[] = [];
+    const racePrivate = new Proxy(E.PRIVATE, {
+      get(target, prop, receiver) {
+        if (prop === "get") {
+          return async (...args: Parameters<R2Bucket["get"]>) => {
+            const obj = await target.get(...args);
+            if (!movedMidFlight && typeof args[0] === "string" && args[0].includes("/package")) {
+              movedMidFlight = true;
+              const moved = await call("POST", "/v1/admin/maktaba-publisher/move", {
+                cookie: admin,
+                body: { account: replacement.id, reason: "mid_countersign_move" },
+              });
+              expect(moved.status).toBe(200);
+            }
+            return obj;
+          };
+        }
+        const val = Reflect.get(target, prop, receiver);
+        return typeof val === "function" ? val.bind(target) : val;
+      },
+    });
+    const raceBucket = new Proxy(E.BUCKET, {
+      get(target, prop, receiver) {
+        if (prop === "put") {
+          return async (...args: Parameters<R2Bucket["put"]>) => {
+            if (typeof args[0] === "string" && args[0].endsWith(".mkplugin")) writtenKeys.push(args[0]);
+            return target.put(...args);
+          };
+        }
+        const val = Reflect.get(target, prop, receiver);
+        return typeof val === "function" ? val.bind(target) : val;
+      },
+    });
+    const raceEnv = { ...E, PRIVATE: racePrivate, BUCKET: raceBucket } as Env;
+
+    try {
+      const ctx = await context(raceEnv, authedRequest("POST", `/v1/admin/submissions/${midSid}/approve`, reviewerCookie));
+      let refusal: Refusal | undefined;
+      try {
+        await approveSubmission(ctx, midSid);
+      } catch (e) {
+        if (e instanceof Refusal) refusal = e;
+        else throw e;
+      }
+      expect(movedMidFlight).toBe(true);
+      expect(refusal).toMatchObject({ status: 409, code: "maktaba_publisher_changed" });
+
+      const ver = await E.DB_CATALOG.prepare("SELECT status, store_sig FROM versions WHERE plugin = ? AND version = ?")
+        .bind(ID, midVer)
+        .first<{ status: string; store_sig: string | null }>();
+      expect(ver?.status).not.toBe("approved");
+      expect(ver?.store_sig ?? "").toBe("");
+
+      const sub = await E.DB_CATALOG.prepare("SELECT status FROM submissions WHERE id = ?").bind(midSid).first<{ status: string }>();
+      expect(sub?.status).toBe("in_review");
+
+      expect(writtenKeys.length).toBe(1);
+      expect(await E.BUCKET.head(writtenKeys[0]!)).toBeNull();
+
+      const auditRow = await E.DB_ACCOUNTS.prepare(
+        "SELECT action, target, result FROM audit WHERE action = 'review.approve' AND target = ? ORDER BY id DESC LIMIT 1",
+      )
+        .bind(`${midSid}:${ID}@${midVer}`)
+        .first<{ action: string; target: string; result: string }>();
+      expect(auditRow).toEqual({ action: "review.approve", target: `${midSid}:${ID}@${midVer}`, result: "publisher_changed" });
+    } finally {
+      const back = await call("POST", "/v1/admin/maktaba-publisher/move", { cookie: admin, body: { account: owner.id } });
+      expect(back.status).toBe(200);
+    }
+  });
+
+  it("recovers publisher move audit via durable outbox after a transient DB_ACCOUNTS failure without duplicates (#1458)", async () => {
+    const owner = await publisher();
+    const replacement = await developer();
+    const admin = await storeAdmin();
+    const reason = `transient_audit_fail_${Date.now() % 1e6}`;
+    const expectedTarget = `${owner.id}->${replacement.id}:${reason}`;
+
+    // Ensure at least one tv.maktaba.* plugin row exists under owner.
+    const fpId = `tv.maktaba.outbox${Date.now() % 1e6}`;
+    await E.DB_CATALOG.prepare("INSERT OR IGNORE INTO plugins (id, developer, developer_name, created) VALUES (?, ?, 'Maktaba', ?)")
+      .bind(fpId, owner.id, new Date().toISOString())
+      .run();
+
+    let failOnce = true;
+    const flakyAccounts = new Proxy(E.DB_ACCOUNTS, {
+      get(target, prop, receiver) {
+        if (prop === "prepare") {
+          return (sql: string) => {
+            const stmt = target.prepare(sql);
+            if (!sql.includes("INSERT OR IGNORE INTO audit")) return stmt;
+            return new Proxy(stmt, {
+              get(sTarget, sProp, sReceiver) {
+                if (sProp === "bind") {
+                  return (...args: unknown[]) => {
+                    const bound = sTarget.bind(...args);
+                    return new Proxy(bound, {
+                      get(bTarget, bProp, bReceiver) {
+                        if (bProp === "run") {
+                          return async () => {
+                            if (failOnce) {
+                              failOnce = false;
+                              throw new Error("accounts db unavailable");
+                            }
+                            return bTarget.run();
+                          };
+                        }
+                        const bv = Reflect.get(bTarget, bProp, bReceiver);
+                        return typeof bv === "function" ? bv.bind(bTarget) : bv;
+                      },
+                    });
+                  };
+                }
+                const sv = Reflect.get(sTarget, sProp, sReceiver);
+                return typeof sv === "function" ? sv.bind(sTarget) : sv;
+              },
+            });
+          };
+        }
+        const val = Reflect.get(target, prop, receiver);
+        return typeof val === "function" ? val.bind(target) : val;
+      },
+    });
+    const flakyEnv = { ...E, DB_ACCOUNTS: flakyAccounts } as Env;
+
+    try {
+      const ctx = await context(
+        flakyEnv,
+        authedRequest("POST", "/v1/admin/maktaba-publisher/move", admin, { account: replacement.id, reason }),
+      );
+      await expect(moveMaktabaPublisher(ctx)).rejects.toThrow(/accounts db unavailable/);
+
+      // DB_CATALOG move and outbox insert committed atomically, while DB_ACCOUNTS.audit has 0 rows yet.
+      const held = await E.DB_CATALOG.prepare("SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba'").first<{
+        account: string;
+      }>();
+      expect(held?.account).toBe(replacement.id);
+      const pluginRow = await E.DB_CATALOG.prepare("SELECT developer FROM plugins WHERE id = ?").bind(fpId).first<{ developer: string }>();
+      expect(pluginRow?.developer).toBe(replacement.id);
+
+      const outboxRow = await E.DB_CATALOG.prepare(
+        "SELECT id, actor, action, target, at, ip_prefix, result FROM catalog_audit_outbox WHERE target = ?",
+      )
+        .bind(expectedTarget)
+        .first<{ id: string; actor: string; action: string; target: string; at: string; ip_prefix: string; result: string }>();
+      expect(outboxRow).toMatchObject({ action: "maktaba_publisher.move", target: expectedTarget, result: "ok" });
+
+      const beforeRetry = (await E.DB_ACCOUNTS.prepare("SELECT count(*) AS n FROM audit WHERE target = ?")
+        .bind(expectedTarget)
+        .first<{ n: number }>())!.n;
+      expect(beforeRetry).toBe(0);
+
+      // Retrying the same move (now same-target) flushes the outbox into DB_ACCOUNTS.audit and returns 200.
+      const retry = await call("POST", "/v1/admin/maktaba-publisher/move", {
+        cookie: admin,
+        body: { account: replacement.id, reason },
+      });
+      expect(retry).toMatchObject({
+        status: 200,
+        body: { status: "moved", previous: replacement.id, account: replacement.id, prefix: "tv.maktaba" },
+      });
+
+      const outboxAfter = (await E.DB_CATALOG.prepare("SELECT count(*) AS n FROM catalog_audit_outbox WHERE target = ?")
+        .bind(expectedTarget)
+        .first<{ n: number }>())!.n;
+      expect(outboxAfter).toBe(0);
+
+      const afterRetry = await E.DB_ACCOUNTS.prepare("SELECT action, target, event_id FROM audit WHERE target = ?")
+        .bind(expectedTarget)
+        .all<{ action: string; target: string; event_id: string }>();
+      expect(afterRetry.results).toEqual([{ action: "maktaba_publisher.move", target: expectedTarget, event_id: outboxRow!.id }]);
+
+      // Re-delivering the same event_id (simulating crash between audit insert and outbox delete) produces no duplicate.
+      await E.DB_CATALOG.prepare(
+        "INSERT INTO catalog_audit_outbox (id, actor, action, target, at, ip_prefix, result) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+        .bind(outboxRow!.id, outboxRow!.actor, outboxRow!.action, outboxRow!.target, outboxRow!.at, outboxRow!.ip_prefix, outboxRow!.result)
+        .run();
+      await flushCatalogAuditOutbox(E);
+      const afterReplay = (await E.DB_ACCOUNTS.prepare("SELECT count(*) AS n FROM audit WHERE target = ?")
+        .bind(expectedTarget)
+        .first<{ n: number }>())!.n;
+      expect(afterReplay).toBe(1);
     } finally {
       const back = await call("POST", "/v1/admin/maktaba-publisher/move", { cookie: admin, body: { account: owner.id } });
       expect(back.status).toBe(200);

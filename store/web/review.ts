@@ -10,7 +10,7 @@ import { sendMail } from "./mail";
 import { type FlowSummary, recordFlow } from "./checks";
 import { firstPartyId } from "./developers";
 import { flowSVG } from "./flowchart";
-import { countersign } from "./publish";
+import { PublishError, countersign } from "./publish";
 
 export const REJECT_REASONS = ["misleading", "does_not_work", "asks_too_much", "harmful_outputs", "malware", "policy", "strings"] as const;
 
@@ -196,7 +196,16 @@ export async function approve(ctx: Ctx, id: string): Promise<Response> {
   }
   let sha256 = "";
   for (const x of all) {
-    const out = await countersign(ctx.env, x.id, "reviewed");
+    let out: { sha256: string; size: number };
+    try {
+      out = await countersign(ctx.env, x.id, "reviewed");
+    } catch (e) {
+      if (e instanceof PublishError && e.code === "publisher_changed") {
+        await audit(ctx, a.id, "review.approve", `${x.id}:${x.plugin}@${x.version}`, "publisher_changed");
+        refuse(409, "maktaba_publisher_changed");
+      }
+      throw e;
+    }
     if (x.id === id) sha256 = out.sha256;
     await ctx.env.DB_CATALOG.prepare(
       "UPDATE submissions SET status = 'approved', reviewer = ?, decision = 'approved', decided_at = ? WHERE id = ?",
