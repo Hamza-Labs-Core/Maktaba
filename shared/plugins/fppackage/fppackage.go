@@ -80,7 +80,7 @@ func parseBundle(raw []byte) ([]*Embedded, error) {
 			Folder     string                       `json:"folder"`
 			Manifest   string                       `json:"manifest"`
 			Strings    map[string]map[string]string `json:"strings"`
-			Statements []any                        `json:"statements"`
+			Statements json.RawMessage              `json:"statements"`
 		} `json:"plugins"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
@@ -110,7 +110,18 @@ func parseBundle(raw []byte) ([]*Embedded, error) {
 			return nil, fmt.Errorf("fppackage: first-party %s: id %q twice or not its own", p.Folder, id)
 		}
 		seen[id] = true
-		e := &Embedded{ID: id, Folder: p.Folder, Manifest: m, Strings: p.Strings, Statements: p.Statements}
+		var sts []any
+		if len(p.Statements) > 0 && string(bytes.TrimSpace(p.Statements)) != "null" {
+			val, err := decodeStrictJSON(p.Statements)
+			if err != nil {
+				return nil, fmt.Errorf("fppackage: first-party %s statements: %w", p.Folder, err)
+			}
+			var ok bool
+			if sts, ok = val.([]any); !ok {
+				return nil, fmt.Errorf("fppackage: first-party %s statements: expected array", p.Folder)
+			}
+		}
+		e := &Embedded{ID: id, Folder: p.Folder, Manifest: m, Strings: p.Strings, Statements: sts}
 		if t, ok := m["trusted"].(map[string]any); ok {
 			e.Component, _ = t["component"].(string)
 		}
@@ -222,8 +233,9 @@ func CheckContents(u Unpacked, e *Embedded, version string, pipeline map[string]
 	}
 	// a Maktaba plugin's statements change only with a server release (54.45 §3)
 	b, ok := u.read("statements.json")
-	var sts []any
-	if !ok || checkNoDuplicateKeys(b) != nil || json.Unmarshal(b, &sts) != nil || !reflect.DeepEqual(sts, e.Statements) {
+	val, err := decodeStrictJSON(b)
+	sts, isArr := val.([]any)
+	if !ok || err != nil || !isArr || !reflect.DeepEqual(sts, e.Statements) {
 		return nil, unsigned("its statements.json is not the one this server embeds")
 	}
 	whl, _ := u.read(wheel)
@@ -233,60 +245,85 @@ func CheckContents(u Unpacked, e *Embedded, version string, pipeline map[string]
 	return m, nil
 }
 
-// checkNoDuplicateKeys rejects malformed JSON, trailing tokens, and any JSON object
-// (at any nesting depth) that repeats a key.
+const maxJSONDepth = 1000
+
+// checkNoDuplicateKeys rejects malformed JSON, excessive nesting, trailing tokens, and any
+// JSON object (at any nesting depth) that repeats a key.
 func checkNoDuplicateKeys(raw []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.UseNumber()
-	if err := checkJSONValue(dec); err != nil {
-		return err
-	}
-	if _, err := dec.Token(); err != io.EOF {
-		return fmt.Errorf("trailing data after JSON value")
-	}
-	return nil
+	_, err := decodeStrictJSON(raw)
+	return err
 }
 
-func checkJSONValue(dec *json.Decoder) error {
+// decodeStrictJSON parses a single JSON value with exact json.Number tokens, validating
+// syntax first (json.Valid), enforcing maxJSONDepth, rejecting duplicate object keys at any
+// nesting depth, and rejecting trailing data.
+func decodeStrictJSON(raw []byte) (any, error) {
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("invalid JSON")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	val, err := decodeJSONValue(dec, 0)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("trailing data after JSON value")
+	}
+	return val, nil
+}
+
+func decodeJSONValue(dec *json.Decoder, depth int) (any, error) {
+	if depth > maxJSONDepth {
+		return nil, fmt.Errorf("JSON nesting exceeds maximum depth %d", maxJSONDepth)
+	}
 	tok, err := dec.Token()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	d, ok := tok.(json.Delim)
 	if !ok {
-		return nil
+		return tok, nil
 	}
 	switch d {
 	case '{':
-		seen := map[string]bool{}
+		obj := map[string]any{}
 		for dec.More() {
 			kt, err := dec.Token()
 			if err != nil {
-				return err
+				return nil, err
 			}
 			k, ok := kt.(string)
 			if !ok {
-				return fmt.Errorf("expected string key")
+				return nil, fmt.Errorf("expected string key")
 			}
-			if seen[k] {
-				return fmt.Errorf("duplicate key %q", k)
+			if _, dup := obj[k]; dup {
+				return nil, fmt.Errorf("duplicate key %q", k)
 			}
-			seen[k] = true
-			if err := checkJSONValue(dec); err != nil {
-				return err
+			v, err := decodeJSONValue(dec, depth+1)
+			if err != nil {
+				return nil, err
 			}
+			obj[k] = v
 		}
-		_, err := dec.Token()
-		return err
+		if _, err := dec.Token(); err != nil {
+			return nil, err
+		}
+		return obj, nil
 	case '[':
+		arr := []any{}
 		for dec.More() {
-			if err := checkJSONValue(dec); err != nil {
-				return err
+			v, err := decodeJSONValue(dec, depth+1)
+			if err != nil {
+				return nil, err
 			}
+			arr = append(arr, v)
 		}
-		_, err := dec.Token()
-		return err
+		if _, err := dec.Token(); err != nil {
+			return nil, err
+		}
+		return arr, nil
 	default:
-		return fmt.Errorf("unexpected delimiter %q", d)
+		return nil, fmt.Errorf("unexpected delimiter %q", d)
 	}
 }

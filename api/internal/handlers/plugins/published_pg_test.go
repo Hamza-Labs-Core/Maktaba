@@ -2,7 +2,9 @@ package plugins
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -596,8 +598,11 @@ func TestRemovedMaktabaPluginQueueViewAndReinstallClaim(t *testing.T) {
 			   SET state = 'claimed', claimed_by = 'w-test', attempts = pj.attempts + 1
 			  FROM pick WHERE pj.id = pick.id
 			RETURNING pj.id`).Scan(&id)
-		if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
 			return 0, false
+		}
+		if err != nil {
+			t.Fatalf("claimOnce: %v", err)
 		}
 		return id, true
 	}

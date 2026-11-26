@@ -8,6 +8,7 @@ import { type Env, iso, now } from "./env";
 import { body, json, optStr, refuse, str } from "./http";
 import { sendMail } from "./mail";
 import { type FlowSummary, recordFlow } from "./checks";
+import { firstPartyId } from "./developers";
 import { flowSVG } from "./flowchart";
 import { countersign } from "./publish";
 
@@ -168,7 +169,9 @@ async function flowOf(env: Env, s: Reviewable): Promise<Reviewable[]> {
 }
 
 async function flowSummary(env: Env, s: Reviewable): Promise<FlowSummary | undefined> {
-  const r = s.report_key ? (JSON.parse((await (await env.PRIVATE.get(s.report_key))?.text()) ?? "null") as { flow?: FlowSummary } | null) : null;
+  const r = s.report_key
+    ? (JSON.parse((await (await env.PRIVATE.get(s.report_key))?.text()) ?? "null") as { flow?: FlowSummary } | null)
+    : null;
   return r?.flow;
 }
 
@@ -180,6 +183,17 @@ export async function approve(ctx: Ctx, id: string): Promise<Response> {
   if (s.uploaded_by === a.id) refuse(403, "own_submission");
   const all = await flowOf(ctx.env, s);
   if (all.some((x) => x.uploaded_by === a.id)) refuse(403, "own_submission");
+  for (const x of all) {
+    if (firstPartyId(x.plugin)) {
+      const held = await ctx.env.DB_CATALOG.prepare(
+        "SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND verified_at IS NOT NULL AND lapsed_at IS NULL",
+      ).first<{ account: string }>();
+      if (!held || held.account !== x.uploaded_by) {
+        await audit(ctx, a.id, "review.approve", `${x.id}:${x.plugin}@${x.version}`, "publisher_changed");
+        refuse(409, "maktaba_publisher_changed");
+      }
+    }
+  }
   let sha256 = "";
   for (const x of all) {
     const out = await countersign(ctx.env, x.id, "reviewed");

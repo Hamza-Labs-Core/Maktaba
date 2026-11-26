@@ -557,4 +557,27 @@ func TestStatementsRejectsDuplicateKeysAndExtraFields(t *testing.T) {
 			t.Fatal("trailing JSON value was accepted")
 		}
 	})
+
+	t.Run("deep nesting rejected cleanly without stack overflow", func(t *testing.T) {
+		deep := []byte(strings.Repeat("[", maxJSONDepth+5) + strings.Repeat("]", maxJSONDepth+5))
+		if _, err := decodeStrictJSON(deep); err == nil {
+			t.Fatal("deeply nested JSON was accepted")
+		}
+	})
+
+	t.Run("near-integer float in scope_arg does not match integer", func(t *testing.T) {
+		for _, badNum := range []string{"1.0", "1.0000000000000001"} {
+			f := plugin(t, subtitles, serverVersion)
+			orig := string(f["statements.json"])
+			mutated := strings.Replace(orig, `"scope_arg": 1`, `"scope_arg": `+badNum, 1)
+			if mutated == orig {
+				t.Fatalf("failed to mutate scope_arg in %s", orig)
+			}
+			f["statements.json"] = []byte(mutated)
+			sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
+			if _, err := CheckStore(f.unpacked(t), sig, keys, serverVersion, switchable, pipe); codeOf(err) != CodeTrustedUnsigned {
+				t.Fatalf("scope_arg=%s: %v, want %s", badNum, err, CodeTrustedUnsigned)
+			}
+		}
+	})
 }
