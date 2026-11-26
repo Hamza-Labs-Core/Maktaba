@@ -647,10 +647,10 @@ async def _semantic_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     or live job is the latest: not queued again."""
     if not is_pg(db) or "index" not in graph:
         return 0
-    from ..search.pgstore import store_state
+    from ..search.pgstore import copy_lock_held, store_state
 
     state = await store_state(db)
-    if not state.ready or state.copying:
+    if not state.ready or state.copying or await copy_lock_held(db):
         return 0  # the Chroma copy is bringing the vectors (story 43.5)
     rows = await db.fetch(
         "SELECT j.subject_id AS sid FROM processing_jobs j"
@@ -700,10 +700,10 @@ async def _partial_copy_sweep(db: Any, graph: Mapping[str, StageDef]) -> int:
     global _partial_cursor
     if _partial_cursor is None or not is_pg(db) or "index" not in graph:
         return 0
-    from ..search.pgstore import store_state
+    from ..search.pgstore import copy_lock_held, store_state
 
     state = await store_state(db)
-    if not state.ready or state.copying:
+    if not state.ready or state.copying or await copy_lock_held(db):
         return 0  # the copy itself finishes what it began
     try:
         partial = await db.fetchval(

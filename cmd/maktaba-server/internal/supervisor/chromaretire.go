@@ -105,7 +105,20 @@ func RetireChroma(cfg config.Config, w io.Writer) string {
 		_ = os.Remove(filepath.Join(state, ChromaCopyProgress))
 		return ""
 	}
-	if !isChromaFolder(dir) {
+	hasDB := hasChromaDB(dir)
+	if !hasDB && copyHome(cfg) {
+		// Only remove the default directory, and only if it is still empty.
+		if entry, err := os.Lstat(dir); err == nil && entry.IsDir() &&
+			filepath.Clean(dir) == filepath.Join(state, "chroma") && os.Remove(dir) == nil {
+			_ = os.Remove(retired)
+			_ = os.Remove(filepath.Join(state, ChromaCopyProgress))
+			fmt.Fprintf(w, "[supervisor] removed empty Chroma folder %s\n", dir)
+			return dir
+		}
+		fmt.Fprintf(w, "[supervisor] %s has no chroma.sqlite3: no copy to run; left as it is\n", dir)
+		return ""
+	}
+	if !hasDB && !isEmptyDir(dir) {
 		fmt.Fprintf(w, "[supervisor] %s is not a Chroma folder (no chroma.sqlite3): left as it is\n", dir)
 		return ""
 	}
@@ -156,7 +169,7 @@ func copyHome(cfg config.Config) bool {
 // Chroma folder has Chroma's database and is not the one ChromaCopyDone names.
 func ChromaCopyPending(cfg config.Config) bool {
 	dir := ChromaDir(cfg)
-	if _, err := os.Stat(filepath.Join(dir, "chroma.sqlite3")); err != nil {
+	if !hasChromaDB(dir) {
 		return false
 	}
 	if copied, ok := chromaCopied(filepath.Join(cfg.StateDir(), ChromaCopyDone)); ok &&
@@ -189,18 +202,18 @@ func BuildChromaCopy(opts Options) ([]Process, error) {
 	wire(cmd)
 	return []Process{{Role: RolePipeline, Instance: ChromaCopyInstance, Cmd: cmd,
 		Once: true, Tries: ChromaCopyTries,
-		// 78: nothing to copy from or into (no pgvector, no collection, no numpy): trying
-		// again at this start changes nothing
+		// 78: the source is damaged or a prerequisite is missing. Retrying at this
+		// start changes nothing.
 		FatalExits: map[int]string{78: ReasonChromaCopyNotReady},
 		Progress:   func() Detail { return chromaCopyDetail(progress, ChromaDir(opts.Config)) }}}, nil
 }
 
-// isChromaFolder: Chroma's own database is there, or the folder is empty (Chroma made it
-// and wrote nothing yet). Any other folder an operator named is never deleted.
-func isChromaFolder(dir string) bool {
-	if _, err := os.Stat(filepath.Join(dir, "chroma.sqlite3")); err == nil {
-		return true
-	}
+func hasChromaDB(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "chroma.sqlite3"))
+	return err == nil
+}
+
+func isEmptyDir(dir string) bool {
 	ents, err := os.ReadDir(dir)
 	return err == nil && len(ents) == 0
 }
@@ -307,13 +320,14 @@ func chromaCopyDetail(path, dir string) Detail {
 		return Detail{}
 	}
 	var p struct {
-		Phase    string  `json:"phase"`
-		Elements int64   `json:"elements"`
-		Total    int64   `json:"total"`
-		Copied   int64   `json:"copied"`
-		Rate     float64 `json:"rows_per_sec"`
-		ETA      *int64  `json:"eta_sec"`
-		Reason   string  `json:"reason"`
+		Phase     string  `json:"phase"`
+		Elements  int64   `json:"elements"`
+		Total     int64   `json:"total"`
+		Copied    int64   `json:"copied"`
+		Rate      float64 `json:"rows_per_sec"`
+		ETA       *int64  `json:"eta_sec"`
+		Reason    string  `json:"reason"`
+		Permanent bool    `json:"permanent"`
 	}
 	if json.Unmarshal(raw, &p) != nil {
 		return Detail{}
@@ -333,6 +347,10 @@ func chromaCopyDetail(path, dir string) Detail {
 	case "verify":
 		return Detail{Text: "Checking the copied search index"}
 	case "failed":
+		if p.Permanent {
+			return Detail{Text: "The Chroma search index could not be read: " + p.Reason +
+				". Search uses the vectors copied so far."}
+		}
 		// the copy holds every re-index of the videos it has not brought yet (nothing is
 		// embedded twice): until it passes, or the admin gives it up by removing the folder
 		return Detail{Text: "The copied search index failed its check: " + p.Reason + ". It is tried again at " +

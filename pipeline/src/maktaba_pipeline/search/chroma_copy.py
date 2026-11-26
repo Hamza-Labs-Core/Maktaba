@@ -6,13 +6,10 @@ dependency. A home that updates with this copy not finished (its Chroma folder s
 there, ``semantic_store_state`` on ``chroma``) finishes it with this release: the
 supervisor runs it at start (``pipeline/chroma-copy``), the videos it copies keep their
 index fingerprints (nothing is embedded again), and only once it is done are Chroma's
-files deleted (the start after). Until then the reconciler's sweeps hold off
-(``MAKTABA_CHROMA_COPY=pending``) so no video waiting for its vectors is indexed again.
+files deleted (the start after). The reconciler's semantic sweeps hold off while the
+supervisor expects the copy to run or the copy holds its database lock.
 
-The copy reads Chroma's files and never opens a Chroma client: the index worker has the
-collection open (and loaded, 24 GB on the home Mac) and keeps writing it until the copy
-is done, and a second client in another process is what broke the index before. What
-it reads:
+The copy reads Chroma's files directly. It reads:
 
 * ``chroma.sqlite3`` (read-only, a few small queries): the collection, its vector
   segment, how far that segment is applied (``max_seq_id``) and the writes after that
@@ -22,10 +19,9 @@ it reads:
   per element: its links, its vector (normalised: the collection is cosine) and its
   label. Elements never move, so an element's place is the cursor.
 
-An id is mapped to its segment by ``transcript_segments (transcript_id, seq)``, which is
-unique and never changes while the transcript exists (segments are never updated or
-deleted but with their transcript): the same row as the ``segment_id`` Chroma keeps.
-Ids whose segment or video no longer exist are orphans and are skipped.
+An id is mapped to its segment by ``transcript_segments (transcript_id, seq)``, which
+identifies the same row as the ``segment_id`` Chroma keeps. Only live segments the index
+stage would keep are eligible.
 
 Steps, each saved in ``semantic_store_state.copy_cursor`` (a restart continues):
 
@@ -34,8 +30,8 @@ Steps, each saved in ``semantic_store_state.copy_cursor`` (a restart continues):
    and ``INSERT ... ON CONFLICT DO NOTHING`` (a row the index stage wrote meanwhile is
    newer); the HNSW index is dropped first and
 3. ``index``: built after, once (per-row maintenance is far slower);
-4. ``verify``: row count, and recall of the HNSW index against the exact top 10 of
-   Chroma's own vectors; then ``store = 'postgres'`` and ``copy_done_at``.
+4. ``verify``: row count and recall of the HNSW index against the exact top 10 of
+   the eligible Chroma vectors; then ``store = 'postgres'`` and ``copy_done_at``.
 
 While it runs, search reads Postgres (what is copied so far) and the index stage writes
 Postgres only: a row it writes is never overwritten by the copy.
@@ -58,7 +54,7 @@ import struct
 import sys
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -68,6 +64,7 @@ import numpy.typing as npt
 
 from ..log import get_logger
 from . import semantic
+from .pgstore import COPY_LOCK_KEY
 
 #: the collection the index stage of the releases before 43.5 wrote: one per model
 COLLECTION_PREFIX = "maktaba_segments"
@@ -113,8 +110,6 @@ EXIT_NOT_READY = 78
 
 PAGE = 5000
 HNSW_INDEX = "segment_embeddings_hnsw"
-#: a fixed key: one copy at a time per database
-LOCK_KEY = 0x43_03_C0_9E
 GB = 1024**3
 
 _log = get_logger()
@@ -124,6 +119,39 @@ _log = get_logger()
 _HEADER = struct.Struct("<iQQQQQQiIQQQdQ")
 #: hnswlib marks a deleted element in the third byte of its level-0 link header
 _DELETE_MARK = 0x01
+
+
+class CorruptChroma(ValueError):
+    """Chroma's persisted files cannot be read in the expected format."""
+
+
+@contextlib.contextmanager
+def _read_store() -> Iterator[None]:
+    """Classify failures from the Chroma reader separately from Postgres failures."""
+    try:
+        yield
+    except CorruptChroma:
+        raise
+    except sqlite3.DatabaseError as exc:
+        if (getattr(exc, "sqlite_errorcode", 0) & 0xFF) in (
+            sqlite3.SQLITE_BUSY,
+            sqlite3.SQLITE_LOCKED,
+            sqlite3.SQLITE_IOERR,
+        ):
+            raise
+        raise CorruptChroma(f"{type(exc).__name__}: {exc}") from exc
+    except (
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+        EOFError,
+        pickle.UnpicklingError,
+        FileNotFoundError,
+        IsADirectoryError,
+    ) as exc:
+        reason = str(exc) or "unexpected end of Chroma data"
+        raise CorruptChroma(f"{type(exc).__name__}: {reason}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,7 +172,7 @@ class Header:
         f = _HEADER.unpack_from(raw)
         size, label_off, data_off = int(f[4]), int(f[5]), int(f[6])
         dim = (label_off - data_off) // 4
-        if not (0 < data_off < label_off < size) or dim <= 0:
+        if not (4 <= data_off < label_off <= size - 8) or (label_off - data_off) % 4:
             raise ValueError(f"{path}: unexpected layout {f}")
         return cls(int(f[3]), size, label_off, data_off, dim)
 
@@ -191,6 +219,7 @@ class ChromaFiles:
         return self.root / self.segment_id
 
     @classmethod
+    @_read_store()
     def open(cls, root: Path, collection: str) -> ChromaFiles:
         with _sqlite(root) as db:
             row = db.execute(
@@ -210,9 +239,15 @@ class ChromaFiles:
             ).fetchone()
         path = root / sid / "header.bin"
         # a collection under a thousand writes has no files yet: all of it is in the queue
-        header = Header.read(path) if path.exists() else Header(0, 1, 0, 0, dim)
-        return cls(root, cid, sid, _seq(applied[0] if applied else 0), header)
+        applied_seq = _seq(applied[0] if applied else 0)
+        header = Header.read(path) if applied_seq or path.exists() else Header(0, 1, 0, 0, dim)
+        if dim and header.dim != dim:
+            raise CorruptChroma(
+                f"{path}: header dimension {header.dim}, collection dimension {dim}"
+            )
+        return cls(root, cid, sid, applied_seq, header)
 
+    @_read_store()
     def load_labels(self) -> None:
         """Each label's id (``index_metadata.pickle``, rewritten whole by Chroma: a read
         in the middle of that is tried again)."""
@@ -232,19 +267,23 @@ class ChromaFiles:
                     raise ValueError(f"label_to_id is a {type(labels).__name__}")
                 self.label_to_id = labels
                 return
-            except (EOFError, pickle.UnpicklingError, KeyError, ValueError, AttributeError) as exc:
+            except (EOFError, pickle.UnpicklingError, KeyError, ValueError, TypeError) as exc:
                 if attempt == 9:
                     raise
                 _log.warning("chroma_copy_labels_retry", error=f"{type(exc).__name__}: {exc}")
                 time.sleep(3)
 
+    @_read_store()
     def elements(self) -> int:
         """How many element records the data file holds now."""
         if not self.header.elements:
             return 0
         size = (self.segment_dir / "data_level0.bin").stat().st_size
-        return min(self.header.elements, size // self.header.size_per_element)
+        if size // self.header.size_per_element < self.header.elements:
+            raise CorruptChroma(f"{self.segment_dir / 'data_level0.bin'} is truncated")
+        return self.header.elements
 
+    @_read_store()
     def read(self, fd: int, first: int, count: int) -> Elements:
         """Elements ``[first, first + count)`` from an open ``data_level0.bin``."""
         h = self.header
@@ -267,6 +306,7 @@ class ChromaFiles:
             sane = np.isfinite(norms) & (np.abs(norms - 1.0) < 0.01)
         return Elements(first, labels, vectors, deleted, sane)
 
+    @_read_store()
     def queue_tail(self) -> list[tuple[int, int, str, npt.NDArray[np.float32] | None]]:
         """The collection's writes after :attr:`applied_seq`, oldest first:
         ``(seq, operation, id, vector)`` (operation 0 add, 1 update, 2 upsert, 3 delete)."""
@@ -352,15 +392,34 @@ def copy_rows(keys: Sequence[tuple[uuid.UUID, int]], vectors: npt.NDArray[np.flo
     return _PGCOPY_HEAD + rows.tobytes() + _PGCOPY_TAIL
 
 
-# the page's rows that still have a segment and a video, written unless already there
-_INSERT = """
+# The index stage keeps the newest active transcript's nonblank segments. Use the
+# same selection for both the copy and its verification.
+_ELIGIBLE = """
+    JOIN transcript_segments ts ON ts.transcript_id = p.transcript_id AND ts.seq = p.seq
+    JOIN transcripts t ON t.id = ts.transcript_id AND t.is_active
+    JOIN videos v ON v.id = t.video_id
+"""
+_CURRENT = """
+    WHERE ts.text ~ '[^[:space:]]'
+      AND NOT EXISTS (
+          SELECT 1 FROM transcripts newer
+          WHERE newer.video_id = t.video_id AND newer.is_active
+            AND (newer.created_at, newer.id) > (t.created_at, t.id)
+      )
+"""
+# Keep the active flag and segment stable through insertion (including a concurrent
+# re-transcription or library deletion).
+_INSERT = (
+    """
 WITH m AS (
     SELECT ts.id AS segment_id, v.id AS video_id, v.library_id, v.detected_language AS language,
            p.embedding
     FROM chroma_copy_page p
-    JOIN transcript_segments ts ON ts.transcript_id = p.transcript_id AND ts.seq = p.seq
-    JOIN transcripts t ON t.id = ts.transcript_id
-    JOIN videos v ON v.id = t.video_id
+    """
+    + _ELIGIBLE
+    + _CURRENT
+    + """
+    FOR SHARE OF t, ts
 ), ins AS (
     INSERT INTO segment_embeddings (segment_id, video_id, library_id, language, model, embedding)
     SELECT segment_id, video_id, library_id, language, $1, embedding FROM m
@@ -369,6 +428,7 @@ WITH m AS (
 )
 SELECT (SELECT count(*) FROM m) AS matched, (SELECT count(*) FROM ins) AS written
 """
+)
 _KEEP = "NOTHING"
 _REPLACE = (
     "UPDATE SET embedding = EXCLUDED.embedding, video_id = EXCLUDED.video_id, "
@@ -564,15 +624,14 @@ async def _write_page(
 async def _tail(conn: Any, files: ChromaFiles, cfg: CopyConfig, cur: Cursor) -> None:
     """The writes still in Chroma's queue (not in its files yet), the last one per id.
     The load skips every element they name: a deleted one stays deleted, a rewritten
-    one is copied from here. Not counted in ``copied``: the count check asks Postgres
-    for at least what the load copied."""
+    one is copied from here."""
     last: dict[str, npt.NDArray[np.float32] | None] = {}
     for _seq_id, op, eid, vec in files.queue_tail():
         if op == 3:
             last[eid] = None
         elif vec is not None:
             last[eid] = vec
-    id_to_label = {eid: label for label, eid in files.label_to_id.items()} if last else {}
+    id_to_label = _queued_labels(files.label_to_id, last)
     keys: list[tuple[uuid.UUID, int]] = []
     vecs: list[npt.NDArray[np.float32]] = []
     gone: list[tuple[uuid.UUID, int]] = []
@@ -609,6 +668,12 @@ async def _tail(conn: Any, files: ChromaFiles, cfg: CopyConfig, cur: Cursor) -> 
     _log.info("chroma_copy_tail", written=written, deleted=len(gone), queued=len(last))
 
 
+def _queued_labels(label_to_id: dict[int, str], queued: dict[str, Any]) -> dict[str, int]:
+    if not queued:
+        return {}
+    return {eid: label for label, eid in label_to_id.items() if eid in queued}
+
+
 async def _load(
     conn: Any, files: ChromaFiles, cfg: CopyConfig, cur: Cursor, copied: int, progress: Progress
 ) -> int:
@@ -617,7 +682,8 @@ async def _load(
         cur.total = files.elements()
     progress.start_next = cur.next
     path = files.segment_dir / "data_level0.bin"
-    fd = os.open(path, os.O_RDONLY) if cur.total else -1
+    with _read_store():
+        fd = os.open(path, os.O_RDONLY) if cur.total else -1
     try:
         while cur.next < cur.total:
             count = min(cfg.page, cur.total - cur.next)
@@ -627,7 +693,7 @@ async def _load(
                 await asyncio.sleep(2)
                 el = await asyncio.to_thread(files.read, fd, cur.next, count)
                 if not len(el.labels):
-                    raise RuntimeError(f"{path} ends at element {cur.next} of {cur.total}")
+                    raise CorruptChroma(f"{path} ends at element {cur.next} of {cur.total}")
             keys: list[tuple[uuid.UUID, int]] = []
             rows: list[int] = []
             labels = el.labels.tolist()
@@ -751,45 +817,82 @@ def as_stored(v: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     return np.asarray(h / np.where(norms > 0, norms, 1.0), dtype=np.float32)
 
 
-def _exact_top(
-    files: ChromaFiles, fd: int, queries: npt.NDArray[np.float32], k: int, skip: set[int]
-) -> list[list[tuple[str, float]]]:
-    """Every query's ``k`` nearest ids among Chroma's live vectors, exactly, by cosine,
-    with their cosine distances, on the vectors as Postgres keeps them (16-bit): the
-    check is then of the copy and its index, not of near ties the rounding reorders."""
-    nq = queries.shape[0]
-    best_s = np.full((nq, k), -np.inf, dtype=np.float32)
-    best_l = np.full((nq, k), -1, dtype=np.int64)
+_VERIFY_PAGE = (
+    """
+SELECT p.ordinal, ts.id, e.segment_id IS NOT NULL AS present
+FROM unnest($1::uuid[], $2::int[]) WITH ORDINALITY AS p(transcript_id, seq, ordinal)
+"""
+    + _ELIGIBLE
+    + " LEFT JOIN segment_embeddings e ON e.segment_id = ts.id "
+    + _CURRENT
+)
+
+
+def _merge_top(
+    queries: npt.NDArray[np.float32],
+    vectors: npt.NDArray[np.float32],
+    ids: npt.NDArray[np.int64],
+    best_scores: npt.NDArray[np.float32],
+    best_ids: npt.NDArray[np.int64],
+) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.int64]]:
+    scores = queries @ as_stored(vectors).T
+    k = best_scores.shape[1]
+    take = min(k, scores.shape[1])
+    idx = np.argpartition(-scores, take - 1, axis=1)[:, :take]
+    merged_scores = np.concatenate([best_scores, np.take_along_axis(scores, idx, axis=1)], axis=1)
+    merged_ids = np.concatenate([best_ids, ids[idx]], axis=1)
+    order = np.argsort(-merged_scores, axis=1)[:, :k]
+    return np.take_along_axis(merged_scores, order, axis=1), np.take_along_axis(
+        merged_ids, order, axis=1
+    )
+
+
+async def _exact_top(
+    conn: Any,
+    files: ChromaFiles,
+    fd: int,
+    queries: npt.NDArray[np.float32],
+    cur: Cursor,
+) -> tuple[int, int, list[list[tuple[int, float]]]]:
+    """Count eligible source rows and find their exact top ten by halfvec cosine distance.
+
+    Check each chunk against Postgres before scoring it, so a deleted transcript cannot
+    hide live neighbours or make its missing rows look like a failed copy.
+    """
+    k = 10
+    best_scores = np.full((len(queries), k), -np.inf, dtype=np.float32)
+    best_ids = np.full((len(queries), k), -1, dtype=np.int64)
+    expected = present = 0
+    skip = set(cur.skip)
     chunk = 100_000
-    total = files.elements()
-    for first in range(0, total, chunk):
-        el = files.read(fd, first, min(chunk, total - first))
-        known = np.fromiter(
-            (lb in files.label_to_id and lb not in skip for lb in el.labels.tolist()),
-            dtype=bool,
-            count=len(el.labels),
-        )
-        mask = el.live & known
-        if not mask.any():
+    for first in range(0, cur.total, chunk):
+        count = min(chunk, cur.total - first)
+        el = await asyncio.to_thread(files.read, fd, first, count)
+        if len(el.labels) != count:
+            raise CorruptChroma(f"data_level0.bin ends before element {first + count}")
+        keys: list[tuple[uuid.UUID, int]] = []
+        indices: list[int] = []
+        for i in np.flatnonzero(el.live).tolist():
+            label = int(el.labels[i])
+            if label not in skip and (key := split_id(files.label_to_id.get(label, ""))):
+                keys.append(key)
+                indices.append(i)
+        if not keys:
             continue
-        vecs = as_stored(el.vectors[mask])
-        labels = el.labels[mask]
-        scores = queries @ vecs.T
-        take = min(k, scores.shape[1])
-        idx = np.argpartition(-scores, take - 1, axis=1)[:, :take]
-        merged_s = np.concatenate([best_s, np.take_along_axis(scores, idx, axis=1)], axis=1)
-        merged_l = np.concatenate([best_l, labels[idx]], axis=1)
-        order = np.argsort(-merged_s, axis=1)[:, :k]
-        best_s = np.take_along_axis(merged_s, order, axis=1)
-        best_l = np.take_along_axis(merged_l, order, axis=1)
-    return [
-        [
-            (files.label_to_id[lb], 1.0 - float(sc))
-            for lb, sc in zip(row_l, row_s, strict=True)
-            if lb >= 0
-        ]
-        for row_l, row_s in zip(best_l.tolist(), best_s.tolist(), strict=True)
+        found = await conn.fetch(_VERIFY_PAGE, [k[0] for k in keys], [k[1] for k in keys])
+        expected += len(found)
+        present += sum(row["present"] for row in found)
+        if found and len(queries):
+            vectors = el.vectors[[indices[row["ordinal"] - 1] for row in found]]
+            ids = np.asarray([row["id"] for row in found], dtype=np.int64)
+            best_scores, best_ids = await asyncio.to_thread(
+                _merge_top, queries, vectors, ids, best_scores, best_ids
+            )
+    truths = [
+        [(sid, 1.0 - score) for sid, score in zip(ids, scores, strict=True) if sid >= 0]
+        for ids, scores in zip(best_ids.tolist(), best_scores.tolist(), strict=True)
     ]
+    return present, expected, truths
 
 
 def _sample(files: ChromaFiles, fd: int, n: int, skip: set[int]) -> npt.NDArray[np.float32]:
@@ -810,62 +913,49 @@ def _sample(files: ChromaFiles, fd: int, n: int, skip: set[int]) -> npt.NDArray[
     return np.stack(picks)
 
 
-async def _verify(
-    conn: Any, files: ChromaFiles, cfg: CopyConfig, cur: Cursor, copied: int
-) -> Verdict:
-    """Count: Postgres holds every row the load copied (less a few the index stage
-    deleted since). Recall: sampled stored vectors as queries, the HNSW index's top 10
-    against the exact top 10 of Chroma's vectors (what Chroma's own index approximates;
-    a second Chroma client next to the index worker's is not opened)."""
-    rows = int(await conn.fetchval("SELECT count(*) FROM segment_embeddings"))
-    slack = max(100, copied // 1000)
-    if cur.unreadable > slack:
-        return Verdict(False, f"{cur.unreadable} vectors were unreadable", rows, copied)
-    if rows + slack < copied:
-        return Verdict(False, f"{rows} rows in Postgres, {copied} copied", rows, copied)
-    skip = set(cur.skip)
-    if not files.elements():
-        # under a thousand writes: no files, nothing for an index to be checked against
-        return Verdict(True, "no Chroma files: recall not checked", rows, copied)
-    fd = os.open(files.segment_dir / "data_level0.bin", os.O_RDONLY)
+async def _verify(conn: Any, files: ChromaFiles, cfg: CopyConfig, cur: Cursor) -> Verdict:
+    """Check surviving source vectors and recall in one Postgres snapshot."""
+    if not cur.total:
+        # Small collections live entirely in the queue, with no HNSW files to check.
+        return Verdict(True, "no Chroma files: recall not checked")
+    with _read_store():
+        fd = os.open(files.segment_dir / "data_level0.bin", os.O_RDONLY)
     try:
-        picked = await asyncio.to_thread(_sample, files, fd, cfg.samples, skip)
-        if not len(picked):
-            return Verdict(False, "no vector to sample", rows, copied)
-        # each query is sent to Postgres exactly as a halfvec (16-bit values print and
-        # parse back whole); the exact search uses the same vector
+        picked = await asyncio.to_thread(_sample, files, fd, cfg.samples, set(cur.skip))
         queries = picked.astype(np.float16).astype(np.float32)
-        truth_ids = await asyncio.to_thread(_exact_top, files, fd, as_stored(queries), 30, skip)
+        async with conn.transaction(isolation="repeatable_read", readonly=True):
+            rows, expected, truths = await _exact_top(conn, files, fd, as_stored(queries), cur)
+            slack = max(100, expected // 1000)
+            if cur.unreadable > slack:
+                return Verdict(False, f"{cur.unreadable} vectors were unreadable", rows, expected)
+            if rows + slack < expected:
+                return Verdict(
+                    False,
+                    f"{rows} eligible vectors in Postgres, {expected} expected",
+                    rows,
+                    expected,
+                )
+            if not expected:
+                return Verdict(True, "no eligible Chroma vectors: recall not checked")
+            recall, counted = await _recall(conn, queries, truths, cfg.ef_search)
+            if not counted:
+                return Verdict(
+                    False, "no sampled query has a neighbour in Postgres", rows, expected
+                )
+            at_search, _ = await _recall(conn, queries, truths, cfg.search_ef)
     finally:
         os.close(fd)
-    keys = {eid: k for ids in truth_ids for eid, _ in ids if (k := split_id(eid)) is not None}
-    found = await conn.fetch(
-        "SELECT g.tid, g.seq, ts.id FROM unnest($1::uuid[], $2::int[]) AS g(tid, seq) "
-        "JOIN transcript_segments ts ON ts.transcript_id = g.tid AND ts.seq = g.seq",
-        [k[0] for k in keys.values()],
-        [k[1] for k in keys.values()],
-    )
-    seg = {(r["tid"], int(r["seq"])): int(r["id"]) for r in found}
-    # the exact neighbours that are in Postgres (an orphan is not), with their distances
-    truths = [
-        [(seg[keys[e]], d) for e, d in ids if e in keys and keys[e] in seg][:10]
-        for ids in truth_ids
-    ]
-    recall, counted = await _recall(conn, queries, truths, cfg.ef_search)
-    if not counted:
-        return Verdict(False, "no sampled query has a neighbour in Postgres", rows, copied)
-    at_search, _ = await _recall(conn, queries, truths, cfg.search_ef)
     if recall < cfg.min_recall:
         return Verdict(
             False,
             f"recall@10 {recall:.3f} below {cfg.min_recall}",
             rows,
-            copied,
+            expected,
             recall,
             counted,
             at_search,
         )
-    return Verdict(True, "", rows, copied, recall, counted, at_search)
+    return Verdict(True, "", rows, expected, recall, counted, at_search)
 
 
 #: how much closer than the exact 10th neighbour a result may be counted: Postgres
@@ -945,7 +1035,7 @@ async def copy_chroma(conn: Any, cfg: CopyConfig) -> int:
     if not await _ready(conn):
         _log.error("chroma_copy_not_ready", reason="no pgvector or no segment_embeddings")
         return EXIT_NOT_READY
-    if not await conn.fetchval("SELECT pg_try_advisory_lock($1)", LOCK_KEY):
+    if not await conn.fetchval("SELECT pg_try_advisory_lock($1::bigint)", COPY_LOCK_KEY):
         _log.error("chroma_copy_already_running")
         return EXIT_FAILED
     state = await _state(conn)
@@ -992,13 +1082,13 @@ async def copy_chroma(conn: Any, cfg: CopyConfig) -> int:
     progress.write({"phase": "verify", "copied": copied, "total": cur.total})
     if not files.label_to_id:
         await asyncio.to_thread(files.load_labels)
-    verdict = await _verify(conn, files, cfg, cur, copied)
+    verdict = await _verify(conn, files, cfg, cur)
     if not verdict.ok:
         _log.error(
             "chroma_copy_check_failed",
             reason=verdict.reason,
             rows=verdict.rows,
-            copied=verdict.expected,
+            expected=verdict.expected,
             recall=round(verdict.recall, 4),
             ef_search=cfg.ef_search,
             recall_at_search_ef=round(verdict.at_search, 4),
@@ -1102,6 +1192,11 @@ async def _run(args: argparse.Namespace) -> int:
     conn = await asyncpg.connect(dsn, ssl=tls)
     try:
         return await copy_chroma(conn, cfg)
+    except CorruptChroma as exc:
+        reason = str(exc)
+        _log.error("chroma_copy_corrupt_store", dir=str(cfg.chroma_dir), error=reason)
+        Progress(cfg).write({"phase": "failed", "reason": reason, "permanent": True})
+        return EXIT_NOT_READY
     finally:
         with contextlib.suppress(Exception):
             await asyncio.wait_for(conn.close(), timeout=5)

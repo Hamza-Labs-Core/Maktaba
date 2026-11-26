@@ -137,6 +137,31 @@ async def test_prepare_never_writes_the_store_row(store: str | None) -> None:
     pgstore.forget_state()
 
 
+@pytest.mark.asyncio
+async def test_copy_lock_checks_the_database_and_bigint_key() -> None:
+    class LockDB:
+        async def fetchval(self, sql: str, key: int) -> bool:
+            assert "pg_catalog.pg_locks" in sql and "current_database()" in sql
+            assert "classid = 0" in sql and "objsubid = 1" in sql
+            assert key == pgstore.COPY_LOCK_KEY
+            return True
+
+    assert await pgstore.copy_lock_held(LockDB())
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_a_second_connection_sees_the_copy_lock(pg: Database) -> None:
+    assert not await pgstore.copy_lock_held(pg)
+    async with pg.connection() as conn:
+        await conn.execute("SELECT pg_advisory_lock($1::bigint)", pgstore.COPY_LOCK_KEY)
+        try:
+            assert await pgstore.copy_lock_held(pg)
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock($1::bigint)", pgstore.COPY_LOCK_KEY)
+    assert not await pgstore.copy_lock_held(pg)
+
+
 # --------------------------------------------------------------------------- Postgres
 
 
