@@ -17,7 +17,7 @@ than main and release/**, and this decides whether that run tests the branch hea
 
     branch_head.py --repo OWNER/NAME --branch BRANCH --sha SHA
 
-Prints why and writes `run=true|false`, `base=<merge-base sha>`, `pr=<number>` to
+Prints why and writes `run=true|false`, `base=<merge-base sha>`, `base_ref=<target branch>`, `pr=<number>` to
 $GITHUB_OUTPUT when it is set. Stdlib and the gh CLI only: it runs before anything is
 installed.
 """
@@ -117,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
     d = resolve(a.repo, a.branch)
     base = merge_base(a.repo, d.base_ref, a.sha) if d.run else ""
     print(f"branch head: {d.why}" + (f" (merge-base with {d.base_ref}: {base})" if base else ""))
-    lines = [f"run={'true' if d.run else 'false'}", f"base={base}", f"pr={d.pr or ''}"]
+    lines = [f"run={'true' if d.run else 'false'}", f"base={base}", f"base_ref={d.base_ref}", f"pr={d.pr or ''}"]
     out = os.environ.get("GITHUB_OUTPUT")
     if out:
         with open(out, "a", encoding="utf-8") as f:

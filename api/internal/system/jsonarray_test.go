@@ -112,9 +112,8 @@ func allocated(f func()) uint64 {
 
 // The update check reads GitHub's list of 30 releases (about 7 MB: 150 assets each) at
 // every start and every check. Decoded whole it allocated three times its size in one
-// burst, and the API's resident memory stayed some 35 MB higher for good (the Core home's
-// idle memory budget, tools/release/bundle-size). Read one release at a time it allocates
-// less than the list is long.
+// burst, and the API's resident memory stayed some 35 MB higher afterward. Reading one release at a
+// time allocates less than the size of the list.
 //
 // The list here has the real one's 30 releases and its assets' shape, with 30 assets a
 // release instead of 150 (about 1.5 MB). What one release at a time allocates (the
