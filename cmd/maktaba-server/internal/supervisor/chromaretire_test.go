@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -171,6 +172,54 @@ func TestRetireChromaLeavesOtherFolders(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if !exists(filepath.Join(dir, "notes.txt")) {
 		t.Fatal("a folder that is not Chroma's was deleted")
+	}
+	if msg := log.String(); !strings.Contains(msg, "no copy to run") || strings.Contains(msg, "the copy runs now") {
+		t.Errorf("log: %q", msg)
+	}
+}
+
+func TestRetireChromaRemovesAnEmptyPostgresHomeFolder(t *testing.T) {
+	cfg, dir := chromaConfig(t)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if ChromaCopyPending(cfg) {
+		t.Fatal("there is no Chroma database to copy")
+	}
+	var log syncBuffer
+	if got := RetireChroma(cfg, &log); got != dir || exists(dir) {
+		t.Fatalf("empty folder should be removed, RetireChroma = %q", got)
+	}
+	if msg := log.String(); !strings.Contains(msg, "removed empty Chroma folder") || strings.Contains(msg, "the copy runs now") {
+		t.Errorf("log: %q", msg)
+	}
+}
+
+func TestRetireChromaKeepsAnEmptyCustomFolder(t *testing.T) {
+	cfg, _ := chromaConfig(t)
+	dir := t.TempDir()
+	t.Setenv("MAKTABA_CHROMA_DIR", dir)
+	var log syncBuffer
+	if got := RetireChroma(cfg, &log); got != "" || !exists(dir) {
+		t.Fatalf("custom folder should be kept, RetireChroma = %q", got)
+	}
+}
+
+func TestRetireChromaKeepsASymlinkToAnEmptyFolder(t *testing.T) {
+	cfg, dir := chromaConfig(t)
+	target := t.TempDir()
+	if err := os.Symlink(target, dir); err != nil {
+		if runtime.GOOS == "windows" {
+			t.Skipf("cannot create a symlink: %v", err)
+		}
+		t.Fatal(err)
+	}
+	var log syncBuffer
+	if got := RetireChroma(cfg, &log); got != "" {
+		t.Fatalf("symlink should be kept, RetireChroma = %q", got)
+	}
+	if got, err := os.Readlink(dir); err != nil || got != target || !exists(target) {
+		t.Fatalf("symlink and target should be intact, Readlink = %q, %v", got, err)
 	}
 }
 
@@ -387,11 +436,12 @@ func TestTheChromaCopyProgress(t *testing.T) {
 		t.Errorf("no file: %q", d.Text)
 	}
 	for raw, want := range map[string]string{
-		`{"phase":"load","elements":250,"total":1000,"eta_sec":600}`: "Copying the search index into the database: 250 of 1000 (25%), about 10m0s left",
-		`{"phase":"index","copied":990}`:                             "Building the search index in the database (990 vectors copied)",
-		`{"phase":"verify"}`:                                         "Checking the copied search index",
-		`{"phase":"failed","reason":"recall@10 0.8 below 0.95"}`:     "The copied search index failed its check: recall@10 0.8 below 0.95. It is tried again at the next start; search uses what is copied so far. To give the copy up and index those videos again, remove /x/chroma.",
-		`{"phase":"done"}`:                                           "",
+		`{"phase":"load","elements":250,"total":1000,"eta_sec":600}`:    "Copying the search index into the database: 250 of 1000 (25%), about 10m0s left",
+		`{"phase":"index","copied":990}`:                                "Building the search index in the database (990 vectors copied)",
+		`{"phase":"verify"}`:                                            "Checking the copied search index",
+		`{"phase":"failed","reason":"recall@10 0.8 below 0.95"}`:        "The copied search index failed its check: recall@10 0.8 below 0.95. It is tried again at the next start; search uses what is copied so far. To give the copy up and index those videos again, remove /x/chroma.",
+		`{"phase":"failed","reason":"invalid header","permanent":true}`: "The Chroma search index could not be read: invalid header. Search uses the vectors copied so far. To give the copy up and index those videos again, remove /x/chroma.",
+		`{"phase":"done"}`:                                              "",
 	} {
 		if err := os.WriteFile(path, []byte(raw), 0o644); err != nil {
 			t.Fatal(err)
