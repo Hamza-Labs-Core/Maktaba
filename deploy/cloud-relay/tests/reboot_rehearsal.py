@@ -44,9 +44,11 @@ STATE, DEPLOY, SRC = rr.STATE, rr.DEPLOY, rr.SRC
 # the cases, and what they must say: one that fails for another reason notices nothing
 NOTICE = {"boots-a-failed-first": (["a first deploy's tests fail, then a reboot", "a first deploy's tests fail, then a power cut"], "a refused release"),
           "first-unsaved": (["the next deploy backs it up"], "begin took no backup"),
-          "half-removed": (["a power cut with a container half removed"], "")}
+          "half-removed": (["a power cut with a container half removed"], ""),
+          "begin-no-heal": (["begin heals a half-removed container"], "begin did not heal")}
 # the cases a mutation's are run after (the ones that start from nothing run from the first)
-AFTER = {"half-removed": ["the first deploy, then a power cut"]}
+AFTER = {"half-removed": ["the first deploy, then a power cut"],
+         "begin-no-heal": ["the first deploy, then a power cut"]}
 
 
 # --- the machine ----------------------------------------------------------------------------
@@ -389,6 +391,31 @@ def half_removed_container() -> str:
     return "taken out, and the node serves"
 
 
+def begin_heals_half_removed() -> str:
+    """A half-removed container present when begin starts: begin's heal_docker clears it."""
+    before = snapshot()
+    c = on(f"cd {DEPLOY} && docker compose --env-file .env ps -q --no-trunc worker")[1].strip()
+    assert len(c) == 64, c
+    on(f"cp -a /var/lib/docker/containers/{c} /root/half-begin && docker rm -f {c} >/dev/null && "
+       f"mv /root/half-begin /var/lib/docker/containers/{c} && sync")
+    # Restart only dockerd (not systemctl restart docker, which would trigger maktaba-relay boot)
+    # so Docker 29 loads the half-removed folder and lists it while inspect answers No such container.
+    on('pid=$(systemctl show -p MainPID --value docker); kill -TERM "$pid"; '
+       'for i in $(seq 1 60); do [ "$(systemctl show -p MainPID --value docker)" != "$pid" ] && docker info >/dev/null 2>&1 && break; sleep 1; done')
+    code, _ = on(f"docker ps -aq --no-trunc | grep -qx {c}", check=False)
+    assert code == 0, f"docker did not list half-removed container {c}"
+    code, insp = on(f"docker inspect --type container {c}", check=False)
+    assert code != 0 and "no such" in insp.lower(), f"expected No such container: {code} {insp}"
+    out = begin("expand")
+    assert "half removed" in out, f"begin did not heal half-removed container: {out[-2000:]}"
+    code, listed = on("docker ps -aq --no-trunc | while read -r x; do docker inspect $x >/dev/null 2>&1 || echo half $x; done", check=False)
+    assert "half" not in listed, f"begin left half-removed container: {listed}"
+    must("rollback")
+    settled()
+    same(before)
+    return "begin healed docker and proceeded"
+
+
 def reboot_in_the_tests() -> str:
     before = snapshot()
     live("expand")
@@ -495,6 +522,7 @@ def main() -> int:
         ("the first deploy, then a power cut", first_deploy_then_a_power_cut),
         ("a reboot of a node that serves", reboot_of_a_node_that_serves),
         ("a power cut with a container half removed", half_removed_container),
+        ("begin heals a half-removed container", begin_heals_half_removed),
         ("a reboot in the tests", reboot_in_the_tests),
         ("a power cut in the tests", power_cut_in_the_tests),
         ("a power cut before apply", power_cut_before_apply),

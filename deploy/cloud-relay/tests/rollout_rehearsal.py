@@ -138,7 +138,7 @@ MUTATIONS: dict[str, tuple[str, str, str, list[str]]] = {
     "boot-never-waits": ("ops/rollout.sh", r"flock -w \"\$\{BOOT_WAIT:-30\}\" 9", "flock -n 9", ["a boot waits for the watch"]),
     "half-removed": ("ops/rollout.sh", r"heal_docker\(\) \{\n", "heal_docker() {\n\treturn 0\n", []),
     "downgrades": ("ops/rollout.sh", r"\[ \"\$now\" -lt \"\$was\" \]", "false", ["an older release"]),
-    "begin-no-heal": ("ops/rollout.sh", r"heal_docker \|\| die \"begin: docker does not answer: nothing was changed\"", "true", ["begin heals a half-removed container"]),
+    "begin-no-heal": ("ops/rollout.sh", r"heal_docker \|\| die \"begin: docker does not answer: nothing was changed\"", "true", []),
     "boot-no-stop-held": ("ops/rollout.sh", r"(cmd_boot\(\) \{\n\tif \[ -f \"\$STATE/held\" \]; then\n\t\t)stop_held \|\| true", r"\1true", ["boot stops a held node without the watch"]),
     "no-docker-info-timeout": ("ops/rollout.sh", r"docker_info\(\) \{ timeout -k 5 \"\$DOCKER_INFO_TIMEOUT\" docker info \"\$@\"; \}", 'docker_info() { docker info "$@"; }', ["a frozen docker daemon during rollback"]),
     "pending-new-left": ("ops/rollout.sh", r"trap \"rm -rf '\$tmp' '\$STATE/pending\.new'\" EXIT", "trap \"rm -rf '$tmp'\" EXIT", ["a release that stops being ready"]),
@@ -1620,24 +1620,6 @@ def held(release: str, says: str) -> str:
     return "stopped, said why, refused deploys and boots until a person decided"
 
 
-def begin_heals_half_removed() -> str:
-    """A half-removed container present before begin: begin's heal_docker clears it so the deploy begins."""
-    before = snapshot()
-    c = dc("ps -q --no-trunc worker").strip()
-    assert len(c) == 64, c
-    sh(f"cp -a /var/lib/docker/containers/{c} /root/half-begin && docker rm -f {c} >/dev/null && "
-       f"mv /root/half-begin /var/lib/docker/containers/{c} && sync && systemctl restart docker")
-    wait_for("docker lists the half-removed container", lambda: c in sh("docker ps -aq --no-trunc"), 60)
-    code, out = begin("b")
-    assert code == 0 and "half removed" in out, out[-2500:]
-    code, out = rollback()
-    assert code == 0, out[-2500:]
-    not_pending()
-    ready()
-    same(before, snapshot())
-    return "begin healed docker and proceeded"
-
-
 def boot_stops_held_without_watch() -> str:
     """boot stops a held node's leftover containers on its own, without the watch timer running."""
     before = snapshot()
@@ -1936,7 +1918,6 @@ def main() -> int:
         ("a rollback without docker", rollback_without_docker),
         ("a frozen docker daemon during rollback", frozen_docker_during_rollback),
         ("boot stops a held node without the watch", boot_stops_held_without_watch),
-        ("begin heals a half-removed container", begin_heals_half_removed),
         ("an answer docker does not give", answer_docker_does_not_give),
         ("backups during a deploy", backups_during_a_deploy),
         ("two failed in a row, the schema kept", two_failed_in_a_row_with_a_kept_schema),
