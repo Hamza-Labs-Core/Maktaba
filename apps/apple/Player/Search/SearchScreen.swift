@@ -637,7 +637,7 @@ private struct TranscriptHeader: View {
                     .font(.maktabaBody(15, weight: .medium, relativeTo: .subheadline))
                     .foregroundStyle(Color.mktText)
                 Group {
-                    if sub.isEmpty { matches } else { Text(verbatim: sub + " · ") + matches }
+                    if sub.isEmpty { matches } else { Text("\(Text(verbatim: sub)) · \(matches)", tableName: "Search", comment: "Transcript video details and match count") }
                 }
                 .font(.maktabaBody(13, relativeTo: .caption))
                 .foregroundStyle(Color.mktMuted)
@@ -654,6 +654,8 @@ private struct PassageRow: View {
 
     var body: some View {
         let time = clock(passage.startSec)
+        let playFrom = Text("Play from \(time)", tableName: "Search", comment: "A transcript passage plays from this time")
+        let snippet = Text(verbatim: SearchSnippet.plain(passage.snippet ?? ""))
         HStack(alignment: .firstTextBaseline, spacing: MaktabaTokens.Spacing.s2) {
             Label { Text(verbatim: time) } icon: { Image(systemName: "play.fill") }
                 .labelStyle(.titleAndIcon)
@@ -671,8 +673,7 @@ private struct PassageRow: View {
         }
         .padding(.leading, MaktabaTokens.Spacing.s6)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text("Play from \(time)", tableName: "Search", comment: "A transcript passage plays from this time")
-            + Text(verbatim: ": " + SearchSnippet.plain(passage.snippet ?? "")))
+        .accessibilityLabel(Text("\(playFrom): \(snippet)", tableName: "Search", comment: "Playback time followed by the transcript passage"))
     }
 }
 
@@ -718,9 +719,11 @@ private struct DidYouMeanRow: View {
     var body: some View {
         let parts = SearchWords.didYouMeanParts()
         Button(action: run) {
-            (Text(verbatim: parts.before)
-                + Text(verbatim: "\u{2068}\(words)\u{2069}").fontWeight(.semibold).foregroundStyle(Color.mktBrassText).underline()
-                + Text(verbatim: parts.after))
+            let before = Text(verbatim: parts.before)
+            let after = Text(verbatim: parts.after)
+            let markedWords = Text(verbatim: "\u{2068}\(words)\u{2069}")
+                .fontWeight(.semibold).foregroundStyle(Color.mktBrassText).underline()
+            Text("\(before)\(markedWords)\(after)", tableName: "Search", comment: "Suggestion with the corrected words styled in place")
                 .font(.maktabaBody(15, relativeTo: .body))
                 .foregroundStyle(Color.mktText)
                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)

@@ -104,10 +104,12 @@ runs the **real** Google Cast SDK on the iPhone and the iPad:
   (`MAKTABA_CAST_APP_ID=CC1AD845 MAKTABA_CAST_ENABLED=YES`, `_apple-apps.yml`), and
   `cast-app-id.py --built` checks the built Info.plist: that receiver, `_googlecast._tcp` and
   `_CC1AD845._googlecast._tcp`. No other build does; the plain build is checked to have no Cast
-  while `shared/cast/app.json` is empty. The other UI tests start with `-maktaba-cast off`.
+  while `shared/cast/app.json` is empty. Player UI tests default to `-maktaba-cast off`.
+  The Cast scenarios opt into the fake or real context.
 - The test starts the app with `-maktaba-cast real` (Debug builds only) and reads the SDK's own
-  state (`CastSDKState`): set up with the build's receiver, not searching before the local
-  network screen's Continue, then searching with no Bonjour error. The SDK sends its first
+  state (`CastSDKState`). A plain local build skips this test. CI requires the SDK to be
+  set up with the build's receiver, idle before Continue on the local network screen, and
+  searching afterward with no Bonjour error. The SDK sends its first
   Bonjour query only once it has read the network's state, which it does at background priority:
   on a busy runner that took up to 137 s, so the test waits for the query and then for the TV.
 - It advertises a Cast device with Bonjour from the test runner, under a new id each run, and

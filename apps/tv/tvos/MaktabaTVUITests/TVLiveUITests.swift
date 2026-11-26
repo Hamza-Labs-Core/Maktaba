@@ -341,11 +341,12 @@ final class TVLiveUITests: XCTestCase {
         XCTAssertTrue(app.buttons["المقترحات"].exists && app.buttons["الفئات"].exists, "the tabs in Arabic")
         moveFocus(to: tab, with: .left)
         XCTAssertTrue(element("collection.col-yt").waitForExistence(timeout: 20), "the collections")
-        XCTAssertTrue(app.staticTexts["قائمة تشغيل يوتيوب"].exists, "the YouTube badge in Arabic")
+        let playlistBadge = element("collection.badge.col-yt")
+        XCTAssertTrue(playlistBadge.exists, "the YouTube playlist card has a badge")
+        XCTAssertEqual(playlistBadge.label, "قائمة تشغيل يوتيوب", "the playlist badge is in Arabic")
         XCTAssertTrue(element("collection.col-ch").exists, "a channel's collection shows")
-        // a channel's collection has no source badge: no more text than the hand-made one's
-        XCTAssertEqual(element("collection.col-ch").staticTexts.count, element("collection.col-mine").staticTexts.count,
-                       "a channel's collection has no source badge")
+        XCTAssertFalse(app.staticTexts["قناة يوتيوب"].exists, "no YouTube channel badge in Arabic")
+        XCTAssertFalse(element("collection.badge.col-ch").exists, "the channel card has no source badge")
         shot("tv-library-collections-ar")
     }
 

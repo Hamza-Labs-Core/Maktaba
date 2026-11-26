@@ -260,6 +260,7 @@ private struct EpisodeRow: View {
     private var label: Text {
         let rest = Text(verbatim: ([episode.title] + [episode.durationSec.map { VideoCard.length($0, locale) }].compactMap { $0 }).joined(separator: ", "))
         guard let number else { return rest }
-        return Text("Episode \(number)", tableName: "Libraries", comment: "An episode's number") + Text(verbatim: ", ") + rest
+        let episodeNumber = Text("Episode \(number)", tableName: "Libraries", comment: "An episode's number")
+        return Text("\(episodeNumber), \(rest)", tableName: "Libraries", comment: "Episode number followed by its title and duration")
     }
 }

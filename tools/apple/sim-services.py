@@ -16,6 +16,7 @@ may take CALL seconds at most, so one that never answers leaves time to ask agai
 printed with the time it took. A service not seen to go, or to run, is a warning, and the exit
 status is 0: the tests run anyway.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -33,30 +34,60 @@ DOMAIN = "user/foreground"
 Call = Callable[[list[str], float], "str | None"]
 
 
+class SimulatorUnavailable(Exception):
+    """The simulator is missing or stopped."""
+
+
 def launchctl(udid: str) -> Call:
     def call(args: list[str], limit: float) -> str | None:
         start = time.monotonic()
         try:
-            done = subprocess.run(["xcrun", "simctl", "spawn", udid, "launchctl", *args],
-                                  capture_output=True, text=True, errors="replace", timeout=limit, check=False)
-            out, how = (done.stdout if done.returncode == 0 else None), f"exit {done.returncode}"
+            done = subprocess.run(
+                ["xcrun", "simctl", "spawn", udid, "launchctl", *args],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=limit,
+                check=False,
+            )
+            out, how = (
+                (done.stdout if done.returncode == 0 else None),
+                f"exit {done.returncode}",
+            )
         except subprocess.TimeoutExpired:
             out, how = None, "cut"
-        print(f"launchctl {' '.join(args)}: {how}, {time.monotonic() - start:.1f}s", flush=True)
+        print(
+            f"launchctl {' '.join(args)}: {how}, {time.monotonic() - start:.1f}s",
+            flush=True,
+        )
+        if how in {"exit 148", "exit 149"}:
+            raise SimulatorUnavailable(f"simulator {udid} unavailable ({how})")
         return out
+
     return call
 
 
 def listed(out: str | None) -> set[str] | None:
-    """The labels `launchctl list` shows; None when it showed nothing (cut, failed or empty)."""
+    """The labels `launchctl list` shows, or None when there was no usable reply."""
     if not out:
         return None
-    labels = {parts[2] for parts in (line.split("\t") for line in out.splitlines()[1:]) if len(parts) == 3}
+    header, *rows = out.splitlines()
+    if not rows and header.split() == ["PID", "Status", "Label"]:
+        return set()
+    labels = {
+        parts[2] for parts in (line.split("\t") for line in rows) if len(parts) == 3
+    }
     return labels or None
 
 
-def turn_off(services: list[str], call: Call, budget: float = BUDGET, *,
-             clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep) -> str | None:
+def turn_off(
+    services: list[str],
+    call: Call,
+    budget: float = BUDGET,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str | None:
     """None once a list shows none of `services`, else what to warn of."""
     end = clock() + budget
     last: set[str] | None = None  # what the last list that answered showed
@@ -65,7 +96,8 @@ def turn_off(services: list[str], call: Call, budget: float = BUDGET, *,
         left = end - clock()
         return call(list(args), min(CALL, left)) if left > 0 else None
 
-    acted = False  # a service not loaded yet is not in the first list, and is not gone
+    seen: set[str] = set()
+    disabled: set[str] = set()
     first = True
     while first or clock() < end:
         if not first:
@@ -75,16 +107,18 @@ def turn_off(services: list[str], call: Call, budget: float = BUDGET, *,
         if labels is None:
             continue
         last = labels
-        there = [s for s in services if s in labels] if acted else services
+        seen.update(labels)
+        there = [s for s in services if s in labels or s not in seen | disabled]
         if not there:
             return None
-        acted = True
         for service in there:
-            ask("disable", f"{DOMAIN}/{service}")
+            if ask("disable", f"{DOMAIN}/{service}") is not None:
+                disabled.add(service)
             ask("bootout", f"{DOMAIN}/{service}")
     if last is None:
         return f"the simulator did not list its services: {', '.join(services)} may still run"
-    return f"not seen to go in {budget:.0f}s: {', '.join(s for s in services if s in last)}"
+    pending = [s for s in services if s in last]
+    return f"not seen to go in {budget:.0f}s: {', '.join(pending or services)}"
 
 
 def running(out: str | None) -> bool:
@@ -92,8 +126,14 @@ def running(out: str | None) -> bool:
     return any(line.strip() == "state = running" for line in (out or "").splitlines())
 
 
-def start(service: str, call: Call, budget: float = BUDGET, *,
-          clock: Callable[[], float] = time.monotonic, sleep: Callable[[float], None] = time.sleep) -> str | None:
+def start(
+    service: str,
+    call: Call,
+    budget: float = BUDGET,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str | None:
     """None once launchd says `service` (its domain with it) runs, else what to warn of."""
     end = clock() + budget
 
@@ -113,7 +153,12 @@ def start(service: str, call: Call, budget: float = BUDGET, *,
 class Fake:
     """A simulator for the self-test: each call takes `takes` seconds (more than its limit: cut)."""
 
-    def __init__(self, services: list[str], takes: Callable[[int], float] = lambda n: 1.0, stuck: bool = False):
+    def __init__(
+        self,
+        services: list[str],
+        takes: Callable[[int], float] = lambda n: 1.0,
+        stuck: bool = False,
+    ):
         self.there, self.takes, self.stuck = list(services), takes, stuck
         self.runs_at = float("inf")  # a kickstarted service runs from then on
         self.now, self.calls = 0.0, []
@@ -129,7 +174,9 @@ class Fake:
         if takes > limit:
             return None
         if args[0] == "list":
-            return "PID\tStatus\tLabel\n" + "".join(f"12\t0\t{s}\n" for s in [*self.there, "com.apple.other"])
+            return "PID\tStatus\tLabel\n" + "".join(
+                f"12\t0\t{s}\n" for s in [*self.there, "com.apple.other"]
+            )
         if args[0] == "print":
             return f"x = {{\n\tstate = {'running' if self.now >= self.runs_at else 'xpcproxy'}\n}}"
         name = args[1].removeprefix(DOMAIN + "/")
@@ -138,19 +185,49 @@ class Fake:
         return ""
 
     def off(self, budget: float = BUDGET) -> str | None:
-        return turn_off(["a", "b"], self.call, budget, clock=lambda: self.now, sleep=self.sleep)
+        return turn_off(
+            ["a", "b"], self.call, budget, clock=lambda: self.now, sleep=self.sleep
+        )
 
 
 def self_test() -> None:
-    assert listed("PID\tStatus\tLabel\n-\t0\tcom.apple.x\n9\t0\tcom.apple.y\n") == {"com.apple.x", "com.apple.y"}
-    assert listed(None) is None and listed("") is None and listed("PID\tStatus\tLabel\n") is None
+    from unittest.mock import patch
+
+    for status in (148, 149):
+        with patch.object(
+            subprocess, "run", return_value=subprocess.CompletedProcess([], status)
+        ) as run:
+            try:
+                turn_off(["a"], launchctl("unavailable"))
+            except SimulatorUnavailable:
+                run.assert_called_once()
+            else:
+                raise AssertionError("expected an unavailable simulator")
+
+    assert listed("PID\tStatus\tLabel\n-\t0\tcom.apple.x\n9\t0\tcom.apple.y\n") == {
+        "com.apple.x",
+        "com.apple.y",
+    }
+    assert listed(None) is None and listed("") is None
+    assert listed("PID\tStatus\tLabel\n") == set()
 
     sim = Fake(["a", "b"])
     assert sim.off() is None
-    assert sim.calls == ["list", "disable user/foreground/a", "bootout user/foreground/a",
-                         "disable user/foreground/b", "bootout user/foreground/b", "list"], sim.calls
+    assert sim.calls == [
+        "list",
+        "disable user/foreground/a",
+        "bootout user/foreground/a",
+        "disable user/foreground/b",
+        "bootout user/foreground/b",
+        "list",
+    ], sim.calls
     late = Fake([])  # not loaded yet: disabled all the same
     assert late.off() is None and len(late.calls) == 6, late.calls
+
+    absent = Fake([], lambda n: 999.0 if n == 1 else 1.0)
+    assert absent.off(40) == "not seen to go in 40s: a, b"
+    retry = Fake([], lambda n: 201.0 if n == 1 else 1.0)
+    assert retry.off() is None and retry.calls.count("disable user/foreground/a") == 2
 
     # every call slow, as on a runner just after a boot
     slow = Fake(["a", "b"], lambda n: 70.0)
@@ -161,7 +238,12 @@ def self_test() -> None:
     # a bootout cut: the list shows its service, and it is booted out again, alone
     again = Fake(["a", "b"], lambda n: 999.0 if n == 2 else 1.0)
     assert again.off() is None
-    assert again.calls[5:] == ["list", "disable user/foreground/a", "bootout user/foreground/a", "list"], again.calls
+    assert again.calls[5:] == [
+        "list",
+        "disable user/foreground/a",
+        "bootout user/foreground/a",
+        "list",
+    ], again.calls
 
     # never gone, never answering: the budget ends it, and says which
     stuck = Fake(["b"], stuck=True)
@@ -171,27 +253,37 @@ def self_test() -> None:
     assert dead.off() == "the simulator did not list its services: a, b may still run"
     assert dead.now == BUDGET, dead.now
 
-    assert running("s = {\n\tstate = running\n\tjob state = exited\n}") and not running("\tjob state = running\n")
+    assert running("s = {\n\tstate = running\n\tjob state = exited\n}") and not running(
+        "\tjob state = running\n"
+    )
     assert not running("\tstate = xpcproxy\n") and not running(None)
     kbd = Fake([])
 
     def kick(budget: float = BUDGET) -> str | None:
-        return start("system/k", kbd.call, budget, clock=lambda: kbd.now, sleep=kbd.sleep)
+        return start(
+            "system/k", kbd.call, budget, clock=lambda: kbd.now, sleep=kbd.sleep
+        )
 
     kbd.runs_at = 0.0
-    assert kick() is None and kbd.calls == ["kickstart system/k", "print system/k"], kbd.calls
+    assert kick() is None and kbd.calls == ["kickstart system/k", "print system/k"], (
+        kbd.calls
+    )
     kbd = Fake([])
     kbd.runs_at = 20.0  # spawned, and held
     assert kick() is None and 20 <= kbd.now < 30, kbd.now
     kbd = Fake([])
-    assert kick(60.0) == "not seen to run in 60s: system/k" and 60 <= kbd.now < 62, kbd.now
+    assert kick(60.0) == "not seen to run in 60s: system/k" and 60 <= kbd.now < 62, (
+        kbd.now
+    )
     kbd = Fake([], lambda n: 999.0)
     assert kick() == "not seen to run in 600s: system/k" and kbd.now == BUDGET, kbd.now
     print("sim-services.py: self-test passed")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("udid", nargs="?")
     parser.add_argument("--off", action="append", default=[], metavar="SERVICE")
     parser.add_argument("--start", metavar="DOMAIN/SERVICE")
@@ -205,13 +297,29 @@ def main() -> int:
         parser.error("UDID, and --off or --start, are needed")
     began = time.monotonic()
     call = launchctl(args.udid)
-    if args.off:
-        wrong, why = turn_off(args.off, call, args.budget), "its load can fail a test"
-        done = f"off: {', '.join(args.off)}"
-    else:
-        wrong, why = start(args.start, call, args.budget), "a test that needs it may wait for it"
-        done = f"running: {args.start}"
-    print(f"::warning::{wrong}; {why} (#1678)" if wrong else f"{done} ({time.monotonic() - began:.0f}s)", flush=True)
+    try:
+        if args.off:
+            wrong, why = (
+                turn_off(args.off, call, args.budget),
+                "its load can fail a test",
+            )
+            done = f"off: {', '.join(args.off)}"
+        else:
+            wrong, why = (
+                start(args.start, call, args.budget),
+                "a test that needs it may wait for it",
+            )
+            done = f"running: {args.start}"
+    except SimulatorUnavailable as error:
+        requested = ", ".join(args.off) if args.off else args.start
+        print(f"::warning::{error}; could not configure {requested}", flush=True)
+        return 0
+    print(
+        f"::warning::{wrong}; {why} (#1678)"
+        if wrong
+        else f"{done} ({time.monotonic() - began:.0f}s)",
+        flush=True,
+    )
     return 0
 
 

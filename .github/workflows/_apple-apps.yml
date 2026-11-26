@@ -183,9 +183,9 @@ jobs:
 
       # for the runner's own simulators (arm64), with the .xctestrun the shards run from
       # Cast on, with Google's public Default Media Receiver: PlayerCastUITests runs the real
-      # Google Cast SDK, which iOS lets search only for the Bonjour services in Info.plist. Every
-      # other test starts with Cast off (PlayerUITestCase.launch), and no other build names it:
-      # the TestFlight and App Store builds take app.json's.
+      # Google Cast SDK, which iOS lets search only for the Bonjour services in Info.plist.
+      # Player UI tests default to Cast off. The TestFlight and App Store builds take
+      # their receiver from app.json.
       - name: Build the app and its UI tests
         working-directory: apps/apple
         env:
@@ -396,7 +396,7 @@ jobs:
           # shard until the job's 60 minutes ran out, and no later test ran (PR #1550's run
           # 45264580791, iPhone 2/6, twice)
           run_tests() {
-            TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
+            TEST_RUNNER_MAKTABA_REQUIRE_CAST_SDK=1 TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test-without-building -xctestrun "$xctestrun" \
               -destination "id=$UDID" -resultBundlePath "$RESULTS/$device-$shard.xcresult" \
               -test-timeouts-enabled YES -default-test-execution-time-allowance 600 \
               -maximum-test-execution-time-allowance 600 "${only[@]}" 2>&1 | tee "$RESULTS/$device-$shard-xcodebuild.log"
@@ -445,7 +445,7 @@ jobs:
           log="$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log"
           # the app's log, the system's word on its processes ending, its crash reports; a
           # simulator that stopped under the tests is said and booted again to read its log
-          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" "${{ matrix.device }}-${{ matrix.shard }}" || true
+          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" "${{ matrix.device }}-${{ matrix.shard }}"
           if [ "$APP_DOWNLOAD" = failure ]; then
             echo "::error::no line of the app at all: the app artifact $APP_ARTIFACT never downloaded, so no test ran"
             exit 1
@@ -531,6 +531,7 @@ jobs:
           # (no `simctl ui appearance` here: the tvOS runtime does not support it)
           xcrun simctl bootstatus "$udid" -b > /dev/null
           xcrun simctl spawn "$udid" log config --subsystem com.hamzalabs.maktaba.tv --mode "level:debug,persist:debug"
+          python3 tools/apple/sim-services.py "$udid" --off com.apple.apsd
           # the keyboard's daemon, which a new simulator starts when a keyboard first opens: in two
           # jobs' first test the simulator's new processes were all held for 15 and 27 s then, and
           # the address typed meanwhile came in after the test had failed (jobs 138956933820 and
@@ -649,7 +650,7 @@ jobs:
           mkdir -p "$RESULTS/mac-crashes"
           find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -iname '*maktaba*' -newer "$RESULTS/mac.selection" \
             -exec cp {} "$RESULTS/mac-crashes/" \; 2>/dev/null || true
-          ls "$RESULTS/mac-crashes" | sed 's/^/crash report kept: /'
+          find "$RESULTS/mac-crashes" -maxdepth 1 -type f -exec basename {} \; | sed 's/^/crash report kept: /'
           python3 ../../tools/apple/check-app-log.py "$RESULTS/mac-app.log" || status=1
           exit $status
 
@@ -734,6 +735,7 @@ jobs:
             xcrun simctl spawn "$udid" defaults write com.apple.Preferences "$key" -bool false
           done
           xcrun simctl spawn "$udid" defaults write com.apple.Preferences DidShowContinuousPathIntroduction -bool true
+          python3 tools/apple/sim-services.py "$udid" --off com.apple.apsd
           python3 tools/apple/sim-settle.py "$udid" "$RESULTS/remote-settle.log" --max 480
 
       - name: Run the Remote's diagnostics UI tests

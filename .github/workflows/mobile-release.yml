@@ -278,12 +278,15 @@ jobs:
   ios:
     name: ios (ipa — signing deferred)
     needs: [guard]
-    runs-on: macos-latest
+    runs-on: xcode-27
     timeout-minutes: 45
     permissions:
       contents: write # gh release upload
     steps:
       - uses: actions/checkout@v6.0.2
+
+      - name: Select released Xcode
+        run: python3 tools/apple/xcode.py select --min 27 --sdk iphoneos
 
       - name: Set up pnpm
         uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8

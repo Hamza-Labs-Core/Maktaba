@@ -1,6 +1,39 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@%@%@" : {
+      "comment" : "Suggestion with the corrected words styled in place",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@%@%@"
+          }
+        }
+      }
+    },
+    "%@ · %@" : {
+      "comment" : "Transcript video details and match count",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · %@"
+          }
+        }
+      }
+    },
+    "%@: %@" : {
+      "comment" : "Playback time followed by the transcript passage",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: %@"
+          }
+        }
+      }
+    },
     "Clear all" : {
       "comment" : "Forgets every recent search",
       "localizations" : {

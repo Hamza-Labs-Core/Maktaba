@@ -145,6 +145,10 @@ final class PlayerMacMenuUITests: XCTestCase {
         XCTAssertTrue(wait { !self.isFullScreen }, "⌃⌘F again leaves full screen")
         XCTAssertTrue(wait { self.app.menuBars.menuBarItems["View"].isHittable }, "the menu bar is back after full screen")
 
+        let enter = app.menuBars.menuItems["Enter Full Screen"].firstMatch
+        XCTAssertTrue(enter.waitForExistence(timeout: 5), "View ▸ Enter Full Screen after leaving full screen")
+        XCTAssertFalse(exit.exists, "no Exit Full Screen after leaving full screen")
+
         menu("Playback", "Stop")
         XCTAssertTrue(player.waitForNonExistence(timeout: 5), "Playback ▸ Stop closes the player")
     }

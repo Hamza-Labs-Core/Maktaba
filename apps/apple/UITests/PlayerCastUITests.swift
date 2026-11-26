@@ -120,9 +120,18 @@ final class PlayerCastUITests: PlayerUITestCase {
     /// receiver is Google's public Default Media Receiver (CI builds with it,
     /// `_apple-apps.yml`). Casting to a TV needs a device (docs/stores/cast.md).
     func testTheGoogleCastSDKFindsATVOnTheNetwork() throws {
+        openWatch("en", cast: "real")
+        let configuration = element("cast.sdk")
+        guard configuration.waitForExistence(timeout: 10) else {
+            let message = "Build with MAKTABA_CAST_ENABLED=YES and MAKTABA_CAST_APP_ID to test receiver discovery"
+            if ProcessInfo.processInfo.environment["MAKTABA_REQUIRE_CAST_SDK"] == "1" {
+                XCTFail(message)
+                return
+            }
+            throw XCTSkip(message)
+        }
         let tv = try CastBeacon(receivers: [Self.defaultMediaReceiver])
         defer { tv.stop() }
-        openWatch("en", cast: "real")
         tapCast()
         let go = app.buttons["cast.interstitial.continue"]
         XCTAssertTrue(go.waitForExistence(timeout: 10), "the local network screen before the first cast")
@@ -132,6 +141,8 @@ final class PlayerCastUITests: PlayerUITestCase {
         XCTAssertEqual(before.problems(receiver: Self.defaultMediaReceiver), ["discovery is not running"],
                        "no search before the local network screen's Continue (\(before.text))")
         go.tap()
+        // Let the picker finish its initial spinner before taking an accessibility snapshot.
+        RunLoop.current.run(until: Date().addingTimeInterval(6))
         // the search begins when the SDK has read the network's state, which it does at
         // background priority (`CastSDKState.searching`): on a runner with no CPU to spare that
         // took over a minute, and no query was sent until then (#1615, #1632: no TV in 60 s). So

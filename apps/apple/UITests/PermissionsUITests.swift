@@ -18,7 +18,7 @@ final class PermissionsUITests: XCTestCase {
     private var state: XCUIElement { app.descendants(matching: .any)["permissions.localNetwork.state"].firstMatch }
 
     private func launch(_ fake: String, reset: Bool, extra: [String] = []) {
-        app.launchArguments = (reset ? ["-maktaba-permissions-reset"] : []) + ["-maktaba-permissions-fake", fake] + extra
+        app.launchArguments = (reset ? ["-maktaba-permissions-reset"] : []) + ["-maktaba-cast", "off", "-maktaba-permissions-fake", fake] + extra
         app.launch()
     }
 

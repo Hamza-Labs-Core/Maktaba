@@ -103,8 +103,10 @@ final class PlayerWatchTests: XCTestCase {
         let audible = await PlayerTracks.groups(of: item).audible
         PlayerTracks.ensureAudio(player: player, item: item, audible: audible)
         XCTAssertNotNil(audible.flatMap { item.currentMediaSelection.selectedMediaOption(in: $0) }, "its sound is selected")
+        let loaded = await PlayerTracks.loadedSound(player: player, item: item)
+        XCTAssertEqual(loaded.codec, "aac")
         let sound = PlayerTracks.sound(player: player, item: item)
-        XCTAssertEqual(sound.codec, "aac")
+        XCTAssertEqual(sound.codec, loaded.codec, "the loaded format is available synchronously")
         XCTAssertTrue(sound.audible)
         XCTAssertFalse(player.isMuted)
         XCTAssertGreaterThan(player.volume, 0)
@@ -127,7 +129,9 @@ final class PlayerWatchTests: XCTestCase {
         XCTAssertFalse(PlayerTracks.sound(player: player, item: item).audible, "muted before")
         XCTAssertTrue(PlayerTracks.ensureAudio(player: player, item: item, audible: audible))
         XCTAssertNotNil(item.currentMediaSelection.selectedMediaOption(in: audible), "its sound is selected")
-        try await wait("an AAC track enabled again") { PlayerTracks.sound(player: player, item: item).codec == "aac" }
+        try await wait("an AAC track enabled again") {
+            await PlayerTracks.loadedSound(player: player, item: item).codec == "aac"
+        }
         XCTAssertTrue(PlayerTracks.sound(player: player, item: item).audible)
         XCTAssertFalse(PlayerTracks.ensureAudio(player: player, item: item, audible: audible), "nothing more to do")
     }
@@ -190,9 +194,9 @@ final class PlayerWatchTests: XCTestCase {
         return (player, item)
     }
 
-    private func wait(_ what: String, timeout: TimeInterval = 10, until done: () -> Bool) async throws {
+    private func wait(_ what: String, timeout: TimeInterval = 10, until done: () async -> Bool) async throws {
         let end = Date().addingTimeInterval(timeout)
-        while !done() {
+        while !(await done()) {
             if Date() > end {
                 XCTFail("timed out: \(what)")
                 return

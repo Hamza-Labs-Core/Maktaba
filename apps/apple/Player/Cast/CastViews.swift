@@ -98,6 +98,7 @@ private struct CastSheets: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .castSDKState(cast)
             .sheet(isPresented: $cast.showsInterstitial) {
                 CastInterstitial(cast: cast)
                     .presentationDetents([.medium])
