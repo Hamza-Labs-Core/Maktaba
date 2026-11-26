@@ -125,6 +125,24 @@ func nonNil(m map[string]any) map[string]any {
 	return m
 }
 
+// RetryPayload parses a failed job's JSON payload for a replacement job,
+// stripping one-shot operator marks (run_now) that applied only to the
+// previous job (matching pipeline engine/requeue.py _asked).
+func RetryPayload(raw []byte) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var p map[string]any
+	if err := json.Unmarshal(raw, &p); err != nil || len(p) == 0 {
+		return nil
+	}
+	delete(p, "run_now")
+	if len(p) == 0 {
+		return nil
+	}
+	return p
+}
+
 // ReasonFor builds the p_reason document: {"why", "by", ...extra}.
 // "by" is "user:<id>" for an authenticated request, "system" otherwise.
 func ReasonFor(ctx context.Context, why string, extra map[string]any) map[string]any {

@@ -165,7 +165,7 @@ const openItemsRest = `
       CROSS JOIN LATERAL (
            SELECT j.id, j.stage, j.subject_kind, j.subject_id, j.state, j.library_id, j.attempts,
                   j.max_attempts, j.error, j.error_cause, j.failure_class, j.parked_on,
-                  j.finished_at, j.created_at
+                  j.finished_at, j.created_at, j.payload, j.force_cascade
              FROM processing_jobs j
             WHERE j.subject_kind = f.subject_kind AND j.subject_id = f.subject_id AND j.stage = f.stage
             ORDER BY j.id DESC LIMIT 1) l

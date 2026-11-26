@@ -42,11 +42,13 @@ WITH f AS (
                           AND fi.stage = processing_jobs.stage)
 ), latest AS (
     SELECT l.id, l.stage, l.subject_kind, l.subject_id, l.state,
-           l.error_cause, l.error, l.finished_at, l.created_at
+           l.error_cause, l.error, l.finished_at, l.created_at,
+           l.payload, l.force_cascade
       FROM f
       CROSS JOIN LATERAL (
            SELECT j.id, j.stage, j.subject_kind, j.subject_id, j.state,
-                  j.error_cause, j.error, j.finished_at, j.created_at
+                  j.error_cause, j.error, j.finished_at, j.created_at,
+                  j.payload, j.force_cascade
              FROM processing_jobs j
             WHERE j.subject_kind = f.subject_kind AND j.subject_id = f.subject_id AND j.stage = f.stage
             ORDER BY j.id DESC LIMIT 1) l

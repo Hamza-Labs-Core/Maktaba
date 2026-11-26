@@ -79,7 +79,7 @@ func (h *Handler) Mount(r chi.Router) {
 func (h *Handler) store() *flagspkg.Store { return h.Resolver.Store }
 
 func unauthorized() *httperror.Error {
-	return &httperror.Error{Type: httperror.TypeForbidden, Title: "unauthorized",
+	return &httperror.Error{Type: httperror.TypeUnauthorized, Title: "unauthorized",
 		Status: http.StatusUnauthorized, Detail: "authentication required"}
 }
 

@@ -13,6 +13,7 @@ package components
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 )
 
 func (h *Handler) mountMachines(r chi.Router) {
@@ -155,6 +157,10 @@ func (c ClusterHook) StagesSwitched(r *http.Request, nodeID string, stages map[s
 }
 
 func problemOf(err error) error {
+	var p *pl.Problem
+	if errors.As(err, &p) {
+		return pluginProblem(p)
+	}
 	if ref, ok := svc.AsRefusal(err); ok {
 		return refusalProblem(ref)
 	}

@@ -703,6 +703,10 @@ func unauthorized() *httperror.Error {
 		Detail: "authentication required"}
 }
 
+// TypePairingCodeExpired is the 410 problem type sent when a device pairing
+// code or its approval has expired or is no longer held by this home.
+var TypePairingCodeExpired = httperror.Type("pairing-code-expired")
+
 func gone(detail string) *httperror.Error {
-	return &httperror.Error{Type: httperror.TypeConflict, Title: "gone", Status: http.StatusGone, Detail: detail}
+	return &httperror.Error{Type: TypePairingCodeExpired, Title: "gone", Status: http.StatusGone, Detail: detail}
 }

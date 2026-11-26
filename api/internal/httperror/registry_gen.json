@@ -588,6 +588,27 @@
       "install": null
     },
     {
+      "slug": "cloud-link-refused",
+      "status": 422,
+      "area": "accounts",
+      "audience": "person",
+      "codes": [],
+      "title": {
+        "en": "The link with Maktaba Cloud wasn't accepted",
+        "ar": "لم يُقبل الربط بسحابة مكتبة"
+      },
+      "means": {
+        "en": "Your home could not accept the confirmation from Maktaba Cloud. The link step may have expired, been used already, or been started for a different account.",
+        "ar": "تعذّر على الجهاز الرئيسي قبول التأكيد القادم من سحابة مكتبة. ربما انتهت مهلة خطوة الربط، أو استُخدمت من قبل، أو بدأت لحساب آخر."
+      },
+      "do": {
+        "en": "Start linking your account to Maktaba Cloud again from your profile page.",
+        "ar": "ابدؤوا ربط حسابكم بسحابة مكتبة من جديد من صفحة ملفكم الشخصي."
+      },
+      "help": "account#linked-accounts",
+      "install": null
+    },
+    {
       "slug": "cloud-not-linked",
       "status": 409,
       "area": "accounts",
@@ -4053,6 +4074,27 @@
         "ar": "لا حاجة إلى فعل شيء. حدّثوا قائمة الطلبات لتروا ما تقرّر."
       },
       "help": null,
+      "install": null
+    },
+    {
+      "slug": "pairing-code-expired",
+      "status": 410,
+      "area": "accounts",
+      "audience": "person",
+      "codes": [],
+      "title": {
+        "en": "The sign-in code has expired",
+        "ar": "انتهت صلاحية رمز تسجيل الدخول"
+      },
+      "means": {
+        "en": "The code shown on the device ran out, was already used, or is no longer held by your home. Codes only wait a short time for approval.",
+        "ar": "انتهت مدة الرمز الظاهر على الجهاز، أو استُخدم من قبل، أو لم يعد الجهاز الرئيسي يحتفظ به. تبقى الرموز بانتظار الموافقة مدة قصيرة فقط."
+      },
+      "do": {
+        "en": "Ask the device for a new sign-in code and approve it again.",
+        "ar": "اطلبوا رمز تسجيل دخول جديدًا على الجهاز ووافقوا عليه مجددًا."
+      },
+      "help": "account#sign-in-with-a-code",
       "install": null
     },
     {

@@ -1,6 +1,7 @@
 package libraries
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
 // TestMutationsRefuseNonAdmins: the API enforces roles. Creating, changing, deleting and
@@ -52,5 +54,22 @@ func TestMutationsRefuseNonAdmins(t *testing.T) {
 				t.Errorf("%s %s as %v: %d, want 403", c.method, c.path, p, rec.Code)
 			}
 		}
+	}
+}
+
+func TestListAnonymousReturnsUnauthorizedProblem(t *testing.T) {
+	r := chi.NewRouter()
+	(&Handler{}).Mount(r)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/libraries", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["type"] != httperror.TypeUnauthorized {
+		t.Fatalf("type = %v, want %s", body["type"], httperror.TypeUnauthorized)
 	}
 }

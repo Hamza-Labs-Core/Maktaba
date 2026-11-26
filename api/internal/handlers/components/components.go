@@ -38,6 +38,7 @@ import (
 	svc "github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/common"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	pl "github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components/runner"
@@ -117,6 +118,11 @@ func (h *Handler) log() *slog.Logger {
 
 // fail writes err: a refusal as its problem, anything else as 503 (the database) or 500.
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
+	var p *pl.Problem
+	if errors.As(err, &p) {
+		httperror.Write(w, r, pluginProblem(p))
+		return
+	}
 	if ref, ok := svc.AsRefusal(err); ok {
 		httperror.Write(w, r, refusalProblem(ref))
 		return
@@ -131,6 +137,16 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	httperror.Write(w, r, httperror.Internal("components"))
+}
+
+// pluginProblem renders a plugin lifecycle refusal (*plugins.Problem) with its
+// HTTP status, problem type, code, detail, and params.
+func pluginProblem(p *pl.Problem) *httperror.Error {
+	e := problem(p.Status, p.Code, strings.ReplaceAll(p.Code, "_", " "), p.Detail)
+	for k, v := range p.Params {
+		e = e.With(k, v)
+	}
+	return e
 }
 
 // refusalProblem is a refusal as its problem+json, with its extras.

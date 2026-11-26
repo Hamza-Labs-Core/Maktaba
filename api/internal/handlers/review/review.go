@@ -450,10 +450,21 @@ type ResolveBody struct {
 
 func writeEditErr(w http.ResponseWriter, r *http.Request, err error) {
 	var be *transcript.BatchError
+	if errors.As(err, &be) {
+		switch {
+		case errors.Is(be.Err, transcript.ErrStale), errors.Is(be.Err, transcript.ErrNotActive),
+			errors.Is(be.Err, transcript.ErrChangedSince), errors.Is(be.Err, transcript.ErrUndone):
+			httperror.Write(w, r, httperror.Conflict(httperror.TypeForCode(be.Err.Error()),
+				"an edit of the batch cannot be undone").With("code", be.Err.Error()).With("edit_id", be.EditID))
+		case errors.Is(be.Err, transcript.ErrNotFound):
+			httperror.Write(w, r, httperror.NotFound("an edit of the batch was not found").
+				With("code", be.Err.Error()).With("edit_id", be.EditID))
+		default:
+			httperror.Write(w, r, httperror.Internal("edit").Wrap(err))
+		}
+		return
+	}
 	switch {
-	case errors.As(err, &be):
-		httperror.Write(w, r, httperror.Conflict(httperror.TypeForCode(be.Err.Error()),
-			"an edit of the batch cannot be undone").With("code", be.Err.Error()).With("edit_id", be.EditID))
 	case errors.Is(err, transcript.ErrStale), errors.Is(err, transcript.ErrNotActive),
 		errors.Is(err, transcript.ErrChangedSince), errors.Is(err, transcript.ErrUndone):
 		httperror.Write(w, r, httperror.Conflict(httperror.TypeForCode(err.Error()), err.Error()).With("code", err.Error()))

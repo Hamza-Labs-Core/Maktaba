@@ -259,7 +259,7 @@ func (h *TiersHandler) log(r *http.Request, what, id string, tier sql.NullInt64,
 // tiersUnauthorized is the 401 of the age tier routes (accounts.go has the account
 // routes' own, with another problem type).
 func tiersUnauthorized() *httperror.Error {
-	return &httperror.Error{Type: httperror.TypeForbidden, Title: "unauthorized",
+	return &httperror.Error{Type: httperror.TypeUnauthorized, Title: "unauthorized",
 		Status: http.StatusUnauthorized, Detail: "authentication required"}
 }
 

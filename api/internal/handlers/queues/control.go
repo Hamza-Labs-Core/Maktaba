@@ -199,7 +199,7 @@ const maxBulkRetry = 20000
 // failedForRetrySQL: latest-failed rows of a stage whose coded cause
 // equals $2, plus uncoded legacy rows (filtered in Go by legacyCause).
 var failedForRetrySQL = latestFailedCTE + `
-SELECT id, subject_kind, subject_id::text, error_cause, error
+SELECT id, subject_kind, subject_id::text, error_cause, error, payload, force_cascade
   FROM latest
  WHERE state = 'failed' AND (error_cause = $2::text OR error_cause IS NULL)
  ORDER BY id
@@ -209,7 +209,7 @@ SELECT id, subject_kind, subject_id::text, error_cause, error
 // row of its subject and stage (a failure a later run has superseded is
 // history, not something to redo - with force, for external writes).
 const failedByIDsSQL = `
-SELECT j.id, j.subject_kind, j.subject_id::text, j.state
+SELECT j.id, j.subject_kind, j.subject_id::text, j.state, j.payload, j.force_cascade
   FROM processing_jobs j
  WHERE j.stage = $1 AND j.id = ANY($2::bigint[])
    AND NOT EXISTS (SELECT 1 FROM processing_jobs n
@@ -229,10 +229,12 @@ SELECT j.id, j.subject_kind, j.subject_id::text,
  LIMIT ` + "20000"
 
 type target struct {
-	jobID int64
-	kind  string
-	id    string
-	hash  string
+	jobID        int64
+	kind         string
+	id           string
+	hash         string
+	payload      []byte
+	forceCascade bool
 }
 
 // Retry implements POST /api/queues/{stage}/retry {cause?, job_ids?}.
@@ -276,7 +278,7 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var t target
 			var cause, errTxt sql.NullString
-			if err := rows.Scan(&t.jobID, &t.kind, &t.id, &cause, &errTxt); err != nil {
+			if err := rows.Scan(&t.jobID, &t.kind, &t.id, &cause, &errTxt, &t.payload, &t.forceCascade); err != nil {
 				rows.Close()
 				writeErr(w, r, "find failures", err)
 				return
@@ -304,7 +306,7 @@ func (h *Handler) Retry(w http.ResponseWriter, r *http.Request) {
 		for rows.Next() {
 			var t target
 			var state string
-			if err := rows.Scan(&t.jobID, &t.kind, &t.id, &state); err != nil {
+			if err := rows.Scan(&t.jobID, &t.kind, &t.id, &state, &t.payload, &t.forceCascade); err != nil {
 				rows.Close()
 				writeErr(w, r, "find jobs", err)
 				return
@@ -431,6 +433,12 @@ func (h *Handler) enqueueTargets(r *http.Request, stage string, targets []target
 	for _, t := range targets {
 		p := base
 		p.SubjectKind, p.SubjectID, p.Stage = t.kind, t.id, stage
+		if t.forceCascade {
+			p.ForceCascade = true
+		}
+		if p.Payload == nil {
+			p.Payload = RetryPayload(t.payload)
+		}
 		ex := map[string]any{"of_job": t.jobID}
 		for k, v := range extra {
 			ex[k] = v

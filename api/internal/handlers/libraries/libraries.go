@@ -237,7 +237,7 @@ func (h *Handler) Mount(r chi.Router) {
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
-		httperror.Write(w, r, &httperror.Error{Type: httperror.TypeForbidden, Title: "unauthorized", Status: http.StatusUnauthorized, Detail: "authentication required"})
+		httperror.Write(w, r, &httperror.Error{Type: httperror.TypeUnauthorized, Title: "unauthorized", Status: http.StatusUnauthorized, Detail: "authentication required"})
 		return
 	}
 

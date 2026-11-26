@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/users"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/cluster/delegation"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/secret"
 )
 
@@ -153,6 +155,89 @@ func TestJWTBearer_RejectsBadAudience(t *testing.T) {
 
 	if got != nil {
 		t.Errorf("wrong-audience JWT should not attach a principal; got %+v", got)
+	}
+}
+
+// Issue #1172: an expired access JWT on a protected route emits 401 token-expired;
+// public routes (like /api/auth/refresh) still pass through, and wrong-audience
+// expired tokens stay generic unauthorized.
+func TestJWTBearer_ExpiredEmitsTokenExpired(t *testing.T) {
+	s := setWithKey(t)
+	expAccess, err := jwt.Sign(s, jwt.Claims{
+		Iss: "maktaba", Aud: "api", Sub: "u1", Usr: "u1",
+		Iat: time.Now().Add(-2 * time.Hour).Unix(),
+		Exp: time.Now().Add(-1 * time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expStreaming, err := jwt.Sign(s, jwt.Claims{
+		Iss: "maktaba", Aud: "streaming", Sub: "u1", Usr: "u1",
+		Iat: time.Now().Add(-2 * time.Hour).Unix(),
+		Exp: time.Now().Add(-1 * time.Hour).Unix(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chain := JWTBearer(s, "api")(RequireAuthExcept(DefaultPublicAllowlist())(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
+
+	// Protected route + expired access JWT -> 401 token-expired
+	req := httptest.NewRequest(http.MethodGet, "/api/libraries", nil)
+	req.Header.Set("Authorization", "Bearer "+expAccess)
+	rec := httptest.NewRecorder()
+	chain.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expired access JWT status = %d, want 401", rec.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["type"] != httperror.TypeTokenExpired {
+		t.Fatalf("expired access JWT type = %v, want %s", body["type"], httperror.TypeTokenExpired)
+	}
+
+	// Public route (/api/auth/refresh) + expired access JWT -> still allowed (200)
+	req = httptest.NewRequest(http.MethodPost, "/api/auth/refresh", nil)
+	req.Header.Set("Authorization", "Bearer "+expAccess)
+	rec = httptest.NewRecorder()
+	chain.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expired access JWT on /api/auth/refresh status = %d, want 200", rec.Code)
+	}
+
+	// Protected route + expired wrong-audience JWT -> 401 unauthorized (not token-expired)
+	req = httptest.NewRequest(http.MethodGet, "/api/libraries", nil)
+	req.Header.Set("Authorization", "Bearer "+expStreaming)
+	rec = httptest.NewRecorder()
+	chain.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong-audience expired JWT status = %d, want 401", rec.Code)
+	}
+	body = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["type"] == httperror.TypeTokenExpired {
+		t.Fatalf("wrong-audience expired JWT leaked token-expired: %+v", body)
+	}
+
+	// RequireAdmin with expired access JWT -> 401 token-expired
+	adminChain := JWTBearer(s, "api")(RequireAdmin(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})))
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/x", nil)
+	req.Header.Set("Authorization", "Bearer "+expAccess)
+	rec = httptest.NewRecorder()
+	adminChain.ServeHTTP(rec, req)
+	body = nil
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusUnauthorized || body["type"] != httperror.TypeTokenExpired {
+		t.Fatalf("RequireAdmin expired JWT: %d %+v", rec.Code, body)
 	}
 }
 

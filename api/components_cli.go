@@ -20,6 +20,7 @@ import (
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/components"
 	componentsh "github.com/Hamza-Labs-Core/Maktaba/api/internal/handlers/components"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/pgdsn"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/plugins"
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/subscriptions"
 	catalog "github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
@@ -354,6 +355,11 @@ func (c *componentsCLI) installRefused(ctx context.Context, d components.Detail)
 }
 
 func (c *componentsCLI) fail(err error) int {
+	var p *plugins.Problem
+	if errors.As(err, &p) {
+		fmt.Fprintf(c.errOut, "Refused (%s): %s\n", p.Code, p.Detail)
+		return exitComponentsFailed
+	}
 	if r, ok := components.AsRefusal(err); ok {
 		fmt.Fprintf(c.errOut, "Refused (%s): %s\n", r.Code, r.Detail)
 		if len(r.RequiredBy) > 0 {

@@ -290,7 +290,7 @@ func enqueueRule(rows ...[]driver.Value) *queuestest.Rule {
 }
 
 func TestRetry(t *testing.T) {
-	failedCols := []string{"id", "kind", "sid", "cause", "error"}
+	failedCols := []string{"id", "kind", "sid", "cause", "error", "payload", "force_cascade"}
 	tests := []struct {
 		name        string
 		body        string
@@ -306,9 +306,9 @@ func TestRetry(t *testing.T) {
 			body: `{"cause":"nas_timeout"}`,
 			rules: []*queuestest.Rule{
 				{Match: "error_cause = $2::text", Cols: failedCols, Rows: [][]driver.Value{
-					{int64(1), "video", uidA, "nas_timeout", nil},
-					{int64(2), "video", uidB, nil, `{"kind":"nas_timeout","message":"x"}`},
-					{int64(3), "video", uidB, nil, `{"kind":"OSError"}`}, // other legacy cause: skipped
+					{int64(1), "video", uidA, "nas_timeout", nil, nil, false},
+					{int64(2), "video", uidB, nil, `{"kind":"nas_timeout","message":"x"}`, nil, false},
+					{int64(3), "video", uidB, nil, `{"kind":"OSError"}`, nil, false}, // other legacy cause: skipped
 				}},
 				enqueueRule([]driver.Value{int64(50), "inserted"}),
 			},
@@ -319,8 +319,8 @@ func TestRetry(t *testing.T) {
 			body: `{"job_ids":[7,8]}`,
 			rules: []*queuestest.Rule{
 				// only rows still latest for their subject and stage (a superseded failure is history)
-				{Match: "j.id = any($2::bigint[]) and not exists", Cols: []string{"id", "kind", "sid", "state"}, Rows: [][]driver.Value{
-					{int64(7), "video", uidA, "failed"}, {int64(8), "video", uidB, "done"}}},
+				{Match: "j.id = any($2::bigint[]) and not exists", Cols: []string{"id", "kind", "sid", "state", "payload", "force_cascade"}, Rows: [][]driver.Value{
+					{int64(7), "video", uidA, "failed", nil, false}, {int64(8), "video", uidB, "done", nil, false}}},
 				enqueueRule([]driver.Value{int64(60), "coalesced"}),
 			},
 			wantCode: 200, wantEnqCall: 1, wantEnq: 0, wantCoal: 1, wantPrio: nil,
@@ -369,7 +369,7 @@ func TestRetry(t *testing.T) {
 	})
 	t.Run("enqueue error rolls back", func(t *testing.T) {
 		f := newFixture(singleStageRule(stageRow("probe", "episodes", 1, "nas_read")), stagesRule(stageRow("probe", "episodes", 1, "nas_read")),
-			&queuestest.Rule{Match: "id = any($2::bigint[])", Cols: []string{"id", "kind", "sid", "state"}, Rows: [][]driver.Value{{int64(7), "video", uidA, "failed"}}},
+			&queuestest.Rule{Match: "id = any($2::bigint[])", Cols: []string{"id", "kind", "sid", "state", "payload", "force_cascade"}, Rows: [][]driver.Value{{int64(7), "video", uidA, "failed", nil, false}}},
 			&queuestest.Rule{Match: "processing_jobs_enqueue", Err: errors.New("boom")})
 		if rec := f.do("POST", "/api/queues/probe/retry", `{"job_ids":[7]}`, admin()); rec.Code != 500 {
 			t.Fatalf("status %d", rec.Code)
@@ -378,6 +378,77 @@ func TestRetry(t *testing.T) {
 			t.Errorf("want rollback, no commit")
 		}
 	})
+	// Issue #1763: queue bulk retry (by cause and by job_ids) preserves payload and
+	// force_cascade while stripping one-shot run_now marks.
+	for _, tc := range []struct {
+		name string
+		body string
+		rule *queuestest.Rule
+	}{
+		{
+			name: "by cause preserves payload and force_cascade and strips run_now",
+			body: `{"cause":"nas_timeout"}`,
+			rule: &queuestest.Rule{
+				Match: "error_cause = $2::text",
+				Cols:  failedCols,
+				Rows: [][]driver.Value{
+					{int64(11), "video", uidA, "nas_timeout", nil, []byte(`{"payload_seasons":["s2"],"fp_gate":"h1","relisten":true,"backfill":true,"run_now":true}`), true},
+					{int64(12), "video", uidB, "nas_timeout", nil, []byte(`{"run_now":true}`), false},
+				},
+			},
+		},
+		{
+			name: "by job_ids preserves payload and force_cascade and strips run_now",
+			body: `{"job_ids":[11,12]}`,
+			rule: &queuestest.Rule{
+				Match: "j.id = any($2::bigint[]) and not exists",
+				Cols:  []string{"id", "kind", "sid", "state", "payload", "force_cascade"},
+				Rows: [][]driver.Value{
+					{int64(11), "video", uidA, "failed", []byte(`{"payload_seasons":["s2"],"fp_gate":"h1","relisten":true,"backfill":true,"run_now":true}`), true},
+					{int64(12), "video", uidB, "failed", []byte(`{"run_now":true}`), false},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(
+				singleStageRule(stageRow("probe", "episodes", 1, "nas_read")),
+				stagesRule(stageRow("probe", "episodes", 1, "nas_read")),
+				tc.rule,
+				enqueueRule([]driver.Value{int64(80), "inserted"}),
+			)
+			if rec := f.do("POST", "/api/queues/probe/retry", tc.body, admin()); rec.Code != 200 {
+				t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+			}
+			calls := f.db.Find("processing_jobs_enqueue")
+			if len(calls) != 2 {
+				t.Fatalf("enqueue calls = %d, want 2", len(calls))
+			}
+			if calls[0].Args[5] != true {
+				t.Fatalf("first call force_cascade = %v, want true", calls[0].Args[5])
+			}
+			raw, ok := calls[0].Args[8].(string)
+			if !ok {
+				t.Fatalf("first call payload = %#v, want JSON string", calls[0].Args[8])
+			}
+			var got map[string]any
+			if err := json.Unmarshal([]byte(raw), &got); err != nil {
+				t.Fatalf("unmarshal payload %q: %v", raw, err)
+			}
+			if _, has := got["run_now"]; has {
+				t.Fatalf("run_now was not stripped: %+v", got)
+			}
+			if got["fp_gate"] != "h1" || got["relisten"] != true || got["backfill"] != true {
+				t.Fatalf("payload lost fields: %+v", got)
+			}
+			if ps, _ := got["payload_seasons"].([]any); len(ps) != 1 || ps[0] != "s2" {
+				t.Fatalf("payload_seasons lost: %+v", got)
+			}
+			if calls[1].Args[5] != false || calls[1].Args[8] != nil {
+				t.Fatalf("second call force_cascade=%v payload=%#v, want false/nil", calls[1].Args[5], calls[1].Args[8])
+			}
+		})
+	}
 }
 
 func TestApply(t *testing.T) {

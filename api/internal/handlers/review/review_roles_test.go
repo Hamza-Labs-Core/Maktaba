@@ -1,6 +1,8 @@
 package review
 
 import (
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +13,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/transcript"
 )
 
 const (
@@ -141,5 +145,38 @@ func TestCodesMatchThePipelineAndTheWeb(t *testing.T) {
 				t.Errorf("%s %s = %v, Go has %v", src.file, c.name, names, c.codes)
 			}
 		}
+	}
+}
+
+// Issue #1172: batch undo must return 404 (not 409) when an edit in the batch is
+// missing, 409 for conflict states, and 500 for unexpected errors.
+func TestWriteEditErrBatch(t *testing.T) {
+	run := func(err error) (int, map[string]any) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/review/batches/"+someID+"/undo", nil)
+		writeEditErr(rec, req, err)
+		var body map[string]any
+		if uerr := json.Unmarshal(rec.Body.Bytes(), &body); uerr != nil {
+			t.Fatalf("unmarshal %q: %v", rec.Body.String(), uerr)
+		}
+		return rec.Code, body
+	}
+
+	status, body := run(&transcript.BatchError{EditID: someID, Err: transcript.ErrNotFound})
+	if status != http.StatusNotFound || body["type"] != httperror.TypeNotFound || body["code"] != "not_found" || body["edit_id"] != someID {
+		t.Fatalf("missing batch edit: status=%d body=%+v", status, body)
+	}
+
+	for _, sentinel := range []error{transcript.ErrStale, transcript.ErrNotActive, transcript.ErrChangedSince, transcript.ErrUndone} {
+		status, body = run(&transcript.BatchError{EditID: someID, Err: sentinel})
+		if status != http.StatusConflict || body["type"] != httperror.TypeForCode(sentinel.Error()) || body["edit_id"] != someID {
+			t.Fatalf("conflict %v: status=%d body=%+v", sentinel, status, body)
+		}
+	}
+
+	status, body = run(&transcript.BatchError{EditID: someID, Err: errors.New("db connection dropped")})
+	if status != http.StatusInternalServerError || body["type"] != httperror.TypeInternal {
+		t.Fatalf("unexpected batch error: status=%d body=%+v", status, body)
 	}
 }

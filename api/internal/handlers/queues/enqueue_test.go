@@ -149,3 +149,24 @@ func TestReasonFor(t *testing.T) {
 		t.Errorf("anonymous reason = %v", r)
 	}
 }
+
+func TestRetryPayload(t *testing.T) {
+	got := RetryPayload([]byte(`{"payload_seasons":["s1"],"fp_gate":"abc","relisten":true,"backfill":true,"run_now":true}`))
+	if got == nil {
+		t.Fatal("expected non-nil payload")
+	}
+	if _, has := got["run_now"]; has {
+		t.Fatalf("run_now should be stripped: %+v", got)
+	}
+	if got["fp_gate"] != "abc" || got["relisten"] != true || got["backfill"] != true {
+		t.Fatalf("payload keys dropped: %+v", got)
+	}
+	if seasons, _ := got["payload_seasons"].([]any); len(seasons) != 1 || seasons[0] != "s1" {
+		t.Fatalf("payload_seasons dropped: %+v", got)
+	}
+	for _, raw := range [][]byte{nil, []byte(""), []byte("{}"), []byte("null"), []byte(`{"run_now":true}`), []byte(`["not-an-object"]`), []byte("{bad")} {
+		if p := RetryPayload(raw); p != nil {
+			t.Errorf("RetryPayload(%q) = %+v, want nil", raw, p)
+		}
+	}
+}

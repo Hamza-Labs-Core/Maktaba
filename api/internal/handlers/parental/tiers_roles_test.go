@@ -1,6 +1,7 @@
 package parental
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/Hamza-Labs-Core/Maktaba/api/internal/auth/principal"
+	"github.com/Hamza-Labs-Core/Maktaba/api/internal/httperror"
 )
 
 const (
@@ -57,8 +59,16 @@ func TestAgeTierRoutesRefuseNonAdmins(t *testing.T) {
 			{"a guardian", guardian, http.StatusForbidden},
 		} {
 			for _, body := range []string{`{"tier":13}`, `{"tier":null}`, `not json`} {
-				if rec := serve(h, c.p, "PUT", path, body); rec.Code != c.want {
+				rec := serve(h, c.p, "PUT", path, body)
+				if rec.Code != c.want {
 					t.Errorf("PUT %s %s as %s: %d, want %d", path, body, c.who, rec.Code, c.want)
+					continue
+				}
+				if c.want == http.StatusUnauthorized {
+					var got map[string]any
+					if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got["type"] != httperror.TypeUnauthorized {
+						t.Errorf("PUT %s as %s: type = %v, want %s", path, c.who, got["type"], httperror.TypeUnauthorized)
+					}
 				}
 			}
 		}

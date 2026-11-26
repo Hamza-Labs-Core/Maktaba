@@ -111,7 +111,7 @@ func principalOf(ctx context.Context) *principal.Principal {
 func owner(w http.ResponseWriter, r *http.Request) (*principal.Principal, string) {
 	p := principal.FromContext(r.Context())
 	if p == nil {
-		httperror.Write(w, r, &httperror.Error{Type: httperror.TypeForbidden, Title: "unauthorized",
+		httperror.Write(w, r, &httperror.Error{Type: httperror.TypeUnauthorized, Title: "unauthorized",
 			Status: http.StatusUnauthorized, Detail: "authentication required"})
 		return nil, ""
 	}

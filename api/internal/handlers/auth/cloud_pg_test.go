@@ -462,16 +462,16 @@ func TestCloudLinkFlow(t *testing.T) {
 		t.Fatalf("start: %d %v", start.code, start.body)
 	}
 	// another user's nonce does not link vic's (or anyone's) account
-	if got := c.do("POST", "/api/me/cloud-link", amina, map[string]string{"assertion": c.cloud.Assertion(cloudlink.PurposeLink, cloudAdmin, nonce)}); got.code != 422 {
-		t.Fatalf("someone else's nonce: %d", got.code)
+	if got := c.do("POST", "/api/me/cloud-link", amina, map[string]string{"assertion": c.cloud.Assertion(cloudlink.PurposeLink, cloudAdmin, nonce)}); got.code != 422 || got.body["type"] != TypeCloudLinkRefused {
+		t.Fatalf("someone else's nonce: %d %v", got.code, got.body)
 	}
 	done := c.do("POST", "/api/me/cloud-link", vic, map[string]string{"assertion": c.cloud.Assertion(cloudlink.PurposeLink, cloudViewer, nonce)})
 	if done.code != 200 || done.body["scope"] != "play" || done.body["cloud_user_id"] != cloudViewer {
 		t.Fatalf("link: %d %v", done.code, done.body)
 	}
 	// the nonce served once
-	if got := c.do("POST", "/api/me/cloud-link", vic, map[string]string{"assertion": c.cloud.Assertion(cloudlink.PurposeLink, cloudViewer, nonce)}); got.code != 422 {
-		t.Fatalf("nonce reused: %d", got.code)
+	if got := c.do("POST", "/api/me/cloud-link", vic, map[string]string{"assertion": c.cloud.Assertion(cloudlink.PurposeLink, cloudViewer, nonce)}); got.code != 422 || got.body["type"] != TypeCloudLinkRefused {
+		t.Fatalf("nonce reused: %d %v", got.code, got.body)
 	}
 	// the same cloud account cannot also be amina's
 	n2 := c.do("POST", "/api/me/cloud-link/start", amina, nil).body["nonce"].(string)
