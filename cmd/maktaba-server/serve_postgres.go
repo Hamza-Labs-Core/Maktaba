@@ -250,12 +250,22 @@ func seedClusterRecordIfPending(ctx context.Context, root string, ob, b pgbundle
 	if !ok || m.Checkpoint == "" {
 		return fmt.Errorf("pending record seed marker present in %s without completed %s", b.Data, pgbundle.UpgradeMarker)
 	}
-	if !ob.Initialized() {
+	pgVer := filepath.Join(ob.Data, "PG_VERSION")
+	if _, err := os.Stat(pgVer); errors.Is(err, os.ErrNotExist) {
+		// Only treat the source cluster as gone when PG_VERSION is genuinely absent (and
+		// ob.Data itself is missing or a directory, never a stat/permission error or file).
+		if di, derr := os.Stat(ob.Data); derr != nil && !errors.Is(derr, os.ErrNotExist) {
+			return fmt.Errorf("stat source cluster %s for pending record seed: %w", ob.Data, derr)
+		} else if derr == nil && !di.IsDir() {
+			return fmt.Errorf("source cluster path %s is not a directory", ob.Data)
+		}
 		fmt.Fprintf(log, "[postgres] level=warn old cluster %s is gone before record seeding: leaving PostgreSQL %s's record as it is\n", ob.Data, newMajor)
 		if err := os.Remove(pendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("clear pending cluster record seed %s: %w", pendingPath, err)
 		}
 		return nil
+	} else if err != nil {
+		return fmt.Errorf("stat source cluster %s for pending record seed: %w", pgVer, err)
 	}
 	oc, oerr := pgbundle.ReadControl(ctx, ob.Bin("pg_controldata"), ob.Data)
 	if oerr != nil {

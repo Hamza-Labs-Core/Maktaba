@@ -377,6 +377,45 @@ func TestSeedClusterRecordIfPending(t *testing.T) {
 		if _, err := os.Stat(pendingPath); err != nil {
 			t.Fatalf("pending marker was removed on failure: %v", err)
 		}
+		// Non-ENOENT stat error on ob.Data (regular file at ob.Data -> ENOTDIR on Unix,
+		// not-a-directory on Windows) must fail closed, keep RecordSeedPending, and leave
+		// PG 18's record untouched rather than treating the source cluster as gone.
+		rootStat := t.TempDir()
+		stateStat := filepath.Join(rootStat, "state")
+		if err := os.MkdirAll(stateStat, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		livePG18 := apppayload.Database{Version: "v0.4.0", State: apppayload.DatabaseMigrated}
+		liveRaw, _ := json.MarshalIndent(livePG18, "", "  ")
+		if err := os.WriteFile(filepath.Join(stateStat, apppayload.ClusterRecordName("18")), append(liveRaw, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		pg16File := filepath.Join(rootStat, "postgres")
+		if err := os.WriteFile(pg16File, []byte("not-a-dir"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		pg18Stat := filepath.Join(rootStat, "postgres-18")
+		if err := os.MkdirAll(pg18Stat, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		pendingStat := filepath.Join(pg18Stat, pgbundle.RecordSeedPending)
+		if err := os.WriteFile(pendingStat, []byte("111111@0/1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(pg18Stat, pgbundle.UpgradeMarker), markerRaw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		obStat := pgbundle.Bundle{Home: filepath.Join(rootStat, "pg16"), Data: pg16File}
+		bStat := pgbundle.Bundle{Home: filepath.Join(rootStat, "pg18"), Data: pg18Stat}
+		if err := seedClusterRecordIfPending(context.Background(), rootStat, obStat, bStat, "16", "18", &bytes.Buffer{}); err == nil {
+			t.Fatal("expected fail-closed error on non-ENOENT/non-dir source cluster stat, got nil")
+		}
+		if _, err := os.Stat(pendingStat); err != nil {
+			t.Fatalf("pending marker was removed on non-ENOENT source stat error: %v", err)
+		}
+		if got := readNew(t, rootStat); got.Version != livePG18.Version || got.State != livePG18.State {
+			t.Fatalf("PG 18 record was modified on non-ENOENT source stat error: %+v", got)
+		}
 		// Marker removal failure (directory where pending marker file is expected) fails closed.
 		if runtime.GOOS != "windows" {
 			root2 := t.TempDir()
