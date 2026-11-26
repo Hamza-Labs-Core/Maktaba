@@ -68,4 +68,54 @@ class WesternDigitsTest {
     fun englishLocaleIsUnchanged() {
         assertEquals(Locale.US, Locale.US.withWesternDigits())
     }
+
+    @Test
+    fun illformedLegacyArabicVariantDoesNotThrow() {
+        @Suppress("DEPRECATION")
+        val legacy = Locale("ar", "EG", "bad!")
+        val fixed = legacy.withWesternDigits()
+        assertEquals("ar", fixed.language)
+        assertEquals("EG", fixed.country)
+        assertEquals("latn", fixed.getUnicodeLocaleType("nu"))
+        assertEquals("2026", String.format(fixed, "%d", 2026))
+    }
+
+    @Test
+    fun applyWesternDigitsPreservesDistinctDisplayAndFormatCategories() {
+        val originalDefault = Locale.getDefault()
+        val originalDisplay = Locale.getDefault(Locale.Category.DISPLAY)
+        val originalFormat = Locale.getDefault(Locale.Category.FORMAT)
+        try {
+            // Arabic display + English format: format must stay English
+            Locale.setDefault(Locale.forLanguageTag("ar-EG"))
+            Locale.setDefault(Locale.Category.DISPLAY, Locale.forLanguageTag("ar-EG"))
+            Locale.setDefault(Locale.Category.FORMAT, Locale.US)
+            applyWesternDigitsDefaultLocale()
+            assertEquals("ar-EG-u-nu-latn", Locale.getDefault().toLanguageTag())
+            assertEquals("ar-EG-u-nu-latn", Locale.getDefault(Locale.Category.DISPLAY).toLanguageTag())
+            assertEquals(Locale.US, Locale.getDefault(Locale.Category.FORMAT))
+
+            // English display + Arabic format: display must stay English, format gains latn
+            Locale.setDefault(Locale.US)
+            Locale.setDefault(Locale.Category.DISPLAY, Locale.US)
+            Locale.setDefault(Locale.Category.FORMAT, Locale.forLanguageTag("ar-SA"))
+            applyWesternDigitsDefaultLocale()
+            assertEquals(Locale.US, Locale.getDefault())
+            assertEquals(Locale.US, Locale.getDefault(Locale.Category.DISPLAY))
+            assertEquals("ar-SA-u-nu-latn", Locale.getDefault(Locale.Category.FORMAT).toLanguageTag())
+
+            // Distinct Arabic regions in DISPLAY and FORMAT: each keeps its own region
+            Locale.setDefault(Locale.forLanguageTag("ar-SA"))
+            Locale.setDefault(Locale.Category.DISPLAY, Locale.forLanguageTag("ar-EG"))
+            Locale.setDefault(Locale.Category.FORMAT, Locale.forLanguageTag("ar-AE"))
+            applyWesternDigitsDefaultLocale()
+            assertEquals("ar-SA-u-nu-latn", Locale.getDefault().toLanguageTag())
+            assertEquals("ar-EG-u-nu-latn", Locale.getDefault(Locale.Category.DISPLAY).toLanguageTag())
+            assertEquals("ar-AE-u-nu-latn", Locale.getDefault(Locale.Category.FORMAT).toLanguageTag())
+        } finally {
+            Locale.setDefault(originalDefault)
+            Locale.setDefault(Locale.Category.DISPLAY, originalDisplay)
+            Locale.setDefault(Locale.Category.FORMAT, originalFormat)
+        }
+    }
 }

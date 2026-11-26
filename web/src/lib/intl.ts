@@ -6,15 +6,22 @@ const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
 const relativeTimeFormats = new Map<string, Intl.RelativeTimeFormat>();
 
 /**
- * BCP 47 tag for Intl formatters: Arabic uses Western digits (`-u-nu-latn`)
- * across every Maktaba client unless a caller explicitly sets another numbering system.
+ * BCP 47 tag for Intl formatters: Arabic always uses Western digits (`-u-nu-latn`)
+ * across every Maktaba client. Uses structured `Intl.Locale` parsing so existing
+ * Unicode extensions (`-u-ca-...`), private-use subtags (`-x-...`), mixed casing,
+ * and underscore separators remain valid BCP 47 tags.
  */
 export function intlLocale(tag: string): string {
-  if (/^ar(?:[-_]|$)/i.test(tag) && !/-u-(?:.*-)?nu-/i.test(tag)) {
-    const base = tag.replace(/_/g, "-");
-    return base.includes("-u-") ? `${base}-nu-latn` : `${base}-u-nu-latn`;
+  const normalized = tag.replace(/_/g, "-");
+  try {
+    const loc = new Intl.Locale(normalized);
+    if (loc.language === "ar") {
+      return new Intl.Locale(loc, { numberingSystem: "latn" }).toString();
+    }
+    return tag;
+  } catch {
+    return tag;
   }
-  return tag;
 }
 
 function keyOf(tag: string, opts: object | undefined): string {

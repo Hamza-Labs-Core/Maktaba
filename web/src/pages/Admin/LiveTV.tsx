@@ -22,6 +22,7 @@ import { AdminGate } from "../../components/AdminGate";
 import { CopyField } from "../../components/CopyField";
 import { ApiError } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
+import { intlLocale } from "../../lib/intl";
 import {
   tvApi,
   type HdhrDevice,
@@ -300,7 +301,8 @@ function ClusterSections() {
   );
 }
 
-const when = (s: string | null | undefined) => (s ? new Date(s).toLocaleString() : null);
+const when = (s: string | null | undefined, locale: string) =>
+  s ? new Date(s).toLocaleString(intlLocale(locale)) : null;
 
 /** The automatic Plex settings (rules section "plexlive"). */
 const AUTO_FLAGS = ["auto_register", "auto_refresh_guide", "auto_refresh_channels"] as const;
@@ -313,7 +315,7 @@ const PLEX_POLL_MS = 3000;
 const BUSY = new Set(["pending", "claimed", "running", "resuming"]);
 
 function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [st, setSt] = useState<PlexLiveStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [rules, setRules] = useState<RuleSection | null>(null);
@@ -453,7 +455,7 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
                 : t("livetv.plex.unreachable")}
           </dd>
           <dt>{t("livetv.plex.lastCheck")}</dt>
-          <dd>{when(st.checked_at) ?? t("livetv.plex.never")}</dd>
+          <dd>{when(st.checked_at, locale) ?? t("livetv.plex.never")}</dd>
           <dt>{t("livetv.plex.maktabaTuner")}</dt>
           <dd>{registered ? t("livetv.plex.registered") : t("livetv.plex.notRegistered")}</dd>
           <dt>{t("livetv.plex.dvrs")}</dt>
@@ -483,9 +485,9 @@ function PlexPanel({ info, device }: { info: TvInfo; device: HdhrDevice }) {
               : "—"}
           </dd>
           <dt>{t("livetv.plex.lastGuide")}</dt>
-          <dd>{when(st.guide_reloaded_at) ?? t("livetv.plex.never")}</dd>
+          <dd>{when(st.guide_reloaded_at, locale) ?? t("livetv.plex.never")}</dd>
           <dt>{t("livetv.plex.lastMap")}</dt>
-          <dd>{when(st.channelmap_at) ?? t("livetv.plex.never")}</dd>
+          <dd>{when(st.channelmap_at, locale) ?? t("livetv.plex.never")}</dd>
           {st.job && BUSY.has(st.job.state) && (
             <>
               <dt>{t("livetv.plex.run")}</dt>

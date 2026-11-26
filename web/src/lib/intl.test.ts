@@ -5,13 +5,24 @@ import { dateTimeFormat, intlLocale, numberFormat, relativeTimeFormat } from "./
 const EASTERN_ARABIC_DIGITS = /[٠-٩]/;
 
 describe("kept Intl formatters", () => {
-  it("normalizes Arabic locales to Western digits while preserving explicit numbering systems", () => {
+  it("normalizes Arabic locales to Western digits and keeps extensions/private-use tags valid", () => {
     expect(intlLocale("en")).toBe("en");
+    expect(intlLocale("en-US")).toBe("en-US");
+    expect(intlLocale("fr-FR")).toBe("fr-FR");
+    expect(intlLocale("not_a_valid_tag!!")).toBe("not_a_valid_tag!!");
     expect(intlLocale("ar")).toBe("ar-u-nu-latn");
     expect(intlLocale("ar-EG")).toBe("ar-EG-u-nu-latn");
     expect(intlLocale("ar_SA")).toBe("ar-SA-u-nu-latn");
     expect(intlLocale("ar-u-nu-latn")).toBe("ar-u-nu-latn");
-    expect(intlLocale("ar-EG-u-nu-arab")).toBe("ar-EG-u-nu-arab");
+    expect(intlLocale("ar_EG-u-nu-arab")).toBe("ar-EG-u-nu-latn");
+    expect(intlLocale("AR-U-CA-GREGORY")).toBe("ar-u-ca-gregory-nu-latn");
+    expect(intlLocale("ar-SA-x-demo")).toBe("ar-SA-u-nu-latn-x-demo");
+
+    for (const tag of ["AR-U-CA-GREGORY", "ar-SA-x-demo", "ar_EG-u-nu-arab"]) {
+      const num = numberFormat(tag).format(2026);
+      expect(num).toContain("2");
+      expect(num).not.toMatch(EASTERN_ARABIC_DIGITS);
+    }
   });
 
   it("makes a number formatter once per locale and options, with Western digits in Arabic", () => {

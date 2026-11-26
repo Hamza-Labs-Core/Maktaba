@@ -27,6 +27,7 @@ import { ApiError } from "../../../lib/api";
 import { componentsApi, refusalOf } from "../../../lib/componentsApi";
 import { useFlag } from "../../../lib/flags";
 import { useI18n } from "../../../lib/i18n";
+import { intlLocale } from "../../../lib/intl";
 import {
   broadcastRefusal,
   revokedReason,
@@ -63,7 +64,7 @@ function isComponentOff(e: unknown): boolean {
 
 export function BroadcastPanel() {
   const allowed = useFlag("broadcast");
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -219,7 +220,7 @@ export function BroadcastPanel() {
             ? t("broadcast.uplink.measured", {
                 kbps: `${mbps(view.uplink.kbps)} Mbps`,
                 when: view.uplink.measured_at
-                  ? new Date(view.uplink.measured_at).toLocaleString()
+                  ? new Date(view.uplink.measured_at).toLocaleString(intlLocale(locale))
                   : "—",
               })
             : t("broadcast.uplink.none")}

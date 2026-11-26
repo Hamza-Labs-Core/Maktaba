@@ -253,7 +253,7 @@ private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
         val at = java.text.DateFormat.getDateTimeInstance(
             java.text.DateFormat.MEDIUM,
             java.text.DateFormat.SHORT,
-            java.util.Locale.getDefault().withWesternDigits(),
+            androidx.compose.ui.platform.LocalLocale.current.platformLocale.withWesternDigits(),
         ).format(java.util.Date(list.savedAtMs))
         Text(stringResource(R.string.cloud_homes_saved, at), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("cloud-saved"))
         if (list.isOld(session.now())) {

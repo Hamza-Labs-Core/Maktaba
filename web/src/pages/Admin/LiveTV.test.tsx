@@ -486,4 +486,18 @@ describe("AdminLiveTV", () => {
     expect(await screen.findByText("A1B2C3D4")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Streaming hosts" })).not.toBeInTheDocument();
   });
+
+  it("formats Plex timestamps with Western digits in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      routes({ "/api/tv/plex": plexRegistered });
+      renderPage();
+      const checkLabel = await screen.findByText("آخر فحص");
+      const checkValue = checkLabel.nextElementSibling;
+      expect(checkValue?.textContent).toMatch(/[0-9]/);
+      expect(checkValue?.textContent).not.toMatch(/[٠-٩]/);
+    } finally {
+      localStorage.clear();
+    }
+  });
 });

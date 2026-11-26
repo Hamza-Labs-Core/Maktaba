@@ -345,7 +345,13 @@ export function Review() {
         <p className="mkt-review-empty">
           {t("review.empty")}
           {lastCheck && (
-            <> · {t("review.lastCheck", { when: new Date(lastCheck).toLocaleString(intlLocale(locale)) })}</>
+            <>
+              {" "}
+              ·{" "}
+              {t("review.lastCheck", {
+                when: new Date(lastCheck).toLocaleString(intlLocale(locale)),
+              })}
+            </>
           )}
         </p>
       )}

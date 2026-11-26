@@ -100,7 +100,7 @@ describe("Updates: a check that keeps failing", () => {
     expect(screen.queryByTestId("updates-check-failed-once")).toBeNull();
   });
 
-  it("reads in Arabic", async () => {
+  it("reads in Arabic with Western digits", async () => {
     renderPage(
       overview({ check_failures: 2, check_failing_since: since, last_check_code: "rate_limited" }),
       "ar"
@@ -108,6 +108,8 @@ describe("Updates: a check that keeps failing", () => {
     const box = await screen.findByTestId("updates-check-failing");
     expect(box.textContent).toContain("تعذّر التحقق من التحديثات منذ");
     expect(box.textContent).toContain("طلب GitHub من مكتبة أن تنتظر");
+    expect(box.textContent).toMatch(/[0-9]/);
+    expect(box.textContent).not.toMatch(/[٠-٩]/);
   });
 });
 

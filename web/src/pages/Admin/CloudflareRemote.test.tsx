@@ -230,4 +230,17 @@ describe("Cloudflare Stream card", () => {
     expect(del).toHaveBeenCalledWith("/api/tv/remote/integration", { confirm: true });
     expect(await within(c).findByText(/1 live inputs deleted at Cloudflare/)).toBeInTheDocument();
   });
+
+  it("formats the last connection test timestamp with Western digits in Arabic", async () => {
+    localStorage.setItem("mkt:locale", "ar");
+    try {
+      setup(status({ last_test: green, can_enable: true }));
+      const c = await card();
+      const line = await within(c).findByText(/نجح آخر فحص/);
+      expect(line.textContent).toMatch(/[0-9]/);
+      expect(line.textContent).not.toMatch(/[٠-٩]/);
+    } finally {
+      localStorage.clear();
+    }
+  });
 });
