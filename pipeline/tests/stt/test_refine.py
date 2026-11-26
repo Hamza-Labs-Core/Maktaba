@@ -296,8 +296,7 @@ def test_stretch_tail_stops_before_the_next_stretch_starts() -> None:
         return [""] * len(stretches)
 
     rf.refine(transcript(s1, s2, s3), range(70 * SAMPLE_RATE), hear, None, "c")
-    # s1 stops at 28.0 (not 28.25); s2 has a huge gap before s3 so keeps +0.25 (28.45)
-    # wait: s2's duration 28.0..28.45 is 0.45s < 0.5s minimum stretch length unless >= 0.5s
+    # s1 stops at 28.0 (not 28.25) so it never reaches into s2's short first word
     assert seen[0] == (0.0, 28.0)
 
     # with s2 long enough to be heard and a 1 s gap before s3, s2 gets its full 0.25 s tail

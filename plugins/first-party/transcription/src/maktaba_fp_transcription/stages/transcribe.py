@@ -1381,7 +1381,7 @@ async def _store(
                     "plan": "03-10",
                     **({"refine": refined} if refined else {}),
                     **({"words": any_words} if asked else {}),
-                    **({"words_by_sentence": True} if any_words else {}),
+                    **({"words_by_sentence": True} if asked else {}),
                     # Whisper gave words, but no sentence got its own
                     **({"words_unmatched": True} if unmatched else {}),
                 }

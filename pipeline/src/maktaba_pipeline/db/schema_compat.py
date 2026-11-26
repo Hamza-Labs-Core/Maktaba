@@ -43,8 +43,20 @@ def older_schema(exc: BaseException) -> bool:
     return "no such table" in text or "no such column" in text
 
 
+#: filesystem errors are subclasses of OSError, never a database outage
+_FILESYSTEM_ERRORS = (
+    FileNotFoundError,
+    PermissionError,
+    IsADirectoryError,
+    NotADirectoryError,
+    FileExistsError,
+)
+
+
 def connection_lost(exc: BaseException) -> bool:
     """The database did not answer (as opposed to answering with an error)."""
+    if isinstance(exc, _FILESYSTEM_ERRORS):
+        return False
     if isinstance(exc, (OSError, TimeoutError, asyncio.TimeoutError)):  # noqa: UP041
         return True
     names = {c.__name__ for c in type(exc).__mro__}

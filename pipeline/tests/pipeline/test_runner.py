@@ -26,7 +26,7 @@ import contextlib
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -675,3 +675,65 @@ async def test_loop_records_unrecorded_failure_when_db_recovers(
         loop.shutdown_event.set()
         wakeup.fire()
         await asyncio.wait_for(task, timeout=2.0)
+
+
+@pytest.mark.asyncio
+async def test_stale_unwinding_task_cannot_clobber_reclaimed_live_job_on_same_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Major 2: if a job is reclaimed by the same worker while a stale attempt is still
+    unwinding (or already queued in _pending_failures), the stale attempt must neither queue
+    nor flush a failure against the reclaimed live attempt of the same job.id."""
+    from maktaba_pipeline.db.jobs_claim import claim_one
+    from maktaba_pipeline.db.jobs_state import FailureOutcome, StageError
+    from maktaba_pipeline.pipeline import runner as runner_mod
+
+    class DatabaseUnavailable(Exception):
+        pass
+
+    db = FakeDB()
+    db.add(Stage.PROBE)
+    cfg = _make_cfg()
+    job = await claim_one(cast(Any, db), worker_id=cfg.worker_id, supported_stages=(Stage.PROBE,))
+    assert job is not None
+    recorded: list[int] = []
+
+    async def fake_mark_failed(_db: Any, *, job_id: int, **_kw: Any) -> FailureOutcome:
+        recorded.append(job_id)
+        return FailureOutcome(state="pending")
+
+    monkeypatch.setattr(runner_mod, "mark_failed_or_retry", fake_mark_failed)
+
+    stale_release = asyncio.Event()
+    live_release = asyncio.Event()
+
+    async def dispatch(_job: Job) -> None:
+        await stale_release.wait()
+        raise DatabaseUnavailable("the database did not answer: eof")
+
+    wakeup = _ManualWakeup()
+    loop = ClaimLoop(db, cfg, dispatch, wakeup=wakeup)
+
+    # 1. Stale task fails while another active task on this worker owns the same job.id:
+    #    _dispatch_job must not queue it into _pending_failures.
+    live_task: asyncio.Task[None] = asyncio.create_task(live_release.wait())  # type: ignore[arg-type]
+    loop._track(live_task, job, loop.in_flight)  # noqa: SLF001
+    stale_task = asyncio.create_task(loop._dispatch_job(job))  # noqa: SLF001
+    loop._track(stale_task, job, loop.in_flight)  # noqa: SLF001
+    stale_release.set()
+    with pytest.raises(DatabaseUnavailable):
+        await stale_task
+    assert job.id not in loop._pending_failures  # noqa: SLF001
+
+    # 2. If a stale failure was already queued before the same worker reclaimed job.id,
+    #    _flush_pending_failures drops it without calling mark_failed_or_retry.
+    loop._pending_failures[job.id] = (  # noqa: SLF001
+        job,
+        StageError(kind="DatabaseUnavailable", message="stale", retryable=True),
+    )
+    assert await loop._flush_pending_failures() == 0  # noqa: SLF001
+    assert recorded == []
+    assert job.id not in loop._pending_failures  # noqa: SLF001
+
+    live_release.set()
+    await live_task

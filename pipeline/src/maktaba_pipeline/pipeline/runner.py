@@ -228,6 +228,9 @@ class ClaimLoop:
         self.in_flight: set[asyncio.Task[None]] = set()
         #: each one's stage (a component's drain cancels only its stages' jobs)
         self._task_stage: dict[asyncio.Task[None], str] = {}
+        #: each in-flight task's job id (guards against a stale unwinding task clobbering
+        #: a reclaimed live attempt of the same job on this worker)
+        self._task_job_id: dict[asyncio.Task[None], int] = {}
         #: job failures that could not be recorded while the database was away: retried as
         #: soon as the database answers again instead of waiting for the claim lease to lapse
         self._pending_failures: dict[int, tuple[Job, StageError]] = {}
@@ -345,11 +348,13 @@ class ClaimLoop:
     ) -> None:
         in_flight.add(task)
         self._task_stage[task] = str(job.stage)
+        self._task_job_id[task] = job.id
         task.add_done_callback(in_flight.discard)
         task.add_done_callback(self._forget)
 
     def _forget(self, task: asyncio.Task[None]) -> None:
         self._task_stage.pop(task, None)
+        self._task_job_id.pop(task, None)
 
     #: Pools are visited in a fixed order so a slow pool cannot starve the others.
     POOL_ORDER: tuple[str, ...] = (
@@ -452,8 +457,13 @@ class ClaimLoop:
 
     async def _flush_pending_failures(self) -> int:
         """Record failures that could not be written while the database was away."""
+        active_job_ids = set(self._task_job_id.values())
         recorded = 0
         for job_id, (job, error) in list(self._pending_failures.items()):
+            if job_id in active_job_ids:
+                # another live task on this worker now owns this job id
+                self._pending_failures.pop(job_id, None)
+                continue
             try:
                 with _job_log_context(job), claim_owner.running_for(self.cfg.worker_id):
                     outcome = await mark_failed_or_retry(self.db, job_id=job.id, error=error)
@@ -487,7 +497,11 @@ class ClaimLoop:
                 await self.dispatch(job)
         except Exception as exc:
             _log.exception("job_dispatch_raised", job_id=job.id, stage=str(job.stage))
-            if connection_lost(exc):
+            cur = asyncio.current_task()
+            reclaimed_here = any(
+                t is not cur and jid == job.id for t, jid in self._task_job_id.items()
+            )
+            if connection_lost(exc) and not reclaimed_here:
                 self._pending_failures[job.id] = (
                     job,
                     StageError(

@@ -11,7 +11,7 @@ import contextlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -64,16 +64,30 @@ class UndefinedTableError(Exception):
 
 
 def test_a_lost_database_is_told_from_one_that_answers_with_an_error() -> None:
+    def named(name: str, msg: str = "x") -> Exception:
+        cls = type(name, (Exception,), {})
+        return cast(Exception, cls(msg))
+
     lost: tuple[BaseException, ...] = (
         ConnectionRefusedError("refused"),
         TimeoutError(),
         ConnectionDoesNotExistError("connection was closed in the middle of operation"),
         InterfaceError("cannot perform operation: connection is closed"),
+        named("AdminShutdownError", "terminating connection"),
+        named("CrashShutdownError", "crash shutdown"),
+        named("DatabaseUnavailable", "the database did not answer"),
     )
     answered: tuple[BaseException, ...] = (
         UndefinedTableError("relation does not exist"),
+        named("UniqueViolationError", "duplicate key"),
+        named("QueryCanceledError", "statement timeout"),
         ValueError("x"),
         InterfaceError("busy"),
+        FileNotFoundError("missing"),
+        PermissionError("denied"),
+        IsADirectoryError("dir"),
+        NotADirectoryError("not dir"),
+        FileExistsError("exists"),
     )
     for exc in lost:
         assert home_unreachable(exc), exc

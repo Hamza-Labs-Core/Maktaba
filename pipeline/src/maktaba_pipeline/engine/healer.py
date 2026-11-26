@@ -336,7 +336,15 @@ async def _requeue(db: Any, r: Any, t: datetime, healed: dict[str, int]) -> None
             and isinstance(payload, dict)
             and payload.get("relisten")
         ):
-            await _count_relisten(db, vid, res.job_id, t)
+            try:
+                await _count_relisten(db, vid, res.job_id, t)
+            except Exception:  # noqa: BLE001 - counting must never abort the batch
+                _log.warning(
+                    "failure_heal_relisten_count_failed",
+                    job_id=res.job_id,
+                    video_id=str(vid),
+                    exc_info=True,
+                )
         healed[stage] = healed.get(stage, 0) + 1
 
 

@@ -66,3 +66,38 @@ async def test_pause_and_cancel_are_logged_and_a_midrun_trigger_survives_cancel(
     assert [r["state"] for r in rows] == ["cancelled", "pending"]
     assert bool(rows[1]["force"]) is True
     assert "cancelled" in [r["kind"] for r in await db.fetch("SELECT kind FROM job_events")]
+
+
+@pytest.mark.asyncio
+async def test_midrun_trigger_on_healed_dedup_scan_keeps_epic47_priority_not_heal(
+    db: Database,
+) -> None:
+    from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES
+    from maktaba_pipeline.engine.requeue import HEAL_PRIORITY
+
+    lib = await make_library(db)
+    await enqueue_job(
+        db,
+        subject_kind="library",
+        subject_id=lib,
+        stage="dedup_scan",
+        priority=HEAL_PRIORITY,
+    )
+    job = await claim_for_pool(db, worker_id="mac", pool="nas_read", stages=["dedup_scan"])
+    assert job is not None and job.priority == HEAL_PRIORITY
+    res = await enqueue_job(
+        db,
+        subject_kind="library",
+        subject_id=lib,
+        stage="dedup_scan",
+        priority=EPIC47_PRIORITIES["dedup_scan"],
+    )
+    assert res.outcome == "rerun_requested"
+    await mark_cancelled(db, job_id=job.id)
+    rows = await db.fetch(
+        "SELECT state, priority FROM processing_jobs WHERE stage = 'dedup_scan' ORDER BY id"
+    )
+    assert [(r["state"], r["priority"]) for r in rows] == [
+        ("cancelled", HEAL_PRIORITY),
+        ("pending", EPIC47_PRIORITIES["dedup_scan"]),
+    ]

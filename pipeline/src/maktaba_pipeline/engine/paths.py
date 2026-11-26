@@ -214,6 +214,8 @@ def track_unavailable() -> Iterator[list[bool]]:
     try:
         yield flag
     finally:
+        if prev is not None and flag[0]:
+            prev[0] = True
         _unavailable_hit.flag = prev
 
 

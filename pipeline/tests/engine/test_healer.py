@@ -31,6 +31,11 @@ from tests.engine.toy import setup as toy_setup
 UP: dict[str, tuple[bool, str]] = {}
 
 
+@pytest.fixture(autouse=True)
+def _reset_look_cursor() -> None:
+    healer._look_after.clear()  # noqa: SLF001
+
+
 async def setup(
     db: Database, rec: Recorder, graph: tuple[StageDef, ...] | None = None
 ) -> EngineRuntime:
