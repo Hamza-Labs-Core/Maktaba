@@ -71,9 +71,7 @@ def listed(out: str | None) -> set[str] | None:
     """The labels `launchctl list` shows, or None when there was no usable reply."""
     if not out:
         return None
-    header, *rows = out.splitlines()
-    if not rows and header.split() == ["PID", "Status", "Label"]:
-        return set()
+    rows = out.splitlines()[1:]
     labels = {
         parts[2] for parts in (line.split("\t") for line in rows) if len(parts) == 3
     }
@@ -108,7 +106,7 @@ def turn_off(
             continue
         last = labels
         seen.update(labels)
-        there = [s for s in services if s in labels or s not in seen | disabled]
+        there = [s for s in services if s in labels or s not in (seen | disabled)]
         if not there:
             return None
         for service in there:
@@ -117,8 +115,8 @@ def turn_off(
             ask("bootout", f"{DOMAIN}/{service}")
     if last is None:
         return f"the simulator did not list its services: {', '.join(services)} may still run"
-    pending = [s for s in services if s in last]
-    return f"not seen to go in {budget:.0f}s: {', '.join(pending or services)}"
+    pending = [s for s in services if s in last or s not in (seen | disabled)]
+    return f"not seen to go in {budget:.0f}s: {', '.join(pending)}" if pending else None
 
 
 def running(out: str | None) -> bool:
@@ -209,7 +207,7 @@ def self_test() -> None:
         "com.apple.y",
     }
     assert listed(None) is None and listed("") is None
-    assert listed("PID\tStatus\tLabel\n") == set()
+    assert listed("PID\tStatus\tLabel\n") is None
 
     sim = Fake(["a", "b"])
     assert sim.off() is None
@@ -226,6 +224,12 @@ def self_test() -> None:
 
     absent = Fake([], lambda n: 999.0 if n == 1 else 1.0)
     assert absent.off(40) == "not seen to go in 40s: a, b"
+    partially_disabled = Fake([], lambda n: 999.0 if n == 3 else 1.0)
+    assert partially_disabled.off(40) == "not seen to go in 40s: b"
+    mixed = Fake(["a"], lambda n: 999.0 if n == 3 else 1.0, stuck=True)
+    assert mixed.off(40) == "not seen to go in 40s: a, b"
+    disabled = Fake([], lambda n: 999.0 if n >= 5 else 1.0)
+    assert disabled.off(12) is None
     retry = Fake([], lambda n: 201.0 if n == 1 else 1.0)
     assert retry.off() is None and retry.calls.count("disable user/foreground/a") == 2
 

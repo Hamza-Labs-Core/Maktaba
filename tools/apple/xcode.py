@@ -46,7 +46,7 @@ APPS = Path("/Applications")
 RELEASE = re.compile(r"^Xcode_(\d+(?:\.\d+)*)\.app$")
 KINDS = {
     "iphone": ("iOS", re.compile(r"^iPhone (\d+)$")),
-    "ipad": ("iOS", re.compile(r"^iPad Pro 11-inch \(M(\d+)\)(?: \(\d+GB\))?$")),
+    "ipad": ("iOS", re.compile(r"^iPad Pro 11-inch \(M(\d+)\)( \(\d+GB\))?$")),
     # "Apple TV 4K" (the first) or "Apple TV 4K (3rd generation)"; never "(at 1080p)"
     "appletv": (
         "tvOS",
@@ -175,8 +175,9 @@ def candidates(kind: str, listing: dict) -> list[tuple[str, str, str]]:
         for d in r.get("supportedDeviceTypes", []):
             m = pattern.match(d["name"])
             if m:
-                ranked.append((int(m.group(1) or 1), d["identifier"], d["name"]))
-        for _, ident, name in sorted(ranked, reverse=True):
+                plain = kind != "ipad" or m.group(2) is None
+                ranked.append((int(m.group(1) or 1), plain, d["identifier"], d["name"]))
+        for _, _, ident, name in sorted(ranked, reverse=True):
             pairs.append((r["identifier"], ident, f"{name} on {r['name']}"))
     return pairs
 
@@ -317,6 +318,18 @@ def _self_test() -> None:
             diagnostic = report.call_args.args[0]
             assert "it has: Xcode_27_beta.app)" in diagnostic, diagnostic
 
+            release_app = apps / "Xcode_27.1.app"
+            developer_dir = release_app / "Contents/Developer"
+            developer_dir.mkdir(parents=True)
+            run.return_value = subprocess.CompletedProcess([], 1)
+            assert select(27, None) == 1
+            run.assert_called_once_with(
+                ["sudo", "xcode-select", "-s", str(developer_dir)], check=False
+            )
+            assert report.call_args.args == (
+                f"::error::could not select {release_app}",
+            )
+
     links = {
         "Xcode.app": "Xcode_27.1.app",
         "Xcode_27.2.0.app": "Xcode_27.2.app",
@@ -444,6 +457,13 @@ def _self_test() -> None:
     }
     assert [pair[1] for pair in candidates("ipad", memory)] == [
         "type.iPad-Pro-11-inch-(M5)-(16GB)"
+    ]
+    memory["runtimes"][0]["supportedDeviceTypes"].extend(
+        rt("iOS", "27.0", ["iPad Pro 11-inch (M5)"])["supportedDeviceTypes"]
+    )
+    assert [pair[1] for pair in candidates("ipad", memory)] == [
+        "type.iPad-Pro-11-inch-(M5)",
+        "type.iPad-Pro-11-inch-(M5)-(16GB)",
     ]
     tv = candidates("appletv", listing)
     assert tv[0][:2] == (

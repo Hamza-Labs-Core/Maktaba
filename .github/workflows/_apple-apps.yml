@@ -442,16 +442,18 @@ jobs:
           APP_DOWNLOAD: ${{ steps.artifact-player-ui-build-check.outcome }}
           APP_ARTIFACT: player-ui-build-${{ matrix.device }}
         run: |
+          status=0
           log="$RESULTS/${{ matrix.device }}-${{ matrix.shard }}-app.log"
           # the app's log, the system's word on its processes ending, its crash reports; a
           # simulator that stopped under the tests is said and booted again to read its log
-          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" "${{ matrix.device }}-${{ matrix.shard }}"
+          python3 tools/apple/sim-log.py "$UDID" "$RESULTS" "${{ matrix.device }}-${{ matrix.shard }}" || status=1
           if [ "$APP_DOWNLOAD" = failure ]; then
             echo "::error::no line of the app at all: the app artifact $APP_ARTIFACT never downloaded, so no test ran"
-            exit 1
+            status=1
           fi
           # checked whole: every launch's info and debug lines are in it
-          python3 tools/apple/check-app-log.py "$log"
+          python3 tools/apple/check-app-log.py "$log" || status=1
+          exit "$status"
 
       # the product screenshots (60.09), `<device>-<screen>-<language>.png`, for
       # web/packages/website/scripts/shots.mjs --from-run

@@ -73,7 +73,7 @@ def crash_pid(report: pathlib.Path) -> int | None:
             metadata, _, body = text.partition("\n")
             payload = json.loads(body if body.strip() else metadata)
             pid = payload.get("pid") if isinstance(payload, dict) else None
-            return pid if isinstance(pid, int) else None
+            return pid if isinstance(pid, int) and not isinstance(pid, bool) else None
         except ValueError:
             return None
     process = re.search(r"^Process:.*\[(\d+)\]", text, re.MULTILINE)
@@ -222,6 +222,9 @@ def self_test() -> int:
         new.write_text('{}\n{"pid": 123}')
         text = text.with_suffix(".crash")
         text.write_text("Process: Maktaba Player [124]\n")
+        assert crash_pid(text) == 124
+        other.write_text('{"pid": true}')
+        assert crash_pid(other) is None
         log = folder / "xcodebuild.log"
         log.write_text(
             "::warning::XCTest failed to terminate the app (pid 123) in its 60 s"

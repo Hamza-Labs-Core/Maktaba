@@ -17,7 +17,7 @@ final class StatusUITests: XCTestCase {
 
     /// Opens the app in `language` (the walkthrough passed with its permissions faked).
     private func launch(_ language: String = "en", locale: String = "en_US") {
-        app.launchArguments = ["-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset",
+        app.launchArguments = ["-maktaba-cast", "off", "-maktaba-permissions-reset", "-maktaba-permissions-fake", "granted", "-maktaba-session-reset",
                                "-AppleLanguages", "(\(language))", "-AppleLocale", locale]
         app.launch()
         let walkthrough = app.descendants(matching: .any)["permissions.walkthrough"].firstMatch
