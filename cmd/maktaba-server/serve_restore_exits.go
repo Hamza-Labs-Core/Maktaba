@@ -36,6 +36,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
@@ -510,16 +511,33 @@ func asideThere(rec apppayload.Database) bool {
 	return err == nil && pgbundle.IsDump(info) && pgbundle.DumpBytes(rec.Aside) == rec.AsideBytes
 }
 
+// validAsideCandidate reports whether path is a non-empty, verified PostgreSQL dump that can
+// safely protect the live database before overwriting it. Empty files, empty directories,
+// and corrupt or unverified archives are rejected.
+func validAsideCandidate(ctx context.Context, path string, verify func(context.Context, string) error) bool {
+	if !pgbundle.HasDumpHeader(path) || pgbundle.DumpBytes(path) <= 0 {
+		return false
+	}
+	if err := pgbundle.CheckCounts(path); err != nil {
+		return false
+	}
+	if verify == nil {
+		return false
+	}
+	return verify(ctx, path) == nil
+}
+
 // replacedDumpThere is a copy of the database a restore replaces that is there already (""
-// when there is none): the record's own path — a whole dump at it, whatever the record says
-// it is (a try that was killed after the dump, before the record said it was whole: the
-// record still says the data is what it was, so it is the same copy) — or, the data not
-// known (asked on a release that kept no record of it), one of that version taken since the
-// backup was, which that release would find and set aside itself (setAsideReplaced).
-func replacedDumpThere(dir string, rec apppayload.Database) string {
+// when there is none): the record's own path — verified whole (either matching a previously
+// recorded AsideBytes > 0, or validated via verify when a kill happened before AsideBytes
+// was recorded) — or, the data not known (asked on a release that kept no record of it), a
+// verified replaced-* dump of that version taken since the ask.
+func replacedDumpThere(ctx context.Context, dir string, rec apppayload.Database, verify func(context.Context, string) error) string {
 	if rec.Aside != "" {
-		info, err := os.Lstat(rec.Aside)
-		if err == nil && pgbundle.IsDump(info) && (rec.AsideBytes <= 0 || pgbundle.DumpBytes(rec.Aside) == rec.AsideBytes) {
+		if asideThere(rec) {
+			return rec.Aside
+		}
+		if rec.AsideBytes <= 0 && validAsideCandidate(ctx, rec.Aside, verify) {
 			return rec.Aside
 		}
 	}
@@ -534,7 +552,10 @@ func replacedDumpThere(dir string, rec apppayload.Database) string {
 	for _, e := range ents {
 		if info, err := e.Info(); err == nil && strings.HasPrefix(e.Name(), prefix) &&
 			strings.HasSuffix(e.Name(), ".dump") && !info.ModTime().Before(since) && pgbundle.IsDump(info) {
-			return filepath.Join(dir, e.Name())
+			p := filepath.Join(dir, e.Name())
+			if validAsideCandidate(ctx, p, verify) {
+				return p
+			}
 		}
 	}
 	return ""
@@ -555,11 +576,24 @@ func goOnWithoutCopy(rec apppayload.Database, err error) bool {
 // age, their number) it still may.
 
 // olderRoom refuses a restore on the older release when its own rules leave no room for the
-// copy it takes, whatever this home's record says: it would remove the backups, and go on with
-// no copy all the same. The copy's size is the guess that release makes, from the newest backup:
-// a library that grew far past it, or a pg_dump that fails there, still ends with no copy.
-func (r *restorer) olderRoom(release string) error {
-	err := roomNow(r.db.Backups, r.room)
+// copy it takes, whatever this home's record says: it would remove backups, and go on with
+// no copy all the same. The copy's size is at least max(liveDBSize, newestBackup * 1.25).
+func (r *restorer) olderRoom(ctx context.Context, release string) error {
+	var live uint64
+	if r.dbSize != nil {
+		sctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		sz, err := r.dbSize(sctx)
+		cancel()
+		if err == nil && sz > 0 {
+			live = uint64(sz)
+		}
+	}
+	var err error
+	if live > 0 {
+		err = roomNowAtLeast(r.db.Backups, r.room, live)
+	} else {
+		err = roomNow(r.db.Backups, r.room)
+	}
 	if err == nil {
 		return nil
 	}
@@ -569,13 +603,35 @@ func (r *restorer) olderRoom(release string) error {
 		free = fmt.Sprintf("Free %d MB more there", (room.Need-room.Free+1<<20-1)>>20)
 	}
 	return refuse("restore_older_no_room", "%s, the release that puts this backup back, first takes a copy of the library "+
-		"database by its own rules, and there is no room for it (%v). Nothing was changed. %s (delete backups you no longer "+
+		"database by its own rules (which may also remove other backups over their share of the disk, their number or their age), "+
+		"and there is no room for it (%v). Nothing was changed. %s (delete backups you no longer "+
 		"need: `maktaba-server backups delete <name>`), or put back a backup that %s, the release running now, puts back itself", release, err, free, r.running())
+}
+
+// unprotectedAdvice describes the actionable fix for a KeepForRestore failure without
+// blaming hard-link support when the underlying error is disk space, read-only storage, or
+// permissions.
+func unprotectedAdvice(err error) string {
+	var linkErr *os.LinkError
+	isLink := errors.As(err, &linkErr)
+	switch {
+	case errors.Is(err, syscall.ENOSPC):
+		return "The backups' disk is full: free some space there, or put back the newest pre-<from>-to-<to> backup"
+	case errors.Is(err, syscall.EROFS):
+		return "The backups' disk is read-only: make it writable, or put back the newest pre-<from>-to-<to> backup"
+	case errors.Is(err, syscall.ENOTSUP) || errors.Is(err, syscall.EOPNOTSUPP) || errors.Is(err, syscall.ENOSYS) ||
+		errors.Is(err, syscall.EXDEV) || errors.Is(err, syscall.EMLINK) || (isLink && errors.Is(err, syscall.EPERM)):
+		return "Put back the newest pre-<from>-to-<to> backup, or move the backups to a disk that has hard links and try again"
+	case errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.EACCES):
+		return "Maktaba does not have permission to write in the backups folder: fix its permissions, or put back the newest pre-<from>-to-<to> backup"
+	default:
+		return "Fix the backups folder error above, or put back the newest pre-<from>-to-<to> backup"
+	}
 }
 
 // protect keeps the backups a restore on the older release pl.Release needs out of its reach
 // (pgbundle.KeepForRestore): those asideKeeps names, and no others, whose room stays theirs to
-// give. It returns the chosen one's path there. A disk that cannot: the chosen one's own path,
+// give. It returns the chosen one's path there. When protection fails: the chosen one's own path,
 // when that release never removes it (the newest an update took), else a refusal.
 func (r *restorer) protect(pl restorePlan, rec apppayload.Database) (string, error) {
 	dir := r.db.Backups
@@ -592,16 +648,16 @@ func (r *restorer) protect(pl restorePlan, rec apppayload.Database) (string, err
 	case pgbundle.IsUpdateDump(pl.Backup) && pgbundle.NewestOfKind(dir, pl.Backup):
 		return rec.Dump, nil
 	}
-	return "", refuse("restore_unprotected", "%s, the release that puts this backup back, may remove it first, and it cannot "+
-		"be kept from that in %s (%v): nothing was changed. Put back the newest pre-<from>-to-<to> backup, or move the backups "+
-		"to a disk that has hard links and try again", pl.Release, dir, err)
+	return "", refuse("restore_unprotected", "%s, the release that puts this backup back, may remove it first (under its own "+
+		"rules, including over the backups' share of the disk, their number or their age), and it cannot be kept from that in %s "+
+		"(%v): nothing was changed. %s", pl.Release, dir, err, unprotectedAdvice(err))
 }
 
 // copyRoom says why no copy of the database a restore of the backup name replaces could be
 // kept now (nil: it can, or none is needed: one is there already, or the database is another
 // since).
-func (r *restorer) copyRoom(name string) error {
-	if r.db == nil || !r.copyNeeded() {
+func (r *restorer) copyRoom(ctx context.Context, name string) error {
+	if r.db == nil || !r.copyNeeded(ctx) {
 		return nil
 	}
 	rec, _, _ := apppayload.ReadDatabase(r.stateDir)
@@ -610,15 +666,15 @@ func (r *restorer) copyRoom(name string) error {
 
 // copyNeeded reports whether a restore takes a copy of the database it replaces: not when there
 // is one already, or the database is another since.
-func (r *restorer) copyNeeded() bool {
+func (r *restorer) copyNeeded(ctx context.Context) bool {
 	old, had, err := apppayload.ReadDatabase(r.stateDir)
 	if err != nil || !had || !asked(old) {
 		return true
 	}
 	old.Aside = pgbundle.MovedDump(r.db.Backups, old.Aside)
 	// the copy the record names, or one a release that kept no record of it made, is found
-	// and kept as it is (replacedDumpThere): the room for one is not asked for
-	return replacedDumpThere(r.db.Backups, old) == "" && old.Data != apppayload.DataReplaced && old.Data != apppayload.DataGone
+	// and validated before reusing it (replacedDumpThere): the room for one is not asked for
+	return replacedDumpThere(ctx, r.db.Backups, old, r.verifyAside) == "" && old.Data != apppayload.DataReplaced && old.Data != apppayload.DataGone
 }
 
 // holdFor holds the backups while rec is a restore that is not done, and releases them
@@ -675,6 +731,9 @@ func stuckOf(r *restorer) *recovery.Stuck {
 	s.WithoutCopy = s.NoCopy && !newerThan(r.running(), rec.From) // refused there (olderRoom)
 	if !s.Running && s.Why == "" && (rec.Before == nil || sameRelease(r.running(), rec.From)) {
 		return nil // not tried yet: the restart that was asked does
+	}
+	if !s.Running && s.Why == "" {
+		s.Why = fmt.Sprintf("waiting for release %s to start (running %s)", rec.From, r.running())
 	}
 	if s.CanGiveUp {
 		base, release, _ := giveUpTo(rec, r.running())

@@ -151,3 +151,22 @@ func TestReserveIsAShareOfTheDiskWithAFloor(t *testing.T) {
 		t.Fatalf("16 GiB disk: reserve %d", got)
 	}
 }
+
+func TestRoomNowAtLeastUsesMaxOfLiveDBAndNewestBackup(t *testing.T) {
+	// Newest backup is 20 GiB -> 1.25x = 25 GiB; reserve on 1000 GiB disk = 50 GiB.
+	// With 100 GiB free, newest backup alone fits (need 75 GiB), but a 60 GiB live DB needs 110 GiB.
+	dir := roomDir(t, "maktaba-20261025-030000.dump")
+	sized(t, dir, 20*gib)
+	fakeDisk(t, 100*gib, 1000*gib)
+	if err := RoomNow(dir, DefaultRoom()); err != nil {
+		t.Fatalf("RoomNow: %v", err)
+	}
+	if err := RoomNowAtLeast(dir, DefaultRoom(), 10*gib); err != nil {
+		t.Fatalf("smaller floor than newest*1.25: %v", err)
+	}
+	err := RoomNowAtLeast(dir, DefaultRoom(), 60*gib)
+	var nr *NoRoomError
+	if !errors.As(err, &nr) || nr.Need != 110*gib || nr.Free != 100*gib {
+		t.Fatalf("larger live DB floor: err = %v", err)
+	}
+}

@@ -647,19 +647,32 @@ func (b Bundle) bootstrap(ctx context.Context, superPW, sql string, log io.Write
 func (b Bundle) withServer(ctx context.Context, log io.Writer, fn func() error) error {
 	b.ClearStaleLock()
 	began := time.Now()
-	for {
-		wctx, cancel := waitCtx(ctx, began.Add(shmWait))
+	deadline := began.Add(shmWait)
+	for try := 0; ; try++ {
+		wctx, cancel := waitCtx(ctx, deadline)
 		awaitShmFree(b, wctx)
 		cancel()
-		err := b.runServer(ctx, log, fn)
-		if !errors.Is(err, errShmInUse) || ctx.Err() != nil || time.Since(began) >= shmWait {
+		startCtx, startCancel := ctx, func() {}
+		if try > 0 {
+			// private retries share the one shmWait deadline so a stuck retry cannot
+			// add a second full readyTimeout on top of it
+			startCtx, startCancel = waitCtx(ctx, deadline)
+		}
+		err := b.runServer(startCtx, log, fn)
+		startCancel()
+		if !errors.Is(err, errShmInUse) || ctx.Err() != nil || !time.Now().Before(deadline) {
 			return err
 		}
 		fmt.Fprintf(os.Stderr, "[postgres] the shared memory of %s is still in use: started again\n", b.Data)
+		sctx, scancel := waitCtx(ctx, deadline)
+		t := time.NewTimer(shmRetryEvery)
 		select {
-		case <-ctx.Done():
+		case <-sctx.Done():
+			t.Stop()
+			scancel()
 			return err
-		case <-time.After(shmRetryEvery):
+		case <-t.C:
+			scancel()
 		}
 	}
 }

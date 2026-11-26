@@ -94,12 +94,14 @@ WHERE (h.classid <> 'pg_class'::regclass OR NOT ` + tempRel(`h.objid`) + `)
 		AND NOT (x.refclassid = x.classid AND x.refobjid = x.objid))))
 ORDER BY 1`
 
-// tempRel is pg_class's oid being a temporary relation (pg_temp's, or one of the temporary
-// kind): withInPublic leaves those out (a session's own, gone when it ends).
+// tempRel is pg_class's oid being a temporary relation (pg_temp_N / pg_toast_temp_N, or
+// one of the temporary kind): withInPublic leaves those out (a session's own, gone when it
+// ends). The underscores in the LIKE pattern are escaped so a permanent schema such as
+// pgxtemp_data is never matched.
 func tempRel(oid string) string {
 	return `EXISTS (SELECT FROM pg_catalog.pg_class t WHERE t.oid = ` + oid + `
 		AND (t.relpersistence = 't' OR t.relnamespace IN (SELECT oid FROM pg_catalog.pg_namespace
-			WHERE nspname LIKE 'pg_temp%')))`
+			WHERE nspname LIKE 'pg\_temp\_%' ESCAPE '\' OR nspname LIKE 'pg\_toast\_temp\_%' ESCAPE '\')))`
 }
 
 // publicDefaults are the default privileges in public that the user may change (another's are for
@@ -252,6 +254,12 @@ func (t Target) howTo(ctx context.Context, d *sql.DB, dump, list string, psql bo
 		return cannot("the backup holds things in the schema %s, and the database user %s may make nothing there (a GRANT "+
 			"of their own, or CREATE on the database to make the schema): nothing was changed", schema, user)
 	}
+	if collisions, err := t.existingElsewhere(ctx, d, list); err != nil {
+		return h, err
+	} else if len(collisions) > 0 {
+		return cannot("the backup holds things in another schema that are already there (%s): drop or rename them first, "+
+			"nothing was changed", few(collisions))
+	}
 	// what the user could only be warned of, or refused: the server grants nothing on what is
 	// another's, and the restore would be found not whole. The dump's grants on the server's
 	// own objects (pg_catalog's, a bundled home's clusterSQL: pg_reload_conf and the like) are
@@ -259,7 +267,7 @@ func (t Target) howTo(ctx context.Context, d *sql.DB, dump, list string, psql bo
 	// would fail the whole transaction
 	mine := withoutCatalogACLs(list)
 	if !super {
-		if mine, err = t.withoutOthers(ctx, d, list, func(ext string) bool {
+		if mine, err = t.withoutOthers(ctx, d, mine, func(ext string) bool {
 			// one made again as a superuser (a trusted one) is the first superuser's
 			return again == "" && exts[ext].goes && exts[ext].needsSuper
 		}); err != nil {
@@ -275,7 +283,12 @@ func (t Target) howTo(ctx context.Context, d *sql.DB, dump, list string, psql bo
 		skipSchema(s, true)
 	}
 	if again == "" {
+		if !psql {
+			return cannot("the restore runs in one transaction, which takes psql, and there is none beside pg_restore " +
+				"(install the PostgreSQL client programs, or set MAKTABA_PG_BIN)")
+		}
 		h.empty = publicAfresh
+		skip["SCHEMA - public"] = true // publicAfresh creates public; keep any ACL - SCHEMA public in the dump
 		for name, e := range exts {
 			if e.there && !e.goes {
 				skip["EXTENSION - "+name], skip["COMMENT - EXTENSION "+name] = true, true
@@ -387,18 +400,100 @@ func (t Target) mayMakeElsewhere(ctx context.Context, d *sql.DB, list string) (s
 	return schema, rows.Err()
 }
 
+// elsewhereObjects are the non-public objects a dump creates (relations, types, functions),
+// keyed by "<schema> <kind> <canonical-name>" with a human-readable label.
+func elsewhereObjects(list string) map[string]string {
+	out := map[string]string{}
+	for _, e := range pgbundle.ParseTOC(list) {
+		switch e.Schema {
+		case "public", "-", "pg_catalog", "information_schema":
+			continue
+		}
+		kind, of := grantedOn(e.Desc, e.Name)
+		if kind == "" {
+			continue
+		}
+		out[e.Schema+" "+kind+" "+of] = strings.ToLower(e.Desc) + " " + e.Schema + "." + of
+	}
+	return out
+}
+
+// existingElsewhere names any object the dump would create in a non-public schema that is
+// already in the database: the restore only empties public, so an existing object in another
+// schema collides mid-transaction even for a superuser or schema owner.
+func (t Target) existingElsewhere(ctx context.Context, d *sql.DB, list string) ([]string, error) {
+	want := elsewhereObjects(list)
+	if len(want) == 0 {
+		return nil, nil
+	}
+	schemaSet := map[string]bool{}
+	for k := range want {
+		s, _, _ := strings.Cut(k, " ")
+		schemaSet[s] = true
+	}
+	schemas := slices.Sorted(maps.Keys(schemaSet))
+	tx, err := d.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL search_path = ''`); err != nil {
+		return nil, err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT n.nspname, o.kind, o.name FROM (
+			SELECT pronamespace AS ns, 'FUNCTION' AS kind,
+				CASE WHEN prokind = 'a' AND pg_catalog.oidvectortypes(proargtypes) = '' THEN pg_catalog.quote_ident(proname) || '(*)'
+					ELSE pg_catalog.quote_ident(proname) || '(' || pg_catalog.oidvectortypes(proargtypes) || ')' END AS name FROM pg_catalog.pg_proc
+			UNION ALL SELECT relnamespace, 'TABLE', pg_catalog.quote_ident(relname) FROM pg_catalog.pg_class
+			UNION ALL SELECT typnamespace, 'TYPE', pg_catalog.quote_ident(typname) FROM pg_catalog.pg_type
+				WHERE typtype IN ('c', 'd', 'e', 'r', 'm')) o
+		JOIN pg_catalog.pg_namespace n ON n.oid = o.ns
+		WHERE n.nspname = ANY($1::name[])`, pq.Array(schemas))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var collisions []string
+	seen := map[string]bool{}
+	for rows.Next() {
+		var schema, kind, name string
+		if err := rows.Scan(&schema, &kind, &name); err != nil {
+			return nil, err
+		}
+		k, of := grantedOn(kind, name)
+		key := schema + " " + k + " " + of
+		if label, ok := want[key]; ok && !seen[label] {
+			seen[label] = true
+			collisions = append(collisions, label)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	slices.Sort(collisions)
+	return collisions, nil
+}
+
 // withoutCatalogACLs is the dump's list without its grants on the server's own objects
 // (pg_catalog's: a bundled home's clusterSQL grants, pg_reload_conf and the like), commented
 // out as pg_restore's --use-list wants. This server's grants on them are its own to make, and
 // a dump's grant that another server's user may not be given would fail the whole transaction
 // (the bundled restore leaves them out the same way, pgbundle's tableOfContents).
 func withoutCatalogACLs(list string) string {
+	drop := map[string]bool{}
+	for _, e := range pgbundle.ParseTOC(list) {
+		if e.Desc == "ACL" && e.Schema == "pg_catalog" {
+			drop[e.Line] = true
+		}
+	}
+	if len(drop) == 0 {
+		return list
+	}
 	lines := strings.Split(list, "\n")
 	for i, line := range lines {
-		if strings.HasPrefix(line, ";") || !strings.Contains(line, " ACL pg_catalog ") {
-			continue
+		if drop[strings.TrimRight(line, "\r")] {
+			lines[i] = ";" + line
 		}
-		lines[i] = ";" + line
 	}
 	return strings.Join(lines, "\n")
 }
@@ -445,28 +540,47 @@ func (t Target) withoutOthers(ctx context.Context, d *sql.DB, list string, lost 
 	if err != nil {
 		return "", err
 	}
-	// the members of extensions that are the user's own all the same: a function by its
-	// signature, the argument types alone with no spaces, as grantedOn's key spells them
-	own, err := column(ctx, d, `SELECT e.extname || '/' || n.nspname || ' ' || o.kind || ' ' || o.name FROM (
-			SELECT 'pg_proc'::regclass AS cls, oid, pronamespace AS ns, proowner AS owner, 'FUNCTION' AS kind,
-				CASE WHEN prokind = 'a' AND pg_get_function_identity_arguments(oid) = '' THEN proname || '(*)'
-					ELSE proname || '(' || regexp_replace(pg_get_function_identity_arguments(oid), '[[:space:]]', '', 'g') || ')' END AS name FROM pg_proc
-			UNION ALL SELECT 'pg_class'::regclass, oid, relnamespace, relowner, 'TABLE', relname FROM pg_class
-			UNION ALL SELECT 'pg_type'::regclass, oid, typnamespace, typowner, 'TYPE', typname FROM pg_type) o
-		JOIN pg_namespace n ON n.oid = o.ns
-		JOIN pg_depend x ON x.classid = o.cls AND x.objid = o.oid AND x.deptype = 'e' AND x.refclassid = 'pg_extension'::regclass
-		JOIN pg_extension e ON e.oid = x.refobjid
-		WHERE pg_has_role(current_user, o.owner, 'USAGE')`)
+	// the members of extensions that are the user's own all the same: queried with
+	// search_path = '' and oidvectortypes(proargtypes) so function input types match pg_dump's
+	// canonical spelling, then normalized through the same grantedOn/functionSig key as TOC.
+	tx, err := d.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return "", err
 	}
-	toc := pgbundle.ParseTOC(list)
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `SET LOCAL search_path = ''`); err != nil {
+		return "", err
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT e.extname, n.nspname, o.kind, o.name FROM (
+			SELECT 'pg_catalog.pg_proc'::regclass AS cls, oid, pronamespace AS ns, proowner AS owner, 'FUNCTION' AS kind,
+				CASE WHEN prokind = 'a' AND pg_catalog.oidvectortypes(proargtypes) = '' THEN pg_catalog.quote_ident(proname) || '(*)'
+					ELSE pg_catalog.quote_ident(proname) || '(' || pg_catalog.oidvectortypes(proargtypes) || ')' END AS name FROM pg_catalog.pg_proc
+			UNION ALL SELECT 'pg_catalog.pg_class'::regclass, oid, relnamespace, relowner, 'TABLE', pg_catalog.quote_ident(relname) FROM pg_catalog.pg_class
+			UNION ALL SELECT 'pg_catalog.pg_type'::regclass, oid, typnamespace, typowner, 'TYPE', pg_catalog.quote_ident(typname) FROM pg_catalog.pg_type) o
+		JOIN pg_catalog.pg_namespace n ON n.oid = o.ns
+		JOIN pg_catalog.pg_depend x ON x.classid = o.cls AND x.objid = o.oid AND x.deptype = 'e' AND x.refclassid = 'pg_catalog.pg_extension'::regclass
+		JOIN pg_catalog.pg_extension e ON e.oid = x.refobjid
+		WHERE pg_catalog.pg_has_role(current_user, o.owner, 'USAGE')`)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
 	known := map[string]bool{}
-	for _, o := range own {
-		if ext, of, _ := strings.Cut(o, "/"); !lost(ext) {
-			known[of] = true
+	for rows.Next() {
+		var ext, schema, kind, name string
+		if err := rows.Scan(&ext, &schema, &kind, &name); err != nil {
+			return "", err
+		}
+		if !lost(ext) {
+			if k, of := grantedOn(kind, name); k != "" {
+				known[schema+" "+k+" "+of] = true
+			}
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	toc := pgbundle.ParseTOC(list)
 	for _, e := range toc {
 		if kind, name := grantedOn(e.Desc, e.Name); kind != "" {
 			known[e.Schema+" "+kind+" "+name] = true
@@ -504,64 +618,81 @@ func grantedOn(desc, name string) (kind, of string) {
 	case "FUNCTION", "PROCEDURE", "AGGREGATE":
 		return "FUNCTION", functionSig(name)
 	case "TABLE", "VIEW", "MATERIALIZED VIEW", "FOREIGN TABLE", "SEQUENCE":
-		kind = "TABLE"
+		return "TABLE", unquote(name)
 	case "COLUMN":
-		kind = "TABLE"
 		if table, _, ok := columnOf(name); ok {
-			name = table
-		} else if i := strings.LastIndex(name, "."); i > 0 {
-			name = name[:i]
+			return "TABLE", table
 		}
+		return "TABLE", unquote(name)
 	case "TYPE", "DOMAIN":
-		kind = "TYPE"
+		return "TYPE", unquote(name)
 	default:
 		return "", ""
 	}
-	if len(name) > 1 && name[0] == '"' && name[len(name)-1] == '"' {
-		name = strings.ReplaceAll(name[1:len(name)-1], `""`, `"`)
-	}
-	return kind, name
 }
 
-// columnOf is the table and the column of a grant's name for a column ("<table> <column>",
-// each name as pg_dump quotes it): ok false when it is not that.
-func columnOf(name string) (table, column string, ok bool) {
-	ident := func(s string) (string, string, bool) { // one name, quoted or bare
-		if strings.HasPrefix(s, `"`) {
-			for i := 1; i < len(s); i++ {
-				if s[i] == '"' {
-					if i+1 < len(s) && s[i+1] == '"' {
-						i++
-						continue
-					}
-					return s[1:i], s[i+1:], true
-				}
-			}
-			return "", s, false
-		}
-		if s == "" {
-			return "", s, false
-		}
-		i := strings.IndexAny(s, " \t")
-		if i < 0 {
-			return s, "", true
-		}
-		return s[:i], s[i:], true
+// scanIdent reads one SQL identifier from the start of s: either double-quoted (with ""
+// escapes, returning the unquoted value) or bare (stopping at '.', ' ', or '\t').
+func scanIdent(s string) (val, rest string, ok bool) {
+	if s == "" {
+		return "", s, false
 	}
-	rest := strings.TrimLeft(name, " \t")
-	first, rest, ok1 := ident(rest)
-	rest = strings.TrimLeft(rest, " \t")
-	second, _, ok2 := ident(rest)
-	if !ok1 || !ok2 || first == "" || second == "" {
+	if s[0] == '"' {
+		var sb strings.Builder
+		for i := 1; i < len(s); i++ {
+			if s[i] == '"' {
+				if i+1 < len(s) && s[i+1] == '"' {
+					sb.WriteByte('"')
+					i++
+					continue
+				}
+				return sb.String(), s[i+1:], true
+			}
+			sb.WriteByte(s[i])
+		}
+		return "", s, false
+	}
+	i := strings.IndexAny(s, ". \t")
+	if i < 0 {
+		return s, "", true
+	}
+	if i == 0 {
+		return "", s, false
+	}
+	return s[:i], s[i:], true
+}
+
+// columnOf splits a COLUMN ACL tag into its unquoted table and column names: PostgreSQL
+// pg_dump writes "<table>.<column>" (with double-quoted identifiers when names contain dots,
+// spaces or quotes, e.g. videos."a.b", "my.tbl"."a.b", "a""b.c"."d.e"), and older/space-
+// separated forms "<table> <column>" are accepted too. ok is false when name is not a
+// two-identifier column reference.
+func columnOf(name string) (table, column string, ok bool) {
+	rest := strings.TrimSpace(name)
+	first, rest, ok1 := scanIdent(rest)
+	if !ok1 || first == "" {
+		return "", "", false
+	}
+	switch {
+	case strings.HasPrefix(rest, "."):
+		rest = rest[1:]
+	case len(rest) > 0 && (rest[0] == ' ' || rest[0] == '\t'):
+		rest = strings.TrimLeft(rest, " \t")
+	default:
+		return "", "", false
+	}
+	second, tail, ok2 := scanIdent(rest)
+	if !ok2 || second == "" || strings.TrimSpace(tail) != "" {
 		return "", "", false
 	}
 	return first, second, true
 }
 
-// functionSig is a function's (or aggregate's, procedure's) name and arguments as one key,
-// the same for the two spellings a dump's list carries (the definition's tag, with the
-// argument names and defaults, and the grant's, the types alone): the argument names go, the
-// spaces go, and what follows DEFAULT goes.
+// functionSig is a function's (or aggregate's, procedure's) name and canonical input argument
+// types as one key, matching both PG 16/18 definition tags (types only), ACL tags (which may
+// carry argument names, modes, and defaults), and pg_catalog.oidvectortypes(proargtypes).
+// Quoted identifier contents are preserved verbatim while whitespace outside quotes is
+// normalized.
 func functionSig(tag string) string {
 	name, args, ok := splitSig(tag)
 	if !ok {
@@ -607,25 +738,34 @@ func splitSig(tag string) (name, args string, ok bool) {
 }
 
 // splitArgs is a signature's argument list split at its top-level commas (a default's
-// expression may hold commas of its own).
+// expression may hold commas of its own, inside parentheses or quotes).
 func splitArgs(args string) []string {
 	var out []string
-	depth, quoted, last := 0, false, 0
+	depth, dquot, squot, last := 0, false, false, 0
 	for i := 0; i < len(args); i++ {
-		switch c := args[i]; {
-		case quoted && c == '"':
+		c := args[i]
+		switch {
+		case dquot && c == '"':
 			if i+1 < len(args) && args[i+1] == '"' {
 				i++
 				continue
 			}
-			quoted = false
-		case !quoted && c == '"':
-			quoted = true
-		case !quoted && (c == '(' || c == '['):
+			dquot = false
+		case squot && c == '\'':
+			if i+1 < len(args) && args[i+1] == '\'' {
+				i++
+				continue
+			}
+			squot = false
+		case !dquot && !squot && c == '"':
+			dquot = true
+		case !dquot && !squot && c == '\'':
+			squot = true
+		case !dquot && !squot && (c == '(' || c == '['):
 			depth++
-		case !quoted && (c == ')' || c == ']'):
+		case !dquot && !squot && (c == ')' || c == ']'):
 			depth--
-		case !quoted && c == ',' && depth == 0:
+		case !dquot && !squot && c == ',' && depth == 0:
 			out = append(out, args[last:i])
 			last = i + 1
 		}
@@ -636,25 +776,156 @@ func splitArgs(args string) []string {
 	return out
 }
 
-// typeHeads are the words a type may begin with, which are never an argument's name.
-var typeHeads = map[string]bool{"double": true, "character": true, "bit": true, "timestamp": true,
-	"time": true, "interval": true, "variadic": true}
+type sqlTokKind int
 
-// argType is one argument as its type alone, the spaces of it gone: its name (a bare word
-// before the type, which a multi-word type never begins with) goes, and so does a default.
-func argType(arg string) string {
-	if i := strings.Index(arg, "DEFAULT"); i >= 0 {
-		arg = arg[:i]
-	}
-	words := strings.Fields(arg)
-	for i, w := range words {
-		if typeHeads[strings.ToLower(w)] || strings.HasPrefix(w, `"`) || i == len(words)-1 {
+const (
+	tokWord sqlTokKind = iota
+	tokQuoted
+	tokPunct
+)
+
+type sqlTok struct {
+	kind sqlTokKind
+	text string
+}
+
+// scanArgTokens tokenizes a function argument up to any top-level DEFAULT or '='.
+// Quoted identifiers ("...") keep their exact bytes including spaces and case.
+func scanArgTokens(arg string) []sqlTok {
+	var toks []sqlTok
+	depth := 0
+	for i := 0; i < len(arg); {
+		c := arg[i]
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' {
+			i++
 			continue
 		}
-		words = append(words[:i], words[i+1:]...) // its name
+		if c == '"' {
+			start := i
+			i++
+			for i < len(arg) {
+				if arg[i] == '"' {
+					if i+1 < len(arg) && arg[i+1] == '"' {
+						i += 2
+						continue
+					}
+					i++
+					break
+				}
+				i++
+			}
+			toks = append(toks, sqlTok{kind: tokQuoted, text: arg[start:i]})
+			continue
+		}
+		if c == '\'' {
+			// Single-quoted literal (only in DEFAULT expressions); skip cleanly.
+			i++
+			for i < len(arg) {
+				if arg[i] == '\'' {
+					if i+1 < len(arg) && arg[i+1] == '\'' {
+						i += 2
+						continue
+					}
+					i++
+					break
+				}
+				i++
+			}
+			continue
+		}
+		if c == '(' || c == '[' {
+			depth++
+			toks = append(toks, sqlTok{kind: tokPunct, text: arg[i : i+1]})
+			i++
+			continue
+		}
+		if c == ')' || c == ']' {
+			if depth > 0 {
+				depth--
+			}
+			toks = append(toks, sqlTok{kind: tokPunct, text: arg[i : i+1]})
+			i++
+			continue
+		}
+		if c == '.' || c == '*' || c == ',' {
+			toks = append(toks, sqlTok{kind: tokPunct, text: arg[i : i+1]})
+			i++
+			continue
+		}
+		if c == '=' && depth == 0 {
+			break
+		}
+		start := i
+		for i < len(arg) && !strings.ContainsRune(" \t\n\r\"'()[],.*=", rune(arg[i])) {
+			i++
+		}
+		word := arg[start:i]
+		if depth == 0 && strings.EqualFold(word, "DEFAULT") {
+			break
+		}
+		toks = append(toks, sqlTok{kind: tokWord, text: strings.ToLower(word)})
+	}
+	return toks
+}
+
+// isMultiWordTypeStart reports whether toks begins with one of PostgreSQL's built-in
+// multi-word SQL type names (never a parameter name before another type).
+func isMultiWordTypeStart(toks []sqlTok) bool {
+	if len(toks) < 2 || toks[0].kind != tokWord || toks[1].kind != tokWord {
+		return false
+	}
+	w0, w1 := toks[0].text, toks[1].text
+	switch w0 {
+	case "double":
+		return w1 == "precision"
+	case "character", "bit":
+		return w1 == "varying"
+	case "timestamp", "time":
+		return w1 == "with" || w1 == "without"
+	case "interval":
+		switch w1 {
+		case "year", "month", "day", "hour", "minute", "second":
+			return true
+		}
+	}
+	return false
+}
+
+// argType is one argument as its canonical input type: leading modes (IN, INOUT, VARIADIC),
+// parameter name (bare or quoted), and DEFAULT expression are stripped, while quoted type
+// identifiers keep their internal spaces and case verbatim.
+func argType(arg string) string {
+	toks := scanArgTokens(arg)
+	// Strip leading parameter mode keywords (IN, INOUT, VARIADIC).
+	for len(toks) > 1 && toks[0].kind == tokWord {
+		switch toks[0].text {
+		case "in", "inout", "variadic":
+			toks = toks[1:]
+			continue
+		}
 		break
 	}
-	return strings.Join(words, "")
+	// Strip parameter name if present: an identifier followed by another type token
+	// (not '.' for schema.type, not '(' or '[' for type modifier/array, and not a
+	// multi-word SQL type start).
+	if len(toks) >= 2 && (toks[0].kind == tokWord || toks[0].kind == tokQuoted) &&
+		toks[1].text != "." && toks[1].text != "(" && toks[1].text != "[" &&
+		!isMultiWordTypeStart(toks) {
+		toks = toks[1:]
+	}
+	var sb strings.Builder
+	for i, tk := range toks {
+		if i > 0 {
+			prev := toks[i-1]
+			needSpace := (prev.kind != tokPunct || prev.text == ")") &&
+				(tk.kind != tokPunct)
+			if needSpace {
+				sb.WriteByte(' ')
+			}
+		}
+		sb.WriteString(tk.text)
+	}
+	return sb.String()
 }
 
 func unquote(name string) string {

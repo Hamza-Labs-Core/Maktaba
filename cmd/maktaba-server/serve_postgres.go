@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -206,8 +207,18 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 		err = u.Run(ctx, log)
 		if err == nil {
 			// the new cluster's record starts as the old one's: the same release's
-			// migrations, the same dumps (a second try takes it again: the old moved on)
-			seedClusterRecord(root, oldMajor, newMajor, log)
+			// migrations, the same dumps (a second try takes it again: the old moved on).
+			// Reconcile any pending untouched restore's DataID from the verified old
+			// cluster to the new upgraded cluster so its new system_identifier is not
+			// misclassified as replaced.
+			var oldSys, newSys string
+			if m, ok, merr := pgbundle.ReadUpgradedFrom(b.Data); merr == nil && ok {
+				oldSys = m.SystemID
+			}
+			if nc, cerr := pgbundle.ReadControl(ctx, b.Bin("pg_controldata"), b.Data); cerr == nil {
+				newSys = nc.SystemID
+			}
+			seedClusterRecord(root, oldMajor, newMajor, oldSys, newSys, log)
 		}
 	} else if err == nil {
 		fmt.Fprintf(log, "[postgres] the library database runs on PostgreSQL %s (%s)\n", newMajor, why)
@@ -225,8 +236,12 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 	return b
 }
 
-// seedClusterRecord copies the old cluster's database record to the new one's.
-func seedClusterRecord(root, oldMajor, newMajor string, log io.Writer) {
+// seedClusterRecord copies the old cluster's database record to the new one's. When a
+// pending restore recorded untouched data on the verified old cluster (oldSys), its old
+// DataID/DataTable are cleared so the upgraded cluster (newSys, with a new system
+// identifier and possibly new database OID) adopts its own live identity on the next
+// settleData probe instead of falsely classifying untouched data as replaced.
+func seedClusterRecord(root, oldMajor, newMajor, oldSys, newSys string, log io.Writer) {
 	dir := filepath.Join(root, "state")
 	from, to := filepath.Join(dir, apppayload.ClusterRecordName(oldMajor)), filepath.Join(dir, apppayload.ClusterRecordName(newMajor))
 	raw, err := os.ReadFile(from)
@@ -235,10 +250,35 @@ func seedClusterRecord(root, oldMajor, newMajor string, log io.Writer) {
 		return
 	}
 	if err == nil {
+		raw = reconcileUpgradedRecord(raw, oldSys, newSys, log)
 		err = layout.WriteFileAtomic(to, raw, 0o644)
 	}
 	if err != nil {
 		fmt.Fprintf(log, "[postgres] level=warn the upgraded library database's record is not seeded (%v): "+
 			"this start takes it as an update from the release that ran last\n", err)
 	}
+}
+
+func reconcileUpgradedRecord(raw []byte, oldSys, newSys string, log io.Writer) []byte {
+	if oldSys == "" || newSys == "" || oldSys == newSys {
+		return raw
+	}
+	var rec apppayload.Database
+	if err := json.Unmarshal(raw, &rec); err != nil {
+		return raw
+	}
+	if !asked(rec) || rec.Data != apppayload.DataUntouched || rec.DataID == "" || strings.HasSuffix(rec.DataID, insideMark) {
+		return raw
+	}
+	recSys, _, ok := strings.Cut(rec.DataID, "/")
+	if !ok || recSys != oldSys {
+		return raw
+	}
+	rec.DataID, rec.DataTable = "", ""
+	updated, err := json.MarshalIndent(rec, "", "  ")
+	if err != nil {
+		return raw
+	}
+	fmt.Fprintf(log, "[postgres] reconciled pending untouched restore identity across cluster upgrade (%s -> %s)\n", oldSys, newSys)
+	return append(updated, '\n')
 }

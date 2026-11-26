@@ -120,7 +120,7 @@ func TestAwaitShmFreeBounds(t *testing.T) {
 func TestShmInUseIgnoresASegmentAnotherPostmasterTook(t *testing.T) {
 	oldStat := shmStat
 	t.Cleanup(func() { shmStat = oldStat })
-	shmStat = func(id int, ds *unix.SysvShmDesc) (int, error) {
+	shmStat = func(_ int, ds *unix.SysvShmDesc) (int, error) {
 		ds.Nattch, ds.Cpid = 2, 4243
 		return 0, nil
 	}
@@ -128,14 +128,14 @@ func TestShmInUseIgnoresASegmentAnotherPostmasterTook(t *testing.T) {
 	if shmInUse(lock) {
 		t.Fatal("a segment another postmaster made is taken for the dead one's")
 	}
-	shmStat = func(id int, ds *unix.SysvShmDesc) (int, error) {
+	shmStat = func(_ int, ds *unix.SysvShmDesc) (int, error) {
 		ds.Nattch, ds.Cpid = 2, 4242
 		return 0, nil
 	}
 	if !shmInUse(lock) {
 		t.Fatal("a segment the dead postmaster made is not waited for")
 	}
-	shmStat = func(id int, ds *unix.SysvShmDesc) (int, error) {
+	shmStat = func(_ int, ds *unix.SysvShmDesc) (int, error) {
 		ds.Nattch, ds.Cpid = 2, 0
 		return 0, nil
 	}

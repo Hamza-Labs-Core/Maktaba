@@ -35,6 +35,9 @@ func TestCopyScan(t *testing.T) {
 		"a COPY's names longer than the scan": {
 			head + "-- Data for Name: wide; Type: TABLE DATA; Schema: public; Owner: -\n--\n\nCOPY public.wide (" +
 				strings.Repeat("c0, ", 300000) + "c1) FROM stdin;\n1\tx\n\\.\n\n\n" + end, 1, false},
+		"a COPY that is not FROM stdin": {
+			head + "-- Data for Name: a; Type: TABLE DATA; Schema: public; Owner: -\n--\n\nCOPY public.a (id, title) TO stdout;\n" +
+				block("a", "1\tx\n") + end, 1, true},
 	} {
 		for _, size := range []int{1, 7, 4096, 1 << 30} {
 			if size == 1 && len(c.script) > 1<<20 {

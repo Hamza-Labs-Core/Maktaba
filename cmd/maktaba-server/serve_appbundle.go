@@ -470,7 +470,15 @@ var (
 	makeRoom = pgbundle.MakeRoomWith
 	// the same for the copy of the database a restore replaces (MakeRoomKeeping), and whether
 	// it would be made (RoomKeeping)
-	makeRoomKeeping, roomKeeping, roomNow = pgbundle.MakeRoomKeeping, pgbundle.RoomKeeping, pgbundle.RoomNow
+	makeRoomKeeping, roomKeeping, roomNow, roomNowAtLeast = pgbundle.MakeRoomKeeping, pgbundle.RoomKeeping, pgbundle.RoomNow, pgbundle.RoomNowAtLeast
+	// verifyAside checks a candidate replaced-* dump before it is reused as protection
+	verifyAside = func(ctx context.Context, g *migrationGate, path string) error {
+		t, err := g.target()
+		if err != nil {
+			return err
+		}
+		return t.VerifyAside(ctx, path)
+	}
 	// the other sessions on the database, ended before an update's migrations
 	endSessionsBundled  = func(ctx context.Context, b pgbundle.Bundle) (int, error) { return b.EndSessions(ctx) }
 	endSessionsExternal = func(ctx context.Context, t dbsafe.Target) (int, error) { return t.EndSessions(ctx) }
@@ -639,7 +647,9 @@ func (g *migrationGate) backups() string {
 // release's migrations when they ran.
 func (g *migrationGate) setAsideReplaced(ctx context.Context, rec apppayload.Database) (string, error) {
 	dir := g.backups()
-	if found := replacedDumpThere(dir, rec); found != "" {
+	if found := replacedDumpThere(ctx, dir, rec, func(vctx context.Context, p string) error {
+		return verifyAside(vctx, g, p)
+	}); found != "" {
 		return found, nil // the record still says the data is what it was: it is the same copy
 	}
 	path := rec.Aside

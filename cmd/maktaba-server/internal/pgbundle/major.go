@@ -327,13 +327,17 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 		}
 		defer func() {
 			// back on, then the marker (a failed upgrade too: the old cluster is as it was);
-			// nothing when the run put them back itself. Bounded: this runs while the
-			// process stops (the context gone), and a start on the old cluster can wait
-			// out shared memory a killed postmaster left — a stop must not hang for that.
+			// nothing when the run put them back itself. When shutdown/cancellation was
+			// requested, skip restoring grants here so stopping mid-upgrade does not hang:
+			// clusterMarker is already gone, so Prepare restores them on the next start.
 			if marker == nil {
 				return
 			}
-			dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), oldSQLBound)
+			if ctx.Err() != nil {
+				fmt.Fprintf(log, "[postgres] level=warn the upgrade stopped (%v): the old cluster's grants are left for its next start\n", ctx.Err())
+				return
+			}
+			dctx, cancel := context.WithTimeout(ctx, oldSQLBound)
 			defer cancel()
 			if gerr := u.oldSQL(dctx, log, clusterSQL); gerr != nil {
 				fmt.Fprintf(log, "[postgres] level=warn the old cluster's grants are not back (%v): its next start makes them again\n", gerr)

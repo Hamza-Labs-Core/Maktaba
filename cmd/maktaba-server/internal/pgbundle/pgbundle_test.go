@@ -842,7 +842,7 @@ func TestServerArgsPreloadPgTextsearch(t *testing.T) {
 func TestWithServerWaitsForTheMemoryBeforeStarting(t *testing.T) {
 	b, logDir := fakeBundle(t)
 	prev := awaitShmFree
-	awaitShmFree = func(b Bundle, ctx context.Context) {
+	awaitShmFree = func(_ Bundle, _ context.Context) {
 		_ = os.WriteFile(filepath.Join(logDir, "order"), []byte("await\n"), 0o600)
 	}
 	t.Cleanup(func() { awaitShmFree = prev })
@@ -870,7 +870,7 @@ func TestWithServerBoundsItsWaitsToOneBound(t *testing.T) {
 	t.Cleanup(func() { shmWait, shmRetryEvery = oldWait, oldEvery })
 	start := time.Now()
 	prev := awaitShmFree
-	awaitShmFree = func(b Bundle, ctx context.Context) {
+	awaitShmFree = func(_ Bundle, ctx context.Context) {
 		if d, ok := ctx.Deadline(); !ok || d.After(start.Add(shmWait+100*time.Millisecond)) {
 			t.Errorf("a wait's context ends at %v (one there: %v), past the bound %v", d, ok, start.Add(shmWait))
 		}
@@ -881,5 +881,41 @@ func TestWithServerBoundsItsWaitsToOneBound(t *testing.T) {
 	}
 	if took := time.Since(start); took > 3*shmWait {
 		t.Fatalf("took %s, want under %s", took, 3*shmWait)
+	}
+}
+
+// A retry inside WithServer bounds runServer's own startup readiness wait to the same shared
+// shmWait deadline rather than granting a fresh readyTimeout on every retry.
+func TestWithServerBoundsRetryRunServerToSharedDeadline(t *testing.T) {
+	b, _ := fakeBundle(t)
+	oldWait, oldEvery, oldReady, oldCheck, oldAwait := shmWait, shmRetryEvery, readyTimeout, readyCheck, awaitShmFree
+	t.Cleanup(func() {
+		shmWait, shmRetryEvery, readyTimeout, readyCheck, awaitShmFree = oldWait, oldEvery, oldReady, oldCheck, oldAwait
+	})
+	shmWait, shmRetryEvery, readyTimeout = 250*time.Millisecond, 10*time.Millisecond, 10*time.Second
+	awaitShmFree = func(_ Bundle, _ context.Context) {}
+	attempts := 0
+	readyCheck = func(ctx context.Context, _, _, _ string) error {
+		attempts++
+		if attempts == 1 {
+			// Let the first start fail with errShmInUse on its own.
+			return ErrStarting
+		}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	// First attempt fails with errShmInUse via fake postgres; second stays up so readyCheck blocks.
+	onceFile := filepath.Join(t.TempDir(), "once")
+	script := "#!/bin/sh\nif [ ! -f '" + onceFile + "' ]; then\n  : > '" + onceFile + "'\n  echo 'FATAL: pre-existing shared memory block is still in use' >&2\n  exit 1\nfi\ntrap 'kill $p 2>/dev/null; exit 0' INT TERM\nsleep 30 </dev/null >/dev/null 2>&1 &\np=$!\nwait $p\n"
+	if err := os.WriteFile(b.Bin("postgres"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	err := b.WithServer(context.Background(), io.Discard, func() error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "postgres did not get ready") {
+		t.Fatalf("err = %v, want readiness timeout", err)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("retry runServer took %s (not bounded by shmWait %s)", took, shmWait)
 	}
 }

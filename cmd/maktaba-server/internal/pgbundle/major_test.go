@@ -1,6 +1,7 @@
 package pgbundle
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Epic 49 story 49.2: 16 and older keep <root>/postgres (every cluster made before), 18 and
@@ -167,5 +169,84 @@ func TestRowsOfTakesNoCarriageReturn(t *testing.T) {
 	}
 	if got := rowsOf(""); len(got) != 0 {
 		t.Errorf("no output: %q", got)
+	}
+}
+
+// Stopping mid-upgrade (cancelled ctx) skips the deferred 30s oldSQL grant restoration
+// immediately because clusterMarker is already gone and Prepare restores grants on the
+// next start.
+func TestMajorUpgradeDeferredOldSQLSkipsOnCancellation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stand-in for pg_controldata/postgres")
+	}
+	root := t.TempDir()
+	oldHome, newHome := filepath.Join(root, "pg16"), filepath.Join(root, "pg18")
+	for _, h := range []string{oldHome, newHome} {
+		if err := os.MkdirAll(filepath.Join(h, "bin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	oldData, newData, keys := filepath.Join(root, "postgres"), filepath.Join(root, "postgres-18"), filepath.Join(root, "keys")
+	if err := os.MkdirAll(oldData, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(keys, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldData, "PG_VERSION"), []byte("16\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldData, clusterMarker), []byte("rev 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(keys, "postgres-"+SuperUser+".password"), []byte("secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctrlScript := "#!/bin/sh\necho 'Database cluster state: shut down'\necho 'Database system identifier: 123456789'\necho 'Latest checkpoint location: 0/1'\necho 'Data page checksum version: 1'\n"
+	if err := os.WriteFile(filepath.Join(oldHome, "bin", "pg_controldata"), []byte(ctrlScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// postgres stand-in sleeps if ever invoked a second time (deferred restore).
+	calls := filepath.Join(root, "pg-calls")
+	pgScript := "#!/bin/sh\necho call >> '" + calls + "'\ntrap 'kill $p 2>/dev/null; exit 0' INT TERM\nsleep 30 </dev/null >/dev/null 2>&1 &\np=$!\nwait $p\n"
+	if err := os.WriteFile(filepath.Join(oldHome, "bin", "postgres"), []byte(pgScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	// psql succeeds on the first call (slotGrantsOffSQL); then Room cancels ctx during the
+	// copy phase so Run exits into the deferred cleanup while ctx is already cancelled.
+	psqlScript := "#!/bin/sh\nexit 0\n"
+	if err := os.WriteFile(filepath.Join(oldHome, "bin", "psql"), []byte(psqlScript), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldCheck := readyCheck
+	t.Cleanup(func() { readyCheck = oldCheck })
+	readyCheck = func(_ context.Context, _, _, _ string) error {
+		if _, err := os.Stat(calls); err != nil {
+			return err
+		}
+		return nil
+	}
+	u := MajorUpgrade{
+		Old:     Bundle{Home: oldHome, Data: oldData, Keys: keys, Port: 54991},
+		New:     Bundle{Home: newHome, Data: newData, Keys: keys, Port: 54991},
+		NoClone: true,
+		Room: func(string, uint64) error {
+			cancel()
+			return context.Canceled
+		},
+	}
+	var log bytes.Buffer
+	start := time.Now()
+	_ = u.Run(ctx, &log)
+	if took := time.Since(start); took > 5*time.Second {
+		t.Fatalf("cancelled upgrade hung for %s in deferred cleanup:\n%s", took, log.String())
+	}
+	if !strings.Contains(log.String(), "left for its next start") {
+		t.Fatalf("deferred cleanup did not skip on cancellation:\n%s", log.String())
+	}
+	raw, _ := os.ReadFile(calls)
+	if strings.Count(string(raw), "call") != 1 {
+		t.Fatalf("old postgres started %d times, want 1 (deferred oldSQL must not run):\n%s", strings.Count(string(raw), "call"), string(raw))
 	}
 }

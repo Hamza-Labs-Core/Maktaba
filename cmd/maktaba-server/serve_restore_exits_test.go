@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -50,15 +51,30 @@ func newExitsRig(t *testing.T) *exitsRig {
 	t.Cleanup(func() { makeRoomKeeping, roomKeeping = prevKeeping, prevCheck })
 	makeRoomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return nil }
 	roomKeeping = makeRoomKeeping
-	prevNow := roomNow
-	t.Cleanup(func() { roomNow = prevNow })
+	prevNow, prevAtLeast := roomNow, roomNowAtLeast
+	t.Cleanup(func() { roomNow, roomNowAtLeast = prevNow, prevAtLeast })
 	roomNow = func(string, pgbundle.RoomPolicy) error { return nil }
+	roomNowAtLeast = func(string, pgbundle.RoomPolicy, uint64) error { return nil }
+	prevVerify := verifyAside
+	t.Cleanup(func() { verifyAside = prevVerify })
+	verifyAside = func(_ context.Context, _ *migrationGate, p string) error {
+		if !pgbundle.HasDumpHeader(p) {
+			return errors.New("not a valid dump")
+		}
+		return nil
+	}
 	rig := newRestoreRig(t, map[string]int64{firstBackup: 140, otherBackup: 140})
 	e := &exitsRig{restoreRig: rig, t: t, f: installFakeDB(t, cfg), log: &syncBuf{}, dir: cfg.StateDir()}
 	rig.r.stateDir = e.dir
 	b := *testBundle(cfg)
 	b.Backups = rig.backups
 	rig.r.identity = func(ctx context.Context) (string, int64, error) { return dataIdentity(ctx, nil) }
+	rig.r.verifyAside = func(_ context.Context, p string) error {
+		if !pgbundle.HasDumpHeader(p) {
+			return errors.New("not a valid dump")
+		}
+		return nil
+	}
 	e.start = func(version string) error {
 		g := &migrationGate{stateDir: e.dir, version: version, pg: &b, api: exec.Command("maktaba-api"), keep: 3, log: e.log}
 		return g.run(context.Background(), noReport)
@@ -249,7 +265,7 @@ func TestTheAsideAKillLeftIsNotTakenAgain(t *testing.T) {
 	rec := e.asked()
 	rec.Aside = filepath.Join(e.backups, "replaced-v0.3.0-20261126T000000.dump")
 	e.write(rec)
-	if err := os.WriteFile(rec.Aside, []byte("aside"), 0o600); err != nil {
+	if err := os.WriteFile(rec.Aside, []byte("PGDMP"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	e.f.restoreErr = errors.New("no such file")
@@ -305,8 +321,8 @@ func TestAnAskWhoseSwitchWasCutShortWaitsForItsRelease(t *testing.T) {
 	if !pgbundle.BackupsHeld(e.backups) {
 		t.Fatal("the backups are not held while it waits")
 	}
-	// the way out is on the recovery page: give it up, and this release goes on
-	if s := stuckOf(e.r); s == nil || !s.CanGiveUp {
+	// the way out is on the recovery page: give it up, and this release goes on, with a non-empty Why
+	if s := stuckOf(e.r); s == nil || !s.CanGiveUp || !strings.Contains(s.Why, "v0.2.0") {
 		t.Fatalf("stuck %+v", s)
 	}
 	// the release it is for starts: the restore runs there, as it was asked
@@ -1740,5 +1756,149 @@ func TestAKeptSchemaIsCarriedFromAKeptBackup(t *testing.T) {
 	}
 	if rec := e.rec(); rec.DumpKeptFor != "0.2.0" {
 		t.Fatalf("%+v", rec)
+	}
+}
+
+// Empty files, empty directories, and corrupt archives at Aside (AsideBytes == 0) or legacy
+// replaced-* paths are never reused as valid protection by copyNeeded or setAsideReplaced.
+func TestUnvalidatedReplacedDumpsAreNotReused(t *testing.T) {
+	makeCandidate := func(t *testing.T, p, kind string) {
+		t.Helper()
+		switch kind {
+		case "empty-file":
+			if err := os.WriteFile(p, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+		case "empty-dir":
+			if err := os.MkdirAll(p, 0o700); err != nil {
+				t.Fatal(err)
+			}
+		case "dir-no-toc":
+			if err := os.MkdirAll(p, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(p, "1234.dat.gz"), []byte("x"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		case "corrupt-file":
+			if err := os.WriteFile(p, []byte("not-a-pg-dump"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		case "corrupt-archive":
+			if err := os.WriteFile(p, []byte("PGDMP-corrupt"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		at := time.Now().Add(time.Minute)
+		_ = os.Chtimes(p, at, at)
+	}
+
+	for _, kind := range []string{"empty-file", "empty-dir", "dir-no-toc", "corrupt-file", "corrupt-archive"} {
+		for _, mode := range []string{"named-zero-bytes", "legacy-unknown"} {
+			t.Run(mode+"/"+kind, func(t *testing.T) {
+				e := newExitsRig(t)
+				e.inst.running = "0.2.0"
+				if kind == "corrupt-archive" {
+					verifyAside = func(context.Context, *migrationGate, string) error {
+						return errors.New("pg_restore --list: corrupt archive")
+					}
+					e.r.verifyAside = func(context.Context, string) error {
+						return errors.New("pg_restore --list: corrupt archive")
+					}
+				}
+				p := filepath.Join(e.backups, "replaced-v0.3.0-20261126T000000.dump")
+				makeCandidate(t, p, kind)
+				rec := e.asked()
+				if mode == "named-zero-bytes" {
+					rec.Aside, rec.AsideBytes = p, 0
+				} else {
+					rec.Data = apppayload.DataUnknown
+				}
+				e.write(rec)
+
+				// copyRoom / plan must still require room (not treat corrupt candidate as existing copy).
+				prevRK := roomKeeping
+				roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error { return &pgbundle.NoRoomError{Need: 1} }
+				pl, err := e.r.plan(context.Background(), firstBackup)
+				roomKeeping = prevRK
+				if err != nil || pl.NoCopy == "" {
+					t.Fatalf("plan treated invalid %s as valid copy: pl=%+v err=%v", kind, pl, err)
+				}
+
+				// setAsideReplaced must take a fresh copy instead of reusing the invalid candidate.
+				e.f.restoreErr = errors.New("stop after aside")
+				_ = haltCode(t, e.start("v0.2.0"))
+				if len(e.f.asides) != 1 {
+					t.Fatalf("expected 1 fresh aside taken for invalid %s, got %v", kind, e.f.asides)
+				}
+			})
+		}
+	}
+}
+
+// olderRoom compares against max(liveDBSize, newestBackup * 1.25).
+func TestOlderRoomUsesLiveDBSizeFloor(t *testing.T) {
+	e := newExitsRig(t)
+	manyBackups(t, e.backups)
+	e.write(e.asked())
+	e.r.dbSize = func(context.Context) (int64, error) { return 80 << 20, nil }
+	var gotFloor uint64
+	roomNowAtLeast = func(_ string, _ pgbundle.RoomPolicy, minNext uint64) error {
+		gotFloor = minNext
+		return &pgbundle.NoRoomError{Dir: e.backups, Free: 20 << 20, Need: minNext}
+	}
+	_, err := e.r.plan(context.Background(), firstBackup)
+	if restoreCode(err) != "restore_older_no_room" || gotFloor != 80<<20 {
+		t.Fatalf("gotFloor=%d err=%v", gotFloor, err)
+	}
+	if !strings.Contains(err.Error(), "share of the disk") {
+		t.Fatalf("refusal missing dumps-share warning: %v", err)
+	}
+}
+
+// unprotectedAdvice surfaces disk-full, read-only, and permission errors clearly instead
+// of always recommending a hard-link disk.
+func TestUnprotectedAdviceSurfacesRealErrorCategory(t *testing.T) {
+	cases := []struct {
+		name      string
+		err       error
+		want      string
+		avoidHard bool
+	}{
+		{"enospc", &os.PathError{Op: "mkdir", Path: "/b", Err: syscall.ENOSPC}, "disk is full", true},
+		{"erofs", &os.PathError{Op: "mkdir", Path: "/b", Err: syscall.EROFS}, "read-only", true},
+		{"eacces", &os.PathError{Op: "mkdir", Path: "/b", Err: syscall.EACCES}, "permission", true},
+		{"enotsup-link", &os.LinkError{Op: "link", Old: "/a", New: "/b", Err: syscall.EOPNOTSUPP}, "hard links", false},
+		{"eperm-link", &os.LinkError{Op: "link", Old: "/a", New: "/b", Err: syscall.EPERM}, "hard links", false},
+		{"other-error", errors.New("i/o timeout"), "Fix the backups folder error", true},
+	}
+	for _, c := range cases {
+		got := unprotectedAdvice(c.err)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: got %q, want substring %q", c.name, got, c.want)
+		}
+		if c.avoidHard && strings.Contains(got, "hard links") {
+			t.Errorf("%s: unexpectedly recommended hard links: %q", c.name, got)
+		}
+	}
+}
+
+// A non-NoRoomError from copyRoom (e.g. permission denied) is never categorized as NoCopyRoom.
+func TestNonNoRoomErrorIsNeverRecordedAsNoCopyRoom(t *testing.T) {
+	e := newExitsRig(t)
+	e.inst.running = "0.2.0"
+	e.write(e.asked())
+	roomKeeping = func(string, pgbundle.RoomPolicy, ...string) error {
+		return &os.PathError{Op: "mkdir", Path: e.backups, Err: syscall.EACCES}
+	}
+	pl, err := e.r.restoreAs(context.Background(), firstBackup, "admin", restoreAsk{confirm: true, withoutCopy: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pl.CopyNeed != 0 || pl.noCopyRoom {
+		t.Fatalf("non-NoRoomError set room fields: %+v", pl)
+	}
+	if rec := e.rec(); rec.NoCopy != apppayload.NoCopyAny {
+		t.Fatalf("rec.NoCopy = %q, want %q (never NoCopyRoom)", rec.NoCopy, apppayload.NoCopyAny)
 	}
 }
