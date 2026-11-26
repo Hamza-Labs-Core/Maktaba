@@ -700,3 +700,174 @@ def test_plugin_the_host_off_keeps_every_plugin_waiting() -> None:
     }
     g = plugin_gates(desired, _plugin_cat(), None, {PLUGIN_CID: ("", {})})
     assert not g[PLUGIN_CID].open and g[PLUGIN_CID].reason == "dependency_off"
+
+
+@pytest.mark.asyncio
+async def test_removed_maktaba_plugin_parks_and_drains_then_runs_once_after_reinstall(
+    db: Database,
+) -> None:
+    """Story 54.46 (#1463 item 1): exercises the real ClaimLoop + ComponentRunner +
+    dispatch_job/execute path with an instrumented stage handler. Removing a Maktaba
+    plugin under load lets the in-flight job finish cleanly once, parks queued jobs with
+    component_off so ClaimLoop never claims them while absent or installed-off, and after
+    reinstalling and enabling the plugin ClaimLoop claims and finalizes the parked job
+    exactly once."""
+    from maktaba_pipeline.db.jobs import Job
+    from maktaba_pipeline.engine.context import StageContext
+    from maktaba_pipeline.engine.dispatch import EngineRuntime, dispatch_job
+    from maktaba_pipeline.engine.enqueue import enqueue_job
+    from maktaba_pipeline.engine.graph import StageResult
+    from maktaba_pipeline.engine.stages import registry
+    from maktaba_pipeline.pipeline.runner import ClaimLoop, WorkerConfig
+    from tests.engine.factory import make_library, make_video
+
+    await sync_graph(db, GRAPH, gates={})
+    r, sel = _runner(db)
+    assert await r.prime() == {}
+    await _pass(r)
+
+    stage = "thumb_small"
+    stage_def = next(s for s in GRAPH if s.name == stage)
+    pool = stage_def.pool
+    assert stage in sel.served
+
+    # Cap the pool to 1 slot so job 1 holds the worker while job 2 stays queued.
+    await db.execute("UPDATE worker_pools SET size = 1 WHERE pool = $1", pool)
+
+    lib = await make_library(db)
+    v1 = await make_video(db, lib)
+    v2 = await make_video(db, lib)
+    e1 = await enqueue_job(db, subject_kind="video", subject_id=v1, stage=stage)
+    assert e1.job_id is not None
+
+    invocations: dict[int, int] = {}
+    job1_started = asyncio.Event()
+    job2_finished = asyncio.Event()
+    job2_id_box: list[int] = []
+
+    async def instrumented_thumb(_db: Any, job: Job, _ctx: StageContext) -> StageResult:
+        invocations[job.id] = invocations.get(job.id, 0) + 1
+        if job.id == e1.job_id:
+            job1_started.set()
+            # Wait until ComponentRunner's drain sets pause_requested on the running job.
+            for _ in range(250):
+                row = await _db.fetchrow(
+                    "SELECT pause_requested FROM processing_jobs WHERE id = $1", job.id
+                )
+                if row and row["pause_requested"]:
+                    break
+                await asyncio.sleep(0.01)
+            return StageResult(output_hash=f"thumb-{job.subject.id}")
+        res = StageResult(output_hash=f"thumb-{job.subject.id}")
+        if job2_id_box and job.id == job2_id_box[0]:
+            job2_finished.set()
+        return res
+
+    prev_impl = registry._IMPLS.get(stage)
+    registry.register_impl(stage, registry.StageImpl(run=instrumented_thumb))
+    rt = EngineRuntime(graph={s.name: s for s in GRAPH})
+    shutdown = asyncio.Event()
+    passes = 0
+
+    def on_pass() -> None:
+        nonlocal passes
+        passes += 1
+
+    loop = ClaimLoop(
+        db,
+        WorkerConfig(
+            supported_stages=(stage,),
+            worker_id="w-test",
+            claim_poll_sec=0.02,
+            claim_poll_max_sec=0.04,
+            shutdown_drain_sec=2.0,
+            pool_mode=True,
+            stage_pools={stage: pool},
+            dynamic_stages=lambda: [stage] if stage in sel.served else [],
+        ),
+        dispatch=lambda job: dispatch_job(db, job, runtime=rt, legacy_handlers={}),
+        shutdown_event=shutdown,
+        on_pass=on_pass,
+    )
+    r.claims = loop
+    loop_task = asyncio.create_task(loop.run())
+    try:
+        # Wait for ClaimLoop to claim and start job 1 inside our handler.
+        await asyncio.wait_for(job1_started.wait(), timeout=5.0)
+
+        # Enqueue job 2 while job 1 holds the single pool slot (removal under load).
+        e2 = await enqueue_job(db, subject_kind="video", subject_id=v2, stage=stage)
+        assert e2.job_id is not None
+        job2_id_box.append(e2.job_id)
+
+        # Remove the Maktaba plugin (want = absent): job 1 finishes its drain cleanly,
+        # stage closes with component_off, and job 2 stays parked.
+        await set_want(db, "media.thumbnails", "absent")
+        await asyncio.wait_for(_pass(r), timeout=5.0)
+        await asyncio.wait_for(
+            asyncio.gather(*list(loop.in_flight), return_exceptions=True), timeout=5.0
+        )
+
+        assert stage not in sel.served
+        assert sel.stages_off[stage] == "component_off:media.thumbnails"
+        assert await stage_row(db, stage) == (False, "component_off")
+
+        j1 = await db.fetchrow(
+            "SELECT state, outcome FROM processing_jobs WHERE id = $1", e1.job_id
+        )
+        j2 = await db.fetchrow("SELECT state FROM processing_jobs WHERE id = $1", e2.job_id)
+        assert (j1["state"], j1["outcome"]) == ("done", "changed")
+        assert j2["state"] == "pending"
+        assert invocations == {e1.job_id: 1}
+
+        # Let ClaimLoop poll several cycles while absent: parked job 2 is never claimed.
+        target_passes = passes + 3
+        for _ in range(100):
+            if passes >= target_passes:
+                break
+            await asyncio.sleep(0.01)
+        assert invocations.get(e2.job_id, 0) == 0
+
+        # Reinstall without enabling (want = installed): still off, still never claimed.
+        await set_want(db, "media.thumbnails", "installed")
+        await asyncio.wait_for(_pass(r), timeout=5.0)
+        assert await stage_row(db, stage) == (False, "component_off")
+        target_passes = passes + 3
+        for _ in range(100):
+            if passes >= target_passes:
+                break
+            await asyncio.sleep(0.01)
+        assert invocations.get(e2.job_id, 0) == 0
+
+        # Enable the reinstalled plugin: ClaimLoop claims and finalizes parked job 2 once.
+        await set_want(db, "media.thumbnails", "enabled")
+        await asyncio.wait_for(_pass(r), timeout=5.0)
+        assert stage in sel.served
+        assert await stage_row(db, stage) == (True, None)
+
+        await asyncio.wait_for(job2_finished.wait(), timeout=5.0)
+        # Wait for execute/finalize_success to finish committing job 2's row.
+        for _ in range(100):
+            j2 = await db.fetchrow(
+                "SELECT state, outcome FROM processing_jobs WHERE id = $1", e2.job_id
+            )
+            if j2 and j2["state"] == "done":
+                break
+            await asyncio.sleep(0.01)
+        # Let ClaimLoop run two more passes to confirm nothing is run twice.
+        target_passes = passes + 2
+        for _ in range(100):
+            if passes >= target_passes:
+                break
+            await asyncio.sleep(0.01)
+
+        assert (j2["state"], j2["outcome"]) == ("done", "changed")
+        assert invocations == {e1.job_id: 1, e2.job_id: 1}
+    finally:
+        shutdown.set()
+        await asyncio.wait_for(loop_task, timeout=5.0)
+        await r.close()
+        if prev_impl is None:
+            registry._IMPLS.pop(stage, None)
+        else:
+            registry.register_impl(stage, prev_impl)

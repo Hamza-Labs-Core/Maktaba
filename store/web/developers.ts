@@ -320,31 +320,65 @@ export async function startSubmission(ctx: Ctx): Promise<Response> {
     if (!fs || fs.uploaded_by !== a.id) refuse(404, "not_found");
     if (fs!.status !== "open") refuse(409, "flow_submission_state", { status: fs!.status });
     if (!(JSON.parse(fs!.members) as string[]).includes(id)) refuse(400, "flow_not_member", { plugin_id: id });
-    const dup = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM submissions WHERE flow_submission = ? AND plugin = ?").bind(group, id).first();
+    const dup = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM submissions WHERE flow_submission = ? AND plugin = ?")
+      .bind(group, id)
+      .first();
     if (dup) refuse(409, "flow_member_submitted", { plugin_id: id });
   }
   const sid = newId("s");
   const at = iso(now());
   const pkgKey = `submissions/${sid}/package.mkplugin`;
   const srcKey = `submissions/${sid}/source.tar.zst`;
-  await ctx.env.DB_CATALOG.batch([
-    ctx.env.DB_CATALOG.prepare("INSERT OR IGNORE INTO plugins (id, developer, developer_name, created) VALUES (?, ?, ?, ?)").bind(
-      id,
-      a.id,
-      a.display_name,
-      at,
-    ),
-    ctx.env.DB_CATALOG.prepare("INSERT INTO versions (plugin, version, status, notes_en, notes_ar) VALUES (?, ?, 'submitted', ?, ?)").bind(
-      id,
-      version,
-      optStr(b.notes_en, "notes_en", 4000) ?? "",
-      optStr(b.notes_ar, "notes_ar", 4000) ?? "",
-    ),
-    ctx.env.DB_CATALOG.prepare(
-      `INSERT INTO submissions (id, plugin, version, uploaded_by, package_key, source_key, package_sha256, package_size, source_size, created, first_version, flow_submission)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOT EXISTS (SELECT 1 FROM versions WHERE plugin = ? AND status = 'approved'), ?)`,
-    ).bind(sid, id, version, a.id, pkgKey, srcKey, sha, size, sourceSize, at, id, group),
-  ]);
+  const notesEn = optStr(b.notes_en, "notes_en", 4000) ?? "";
+  const notesAr = optStr(b.notes_ar, "notes_ar", 4000) ?? "";
+  if (firstPartyId(id)) {
+    const results = await ctx.env.DB_CATALOG.batch([
+      ctx.env.DB_CATALOG.prepare(
+        `INSERT OR IGNORE INTO plugins (id, developer, developer_name, created)
+         SELECT ?, ?, ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM developer_prefixes
+           WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND account = ?
+             AND verified_at IS NOT NULL AND lapsed_at IS NULL
+         )`,
+      ).bind(id, a.id, a.display_name, at, a.id),
+      ctx.env.DB_CATALOG.prepare(
+        `INSERT INTO versions (plugin, version, status, notes_en, notes_ar)
+         SELECT ?, ?, 'submitted', ?, ?
+         WHERE EXISTS (
+           SELECT 1 FROM developer_prefixes
+           WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND account = ?
+             AND verified_at IS NOT NULL AND lapsed_at IS NULL
+         ) AND EXISTS (SELECT 1 FROM plugins WHERE id = ? AND developer = ?)`,
+      ).bind(id, version, notesEn, notesAr, a.id, id, a.id),
+      ctx.env.DB_CATALOG.prepare(
+        `INSERT INTO submissions (id, plugin, version, uploaded_by, package_key, source_key, package_sha256, package_size, source_size, created, first_version, flow_submission)
+         SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOT EXISTS (SELECT 1 FROM versions WHERE plugin = ? AND status = 'approved'), ?
+         WHERE EXISTS (
+           SELECT 1 FROM developer_prefixes
+           WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND account = ?
+             AND verified_at IS NOT NULL AND lapsed_at IS NULL
+         ) AND EXISTS (SELECT 1 FROM plugins WHERE id = ? AND developer = ?)`,
+      ).bind(sid, id, version, a.id, pkgKey, srcKey, sha, size, sourceSize, at, id, group, a.id, id, a.id),
+    ]);
+    if (results[2]!.meta.changes !== 1) refuse(403, "prefix_unverified");
+  } else {
+    await ctx.env.DB_CATALOG.batch([
+      ctx.env.DB_CATALOG.prepare("INSERT OR IGNORE INTO plugins (id, developer, developer_name, created) VALUES (?, ?, ?, ?)").bind(
+        id,
+        a.id,
+        a.display_name,
+        at,
+      ),
+      ctx.env.DB_CATALOG.prepare(
+        "INSERT INTO versions (plugin, version, status, notes_en, notes_ar) VALUES (?, ?, 'submitted', ?, ?)",
+      ).bind(id, version, notesEn, notesAr),
+      ctx.env.DB_CATALOG.prepare(
+        `INSERT INTO submissions (id, plugin, version, uploaded_by, package_key, source_key, package_sha256, package_size, source_size, created, first_version, flow_submission)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOT EXISTS (SELECT 1 FROM versions WHERE plugin = ? AND status = 'approved'), ?)`,
+      ).bind(sid, id, version, a.id, pkgKey, srcKey, sha, size, sourceSize, at, id, group),
+    ]);
+  }
   await audit(ctx, a.id, "submission.start", `${id}@${version}`);
   const origin = ctx.env.STORE_ORIGIN;
   return json(
@@ -395,7 +429,9 @@ export async function getFlowSubmission(ctx: Ctx, id: string): Promise<Response>
   const a = developer(ctx);
   const fs = await ctx.env.DB_CATALOG.prepare("SELECT * FROM flow_submissions WHERE id = ?").bind(id).first<Record<string, unknown>>();
   if (!fs || fs.uploaded_by !== a.id) refuse(404, "not_found");
-  const members = await ctx.env.DB_CATALOG.prepare("SELECT id, plugin, version, status, flow_state FROM submissions WHERE flow_submission = ?")
+  const members = await ctx.env.DB_CATALOG.prepare(
+    "SELECT id, plugin, version, status, flow_state FROM submissions WHERE flow_submission = ?",
+  )
     .bind(id)
     .all();
   const report = fs!.report_key ? JSON.parse((await (await ctx.env.PRIVATE.get(String(fs!.report_key)))?.text()) ?? "null") : null;

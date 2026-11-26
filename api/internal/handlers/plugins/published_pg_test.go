@@ -2,7 +2,9 @@ package plugins
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -490,7 +492,8 @@ func TestAMaktabaPluginIsRemovedAndInstalledAgain(t *testing.T) {
 }
 
 // Story 54.46 §3: a Maktaba plugin that components still on need is not removed; once
-// they are off it is.
+// they are off it is. With ?purge=true, component_required_by is reported before
+// plugin_data_kept.
 func TestRemovingAMaktabaPluginOthersNeedIsRefused(t *testing.T) {
 	f := newPub(t)
 	ctx := context.Background()
@@ -499,6 +502,10 @@ func TestRemovingAMaktabaPluginOthersNeedIsRefused(t *testing.T) {
 		if _, err := f.s.Apply(ctx, svc.Request{Changes: []svc.Change{{ID: c, Want: "enabled"}}}, svc.Actor{By: "owner", Source: "web"}); err != nil {
 			t.Fatalf("enable %s: %v", c, err)
 		}
+	}
+	// ?purge=true on a required plugin still reports component_required_by (#1463).
+	if code, got := f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.transcription?purge=true"); code != http.StatusConflict || got["code"] != "component_required_by" {
+		t.Fatalf("purging what subtitles needs: %d %v", code, got)
 	}
 	code, got := f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.transcription")
 	if code != http.StatusConflict || got["code"] != "component_required_by" {
@@ -510,7 +517,122 @@ func TestRemovingAMaktabaPluginOthersNeedIsRefused(t *testing.T) {
 	if code, got := f.call(f.admin, http.MethodPost, "/api/plugins/tv.maktaba.subtitles/disable"); code != http.StatusOK {
 		t.Fatalf("subtitles off: %d %v", code, got)
 	}
+	// Once subtitles is off, ?purge=true refuses with plugin_data_kept without removing it.
+	if code, got := f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.transcription?purge=true"); code != http.StatusConflict || got["code"] != pl.CodeDataKept {
+		t.Fatalf("purging unrequired transcription: %d %v", code, got)
+	}
 	if code, got := f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.transcription"); code != http.StatusAccepted {
 		t.Fatalf("removing it once subtitles is off: %d %v", code, got)
+	}
+}
+
+// Story 54.46 (#1463 item 1): removing a Maktaba plugin while a job is queued parks it so
+// the queue view shows component_off and no worker claims it; installing the plugin again
+// lets a worker claim and complete the parked job exactly once.
+func TestRemovedMaktabaPluginQueueViewAndReinstallClaim(t *testing.T) {
+	f := newPub(t)
+	db := f.s.Store.DB
+	qh := &queues.Handler{DB: db}
+	qh.Mount(f.r)
+
+	if _, err := db.Exec(`INSERT INTO job_stages (stage, label, subject_kinds, pool, lane, lane_order, enabled, disabled_reason)
+		VALUES ('thumb_small', 'Small thumbnails', '{video}', 'cpu', 'media', 1, true, NULL)
+		ON CONFLICT (stage) DO UPDATE SET enabled = true, disabled_reason = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	var vid string
+	if err := db.QueryRow(`WITH l AS (INSERT INTO libraries (name, roots) VALUES ('Films', '{}') RETURNING id)
+		INSERT INTO videos (library_id, content_hash, path, filename, size_bytes, mtime, title, duration_sec)
+		SELECT id, repeat('b', 64), '/x/b.mp4', 'b.mp4', 1, now(), 'B', 60 FROM l RETURNING id::text`).Scan(&vid); err != nil {
+		t.Fatal(err)
+	}
+	var jobID int64
+	if err := db.QueryRow(`INSERT INTO processing_jobs (video_id, subject_kind, subject_id, stage, state)
+		VALUES ($1, 'video', $1, 'thumb_small', 'pending') RETURNING id`, vid).Scan(&jobID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Remove the plugin while the job is queued.
+	if code, got := f.call(f.admin, http.MethodDelete, "/api/plugins/tv.maktaba.thumbnails"); code != http.StatusAccepted || got["want"] != "absent" || got["queued_jobs_parked"] != float64(1) {
+		t.Fatalf("remove: %d %v", code, got)
+	}
+	// Apply the pipeline runner's stage gate for want=absent (verified end-to-end in pipeline/tests/components/test_runner.py).
+	if _, err := db.Exec(`UPDATE job_stages SET enabled = false, disabled_reason = 'component_off' WHERE stage = 'thumb_small'`); err != nil {
+		t.Fatal(err)
+	}
+	qh.InvalidateReads()
+
+	// The queue view reports the parked job with waiting_reason = component_off.
+	code, snap := f.call(f.admin, http.MethodGet, "/api/queues")
+	if code != http.StatusOK {
+		t.Fatalf("GET /api/queues: %d %v", code, snap)
+	}
+	var thumbQ map[string]any
+	for _, x := range snap["queues"].([]any) {
+		if m, _ := x.(map[string]any); m["stage"] == "thumb_small" {
+			thumbQ = m
+			break
+		}
+	}
+	if thumbQ == nil {
+		t.Fatalf("thumb_small missing from /api/queues: %v", snap["queues"])
+	}
+	counts, _ := thumbQ["counts"].(map[string]any)
+	if counts["pending"] != float64(1) || thumbQ["waiting_reason"] != string(queues.WaitComponentOff) || thumbQ["component"] != "media.thumbnails" {
+		t.Fatalf("parked queue summary = %v, want pending=1 waiting_reason=component_off component=media.thumbnails", thumbQ)
+	}
+
+	// Worker claim SQL must claim nothing while the stage is disabled by component_off.
+	claimOnce := func() (int64, bool) {
+		t.Helper()
+		var id int64
+		err := db.QueryRow(`
+			WITH pick AS (
+				SELECT j.id FROM processing_jobs j
+				JOIN job_stages s ON s.stage = j.stage
+				WHERE s.stage = 'thumb_small' AND s.enabled AND NOT s.paused
+				  AND j.state IN ('pending', 'paused')
+				ORDER BY j.priority, j.id LIMIT 1
+			)
+			UPDATE processing_jobs pj
+			   SET state = 'claimed', claimed_by = 'w-test', attempts = pj.attempts + 1
+			  FROM pick WHERE pj.id = pick.id
+			RETURNING pj.id`).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, false
+		}
+		if err != nil {
+			t.Fatalf("claimOnce: %v", err)
+		}
+		return id, true
+	}
+	if id, ok := claimOnce(); ok {
+		t.Fatalf("worker claimed job %d while plugin was removed", id)
+	}
+
+	// Install the plugin again and re-open its stage gate.
+	if code, got := f.send(f.admin, http.MethodPost, "/api/plugins/tv.maktaba.thumbnails/install", `{"enable": true}`); code != http.StatusOK || got["want"] != "enabled" {
+		t.Fatalf("reinstall: %d %v", code, got)
+	}
+	if _, err := db.Exec(`UPDATE job_stages SET enabled = true, disabled_reason = NULL WHERE stage = 'thumb_small'`); err != nil {
+		t.Fatal(err)
+	}
+	qh.InvalidateReads()
+
+	// The parked job is claimed once, completes, and is never claimed a second time.
+	claimedID, ok := claimOnce()
+	if !ok || claimedID != jobID {
+		t.Fatalf("reinstall claim = (%d, %v), want (%d, true)", claimedID, ok, jobID)
+	}
+	if _, err := db.Exec(`UPDATE processing_jobs SET state = 'done', finished_at = now() WHERE id = $1`, claimedID); err != nil {
+		t.Fatal(err)
+	}
+	if secondID, ok := claimOnce(); ok {
+		t.Fatalf("parked job claimed twice: %d", secondID)
+	}
+	var state string
+	var attempts int
+	if err := db.QueryRow(`SELECT state, attempts FROM processing_jobs WHERE id = $1`, jobID).Scan(&state, &attempts); err != nil || state != "done" || attempts != 1 {
+		t.Fatalf("job after run: state=%q attempts=%d err=%v", state, attempts, err)
 	}
 }

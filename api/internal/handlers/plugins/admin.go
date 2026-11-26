@@ -548,16 +548,28 @@ func (h *Admin) apply(w http.ResponseWriter, r *http.Request, ch svc.Change) {
 // dropped; a plugin other components on need is refused with what needs it
 // (component_required_by). The data it wrote is Maktaba's own and stays: purge is refused.
 func (h *Admin) removePublished(w http.ResponseWriter, r *http.Request, id string) {
+	fp := pl.Published(id)
+	req := svc.Request{Changes: []svc.Change{{ID: fp.Trusted.Component, Want: components.WantAbsent}}}
 	if r.URL.Query().Get("purge") == "true" {
+		// Check whether an enabled component still requires this plugin before refusing
+		// purge, so the admin sees component_required_by rather than plugin_data_kept.
+		prev, err := h.L.Components.Preview(r.Context(), req)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+		if len(prev.Refused) > 0 {
+			ref := prev.Refused[0]
+			h.fail(w, r, &ref)
+			return
+		}
 		httperror.Write(w, r, problem(http.StatusConflict, pl.CodeDataKept,
 			id+" is Maktaba's own: the data it wrote (transcripts, thumbnails, tags) is the library's and stays"))
 		return
 	}
-	fp := pl.Published(id)
 	parked := 0
 	_ = h.L.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM processing_jobs WHERE stage = ANY($1) AND state = 'pending'`,
 		pq.Array(fp.Stages)).Scan(&parked)
-	req := svc.Request{Changes: []svc.Change{{ID: fp.Trusted.Component, Want: components.WantAbsent}}}
 	if _, err := h.L.Components.Apply(r.Context(), req, h.actor(r)); err != nil {
 		h.fail(w, r, err)
 		return

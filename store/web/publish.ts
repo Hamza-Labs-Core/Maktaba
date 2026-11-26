@@ -3,6 +3,7 @@
 // (catalog-<api major>.json, revoked.json, revoked-head.json) that the CatalogWriter
 // regenerates on every change and on a timer. store-keys.json is the owner's, signed offline
 // with a root key, and uploaded beside them; the store only checks that its own key is in it.
+import { firstPartyId } from "./developers";
 import { isPaidPlugin, paidKey } from "./paid";
 import { Root, StoreKeys, emptyState } from "../signing/verify";
 import { Signer, capabilitiesSHA256, filesSHA256, sha256Hex, signEnvelope, signFile } from "../signing/sig";
@@ -59,12 +60,16 @@ async function countersignPackage(
   version: string,
   account: string,
   level: "automated" | "reviewed",
+  opts: { expectedKeyId?: string; requireCurrentMaktabaPublisher?: boolean; listPlugin?: boolean } = {},
 ): Promise<{ sha256: string; size: number }> {
   const i = await inspect(pkg);
   const m = JSON.parse(i.manifest) as Manifest;
   if (m.id !== plugin || m.version !== version) throw new PublishError("package_mismatch", "the package is another plugin or version");
   if (!i.developer_sig) throw new PublishError("developer_sig_missing", "the package has no developer.sig");
   const dev = parseJSON(i.developer_sig) as { key_id: string };
+  if (opts.expectedKeyId && dev.key_id !== opts.expectedKeyId) {
+    throw new PublishError("developer_key_mismatch", `${dev.key_id} does not match recorded key ${opts.expectedKeyId}`);
+  }
   const key = await env.DB_CATALOG.prepare("SELECT revoked_at, suspended_at FROM developer_keys WHERE id = ? AND account = ?")
     .bind(dev.key_id, account)
     .first<{ revoked_at: string | null; suspended_at: string | null }>();
@@ -105,20 +110,90 @@ async function countersignPackage(
   // a paid plugin's package is never public (story 54.19 §6): the private bucket, served by
   // signed URL only (paid.ts)
   if (await isPaidPlugin(env, m.id)) {
-    if (!(await env.PRIVATE.head(paidKey(sha)))) {
-      await env.PRIVATE.put(paidKey(sha), out, { httpMetadata: { contentType: "application/vnd.maktaba.plugin" } });
+    const keyName = paidKey(sha);
+    if (!(await env.PRIVATE.head(keyName))) {
+      await env.PRIVATE.put(keyName, out, { httpMetadata: { contentType: "application/vnd.maktaba.plugin" } });
     }
-  } else if (!(await env.BUCKET.head(`${sha}.mkplugin`))) {
-    await env.BUCKET.put(`${sha}.mkplugin`, out, {
-      httpMetadata: { contentType: "application/vnd.maktaba.plugin", cacheControl: PACKAGE_CACHE },
-    });
+  } else {
+    const keyName = `${sha}.mkplugin`;
+    if (!(await env.BUCKET.head(keyName))) {
+      await env.BUCKET.put(keyName, out, {
+        httpMetadata: { contentType: "application/vnd.maktaba.plugin", cacheControl: PACKAGE_CACHE },
+      });
+    }
   }
-  await env.DB_CATALOG.prepare(
-    `UPDATE versions SET sha256 = ?, size = ?, files_sha256 = ?, manifest = ?, capabilities = ?, maktaba = ?, plugin_api = ?,
-       platforms = ?, developer_key = ?, review_level = ?, status = 'approved', store_sig = ?, store_key = ?, released = COALESCE(released, ?)
-     WHERE plugin = ? AND version = ?`,
-  )
-    .bind(
+  // the listing's words come from the package's own strings (54.16 C6 made sure both
+  // languages have them); machine-translated Arabic is what the notes say (54.16 §4)
+  const strings = (i as unknown as { strings: Record<string, Record<string, string>> }).strings ?? {};
+  const strKeys = (m as unknown as { strings?: { name?: string; summary?: string; description?: string } }).strings ?? {};
+  const pick = (k?: string) => (k ? { en: String(strings.en?.[k] ?? ""), ar: String(strings.ar?.[k] ?? "") } : { en: "", ar: "" });
+  const notes = await env.DB_CATALOG.prepare("SELECT notes_en, notes_ar FROM versions WHERE plugin = ? AND version = ?")
+    .bind(m.id, m.version)
+    .first<{ notes_en: string; notes_ar: string }>();
+  const machine = /machine[- ]translat/i.test(notes?.notes_en ?? "") || /ترجمة آلية/.test(notes?.notes_ar ?? "") ? ["ar"] : [];
+  if (opts.requireCurrentMaktabaPublisher) {
+    // Guard the publication commit atomically inside D1 so a concurrent tv.maktaba move
+    // during R2 fetch/signing cannot approve or list the prior publisher's version.
+    const publisherGuard =
+      "EXISTS (SELECT 1 FROM developer_prefixes WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND account = ? AND verified_at IS NOT NULL AND lapsed_at IS NULL)";
+    const stmts = [
+      env.DB_CATALOG.prepare(
+        `UPDATE versions SET sha256 = ?, size = ?, files_sha256 = ?, manifest = ?, capabilities = ?, maktaba = ?, plugin_api = ?,
+           platforms = ?, developer_key = ?, review_level = ?, status = 'approved', store_sig = ?, store_key = ?, released = COALESCE(released, ?)
+         WHERE plugin = ? AND version = ? AND ${publisherGuard}`,
+      ).bind(
+        sha,
+        out.length,
+        verified.filesSHA256,
+        i.manifest,
+        JSON.stringify([...m.capabilities.required, ...m.capabilities.optional]),
+        m.maktaba,
+        m.plugin_api,
+        JSON.stringify(m.platforms),
+        dev.key_id,
+        level,
+        storeSig,
+        signer.id,
+        at,
+        m.id,
+        m.version,
+        account,
+      ),
+      env.DB_CATALOG.prepare(
+        `UPDATE plugins SET names = ?, summaries = ?, descriptions = ?, machine_translated = ?
+         WHERE id = ? AND ${publisherGuard}`,
+      ).bind(
+        JSON.stringify(pick(strKeys.name)),
+        JSON.stringify(pick(strKeys.summary)),
+        JSON.stringify(pick(strKeys.description)),
+        JSON.stringify(machine),
+        m.id,
+        account,
+      ),
+    ];
+    if (opts.listPlugin) {
+      stmts.push(
+        env.DB_CATALOG.prepare(`UPDATE plugins SET status = 'listed' WHERE id = ? AND status = 'draft' AND ${publisherGuard}`).bind(
+          m.id,
+          account,
+        ),
+      );
+    }
+    const [verUpd] = await env.DB_CATALOG.batch(stmts);
+    if (verUpd!.meta.changes !== 1) {
+      // Never delete the content-addressed R2 object on guard loss: a concurrent approval in
+      // the same second can reuse the identical SHA and commit before the move, so deleting it
+      // would break a live approved version. Unreferenced R2 blobs are inert and never listed.
+      throw new PublishError("publisher_changed", `${m.id} was submitted by ${account}, not the current tv.maktaba publisher`);
+    }
+    return { sha256: sha, size: out.length };
+  }
+  const stmts = [
+    env.DB_CATALOG.prepare(
+      `UPDATE versions SET sha256 = ?, size = ?, files_sha256 = ?, manifest = ?, capabilities = ?, maktaba = ?, plugin_api = ?,
+         platforms = ?, developer_key = ?, review_level = ?, status = 'approved', store_sig = ?, store_key = ?, released = COALESCE(released, ?)
+       WHERE plugin = ? AND version = ?`,
+    ).bind(
       sha,
       out.length,
       verified.filesSHA256,
@@ -134,18 +209,19 @@ async function countersignPackage(
       at,
       m.id,
       m.version,
-    )
-    .run();
-  // the listing's words come from the package's own strings (54.16 C6 made sure both
-  // languages have them); machine-translated Arabic is what the notes say (54.16 §4)
-  const strings = (i as unknown as { strings: Record<string, Record<string, string>> }).strings ?? {};
-  const strKeys = (m as unknown as { strings?: { name?: string; summary?: string; description?: string } }).strings ?? {};
-  const pick = (k?: string) => (k ? { en: String(strings.en?.[k] ?? ""), ar: String(strings.ar?.[k] ?? "") } : { en: "", ar: "" });
-  const notes = await env.DB_CATALOG.prepare("SELECT notes_en, notes_ar FROM versions WHERE plugin = ? AND version = ?").bind(m.id, m.version).first<{ notes_en: string; notes_ar: string }>();
-  const machine = /machine[- ]translat/i.test(notes?.notes_en ?? "") || /ترجمة آلية/.test(notes?.notes_ar ?? "") ? ["ar"] : [];
-  await env.DB_CATALOG.prepare("UPDATE plugins SET names = ?, summaries = ?, descriptions = ?, machine_translated = ? WHERE id = ?")
-    .bind(JSON.stringify(pick(strKeys.name)), JSON.stringify(pick(strKeys.summary)), JSON.stringify(pick(strKeys.description)), JSON.stringify(machine), m.id)
-    .run();
+    ),
+    env.DB_CATALOG.prepare("UPDATE plugins SET names = ?, summaries = ?, descriptions = ?, machine_translated = ? WHERE id = ?").bind(
+      JSON.stringify(pick(strKeys.name)),
+      JSON.stringify(pick(strKeys.summary)),
+      JSON.stringify(pick(strKeys.description)),
+      JSON.stringify(machine),
+      m.id,
+    ),
+  ];
+  if (opts.listPlugin) {
+    stmts.push(env.DB_CATALOG.prepare("UPDATE plugins SET status = 'listed' WHERE id = ? AND status = 'draft'").bind(m.id));
+  }
+  await env.DB_CATALOG.batch(stmts);
   return { sha256: sha, size: out.length };
 }
 
@@ -159,31 +235,57 @@ export async function countersign(
     .bind(submissionId)
     .first<{ plugin: string; version: string; package_key: string; uploaded_by: string }>();
   if (!s) throw new PublishError("not_found", submissionId);
+  const isFirstParty = firstPartyId(s.plugin);
+  if (isFirstParty) {
+    const held = await env.DB_CATALOG.prepare(
+      "SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND verified_at IS NOT NULL AND lapsed_at IS NULL",
+    ).first<{ account: string }>();
+    if (!held || held.account !== s.uploaded_by) {
+      throw new PublishError("publisher_changed", `${s.plugin} was submitted by ${s.uploaded_by}, not the current tv.maktaba publisher`);
+    }
+  }
   const obj = await env.PRIVATE.get(s.package_key);
   if (!obj) throw new PublishError("package_missing", s.package_key);
-  const out = await countersignPackage(env, new Uint8Array(await obj.arrayBuffer()), s.plugin, s.version, s.uploaded_by, level);
-  await env.DB_CATALOG.prepare("UPDATE plugins SET status = 'listed' WHERE id = ? AND status = 'draft'").bind(s.plugin).run();
-  return out;
+  return countersignPackage(env, new Uint8Array(await obj.arrayBuffer()), s.plugin, s.version, s.uploaded_by, level, {
+    requireCurrentMaktabaPublisher: isFirstParty,
+    listPlugin: true,
+  });
 }
 
 /**
  * The batch re-sign of a key rotation (54.14 §5): every approved version not yet signed by
  * the current key, a page at a time; answers the cursor of the next page ("" when done).
  * The old file stays on the CDN (content-addressed); the catalog then names the new one.
+ * Uses each version's recorded signing key provenance rather than mutable plugins.developer
+ * so moving a publisher prefix does not break re-signing already-approved historical versions.
  */
 export async function resignPage(env: Env, after: string, page = 20): Promise<string> {
   const { signer } = await storeSigner(env);
   const rows = await env.DB_CATALOG.prepare(
-    `SELECT v.plugin, v.version, v.sha256, v.review_level, p.developer FROM versions v JOIN plugins p ON p.id = v.plugin
-     WHERE v.status = 'approved' AND v.store_key <> ? AND (v.plugin || '@' || v.version) > ? ORDER BY v.plugin, v.version LIMIT ?`,
+    `SELECT v.plugin, v.version, v.sha256, v.review_level, v.developer_key,
+            COALESCE(k.account, p.developer) AS signer_account
+     FROM versions v
+     JOIN plugins p ON p.id = v.plugin
+     LEFT JOIN developer_keys k ON k.id = v.developer_key
+     WHERE v.status = 'approved' AND v.store_key <> ? AND (v.plugin || '@' || v.version) > ?
+     ORDER BY v.plugin, v.version LIMIT ?`,
   )
     .bind(signer.id, after, page)
-    .all<{ plugin: string; version: string; sha256: string; review_level: "automated" | "reviewed"; developer: string }>();
+    .all<{
+      plugin: string;
+      version: string;
+      sha256: string;
+      review_level: "automated" | "reviewed";
+      developer_key: string;
+      signer_account: string;
+    }>();
   for (const r of rows.results) {
     const obj = (await env.BUCKET.get(`${r.sha256}.mkplugin`)) ?? (await env.PRIVATE.get(paidKey(r.sha256)));
     if (!obj) continue;
     try {
-      await countersignPackage(env, new Uint8Array(await obj.arrayBuffer()), r.plugin, r.version, r.developer, r.review_level);
+      await countersignPackage(env, new Uint8Array(await obj.arrayBuffer()), r.plugin, r.version, r.signer_account, r.review_level, {
+        expectedKeyId: r.developer_key || undefined,
+      });
     } catch (e) {
       // one version that cannot be re-signed (its developer key revoked since) does not stop
       // the batch; a reviewer decides it

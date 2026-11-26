@@ -171,6 +171,39 @@ func TestAPackageWithOtherStatementsIsRefused(t *testing.T) {
 	}
 }
 
+// #1456 item 1: repacking a release package whose statements.json adds an extra field or
+// duplicates a key whose last value matches is refused even with regenerated files.json
+// and checksums.txt.
+func TestAPackageWithExtraFieldOrDuplicateKeyInStatementsIsRefused(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func([]byte) []byte
+	}{
+		{
+			name: "extra field",
+			mutate: func(b []byte) []byte {
+				return bytes.Replace(b, []byte(`"mode":`), []byte(`"extra":"x","mode":`), 1)
+			},
+		},
+		{
+			name: "duplicate key whose last value matches",
+			mutate: func(b []byte) []byte {
+				return bytes.Replace(b, []byte(`"mode":`), []byte(`"mode":"evil","mode":`), 1)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := buildRelease(t, relVersion)
+			fp := firstPlugin(t)
+			repack(t, dir, fp.ID, "statements.json", tc.mutate)
+			_, err := VerifyReleasePackages(dir, relVersion, checksums(t, dir), "")
+			if codeOf(err) != CodeTrustedUnsigned || !strings.Contains(err.Error(), "statements.json is not the one") {
+				t.Fatalf("%s: %v", tc.name, err)
+			}
+		})
+	}
+}
+
 func TestAPackageWithAnotherManifestIsRefused(t *testing.T) {
 	dir := buildRelease(t, relVersion)
 	fp := firstPlugin(t)

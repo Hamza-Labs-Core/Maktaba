@@ -39,14 +39,16 @@ The Plugins page shows Remove and Install for Maktaba plugins, and `source` beco
 
 - **One source of truth.** A Maktaba plugin's state is its component's desired row, as §1
   has it: `absent` means not installed (phase `not_installed`), `installed` means off, and
-  `enabled` means on. No `plugin.<id>` entry is made.
+  `enabled` means on. Asset phases `installing` and `removing` do not occur yet because
+  nothing downloads before 54.49. No `plugin.<id>` entry is made.
 - **Remove** (`DELETE /api/plugins/{id}`) sets the component's want to `absent` through the
   components service. That service refuses it with what needs it (`component_required_by`)
   while a component that is on requires it. The answer counts the queued jobs parked
   (`queued_jobs_parked`). Their stages wait with `component_off` and no worker claims them,
   since `absent` closes the gate as off does. Running jobs drain as for any component turned
-  off. `?purge=true` is refused (`plugin_data_kept`, 409): what a Maktaba plugin wrote is the
-  library's own and stays.
+  off. `?purge=true` checks whether another enabled component requires the plugin first
+  (`component_required_by`, 409) and otherwise refuses the purge (`plugin_data_kept`, 409):
+  what a Maktaba plugin wrote is the library's own and stays.
 - **Install** (`POST /api/plugins/{id}/install`, `{"enable": bool}`) puts a removed Maktaba
   plugin back from the release: want `installed`, or `enabled`, and its parked jobs run again.
   Its code ships with the server, so nothing is downloaded. A package of a Maktaba plugin from

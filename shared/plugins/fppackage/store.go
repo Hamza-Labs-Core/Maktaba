@@ -1,6 +1,7 @@
 package fppackage
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -124,10 +125,53 @@ func CheckStore(u Unpacked, sig Signed, keys *pluginsig.StoreKeys, serverVersion
 	if !ok {
 		return nil, unsigned("%s %s is signed by %s, which is not Maktaba's key", id, version, res.DeveloperKeyID)
 	}
-	if _, err := CheckContents(u, e, serverVersion, pipeline); err != nil {
+	signedPaths, err := verifySignedMembers(u, sig.FilesJSON)
+	if err != nil {
+		return nil, err
+	}
+	diskManifest, ok := u.read("manifest.toml")
+	if !ok || !bytes.Equal(u.Manifest, diskManifest) {
+		return nil, unsigned("%s %s: manifest does not match the signed manifest.toml", id, version)
+	}
+	verified := Unpacked{Dir: u.Dir, Manifest: diskManifest, Files: signedPaths}
+	if _, err := CheckContents(verified, e, serverVersion, pipeline); err != nil {
 		return nil, err
 	}
 	return res, nil
+}
+
+// verifySignedMembers checks that the caller's Unpacked.Files matches the signed
+// files.json member set exactly, with no duplicates, omissions, or extras.
+func verifySignedMembers(u Unpacked, filesJSON []byte) ([]string, error) {
+	var entries []pluginsig.FileEntry
+	if err := json.Unmarshal(filesJSON, &entries); err != nil {
+		return nil, unsigned("files.json: %v", err)
+	}
+	signedSet := make(map[string]bool, len(entries))
+	signedPaths := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if signedSet[entry.Path] {
+			return nil, unsigned("files.json lists %s more than once", entry.Path)
+		}
+		signedSet[entry.Path] = true
+		signedPaths = append(signedPaths, entry.Path)
+	}
+	callerSet := make(map[string]bool, len(u.Files))
+	for _, f := range u.Files {
+		if callerSet[f] {
+			return nil, unsigned("unpacked file list names %s more than once", f)
+		}
+		if !signedSet[f] {
+			return nil, unsigned("unpacked file %s is not in signed files.json", f)
+		}
+		callerSet[f] = true
+	}
+	for _, p := range signedPaths {
+		if !callerSet[p] {
+			return nil, unsigned("signed files.json lists %s, missing from unpacked file list", p)
+		}
+	}
+	return signedPaths, nil
 }
 
 // manifestID reads a manifest's id and version only (the full check is CheckContents').

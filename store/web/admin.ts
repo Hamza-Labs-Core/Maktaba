@@ -3,7 +3,7 @@
 // batch re-sign of a key rotation. Every route checks the role and a passkey on the server
 // and needs a passkey confirmed in the last 5 minutes; every action writes an audit row.
 import { type Ctx, audit, endSessions, reauthed, reauthedPasskey, staff, verified } from "./auth";
-import { sha256hex } from "./crypto";
+import { newId, sha256hex } from "./crypto";
 import { type Env, iso, now } from "./env";
 import { body, json, optStr, refuse, str } from "./http";
 import { sendMail } from "./mail";
@@ -59,6 +59,45 @@ export async function grantRole(ctx: Ctx): Promise<Response> {
   return json({ status: "granted" });
 }
 
+interface OutboxRow {
+  id: string;
+  actor: string;
+  action: string;
+  target: string;
+  at: string;
+  ip_prefix: string;
+  result: string;
+}
+
+/**
+ * Delivers pending catalog_audit_outbox rows into DB_ACCOUNTS.audit idempotently (keyed by
+ * event_id) and removes each row from DB_CATALOG once recorded. Throws if DB_ACCOUNTS is
+ * unavailable so the outbox row remains durable for retry.
+ */
+export async function flushCatalogAuditOutbox(env: Env): Promise<number> {
+  const pending = await env.DB_CATALOG.prepare(
+    "SELECT id, actor, action, target, at, ip_prefix, result FROM catalog_audit_outbox ORDER BY at, id LIMIT 100",
+  ).all<OutboxRow>();
+  let delivered = 0;
+  for (const row of pending.results) {
+    try {
+      await env.DB_ACCOUNTS.prepare(
+        "INSERT OR IGNORE INTO audit (actor, action, target, at, ip_prefix, result, event_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      )
+        .bind(row.actor, row.action, row.target, row.at, row.ip_prefix, row.result, row.id)
+        .run();
+    } catch (e) {
+      console.error(
+        JSON.stringify({ event: "audit_failed", id: row.id, actor: row.actor, action: row.action, target: row.target, error: String(e) }),
+      );
+      throw e;
+    }
+    await env.DB_CATALOG.prepare("DELETE FROM catalog_audit_outbox WHERE id = ?").bind(row.id).run();
+    delivered += 1;
+  }
+  return delivered;
+}
+
 /**
  * POST /v1/admin/maktaba-publisher {account} (story 54.45 §2): the store's one publisher
  * account for Maktaba, marked verified. Its prefix (tv.maktaba, kind 'maktaba') is the only one
@@ -71,17 +110,99 @@ export async function setMaktabaPublisher(ctx: Ctx): Promise<Response> {
   const target = str(b.account, "account", 64);
   const dev = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM developers WHERE account = ? AND status = 'active'").bind(target).first();
   if (!dev) refuse(404, "not_found");
-  const held = await ctx.env.DB_CATALOG.prepare("SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba'").first<{ account: string }>();
-  if (held && held.account !== target) refuse(409, "maktaba_publisher_taken");
-  if (!held) {
-    await ctx.env.DB_CATALOG.prepare(
-      "INSERT INTO developer_prefixes (prefix, account, kind, verified_at) VALUES ('tv.maktaba', ?, 'maktaba', ?)",
-    )
-      .bind(target, iso(now()))
-      .run();
-    await audit(ctx, a.id, "maktaba_publisher.set", target);
+  const at = iso(now());
+  const [ins] = await ctx.env.DB_CATALOG.batch([
+    ctx.env.DB_CATALOG.prepare(
+      `INSERT OR IGNORE INTO developer_prefixes (prefix, account, kind, verified_at)
+       SELECT 'tv.maktaba', ?, 'maktaba', ?
+       WHERE EXISTS (SELECT 1 FROM developers WHERE account = ? AND status = 'active')`,
+    ).bind(target, at, target),
+    ctx.env.DB_CATALOG.prepare(
+      `INSERT INTO catalog_audit_outbox (id, actor, action, target, at, ip_prefix, result)
+       SELECT ?, ?, 'maktaba_publisher.set', ?, ?, ?, 'ok'
+       WHERE changes() = 1`,
+    ).bind(newId("aud"), a.id, target, at, ctx.ipPrefix),
+  ]);
+  if (ins!.meta.changes === 1) {
+    await flushCatalogAuditOutbox(ctx.env);
+    return json({ status: "set", account: target, prefix: "tv.maktaba" });
   }
+  const active = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM developers WHERE account = ? AND status = 'active'").bind(target).first();
+  if (!active) refuse(404, "not_found");
+  const held = await ctx.env.DB_CATALOG.prepare("SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba'").first<{
+    account: string;
+  }>();
+  if (!held || held.account !== target) refuse(409, "maktaba_publisher_taken");
+  await flushCatalogAuditOutbox(ctx.env);
   return json({ status: "set", account: target, prefix: "tv.maktaba" });
+}
+
+/**
+ * POST /v1/admin/maktaba-publisher/move {account, reason?}: atomically re-points tv.maktaba,
+ * updates non-community tv.maktaba.* plugin rows, and enqueues an idempotent audit outbox row
+ * in a single D1 transaction before flushing the audit to DB_ACCOUNTS. Passkey-confirmed and
+ * audited, for recovery if the current publisher account is lost or compromised.
+ */
+export async function moveMaktabaPublisher(ctx: Ctx): Promise<Response> {
+  const a = admin(ctx);
+  const b = await body(ctx.req);
+  const target = str(b.account, "account", 64);
+  const reason = optStr(b.reason, "reason", 200);
+  const dev = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM developers WHERE account = ? AND status = 'active'").bind(target).first();
+  if (!dev) refuse(404, "not_found");
+  const held = await ctx.env.DB_CATALOG.prepare(
+    "SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba' AND kind = 'maktaba'",
+  ).first<{ account: string }>();
+  if (!held) refuse(404, "not_found");
+  const prev = held!.account;
+  const auditTarget = `${prev}->${target}${reason ? `:${reason}` : ""}`;
+  const at = iso(now());
+  if (prev === target) {
+    await ctx.env.DB_CATALOG.batch([
+      ctx.env.DB_CATALOG.prepare(
+        `UPDATE plugins SET developer = ?
+         WHERE id LIKE 'tv.maktaba.%' AND id NOT LIKE 'tv.maktaba.community.%'
+           AND developer <> ?
+           AND EXISTS (SELECT 1 FROM developer_prefixes WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND account = ?)
+           AND EXISTS (SELECT 1 FROM developers WHERE account = ? AND status = 'active')`,
+      ).bind(target, target, target, target),
+      ctx.env.DB_CATALOG.prepare(
+        `INSERT INTO catalog_audit_outbox (id, actor, action, target, at, ip_prefix, result)
+         SELECT ?, ?, 'maktaba_publisher.move', ?, ?, ?, 'ok'
+         WHERE changes() > 0`,
+      ).bind(newId("aud"), a.id, auditTarget, at, ctx.ipPrefix),
+    ]);
+    await flushCatalogAuditOutbox(ctx.env);
+    return json({ status: "moved", previous: prev, account: target, prefix: "tv.maktaba" });
+  }
+  const [upd] = await ctx.env.DB_CATALOG.batch([
+    ctx.env.DB_CATALOG.prepare(
+      `UPDATE developer_prefixes SET account = ?, verified_at = ?
+       WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND account = ?
+         AND EXISTS (SELECT 1 FROM developers WHERE account = ? AND status = 'active')`,
+    ).bind(target, at, prev, target),
+    ctx.env.DB_CATALOG.prepare(
+      `INSERT INTO catalog_audit_outbox (id, actor, action, target, at, ip_prefix, result)
+       SELECT ?, ?, 'maktaba_publisher.move', ?, ?, ?, 'ok'
+       WHERE changes() = 1`,
+    ).bind(newId("aud"), a.id, auditTarget, at, ctx.ipPrefix),
+    ctx.env.DB_CATALOG.prepare(
+      `UPDATE plugins SET developer = ?
+       WHERE id LIKE 'tv.maktaba.%' AND id NOT LIKE 'tv.maktaba.community.%'
+         AND developer <> ?
+         AND EXISTS (SELECT 1 FROM developer_prefixes WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND account = ?)
+         AND EXISTS (SELECT 1 FROM developers WHERE account = ? AND status = 'active')`,
+    ).bind(target, target, target, target),
+  ]);
+  if (upd!.meta.changes !== 1) {
+    const stillActive = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM developers WHERE account = ? AND status = 'active'")
+      .bind(target)
+      .first();
+    if (!stillActive) refuse(404, "not_found");
+    refuse(409, "maktaba_publisher_taken");
+  }
+  await flushCatalogAuditOutbox(ctx.env);
+  return json({ status: "moved", previous: prev, account: target, prefix: "tv.maktaba" });
 }
 
 export async function revokeRole(ctx: Ctx, target: string, role: string): Promise<Response> {

@@ -10,12 +10,14 @@
 package fppackage
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 
@@ -78,13 +80,14 @@ func parseBundle(raw []byte) ([]*Embedded, error) {
 			Folder     string                       `json:"folder"`
 			Manifest   string                       `json:"manifest"`
 			Strings    map[string]map[string]string `json:"strings"`
-			Statements []any                        `json:"statements"`
+			Statements json.RawMessage              `json:"statements"`
 		} `json:"plugins"`
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return nil, fmt.Errorf("fppackage: firstparty.json: %w", err)
 	}
 	out := make([]*Embedded, 0, len(doc.Plugins))
+	seen := map[string]bool{}
 	for _, p := range doc.Plugins {
 		strs := p.Strings
 		m, errs := pluginmanifest.ValidateTrusted([]byte(p.Manifest), func(path string) ([]byte, bool) {
@@ -102,7 +105,23 @@ func parseBundle(raw []byte) ([]*Embedded, error) {
 		if len(errs) > 0 {
 			return nil, fmt.Errorf("fppackage: first-party %s: %w", p.Folder, errs)
 		}
-		e := &Embedded{ID: p.ID, Folder: p.Folder, Manifest: m, Strings: p.Strings, Statements: p.Statements}
+		id, _ := m["id"].(string)
+		if id != p.ID || seen[id] {
+			return nil, fmt.Errorf("fppackage: first-party %s: id %q twice or not its own", p.Folder, id)
+		}
+		seen[id] = true
+		var sts []any
+		if len(p.Statements) > 0 && string(bytes.TrimSpace(p.Statements)) != "null" {
+			val, err := decodeStrictJSON(p.Statements)
+			if err != nil {
+				return nil, fmt.Errorf("fppackage: first-party %s statements: %w", p.Folder, err)
+			}
+			var ok bool
+			if sts, ok = val.([]any); !ok {
+				return nil, fmt.Errorf("fppackage: first-party %s statements: expected array", p.Folder)
+			}
+		}
+		e := &Embedded{ID: id, Folder: p.Folder, Manifest: m, Strings: p.Strings, Statements: sts}
 		if t, ok := m["trusted"].(map[string]any); ok {
 			e.Component, _ = t["component"].(string)
 		}
@@ -111,6 +130,7 @@ func parseBundle(raw []byte) ([]*Embedded, error) {
 		}
 		out = append(out, e)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
 
@@ -183,6 +203,9 @@ func CheckContents(u Unpacked, e *Embedded, version string, pipeline map[string]
 	expect := []string{"manifest.toml", "i18n/en.json", "i18n/ar.json", "statements.json", wheel}
 	members := map[string]bool{}
 	for _, f := range u.Files {
+		if members[f] {
+			return nil, unsigned("it lists %s more than once", f)
+		}
 		members[f] = true
 	}
 	if len(members) != len(expect) {
@@ -204,14 +227,15 @@ func CheckContents(u Unpacked, e *Embedded, version string, pipeline map[string]
 	for lang, words := range e.Strings {
 		b, ok := u.read("i18n/" + lang + ".json")
 		var got map[string]string
-		if !ok || json.Unmarshal(b, &got) != nil || !reflect.DeepEqual(got, words) {
+		if !ok || checkNoDuplicateKeys(b) != nil || json.Unmarshal(b, &got) != nil || !reflect.DeepEqual(got, words) {
 			return nil, unsigned("its i18n/%s.json is not the one this server embeds", lang)
 		}
 	}
 	// a Maktaba plugin's statements change only with a server release (54.45 §3)
 	b, ok := u.read("statements.json")
-	var sts []any
-	if !ok || json.Unmarshal(b, &sts) != nil || !reflect.DeepEqual(sts, e.Statements) {
+	val, err := decodeStrictJSON(b)
+	sts, isArr := val.([]any)
+	if !ok || err != nil || !isArr || !reflect.DeepEqual(sts, e.Statements) {
 		return nil, unsigned("its statements.json is not the one this server embeds")
 	}
 	whl, _ := u.read(wheel)
@@ -219,4 +243,87 @@ func CheckContents(u Unpacked, e *Embedded, version string, pipeline map[string]
 		return nil, unsigned("%s: %v", wheel, err)
 	}
 	return m, nil
+}
+
+const maxJSONDepth = 1000
+
+// checkNoDuplicateKeys rejects malformed JSON, excessive nesting, trailing tokens, and any
+// JSON object (at any nesting depth) that repeats a key.
+func checkNoDuplicateKeys(raw []byte) error {
+	_, err := decodeStrictJSON(raw)
+	return err
+}
+
+// decodeStrictJSON parses a single JSON value with exact json.Number tokens, validating
+// syntax first (json.Valid), enforcing maxJSONDepth, rejecting duplicate object keys at any
+// nesting depth, and rejecting trailing data.
+func decodeStrictJSON(raw []byte) (any, error) {
+	if !json.Valid(raw) {
+		return nil, fmt.Errorf("invalid JSON")
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	val, err := decodeJSONValue(dec, 0)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, fmt.Errorf("trailing data after JSON value")
+	}
+	return val, nil
+}
+
+func decodeJSONValue(dec *json.Decoder, depth int) (any, error) {
+	if depth > maxJSONDepth {
+		return nil, fmt.Errorf("JSON nesting exceeds maximum depth %d", maxJSONDepth)
+	}
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	d, ok := tok.(json.Delim)
+	if !ok {
+		return tok, nil
+	}
+	switch d {
+	case '{':
+		obj := map[string]any{}
+		for dec.More() {
+			kt, err := dec.Token()
+			if err != nil {
+				return nil, err
+			}
+			k, ok := kt.(string)
+			if !ok {
+				return nil, fmt.Errorf("expected string key")
+			}
+			if _, dup := obj[k]; dup {
+				return nil, fmt.Errorf("duplicate key %q", k)
+			}
+			v, err := decodeJSONValue(dec, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			obj[k] = v
+		}
+		if _, err := dec.Token(); err != nil {
+			return nil, err
+		}
+		return obj, nil
+	case '[':
+		arr := []any{}
+		for dec.More() {
+			v, err := decodeJSONValue(dec, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			arr = append(arr, v)
+		}
+		if _, err := dec.Token(); err != nil {
+			return nil, err
+		}
+		return arr, nil
+	default:
+		return nil, fmt.Errorf("unexpected delimiter %q", d)
+	}
 }

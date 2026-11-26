@@ -406,3 +406,178 @@ func TestTheBundleReads(t *testing.T) {
 		t.Fatalf("core's plugin: %+v", e)
 	}
 }
+
+// #1458 item 2: parseBundle refuses duplicate plugin ids and a manifest whose id differs
+// from its bundle entry id.
+func TestParseBundleRefusesDuplicateAndMismatchedIDs(t *testing.T) {
+	var doc struct {
+		Schema  int               `json:"schema"`
+		Digest  string            `json:"digest"`
+		Plugins []json.RawMessage `json:"plugins"`
+	}
+	if err := json.Unmarshal(sharedplugins.FirstParty, &doc); err != nil || len(doc.Plugins) == 0 {
+		t.Fatalf("unmarshal bundle: %v", err)
+	}
+	// Duplicate plugin entry with the same id.
+	dupDoc := map[string]any{
+		"schema":  doc.Schema,
+		"digest":  doc.Digest,
+		"plugins": []json.RawMessage{doc.Plugins[0], doc.Plugins[0]},
+	}
+	dupRaw, err := json.Marshal(dupDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseBundle(dupRaw); err == nil || !strings.Contains(err.Error(), "twice or not its own") {
+		t.Fatalf("duplicate id in bundle: got %v, want error", err)
+	}
+
+	// Bundle entry whose top-level id does not match its manifest's id.
+	var first map[string]any
+	if err := json.Unmarshal(doc.Plugins[0], &first); err != nil {
+		t.Fatal(err)
+	}
+	first["id"] = "tv.maktaba.other-id"
+	mismatchRaw, err := json.Marshal(map[string]any{
+		"schema":  doc.Schema,
+		"digest":  doc.Digest,
+		"plugins": []any{first},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseBundle(mismatchRaw); err == nil || !strings.Contains(err.Error(), "twice or not its own") {
+		t.Fatalf("mismatched manifest id in bundle: got %v, want error", err)
+	}
+}
+
+// #1458 item 3: CheckStore cross-checks Unpacked.Files and Unpacked.Manifest against the
+// signed files.json and verified manifest.toml on disk.
+func TestCheckStoreCrossChecksSignedFilesAndManifest(t *testing.T) {
+	k := newKit()
+	defer UseMaktabaKeys(k.maktaba.ID)()
+	keys := k.storeKeys(t)
+	pipe := testPipeline(t)
+
+	// A package with a sixth file in signed files.json, while the caller passes only the five
+	// expected paths in Unpacked.Files.
+	t.Run("sixth file in signed files.json omitted from Unpacked.Files", func(t *testing.T) {
+		f := plugin(t, subtitles, serverVersion)
+		f["extra.txt"] = []byte("sneaky sixth file")
+		sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
+		u := f.unpacked(t)
+		filtered := make([]string, 0, len(u.Files))
+		for _, p := range u.Files {
+			if p != "extra.txt" {
+				filtered = append(filtered, p)
+			}
+		}
+		u.Files = filtered
+		if _, err := CheckStore(u, sig, keys, serverVersion, switchable, pipe); codeOf(err) != CodeTrustedUnsigned {
+			t.Fatalf("sixth file omitted from Unpacked.Files: %v, want %s", err, CodeTrustedUnsigned)
+		}
+	})
+
+	// Caller adds an extra path in Unpacked.Files that is not in signed files.json.
+	t.Run("extra file in Unpacked.Files not in signed files.json", func(t *testing.T) {
+		f := plugin(t, subtitles, serverVersion)
+		sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
+		u := f.unpacked(t)
+		u.Files = append(u.Files, "ghost.txt")
+		if _, err := CheckStore(u, sig, keys, serverVersion, switchable, pipe); codeOf(err) != CodeTrustedUnsigned {
+			t.Fatalf("extra file in Unpacked.Files: %v, want %s", err, CodeTrustedUnsigned)
+		}
+	})
+
+	// Caller omits a signed path from Unpacked.Files.
+	t.Run("signed file missing from Unpacked.Files", func(t *testing.T) {
+		f := plugin(t, subtitles, serverVersion)
+		sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
+		u := f.unpacked(t)
+		u.Files = u.Files[:len(u.Files)-1]
+		if _, err := CheckStore(u, sig, keys, serverVersion, switchable, pipe); codeOf(err) != CodeTrustedUnsigned {
+			t.Fatalf("missing file in Unpacked.Files: %v, want %s", err, CodeTrustedUnsigned)
+		}
+	})
+
+	// Caller supplies a different Manifest buffer than the signed manifest.toml on disk.
+	t.Run("Unpacked.Manifest differs from signed manifest.toml", func(t *testing.T) {
+		f := plugin(t, subtitles, serverVersion)
+		sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
+		u := f.unpacked(t)
+		u.Manifest = append([]byte("\n"), u.Manifest...)
+		if _, err := CheckStore(u, sig, keys, serverVersion, switchable, pipe); codeOf(err) != CodeTrustedUnsigned {
+			t.Fatalf("mismatched Unpacked.Manifest: %v, want %s", err, CodeTrustedUnsigned)
+		}
+	})
+}
+
+// #1456 item 1: statements.json rejects both unknown extra fields and duplicate object keys
+// (even when the last value of the duplicated key matches the embedded statement).
+func TestStatementsRejectsDuplicateKeysAndExtraFields(t *testing.T) {
+	k := newKit()
+	defer UseMaktabaKeys(k.maktaba.ID)()
+	keys := k.storeKeys(t)
+	pipe := testPipeline(t)
+
+	t.Run("duplicate key whose last value matches", func(t *testing.T) {
+		f := plugin(t, subtitles, serverVersion)
+		orig := string(f["statements.json"])
+		// Inject a duplicate "mode" key right before the real "mode" key so the last value matches.
+		mutated := strings.Replace(orig, `"mode":`, `"mode":"evil","mode":`, 1)
+		if mutated == orig {
+			t.Fatalf("failed to inject duplicate key into %s", orig)
+		}
+		f["statements.json"] = []byte(mutated)
+		sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
+		if _, err := CheckStore(f.unpacked(t), sig, keys, serverVersion, switchable, pipe); codeOf(err) != CodeTrustedUnsigned {
+			t.Fatalf("duplicate key in statements.json: %v, want %s", err, CodeTrustedUnsigned)
+		}
+	})
+
+	t.Run("extra unknown field", func(t *testing.T) {
+		f := plugin(t, subtitles, serverVersion)
+		var sts []map[string]any
+		if err := json.Unmarshal(f["statements.json"], &sts); err != nil || len(sts) == 0 {
+			t.Fatalf("statements: %v", err)
+		}
+		sts[0]["extra_field"] = "unexpected"
+		f["statements.json"], _ = json.Marshal(sts)
+		sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
+		if _, err := CheckStore(f.unpacked(t), sig, keys, serverVersion, switchable, pipe); codeOf(err) != CodeTrustedUnsigned {
+			t.Fatalf("extra field in statements.json: %v, want %s", err, CodeTrustedUnsigned)
+		}
+	})
+
+	t.Run("checkNoDuplicateKeys catches nested duplicate keys", func(t *testing.T) {
+		if err := checkNoDuplicateKeys([]byte(`[{"outer":{"a":1,"a":1}}]`)); err == nil {
+			t.Fatal("nested duplicate key was accepted")
+		}
+		if err := checkNoDuplicateKeys([]byte(`[{"a":1}] {"trailing":true}`)); err == nil {
+			t.Fatal("trailing JSON value was accepted")
+		}
+	})
+
+	t.Run("deep nesting rejected cleanly without stack overflow", func(t *testing.T) {
+		deep := []byte(strings.Repeat("[", maxJSONDepth+5) + strings.Repeat("]", maxJSONDepth+5))
+		if _, err := decodeStrictJSON(deep); err == nil {
+			t.Fatal("deeply nested JSON was accepted")
+		}
+	})
+
+	t.Run("near-integer float in scope_arg does not match integer", func(t *testing.T) {
+		for _, badNum := range []string{"1.0", "1.0000000000000001"} {
+			f := plugin(t, subtitles, serverVersion)
+			orig := string(f["statements.json"])
+			mutated := strings.Replace(orig, `"scope_arg": 1`, `"scope_arg": `+badNum, 1)
+			if mutated == orig {
+				t.Fatalf("failed to mutate scope_arg in %s", orig)
+			}
+			f["statements.json"] = []byte(mutated)
+			sig := k.signed(t, f, subtitles, serverVersion, k.maktaba, true, pluginsig.LevelReviewed)
+			if _, err := CheckStore(f.unpacked(t), sig, keys, serverVersion, switchable, pipe); codeOf(err) != CodeTrustedUnsigned {
+				t.Fatalf("scope_arg=%s: %v, want %s", badNum, err, CodeTrustedUnsigned)
+			}
+		}
+	})
+}

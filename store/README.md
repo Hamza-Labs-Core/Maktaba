@@ -162,7 +162,18 @@ empty. To open it:
 4. Grant `store_reviewer` to the reviewers (each with a passkey), then set
    `SUBMISSIONS_OPEN = "true"`. The isolated runner starts as the GitHub Actions fallback
    (`RUNNER = "github"`, with `RUNNER_DISPATCH_TOKEN`).
-5. Once the root keys are in a server release (step 1), homes accept the store's signatures.
+5. Set the Maktaba first-party publisher account (story 54.45 §2): call
+   `POST /v1/admin/maktaba-publisher {account}` with a passkey-confirmed `store_admin` session
+   for an active developer account to assign the `tv.maktaba` prefix. If that publisher account
+   must later be replaced (for example after loss or compromise), call
+   `POST /v1/admin/maktaba-publisher/move {account, reason?}` (passkey-confirmed `store_admin`,
+   audited as `maktaba_publisher.move`): it atomically moves `tv.maktaba` and existing
+   non-community `tv.maktaba.*` plugin rows to the new active developer account. Pending
+   first-party submissions uploaded by the previous account are refused at approval time
+   (`409 maktaba_publisher_changed`), while already-approved historical versions remain
+   re-signable during store signing-key rotation as long as their original developer key stays
+   active.
+6. Once the root keys are in a server release (step 1), homes accept the store's signatures.
 
 ### The isolated runner on Cloudflare Containers (optional, #756)
 
