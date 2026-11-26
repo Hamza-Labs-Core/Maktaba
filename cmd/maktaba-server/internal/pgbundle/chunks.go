@@ -1,9 +1,11 @@
 package pgbundle
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"os"
@@ -239,19 +241,39 @@ func Chunks(dump string) map[string][]string {
 
 // CheckChunks refuses a dump whose chunks are not whole, before a restore changes anything: one
 // cut short (psql takes a binary COPY that ends between two rows for whole), one gone from
-// among them, or none of a chunked table's rows, which list (the dump's table of contents)
-// says are not pg_dump's either. A last one gone is seen by the rows' counts alone.
+// among them, none of a chunked table's rows (which list says are not pg_dump's either), or a
+// total chunk row count that disagrees with counts.json when counts.json is present (catching
+// a missing final chunk). Without counts.json a missing final chunk cannot be told.
 func CheckChunks(dump, list string) error {
+	_, err := checkChunks(dump, list, false)
+	return err
+}
+
+// CheckAsideChunks is CheckChunks for a candidate set-aside safety copy: in addition to every
+// CheckChunks invariant, any dump holding sidecar binary chunks MUST have a counts.json entry
+// for every chunked table so its final chunk completeness is proven before reusing it as the
+// sole safety copy.
+func CheckAsideChunks(dump, list string) error {
+	_, err := checkChunks(dump, list, true)
+	return err
+}
+
+func checkChunks(dump, list string, requireCounts bool) (map[string]int64, error) {
 	chunks := Chunks(dump)
+	rowsByTable := make(map[string]int64, len(chunks))
 	for table, files := range chunks {
+		var total int64
 		for i, f := range files {
 			if want := fmt.Sprintf("%s%s.%03d%s", chunkPrefix, table, i, chunkExt); filepath.Base(f) != want {
-				return fmt.Errorf("the dump is damaged: %s is not there", want)
+				return nil, fmt.Errorf("the dump is damaged: %s is not there", want)
 			}
-			if err := checkChunk(f); err != nil {
-				return fmt.Errorf("the dump is damaged: %s: %w", filepath.Base(f), err)
+			n, err := countChunkRows(f)
+			if err != nil {
+				return nil, fmt.Errorf("the dump is damaged: %s: %w", filepath.Base(f), err)
 			}
+			total += n
 		}
+		rowsByTable[table] = total
 	}
 	made, data := map[string]bool{}, map[string]bool{}
 	for _, e := range ParseTOC(list) {
@@ -264,38 +286,89 @@ func CheckChunks(dump, list string) error {
 	}
 	for _, t := range Chunked {
 		if made[t.Name] && !data[t.Name] && len(chunks[t.Name]) == 0 {
-			return fmt.Errorf("the dump is damaged: no rows of %s are in it", t.Name)
+			return nil, fmt.Errorf("the dump is damaged: no rows of %s are in it", t.Name)
 		}
 	}
-	return nil
+	if len(chunks) > 0 {
+		counts, err := readCounts(dump)
+		if err != nil {
+			return nil, err
+		}
+		for table, got := range rowsByTable {
+			want, ok := counts[table]
+			if !ok {
+				if requireCounts {
+					return nil, fmt.Errorf("dump_incomplete: %s has chunked table %s without %s", dump, table, CountsFile)
+				}
+				continue
+			}
+			if got != want {
+				return nil, fmt.Errorf("the dump is damaged: %s: %d of %d rows in chunks", table, got, want)
+			}
+		}
+	}
+	return rowsByTable, nil
 }
 
-// checkChunk checks a binary COPY's signature and its trailer (a row of -1 fields).
-func checkChunk(path string) error {
+// countChunkRows validates a PostgreSQL binary COPY chunk file (header signature, flags,
+// extension area, every tuple's field count/lengths, and the exact -1 trailer at EOF) and
+// returns the number of rows it contains.
+func countChunkRows(path string) (int64, error) {
 	f, err := os.Open(path) //nolint:gosec // a dump's own chunk
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() { _ = f.Close() }()
-	st, err := f.Stat()
-	if err != nil {
-		return err
-	}
+	br := bufio.NewReaderSize(f, 64<<10)
 	const signature = "PGCOPY\n\xff\r\n\x00"
-	head, end := make([]byte, len(signature)), make([]byte, 2)
-	if st.Size() < chunkHeader {
-		return fmt.Errorf("%d bytes: it is cut short", st.Size())
+	var hdr [19]byte
+	if _, err := io.ReadFull(br, hdr[:]); err != nil {
+		return 0, fmt.Errorf("it is cut short, or no binary COPY")
 	}
-	if _, err := f.ReadAt(head, 0); err != nil {
-		return err
+	if string(hdr[:len(signature)]) != signature {
+		return 0, fmt.Errorf("it is cut short, or no binary COPY")
 	}
-	if _, err := f.ReadAt(end, st.Size()-2); err != nil {
-		return err
+	extLen := binary.BigEndian.Uint32(hdr[15:19])
+	if extLen > 0 {
+		if _, err := io.CopyN(io.Discard, br, int64(extLen)); err != nil {
+			return 0, fmt.Errorf("it is cut short, or no binary COPY")
+		}
 	}
-	if string(head) != signature || end[0] != 0xff || end[1] != 0xff {
-		return fmt.Errorf("it is cut short, or no binary COPY")
+	var rows int64
+	var b2 [2]byte
+	var b4 [4]byte
+	for {
+		if _, err := io.ReadFull(br, b2[:]); err != nil {
+			return 0, fmt.Errorf("it is cut short, or no binary COPY")
+		}
+		nfields := int16(binary.BigEndian.Uint16(b2[:]))
+		if nfields == -1 {
+			// Must be at exact EOF after the -1 trailer.
+			if _, err := br.ReadByte(); err != io.EOF {
+				return 0, fmt.Errorf("trailing bytes after binary COPY trailer")
+			}
+			return rows, nil
+		}
+		if nfields < 0 {
+			return 0, fmt.Errorf("invalid binary COPY field count %d", nfields)
+		}
+		for range int(nfields) {
+			if _, err := io.ReadFull(br, b4[:]); err != nil {
+				return 0, fmt.Errorf("it is cut short, or no binary COPY")
+			}
+			flen := int32(binary.BigEndian.Uint32(b4[:]))
+			if flen == -1 {
+				continue // SQL NULL
+			}
+			if flen < -1 {
+				return 0, fmt.Errorf("invalid binary COPY field length %d", flen)
+			}
+			if _, err := io.CopyN(io.Discard, br, int64(flen)); err != nil {
+				return 0, fmt.Errorf("it is cut short, or no binary COPY")
+			}
+		}
+		rows++
 	}
-	return nil
 }
 
 // CountsScript is SQL that fails when a table restored from dump (list: its table of

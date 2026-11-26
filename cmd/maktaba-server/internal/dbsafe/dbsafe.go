@@ -452,7 +452,7 @@ func (t Target) VerifyAside(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	if err := pgbundle.CheckChunks(path, list); err != nil {
+	if err := pgbundle.CheckAsideChunks(path, list); err != nil {
 		return err
 	}
 	// Stream the full archive through pg_restore to /dev/null (io.Discard) without touching
@@ -1107,13 +1107,14 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, after, onl
 		var (
 			wdMu      sync.Mutex
 			inRead    bool
+			readGen   uint64
 			doneAt    time.Time
 			readBegan time.Time
 			waitLeft  = childWaitDelay
 			wdTimer   *time.Timer
 			timedOut  bool
 		)
-		armWatchdogLocked := func(now time.Time) {
+		armWatchdogLocked := func(now time.Time, gen uint64) {
 			if waitLeft <= 0 {
 				timedOut = true
 				_ = pr.Close()
@@ -1122,9 +1123,14 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, after, onl
 			if derr := pipeSetReadDeadline(pr, now.Add(waitLeft)); derr != nil {
 				wdTimer = time.AfterFunc(waitLeft, func() {
 					wdMu.Lock()
-					timedOut = true
+					shouldClose := inRead && readGen == gen
+					if shouldClose {
+						timedOut = true
+					}
 					wdMu.Unlock()
-					_ = pr.Close()
+					if shouldClose {
+						_ = pr.Close()
+					}
 				})
 			}
 		}
@@ -1133,16 +1139,19 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, after, onl
 			for {
 				wdMu.Lock()
 				now := time.Now()
+				readGen++
+				myGen := readGen
+				inRead = true
+				readBegan = now
 				if !doneAt.IsZero() {
 					if waitLeft <= 0 {
+						inRead = false
 						wdMu.Unlock()
 						copyDone <- fmt.Errorf("pg_restore stdout stayed open after it exited: %w", os.ErrDeadlineExceeded)
 						return
 					}
-					armWatchdogLocked(now)
+					armWatchdogLocked(now, myGen)
 				}
-				inRead = true
-				readBegan = now
 				wdMu.Unlock()
 
 				n, rerr := pr.Read(buf)
@@ -1191,7 +1200,7 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, after, onl
 			wdMu.Lock()
 			doneAt = time.Now()
 			if inRead {
-				armWatchdogLocked(doneAt)
+				armWatchdogLocked(doneAt, readGen)
 			}
 			wdMu.Unlock()
 			waitDone <- werr

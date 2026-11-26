@@ -214,16 +214,21 @@ func sqliteInUse() bool {
 // Bin is one of the install's programs.
 func (b Bundle) Bin(name string) string { return filepath.Join(b.Home, "bin", exe(name)) }
 
+// StopCommandContext is StopCommand bounded by ctx.
+func (b Bundle) StopCommandContext(ctx context.Context) *exec.Cmd {
+	return exec.CommandContext(ctx, b.Bin("pg_ctl"), "stop", "-D", b.Data, "-m", "fast", "-W")
+}
+
 // StopCommand is the fast shutdown where a signal cannot ask for it (Windows has no
 // SIGINT for another process): pg_ctl stop -m fast, not waiting.
 func (b Bundle) StopCommand() *exec.Cmd {
-	return exec.Command(b.Bin("pg_ctl"), "stop", "-D", b.Data, "-m", "fast", "-W")
+	return b.StopCommandContext(context.Background())
 }
 
-// stop asks a server of this cluster to shut down fast.
-func (b Bundle) stop(p *os.Process) {
+// stop asks a server of this cluster to shut down fast, bounding Windows' pg_ctl call to ctx.
+func (b Bundle) stop(ctx context.Context, p *os.Process) {
 	if runtime.GOOS == "windows" {
-		_ = b.StopCommand().Run()
+		_ = b.StopCommandContext(ctx).Run()
 		return
 	}
 	_ = p.Signal(os.Interrupt)
@@ -741,7 +746,6 @@ func (b Bundle) runServer(ctx context.Context, startDeadline time.Time, log io.W
 	go func() { exited <- srv.Wait() }()
 	ready := false
 	defer func() {
-		b.stop(srv.Process) // fast shutdown
 		wait := 30 * time.Second
 		if !ready && !startDeadline.IsZero() {
 			if left := time.Until(startDeadline); left < wait {
@@ -753,7 +757,17 @@ func (b Bundle) runServer(ctx context.Context, startDeadline time.Time, log io.W
 			<-exited
 			return
 		}
-		t := time.NewTimer(wait)
+		stopDeadline := time.Now().Add(wait)
+		stopCtx, stopCancel := context.WithDeadline(context.Background(), stopDeadline)
+		defer stopCancel()
+		b.stop(stopCtx, srv.Process) // fast shutdown (pg_ctl bounded to stopDeadline on Windows)
+		left := time.Until(stopDeadline)
+		if left <= 0 {
+			_ = srv.Process.Kill()
+			<-exited
+			return
+		}
+		t := time.NewTimer(left)
 		defer t.Stop()
 		select {
 		case <-exited:

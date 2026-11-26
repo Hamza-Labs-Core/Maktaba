@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -170,7 +171,58 @@ func TestSeedClusterRecordReconcilesUntouchedPendingRestoreIdentity(t *testing.T
 		}
 	})
 
-	t.Run("crash between UpgradeMarker write and seeding retries idempotently on restart", func(t *testing.T) {
+	t.Run("legacy pre-PR PG 18 home without pending marker keeps live database-pg18.json untouched", func(t *testing.T) {
+		for _, withOld := range []bool{true, false} {
+			name := "without-old-record"
+			if withOld {
+				name = "with-old-record"
+			}
+			t.Run(name, func(t *testing.T) {
+				root := t.TempDir()
+				stateDir := filepath.Join(root, "state")
+				if err := os.MkdirAll(stateDir, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if withOld {
+					writeOld(t, root, apppayload.Database{
+						Version: "v0.3.0", State: apppayload.DatabaseMigrated,
+					})
+				}
+				livePG18 := apppayload.Database{
+					Version: "v0.4.0", State: apppayload.DatabaseRestoring, From: "v0.3.9",
+					By: "admin", Dump: "/backups/live-pg18.dump", Data: apppayload.DataUntouched, DataID: "222222/16385/2200",
+				}
+				liveRaw, _ := json.MarshalIndent(livePG18, "", "  ")
+				if err := os.WriteFile(filepath.Join(stateDir, apppayload.ClusterRecordName("18")), append(liveRaw, '\n'), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				pg18Data := filepath.Join(root, "postgres-18")
+				if err := os.MkdirAll(pg18Data, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				markerRaw, _ := json.Marshal(pgbundle.UpgradedFrom{
+					Major: "16", SystemID: "111111", Checkpoint: "0/1",
+				})
+				if err := os.WriteFile(filepath.Join(pg18Data, pgbundle.UpgradeMarker), markerRaw, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				b := pgbundle.Bundle{Home: filepath.Join(root, "pg18"), Data: pg18Data}
+				var log bytes.Buffer
+				if err := seedClusterRecordIfPending(context.Background(), root, b, "16", "18", &log); err != nil {
+					t.Fatalf("legacy PG 18 home returned error: %v", err)
+				}
+				got := readNew(t, root)
+				if got.Dump != livePG18.Dump || got.DataID != livePG18.DataID || got.State != livePG18.State {
+					t.Fatalf("legacy PG 18 record was modified: got=%+v want=%+v", got, livePG18)
+				}
+			})
+		}
+	})
+
+	t.Run("crash after writing RecordSeedPending and UpgradeMarker retries cleanly and removes pending marker", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("shell stand-in for pg_controldata")
+		}
 		root := t.TempDir()
 		writeOld(t, root, apppayload.Database{
 			Version:   "v0.4.0",
@@ -194,7 +246,11 @@ func TestSeedClusterRecordReconcilesUntouchedPendingRestoreIdentity(t *testing.T
 		if err := os.WriteFile(filepath.Join(pg18Home, "bin", "pg_controldata"), []byte(ctrl), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		// Simulate crash right after UpgradeMarker was written (no recordSeededMarker yet).
+		// Simulate crash right after MajorUpgrade wrote RecordSeedPending + UpgradeMarker.
+		pendingPath := filepath.Join(pg18Data, pgbundle.RecordSeedPending)
+		if err := os.WriteFile(pendingPath, []byte("111111@0/1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
 		markerRaw, _ := json.Marshal(pgbundle.UpgradedFrom{
 			Major: "16", SystemID: "111111", Checkpoint: "0/1", Identity: "111111/16384/2200", Table: "16400",
 		})
@@ -203,22 +259,79 @@ func TestSeedClusterRecordReconcilesUntouchedPendingRestoreIdentity(t *testing.T
 		}
 		b := pgbundle.Bundle{Home: pg18Home, Data: pg18Data}
 		var log bytes.Buffer
-		seedClusterRecordIfNeeded(context.Background(), root, b, "16", "18", &log)
+		if err := seedClusterRecordIfPending(context.Background(), root, b, "16", "18", &log); err != nil {
+			t.Fatalf("seedClusterRecordIfPending failed: %v", err)
+		}
+		if _, err := os.Stat(pendingPath); !os.IsNotExist(err) {
+			t.Fatalf("pending marker not removed after seeding: %v", err)
+		}
 		got := readNew(t, root)
 		if got.Data != apppayload.DataUntouched || got.DataID != "" || got.DataTable != "" {
 			t.Fatalf("after restart recovery, seeded record = %+v", got)
 		}
 		// Mutate the PG 18 record as live operation would, then verify a subsequent restart
-		// does not overwrite it once recordSeededMarker matches the checkpoint.
+		// does not overwrite it once RecordSeedPending is gone.
 		got.DataID = "222222/16385/2200"
 		mut, _ := json.Marshal(got)
 		if err := os.WriteFile(filepath.Join(root, "state", apppayload.ClusterRecordName("18")), mut, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		seedClusterRecordIfNeeded(context.Background(), root, b, "16", "18", &log)
+		if err := seedClusterRecordIfPending(context.Background(), root, b, "16", "18", &log); err != nil {
+			t.Fatalf("second seedClusterRecordIfPending failed: %v", err)
+		}
 		after := readNew(t, root)
 		if after.DataID != "222222/16385/2200" {
 			t.Fatalf("subsequent restart overwrote PG 18 record: %+v", after)
+		}
+	})
+
+	t.Run("seeding or marker failure fails closed and preserves RecordSeedPending", func(t *testing.T) {
+		root := t.TempDir()
+		pg18Data := filepath.Join(root, "postgres-18")
+		if err := os.MkdirAll(pg18Data, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		pendingPath := filepath.Join(pg18Data, pgbundle.RecordSeedPending)
+		if err := os.WriteFile(pendingPath, []byte("111111@0/1\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		markerRaw, _ := json.Marshal(pgbundle.UpgradedFrom{
+			Major: "16", SystemID: "111111", Checkpoint: "0/1", Identity: "111111/16384/2200", Table: "16400",
+		})
+		if err := os.WriteFile(filepath.Join(pg18Data, pgbundle.UpgradeMarker), markerRaw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		// Missing pg_controldata must fail closed and leave RecordSeedPending in place.
+		b := pgbundle.Bundle{Home: filepath.Join(root, "no-such-pg18"), Data: pg18Data}
+		if err := seedClusterRecordIfPending(context.Background(), root, b, "16", "18", &bytes.Buffer{}); err == nil {
+			t.Fatal("expected error when pg_controldata fails, got nil")
+		}
+		if _, err := os.Stat(pendingPath); err != nil {
+			t.Fatalf("pending marker was removed on failure: %v", err)
+		}
+		// Marker removal failure (directory where pending marker file is expected) fails closed.
+		if runtime.GOOS != "windows" {
+			root2 := t.TempDir()
+			writeOld(t, root2, apppayload.Database{Version: "v0.4.0", State: apppayload.DatabaseMigrated})
+			pg18Data2 := filepath.Join(root2, "postgres-18")
+			pg18Home2 := filepath.Join(root2, "pg18")
+			if err := os.MkdirAll(filepath.Join(pg18Data2, pgbundle.RecordSeedPending, "nested"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(pg18Home2, "bin"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			ctrl := "#!/bin/sh\necho 'Database cluster state: shut down'\necho 'Database system identifier: 222222'\necho 'Latest checkpoint location: 0/2'\n"
+			if err := os.WriteFile(filepath.Join(pg18Home2, "bin", "pg_controldata"), []byte(ctrl), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(pg18Data2, pgbundle.UpgradeMarker), markerRaw, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			b2 := pgbundle.Bundle{Home: pg18Home2, Data: pg18Data2}
+			if err := seedClusterRecordIfPending(context.Background(), root2, b2, "16", "18", &bytes.Buffer{}); err == nil {
+				t.Fatal("expected error when removing RecordSeedPending fails, got nil")
+			}
 		}
 	})
 }

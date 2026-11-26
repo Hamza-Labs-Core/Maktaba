@@ -101,3 +101,53 @@ func TestCheckChunksCannotSeeAGoneLastChunkWithoutCounts(t *testing.T) {
 		t.Fatalf("the counts the dump has: %q %v", sql, err)
 	}
 }
+
+// CheckChunks counts actual binary COPY rows across sidecar chunks and rejects a mismatch
+// against counts.json (catching a missing final chunk); CheckAsideChunks additionally
+// refuses any chunked candidate lacking counts.json so a legacy unprovably-complete dump
+// is never reused as the sole safety copy.
+func TestCheckChunksAndAsideCountsRowTotals(t *testing.T) {
+	const sig = "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	const row = "\x00\x01\x00\x00\x00\x02hi"
+	const end = "\xff\xff"
+	toc := "1; 0 1 TABLE public segment_embeddings maktaba\n"
+
+	dir := t.TempDir()
+	for n, body := range map[string]string{"000": sig + row + end, "001": sig + row + end} {
+		if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings."+n+".bin"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Legacy chunked dump with no counts.json: CheckChunks passes, CheckAsideChunks refuses.
+	if err := CheckChunks(dir, toc); err != nil {
+		t.Fatalf("legacy chunked dump without counts rejected by CheckChunks: %v", err)
+	}
+	if err := CheckAsideChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "dump_incomplete") {
+		t.Fatalf("legacy chunked dump without counts accepted by CheckAsideChunks: %v", err)
+	}
+	// Matching counts.json (2 rows across 2 chunks): both pass.
+	if err := os.WriteFile(filepath.Join(dir, CountsFile), []byte(`{"public.segment_embeddings":2}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err != nil {
+		t.Fatalf("complete chunked dump rejected by CheckChunks: %v", err)
+	}
+	if err := CheckAsideChunks(dir, toc); err != nil {
+		t.Fatalf("complete chunked dump rejected by CheckAsideChunks: %v", err)
+	}
+	// Missing final chunk (only 1 of 2 rows present): both reject.
+	_ = os.Remove(filepath.Join(dir, "chunk.public.segment_embeddings.001.bin"))
+	if err := CheckChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "1 of 2 rows") {
+		t.Fatalf("missing final chunk with counts accepted by CheckChunks: %v", err)
+	}
+	if err := CheckAsideChunks(dir, toc); err == nil || !strings.Contains(err.Error(), "1 of 2 rows") {
+		t.Fatalf("missing final chunk with counts accepted by CheckAsideChunks: %v", err)
+	}
+	// Trailing bytes after trailer are rejected.
+	if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings.000.bin"), []byte(sig+row+end+"junk"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckChunks(dir, toc); err == nil {
+		t.Fatal("chunk with trailing bytes after trailer accepted")
+	}
+}

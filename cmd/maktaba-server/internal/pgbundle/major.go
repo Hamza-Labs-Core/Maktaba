@@ -37,6 +37,12 @@ import (
 // UpgradeMarker is the file in a cluster pg_upgrade made, saying from what.
 const UpgradeMarker = "maktaba-upgraded-from.json"
 
+// RecordSeedPending is written inside the upgraded cluster before UpgradeMarker is
+// finalized so startup knows this upgrade still needs its database record seeded and
+// reconciled from the old cluster's record. Pre-existing upgraded clusters lack this file
+// and their live database record is never overwritten.
+const RecordSeedPending = "maktaba-record-seed-pending"
+
 // UpgradedFrom is UpgradeMarker's content.
 type UpgradedFrom struct {
 	Major      string `json:"major"`
@@ -447,6 +453,12 @@ func (u MajorUpgrade) Run(ctx context.Context, log io.Writer) error {
 	m := UpgradedFrom{Major: oldMajor, Data: u.Old.Data, SystemID: c.SystemID, Checkpoint: c.Checkpoint,
 		Identity: oldIdentity, Table: oldTable, Mode: mode, At: time.Now().UTC()}
 	raw, _ := json.MarshalIndent(m, "", "  ")
+	// Mark record seeding pending BEFORE finalizing UpgradeMarker: a crash between the two
+	// re-runs Needed()+Run(); a crash after UpgradeMarker still sees RecordSeedPending on
+	// restart and completes seeding/reconciliation before removing it.
+	if err := os.WriteFile(filepath.Join(u.New.Data, RecordSeedPending), []byte(c.SystemID+"@"+c.Checkpoint+"\n"), 0o600); err != nil {
+		return err
+	}
 	if err := os.WriteFile(filepath.Join(u.New.Data, UpgradeMarker), append(raw, '\n'), 0o600); err != nil {
 		return err
 	}

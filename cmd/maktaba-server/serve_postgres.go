@@ -209,11 +209,10 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 		fmt.Fprintf(log, "[postgres] the library database runs on PostgreSQL %s (%s)\n", newMajor, why)
 	}
 	if err == nil {
-		// Seed and reconcile the new cluster's record idempotently against UpgradeMarker's
-		// checkpoint: if a previous start crashed after u.Run wrote UpgradeMarker but before
-		// seeding finished, Needed() returns up-to-date on restart and this still finishes
-		// seeding and reconciliation.
-		seedClusterRecordIfNeeded(ctx, root, b, oldMajor, newMajor, log)
+		// Seed and reconcile the new cluster's record ONLY when the upgrade wrote
+		// RecordSeedPending (fail closed on error). Legacy clusters upgraded before this
+		// marker existed have no pending file, so their live database record is never touched.
+		err = seedClusterRecordIfPending(ctx, root, b, oldMajor, newMajor, log)
 	}
 	if err != nil {
 		fmt.Fprintf(log, "[postgres] level=error the library database could not be upgraded to PostgreSQL %s, so it "+
@@ -228,33 +227,36 @@ func upgradeTo(ctx context.Context, cfg config.Config, b pgbundle.Bundle, old st
 	return b
 }
 
-// recordSeededMarker tracks which upgraded cluster checkpoint has already had its database
-// record seeded and reconciled, so a kill between writing UpgradeMarker and seeding retries
-// cleanly on the next startup.
-const recordSeededMarker = "maktaba-record-seeded"
-
-// seedClusterRecordIfNeeded copies and reconciles the old cluster's database record for b
-// once per UpgradeMarker checkpoint.
-func seedClusterRecordIfNeeded(ctx context.Context, root string, b pgbundle.Bundle, oldMajor, newMajor string, log io.Writer) {
+// seedClusterRecordIfPending copies and reconciles the old cluster's database record into
+// b's major record ONLY when pgbundle.RecordSeedPending is present (written by MajorUpgrade
+// before finalizing UpgradeMarker). Legacy PG 18 homes upgraded by earlier releases have no
+// pending marker and keep their live record untouched. Any failure fails closed so the
+// pending marker stays for the next start and the upgrade does not proceed unseeded.
+func seedClusterRecordIfPending(ctx context.Context, root string, b pgbundle.Bundle, oldMajor, newMajor string, log io.Writer) error {
+	pendingPath := filepath.Join(b.Data, pgbundle.RecordSeedPending)
+	if _, err := os.Stat(pendingPath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return fmt.Errorf("check pending cluster record seed %s: %w", pendingPath, err)
+	}
 	m, ok, err := pgbundle.ReadUpgradedFrom(b.Data)
-	if err != nil || !ok || m.Checkpoint == "" {
-		return
+	if err != nil {
+		return fmt.Errorf("read upgrade marker for pending record seed: %w", err)
 	}
-	stamp := m.SystemID + "@" + m.Checkpoint
-	markerPath := filepath.Join(b.Data, recordSeededMarker)
-	if raw, err := os.ReadFile(markerPath); err == nil && strings.TrimSpace(string(raw)) == stamp {
-		return
+	if !ok || m.Checkpoint == "" {
+		return fmt.Errorf("pending record seed marker present in %s without completed %s", b.Data, pgbundle.UpgradeMarker)
 	}
-	var newSys string
-	if nc, cerr := pgbundle.ReadControl(ctx, b.Bin("pg_controldata"), b.Data); cerr == nil {
-		newSys = nc.SystemID
+	nc, cerr := pgbundle.ReadControl(ctx, b.Bin("pg_controldata"), b.Data)
+	if cerr != nil {
+		return fmt.Errorf("read upgraded cluster identity for pending record seed: %w", cerr)
 	}
-	if err := seedClusterRecord(root, oldMajor, newMajor, m.Identity, m.Table, newSys, log); err != nil {
-		return
+	if err := seedClusterRecord(root, oldMajor, newMajor, m.Identity, m.Table, nc.SystemID, log); err != nil {
+		return err
 	}
-	if err := layout.WriteFileAtomic(markerPath, []byte(stamp+"\n"), 0o600); err != nil {
-		fmt.Fprintf(log, "[postgres] level=warn could not record seeded marker (%v): next start will re-seed\n", err)
+	if err := os.Remove(pendingPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("clear pending cluster record seed %s: %w", pendingPath, err)
 	}
+	return nil
 }
 
 // seedClusterRecord copies the old cluster's database record to the new one's. When a
@@ -268,7 +270,9 @@ func seedClusterRecord(root, oldMajor, newMajor, oldID, oldTable, newSys string,
 	from, to := filepath.Join(dir, apppayload.ClusterRecordName(oldMajor)), filepath.Join(dir, apppayload.ClusterRecordName(newMajor))
 	raw, err := os.ReadFile(from)
 	if errors.Is(err, os.ErrNotExist) {
-		_ = os.Remove(to)
+		if rerr := os.Remove(to); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+			return rerr
+		}
 		return nil
 	}
 	if err == nil {

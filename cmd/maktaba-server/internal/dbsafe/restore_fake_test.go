@@ -459,6 +459,42 @@ func TestVerifyAsideRejectsCorruptOrMissingTableDataMember(t *testing.T) {
 	if err := tg.VerifyAside(ctx, makeDirDump(t, &good)); err != nil {
 		t.Fatalf("valid directory dump rejected: %v", err)
 	}
+
+	// Sidecar binary vector chunk checks: missing final chunk (row total < counts.json)
+	// and legacy chunked dump without counts.json must both be rejected by VerifyAside.
+	const sig = "PGCOPY\n\xff\r\n\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+	const row = "\x00\x01\x00\x00\x00\x02hi"
+	const end = "\xff\xff"
+	makeChunked := func(t *testing.T, countsJSON *string, chunks map[string]string) string {
+		t.Helper()
+		dir := makeDirDump(t, &good)
+		if countsJSON == nil {
+			_ = os.Remove(filepath.Join(dir, pgbundle.CountsFile))
+		} else {
+			if err := os.WriteFile(filepath.Join(dir, pgbundle.CountsFile), []byte(*countsJSON), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for n, body := range chunks {
+			if err := os.WriteFile(filepath.Join(dir, "chunk.public.segment_embeddings."+n+".bin"), []byte(body), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return dir
+	}
+	counts2 := `{"public.videos":1,"public.segment_embeddings":2}`
+	missingFinal := makeChunked(t, &counts2, map[string]string{"000": sig + row + end})
+	if err := tg.VerifyAside(ctx, missingFinal); err == nil || !strings.Contains(err.Error(), "1 of 2 rows") {
+		t.Fatalf("chunked dump missing final sidecar chunk accepted: %v", err)
+	}
+	legacyNoCounts := makeChunked(t, nil, map[string]string{"000": sig + row + end})
+	if err := tg.VerifyAside(ctx, legacyNoCounts); err == nil || !strings.Contains(err.Error(), "dump_incomplete") {
+		t.Fatalf("legacy chunked dump without counts.json accepted: %v", err)
+	}
+	completeChunked := makeChunked(t, &counts2, map[string]string{"000": sig + row + end, "001": sig + row + end})
+	if err := tg.VerifyAside(ctx, completeChunked); err != nil {
+		t.Fatalf("complete chunked dump rejected: %v", err)
+	}
 }
 
 // A pg_restore that ends well but leaves a grandchild holding stdout ONLY (not stderr) does
