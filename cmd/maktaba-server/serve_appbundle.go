@@ -984,16 +984,17 @@ func (g *migrationGate) record() (apppayload.Database, error) {
 
 // keptFor reports whether the record keeps its newer schema for release cur (a rollback
 // with nothing put back, layout.MarkRecordKept): cur is the release it was kept for, or
-// one between it and the release whose migrations it holds. Those migrations are all
-// additive, and a release between knows a part of them (its own come before), so it runs
-// on that schema as the release kept for does. Without this, a rollback from 0.3.46 to
-// 0.3.43 refused 0.3.45, a good release, as older than the database (update rehearsal 10a).
+// one between it and the release whose migrations it holds (SchemaRelease, else Version).
+// Those migrations are all additive, and a release between knows a part of them (its own
+// come before), so it runs on that schema as the release kept for does. Without this, a
+// rollback from 0.3.46 to 0.3.43 refused 0.3.45, a good release, as older than the database
+// (update rehearsal 10a).
 func keptFor(rec apppayload.Database, cur string) bool {
 	if rec.KeptFor == "" || (rec.State != apppayload.DatabaseMigrated && rec.State != apppayload.DatabaseRestored) {
 		return false
 	}
 	c, k := layout.NormalizeVersion(cur), layout.NormalizeVersion(rec.KeptFor)
-	return c == k || (apppayload.Older(k, c) && apppayload.Older(c, rec.Version))
+	return c == k || (apppayload.Older(k, c) && apppayload.Older(c, rec.SchemaOwner()))
 }
 
 // envSchemaAheadOK tells the api (its `migrate up` and its serve) that the database may
@@ -1147,7 +1148,7 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	if kept {
 		g.allowSchemaAhead()
 		fmt.Fprintf(g.log, "[serve] the library database holds %s's migrations, kept for %s by its rollback (%s): "+
-			"they are additive, nothing was put back\n", rec.Version, cur, orUnknown(rec.KeptReason))
+			"they are additive, nothing was put back\n", rec.SchemaOwner(), cur, orUnknown(rec.KeptReason))
 	}
 	if held != "" && held != cur && apppayload.Older(cur, held) && !kept {
 		err := downgrade(cur, rec)
@@ -1164,7 +1165,7 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	case rec.State == apppayload.DatabaseMigrating:
 		// a start that did not finish migrating (stopped, cut off, its putting
 		// back failed): go on; the dump is still the one from before it all
-		update.From, update.Dump, update.DumpKeptFor = rec.From, rec.Dump, rec.DumpKeptFor
+		update.From, update.Dump, update.DumpKeptFor, update.DumpSchemaRelease = rec.From, rec.Dump, rec.DumpKeptFor, rec.DumpSchemaRelease
 		update.SchemaBefore = rec.SchemaBefore
 		if update.SchemaBefore == 0 && !rec.At.IsZero() && !wasHeld {
 			// begun by a release from before schema_before: the record was saved as the
@@ -1182,6 +1183,9 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 	default:
 		// the dump is of this database: of a kept schema, when it is one
 		update.From, update.DumpKeptFor = ran, rec.KeptFor
+		if rec.KeptFor != "" {
+			update.DumpSchemaRelease = rec.SchemaOwner()
+		}
 		back = ran != "" && apppayload.Older(cur, ran)
 		if n, known := pendingMigrations(ctx, g); kept || (known && n == 0) {
 			// no migration to run: no dump, and Version stays (the release before knows
@@ -1192,7 +1196,8 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 				update.Version, update.Release = cur, ""
 			}
 			// the schema does not change: whom it is kept for neither
-			update.KeptFor, update.KeptReason, update.DumpKeptFor = rec.KeptFor, rec.KeptReason, ""
+			update.KeptFor, update.KeptReason, update.SchemaRelease = rec.KeptFor, rec.KeptReason, rec.SchemaRelease
+			update.DumpKeptFor, update.DumpSchemaRelease = "", ""
 			if !back {
 				fmt.Fprintf(g.log, "[serve] update %s -> %s: no migration to run, so no dump: the switch is a restart\n",
 					orUnknown(ran), cur)
@@ -1290,7 +1295,8 @@ func (g *migrationGate) run(ctx context.Context, report func(supervisor.Detail))
 				return nil
 			}
 			// restored, and this is the release from before (on the kept schema it was put back to)
-			update = apppayload.Database{Version: cur, KeptFor: rec.KeptFor, KeptReason: rec.KeptReason}
+			update = apppayload.Database{Version: cur, KeptFor: rec.KeptFor, KeptReason: rec.KeptReason,
+				SchemaRelease: rec.SchemaRelease}
 		case !back:
 			g.attempt(update.From, func(a *attempts.Attempt) { a.Step, a.Code, a.Detail = "migrate", "", ""; a.Ended(attempts.Installed) })
 		}
@@ -1497,7 +1503,7 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, upd *ap
 		rec := apppayload.Database{Version: cur, State: apppayload.DatabaseMigrated, Release: update.From,
 			From: update.From, Dump: update.Dump, Failed: cur, Error: cause.Error(),
 			KeptFor: layout.NormalizeVersion(update.From), KeptReason: "its migrations failed: " + cause.Error(),
-			DumpKeptFor: update.DumpKeptFor}
+			DumpKeptFor: update.DumpKeptFor, DumpSchemaRelease: update.DumpSchemaRelease}
 		if err := g.save(rec); err != nil {
 			return true, err
 		}
@@ -1533,8 +1539,13 @@ func (g *migrationGate) backWithoutDump(ctx context.Context, cur string, upd *ap
 			Dump: update.Dump, Failed: cur, Error: cause.Error(), DownFrom: cur, DownReason: cause.Error()}
 		if update.DumpKeptFor != "" {
 			// back on the kept, newer schema the release before ran on: still kept for it, or
-			// it refuses it as ahead of its own (db_ahead)
+			// it refuses it as ahead of its own (db_ahead). Preserve the schema's own release
+			// so intermediate releases between kept_for and schema_release are accepted too.
 			rec.KeptFor = layout.NormalizeVersion(update.From)
+			if update.DumpSchemaRelease != "" {
+				rec.KeptFor = layout.NormalizeVersion(update.DumpKeptFor)
+				rec.SchemaRelease = update.DumpSchemaRelease
+			}
 			rec.KeptReason = "kept before the update to " + cur + ", which failed"
 		}
 		if err := g.save(rec); err != nil {
@@ -1677,7 +1688,8 @@ func (g *migrationGate) restoreAsked(ctx context.Context, rec apppayload.Databas
 	}
 	// the dump of a schema kept for a release is that schema again, kept for it
 	done := apppayload.Database{Version: rec.From, State: apppayload.DatabaseRestored, From: rec.From,
-		Dump: pgbundle.OriginalPath(rec.Dump), By: rec.By, KeptFor: rec.DumpKeptFor}
+		Dump: pgbundle.OriginalPath(rec.Dump), By: rec.By, KeptFor: rec.DumpKeptFor,
+		SchemaRelease: rec.DumpSchemaRelease}
 	if err := g.save(done); err != nil {
 		return rec, err
 	}

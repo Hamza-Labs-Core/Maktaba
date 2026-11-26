@@ -245,3 +245,26 @@ func TestServerArgsSetMaxConnections(t *testing.T) {
 		t.Fatalf("MaxConnections = %d: no more room than Postgres's default", MaxConnections)
 	}
 }
+
+// #1667: the bundled Postgres sets server-side TCP keepalives so a sleeping machine's
+// stuck COPY ends within ~60 s, and clusterSQL grants SELECT on pg_hba_file_rules so
+// cluster_copies_paused() can tell machines when the home paused their copies.
+func TestServerArgsKeepalivesAndClusterHBARulesGrant(t *testing.T) {
+	b := clusterBundle(t, true, true)
+	args := strings.Join(b.ServerArgs(), " ")
+	for _, want := range []string{
+		"-c tcp_keepalives_idle=30",
+		"-c tcp_keepalives_interval=10",
+		"-c tcp_keepalives_count=3",
+	} {
+		if !strings.Contains(args, want) {
+			t.Errorf("ServerArgs lacks %q: %s", want, args)
+		}
+	}
+	if !strings.Contains(clusterSQL, "GRANT SELECT ON pg_catalog.pg_hba_file_rules TO "+AppRole) {
+		t.Errorf("clusterSQL lacks pg_hba_file_rules grant:\n%s", clusterSQL)
+	}
+	if clusterRev < 7 {
+		t.Errorf("clusterRev = %d, want >= 7", clusterRev)
+	}
+}

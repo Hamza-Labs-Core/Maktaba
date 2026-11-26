@@ -426,6 +426,13 @@ func (s *Service) tick(ctx context.Context) (Decision, error) {
 		return Decision{Action: "held", Reason: ReasonHeld, Version: pl.Target.Version}, nil
 	}
 	if pl.Target == nil || !pl.Due {
+		if !s.copySince.IsZero() {
+			// look outside the window too: a copy that ended after the window ends its
+			// hold so a separate day's copy gets its own CopyHoldMax budget (#1753).
+			if why, _, berr := s.blockedFor(ctx, ""); berr == nil && why == "" {
+				s.copySince = time.Time{}
+			}
+		}
 		if pl.Target != nil && pl.NextRunAt != nil {
 			s.notify(ctx, NoticeScheduled, notify.Payload{Severity: notify.SeverityInfo,
 				Params:  map[string]any{"version": pl.Target.Version, "at": pl.NextRunAt.Format(time.RFC3339)},

@@ -2224,14 +2224,67 @@ func TestAppBundleDownScriptsLeaveAKeptSchemaKept(t *testing.T) {
 	if len(f.downs) != 1 || f.downs[0] != "migrating 234" || len(f.befores) != 1 || f.befores[0] != 234 {
 		t.Fatalf("Down scripts %v, decided with the slot before %v", f.downs, f.befores)
 	}
-	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.KeptFor != "0.2.0" || rec.KeptReason == "" {
+	if rec := recorded(t, cfg); rec.Version != "v0.2.0" || rec.KeptFor != "0.2.0" || rec.SchemaRelease != "v0.2.5" || rec.KeptReason == "" {
 		t.Fatalf("record %+v", rec)
+	}
+	// #1666: an intermediate release M (v0.2.3) between A (0.2.0) and B (v0.2.5) runs on B's
+	// kept schema after C's Down scripts, while a release older than A (v0.1.9) is refused.
+	if !keptFor(recorded(t, cfg), "v0.2.3") {
+		t.Fatalf("keptFor rejected intermediate release v0.2.3 on %+v", recorded(t, cfg))
+	}
+	if keptFor(recorded(t, cfg), "v0.1.9") {
+		t.Fatalf("keptFor accepted release older than kept_for on %+v", recorded(t, cfg))
+	}
+	// Backwards-compatible: an older record without SchemaRelease uses Version.
+	if !keptFor(apppayload.Database{Version: "v0.2.5", State: apppayload.DatabaseMigrated, KeptFor: "0.2.0"}, "v0.2.3") {
+		t.Fatal("keptFor should stay backwards-compatible when SchemaRelease is empty")
+	}
+	newPayload(t, payload, "v0.2.3")
+	f.migrateErr, f.ahead = nil, true // the database is at B's schema, ahead of M's own migrations
+	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("intermediate v0.2.3 on the kept schema: %v", err)
+	}
+	if rec := recorded(t, cfg); rec.KeptFor != "0.2.0" || rec.SchemaRelease != "v0.2.5" || rec.Release != "v0.2.3" {
+		t.Fatalf("record after intermediate start: %+v", rec)
 	}
 	newPayload(t, payload, "v0.2.0")
 	f.migrateErr, f.ahead = nil, true // the database is ahead of v0.2.0's own migrations
 	ps = appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
 	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
 		t.Fatalf("v0.2.0 on the kept schema: %v", err)
+	}
+}
+
+// #1666: restoreAsked of a dump taken from a kept schema preserves schema_release so an
+// intermediate release M between kept_for and schema_release is accepted after the restore.
+func TestAppBundleRestoreAskedPreservesSchemaRelease(t *testing.T) {
+	cfg, payload := appEnv(t, "v0.2.3", "")
+	dump := filepath.Join(cfg.StateDir(), "backups", "pre-v0.2.0-to-v0.3.0.dump")
+	if err := os.MkdirAll(filepath.Dir(dump), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dump, []byte("PGDMP"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record(t, cfg, apppayload.Database{
+		Version:           "v0.3.0",
+		State:             apppayload.DatabaseRestoring,
+		From:              "v0.2.0",
+		Dump:              dump,
+		By:                "admin",
+		DumpKeptFor:       "0.2.0",
+		DumpSchemaRelease: "v0.2.5",
+	})
+	f := installFakeDB(t, cfg)
+	f.ahead = true // restored dump holds B's (v0.2.5) schema, ahead of M (v0.2.3)
+	ps := appBundleGates(cfg, payload, testBundle(cfg), gateProcs(true), io.Discard)
+	if err := prepareOf(t, ps, supervisor.RoleAPI)(context.Background(), noReport); err != nil {
+		t.Fatalf("restoreAsked + start of intermediate v0.2.3: %v", err)
+	}
+	rec := recorded(t, cfg)
+	if rec.State != apppayload.DatabaseMigrated || rec.KeptFor != "0.2.0" || rec.SchemaRelease != "v0.2.5" {
+		t.Fatalf("record after restoreAsked: %+v", rec)
 	}
 }
 

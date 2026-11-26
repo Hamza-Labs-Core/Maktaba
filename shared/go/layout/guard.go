@@ -444,7 +444,7 @@ func UnmarkRecordKept(path, failed string) (bool, error) {
 		return false, nil
 	}
 	// from starts on it as on its own: the release that ran last is from
-	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for"} {
+	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for", "dump_schema_release", "schema_release"} {
 		delete(rec, k)
 	}
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)
@@ -531,13 +531,20 @@ func MarkRecordDown(path, failed, from, reason string) (bool, error) {
 	}
 	rec["down_from"], rec["down_reason"] = str("version"), reason
 	rec["version"] = back
-	onKept := str("dump_kept_for") != ""
+	dumpKeptFor := str("dump_kept_for")
+	dumpSchemaRelease := str("dump_schema_release")
+	onKept := dumpKeptFor != ""
 	// from starts on it as on its own: the release that ran last is from
-	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for", "schema_before"} {
+	for _, k := range []string{"kept_for", "kept_reason", "release", "dump_kept_for", "dump_schema_release", "schema_release", "schema_before"} {
 		delete(rec, k)
 	}
 	if onKept {
-		rec["kept_for"] = NormalizeVersion(from)
+		if dumpSchemaRelease != "" {
+			rec["kept_for"] = NormalizeVersion(dumpKeptFor)
+			rec["schema_release"] = dumpSchemaRelease
+		} else {
+			rec["kept_for"] = NormalizeVersion(from)
+		}
 		rec["kept_reason"] = "kept before the update to " + failed + ", which was undone"
 	}
 	rec["at"] = time.Now().UTC().Format(time.RFC3339Nano)

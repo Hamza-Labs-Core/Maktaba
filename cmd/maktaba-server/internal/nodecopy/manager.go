@@ -80,20 +80,88 @@ type Manager struct {
 	homeAuthUntil time.Time
 	// copyAuth: the home refused the copy's replication role that many times in a row;
 	// copyPausedUntil: its subscription stays paused until then (its worker would try
-	// again every few seconds, for ever); copyLoginAt: when it was last tried
+	// again every few seconds, for ever); copyLoginAt: when it was last tried;
+	// homePaused: the home itself paused the machines' copies for its migrations (#1667)
 	copyAuth        int
 	copyPausedUntil time.Time
 	copyLoginAt     time.Time
+	homePaused      bool
 	// strandedAt: when the copy was last looked at for a table whose first copy can never
 	// end (Copy.Stranded)
 	strandedAt time.Time
 
 	// CopyLoginEvery is how often a subscription that does not receive from the home has
 	// its login tried (0: 1 min); CopyAuthAfter is how many refused logins in a row pause
-	// it (0: 3); AuthBackoffMax is the longest wait after refused logins (0: 30 min).
-	CopyLoginEvery time.Duration
-	CopyAuthAfter  int
-	AuthBackoffMax time.Duration
+	// it (0: 3); AuthBackoffMax is the longest wait after refused logins (0: 30 min);
+	// CopyPausedEvery is how often watch re-checks while the home paused copies (0: 5 s).
+	CopyLoginEvery  time.Duration
+	CopyAuthAfter   int
+	AuthBackoffMax  time.Duration
+	CopyPausedEvery time.Duration
+
+	// Test hooks (nil in production -> m.Copy.*).
+	observeFn      func(ctx context.Context, homeNow time.Time) Status
+	receivingFn    func(ctx context.Context) (bool, error)
+	copyLoginFn    func(ctx context.Context, database string) error
+	pauseFn        func(ctx context.Context) error
+	copiesPausedFn func(ctx context.Context) bool
+}
+
+func (m *Manager) copyPausedEvery() time.Duration {
+	if m.CopyPausedEvery > 0 {
+		return m.CopyPausedEvery
+	}
+	return 5 * time.Second
+}
+
+func (m *Manager) setHomePaused(paused bool) {
+	m.mu.Lock()
+	m.homePaused = paused
+	if paused {
+		m.copyAuth, m.copyPausedUntil = 0, time.Time{}
+	}
+	m.mu.Unlock()
+}
+
+func (m *Manager) isHomePaused() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.homePaused
+}
+
+func (m *Manager) observe(ctx context.Context) Status {
+	if m.observeFn != nil {
+		return m.observeFn(ctx, m.homeNow())
+	}
+	return m.Copy.Observe(ctx, m.homeNow())
+}
+
+func (m *Manager) receiving(ctx context.Context) (bool, error) {
+	if m.receivingFn != nil {
+		return m.receivingFn(ctx)
+	}
+	return m.Copy.Receiving(ctx)
+}
+
+func (m *Manager) tryCopyLogin(ctx context.Context, database string) error {
+	if m.copyLoginFn != nil {
+		return m.copyLoginFn(ctx, database)
+	}
+	return m.Copy.CopyLogin(ctx, database)
+}
+
+func (m *Manager) pauseCopy(ctx context.Context) error {
+	if m.pauseFn != nil {
+		return m.pauseFn(ctx)
+	}
+	return m.Copy.Pause(ctx)
+}
+
+func (m *Manager) homeCopiesPaused(ctx context.Context) bool {
+	if m.copiesPausedFn != nil {
+		return m.copiesPausedFn(ctx)
+	}
+	return m.Copy.CopiesPaused(ctx)
 }
 
 func (m *Manager) copyLoginEvery() time.Duration {
@@ -304,6 +372,10 @@ func (m *Manager) report(ctx context.Context, s Status) {
 				m.homeLoginOK()
 				m.mu.Lock()
 				m.offset, m.slotLag, m.slotAt, m.slotWAL = seen.Offset, seen.SlotLag, m.now(), seen.SlotWAL
+				m.homePaused = seen.CopiesPaused
+				if seen.CopiesPaused {
+					m.copyAuth, m.copyPausedUntil = 0, time.Time{}
+				}
 				m.mu.Unlock()
 			} else if kindOf(err) == kindAuth {
 				m.homeRefusedLogin()
@@ -408,6 +480,14 @@ func (m *Manager) Run(ctx context.Context) {
 		refused = 0
 		m.homeLoginOK()
 		m.setSlotWAL(g.SlotWAL)
+		m.setHomePaused(g.CopiesPaused)
+		if g.CopiesPaused {
+			m.set(ctx, m.watchState(ctx, "the home paused the machines' copies while it updates its database: waiting to resume"))
+			if !m.watch(ctx, m.retry()) {
+				return
+			}
+			continue
+		}
 		if g.SchemaVersion > local {
 			// the home's changes would not apply until this machine updates
 			_ = m.Copy.Pause(ctx)
@@ -660,7 +740,7 @@ func (m *Manager) resubscribe(ctx context.Context, local int64, why string) erro
 // watchState is the state to show while the home cannot be asked: the copy's own,
 // with why the home was not asked.
 func (m *Manager) watchState(ctx context.Context, detail string) Status {
-	s := m.withSlot(m.Copy.Observe(ctx, m.homeNow()))
+	s := m.withSlot(m.observe(ctx))
 	if s.State != StateFollowing && s.State != StateCopying {
 		s.Detail = detail
 	}
@@ -668,19 +748,26 @@ func (m *Manager) watchState(ctx context.Context, detail string) Status {
 }
 
 // watch observes the copy every period for d (false: ctx ended), and notes whether
-// the home's changes keep failing to apply.
+// the home's changes keep failing to apply. While the home paused the machines' copies for
+// its own migrations (#1667), watch re-checks every CopyPausedEvery (default 5 s) without
+// counting login refusals and returns as soon as the pause lifts.
 func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 	end := m.now().Add(d)
 	for {
-		s := m.withSlot(m.Copy.Observe(ctx, m.homeNow()))
+		s := m.withSlot(m.observe(ctx))
 		m.mu.Lock()
 		rising := s.Errors > m.lastErrs
 		m.mu.Unlock()
 		m.noteErrors(s)
 		due := m.strandedDue(s, rising) // as observed: a rebuild's first copy too
+		wasPaused := m.isHomePaused()
 		s = m.copyLogin(ctx, s)
+		nowPaused := m.isHomePaused()
 		s = m.asRebuild(s)
 		m.set(ctx, s)
+		if wasPaused && !nowPaused {
+			return true
+		}
 		if due {
 			// a first copy whose table-sync keeps failing: a stranded table ends the watch,
 			// and the turn after it makes the copy anew (strandedReason)
@@ -695,7 +782,11 @@ func (m *Manager) watch(ctx context.Context, d time.Duration) bool {
 		if left <= 0 {
 			return true
 		}
-		if !sleep(ctx, min(left, m.every())) {
+		step := m.every()
+		if nowPaused {
+			step = m.copyPausedEvery()
+		}
+		if !sleep(ctx, min(left, step)) {
 			return false
 		}
 	}
@@ -743,6 +834,18 @@ func (m *Manager) copyPaused() bool {
 // on again: so a copy that cannot log in knocks at the home's door rarely, not every few
 // seconds. s is the status to show.
 func (m *Manager) copyLogin(ctx context.Context, s Status) Status {
+	const pausedDetail = "the home paused the machines' copies while it updates its database: waiting to resume"
+	if m.isHomePaused() {
+		if m.homeCopiesPaused(ctx) {
+			m.setHomePaused(true)
+			if s.State == StateError {
+				s.State = StateBehind
+			}
+			s.Detail = pausedDetail
+			return s
+		}
+		m.setHomePaused(false)
+	}
 	m.mu.Lock()
 	paused := m.now().Before(m.copyPausedUntil)
 	// on again after a pause for refused logins: tried at once, not a minute of knocking later
@@ -758,10 +861,20 @@ func (m *Manager) copyLogin(ctx context.Context, s Status) Status {
 	if !s.enabled || !due {
 		return s
 	}
-	if ok, err := m.Copy.Receiving(ctx); err != nil || ok {
+	if ok, err := m.receiving(ctx); err != nil || ok {
 		return s
 	}
-	err := m.Copy.CopyLogin(ctx, "")
+	err := m.tryCopyLogin(ctx, "")
+	if err != nil && kindOf(err) == kindAuth && m.homeCopiesPaused(ctx) {
+		// #1667: the home's own pause for migrations is not a login refusal: keep the
+		// subscription unpaused and check again every few seconds without backing off.
+		m.setHomePaused(true)
+		if s.State == StateError {
+			s.State = StateBehind
+		}
+		s.Detail = pausedDetail
+		return s
+	}
 	m.mu.Lock()
 	m.copyLoginAt = m.now()
 	switch {
@@ -775,7 +888,7 @@ func (m *Manager) copyLogin(ctx context.Context, s Status) Status {
 	if err == nil || kindOf(err) != kindAuth || fails < m.copyAuthAfter() {
 		return s // let in, or not refused (the home away): its worker's own retries are the home's to bear
 	}
-	if perr := m.Copy.Pause(ctx); perr != nil {
+	if perr := m.pauseCopy(ctx); perr != nil {
 		m.logf("pausing the copy that cannot log in: %v", perr)
 		return s
 	}

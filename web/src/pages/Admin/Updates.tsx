@@ -34,6 +34,7 @@ import {
   runActive,
   safeReleaseUrl,
   statusTone,
+  updateRefusal,
   windowEnds,
   type Words,
 } from "../../lib/updatesView";
@@ -139,14 +140,7 @@ function useWords() {
   /** Why an action was refused: its code's words (a blocker's as a scheduled run's that
    * waits), else what the server said. Only Update now has nothing to install (now): a
    * server of v0.3.164 or older says no_update of a machine's action too, for its own reason. */
-  const refusal = (e: unknown, now = false) => {
-    if (!(e instanceof ApiError)) return t("common.error");
-    const c = e.problem.code ?? "";
-    if (has(`updates.blocker.${c}`)) return t("update.blocked", { reason: word("blocker", c) });
-    return has(`updates.refused.${c}`) && (now || c !== "no_update")
-      ? t(`updates.refused.${c}`, { detail: e.problem.detail ?? "" })
-      : e.message;
-  };
+  const refusal = (e: unknown, now = false) => updateRefusal(e, locale, t, now);
   return {
     t,
     refusal,

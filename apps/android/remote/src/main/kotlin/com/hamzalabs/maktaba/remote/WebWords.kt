@@ -496,4 +496,15 @@ internal object WebWords {
         "order" to R.string.w_updates_trigger_order,
         "start" to R.string.w_updates_trigger_start,
     )
+
+    /** `updates.checkFailed.*` */
+    val checkFailed: Map<String, Int> = mapOf(
+        "too_large" to R.string.w_updates_checkFailed_too_large,
+        "rate_limited" to R.string.w_updates_checkFailed_rate_limited,
+        "http_error" to R.string.w_updates_checkFailed_http_error,
+        "decode" to R.string.w_updates_checkFailed_decode,
+        "unreachable" to R.string.w_updates_checkFailed_unreachable,
+        "feed_refused" to R.string.w_updates_checkFailed_feed_refused,
+        "feed_old" to R.string.w_updates_checkFailed_feed_old,
+    )
 }

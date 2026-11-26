@@ -145,7 +145,12 @@ internal fun UpdatesContent(
 private fun LazyListScope.updatesRows(ov: UpdatesOverview, run: UpdateRunView?, chosen: String?, say: Say, choose: (String?) -> Unit) {
     val active = ov.activeRun
     if (ov.checkStale) item { Callout(say.t(R.string.check_stale), error = true) }
-    ov.lastCheckError?.takeIf { it.isNotEmpty() }?.let { e -> item { Callout(say.t(R.string.check_failed), error = true, detail = e) } }
+    val checkErr = ov.lastCheckError?.takeIf { it.isNotEmpty() }
+    val checkCode = ov.lastCheckCode?.takeIf { it.isNotEmpty() }
+    if (checkErr != null || checkCode != null) {
+        val title = checkCode?.let { say.checkFailed(it) } ?: say.t(R.string.check_failed)
+        item { Callout(title, error = true, detail = checkErr) }
+    }
     ov.stuck?.takeIf { active == null }?.let { s ->
         item { Callout(say.stuck(s), detail = say.t(R.string.stuck_body)) }
     }

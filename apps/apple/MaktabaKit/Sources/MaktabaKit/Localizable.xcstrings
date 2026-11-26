@@ -5517,6 +5517,125 @@
         }
       }
     },
+    "updates.checkFailed.decode" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub's answer could not be read"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّرت قراءة جواب GitHub"
+          }
+        }
+      }
+    },
+    "updates.checkFailed.feed_old" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba's release feed is older than a week and GitHub could not be reached"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "موجز إصدارات مكتبة أقدم من أسبوع وتعذّر الوصول إلى GitHub"
+          }
+        }
+      }
+    },
+    "updates.checkFailed.feed_refused" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maktaba's release feed failed its signature or content checks, so it was not used"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يجتز موجز إصدارات مكتبة فحص توقيعه أو محتواه، فلم يُستعمل"
+          }
+        }
+      }
+    },
+    "updates.checkFailed.http_error" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub answered with an error"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "أجاب GitHub بخطأ"
+          }
+        }
+      }
+    },
+    "updates.checkFailed.rate_limited" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub asked Maktaba to wait (too many requests from this network)"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "طلب GitHub من مكتبة أن تنتظر (طلبات كثيرة من هذه الشبكة)"
+          }
+        }
+      }
+    },
+    "updates.checkFailed.too_large" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub's list of releases is larger than this version of Maktaba reads"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قائمة الإصدارات على GitHub أكبر مما يقرؤه هذا الإصدار من مكتبة"
+          }
+        }
+      }
+    },
+    "updates.checkFailed.unreachable" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "GitHub could not be reached"
+          }
+        },
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "تعذّر الوصول إلى GitHub"
+          }
+        }
+      }
+    },
     "updates.code.admin" : {
       "extractionState" : "manual",
       "localizations" : {

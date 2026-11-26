@@ -300,7 +300,7 @@ func (h *Handler) TVAction(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		common.WriteJSON(w, r, http.StatusOK, out)
 	case errors.Is(err, ErrNoSuchRun):
-		httperror.Write(w, r, httperror.NotFound("update run"))
+		httperror.Write(w, r, httperror.NotFound("update run").With("code", "no_such_run"))
 	case errors.Is(err, ErrTVNotHeld):
 		httperror.Write(w, r, httperror.Conflict("about:blank#tv_not_held",
 			"the run's TV change is not held (it was retried, dropped or replaced)").With("code", "tv_not_held"))

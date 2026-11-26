@@ -41,6 +41,11 @@ const (
 	MaxFeed = 1 << 20
 	// FeedKeep is how many releases a feed lists that a machine may install.
 	FeedKeep = 10
+	// FeedFreshAge is how old a signed feed still counts as a fresh read: update-feed.yml
+	// signs it every week, so one signed more than eight days ago is still read (up to
+	// FeedMaxAge), but does not refresh the home's last fresh check — the home checks
+	// GitHub's list too, or waits before installing automatically.
+	FeedFreshAge = 8 * 24 * time.Hour
 	// FeedMaxAge is how old a signed feed a machine believes: update-feed.yml signs it
 	// again every week, so one older than this is an old feed served again (a machine then
 	// reads GitHub's list instead).

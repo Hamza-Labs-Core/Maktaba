@@ -10,6 +10,7 @@ vi.mock("../../../lib/api", async () => {
   return { ...actual, api: { ...actual.api, get, post } };
 });
 
+import { ApiError } from "../../../lib/api";
 import { I18nProvider } from "../../../lib/i18n";
 import { HeldReleaseCard } from "./HeldReleaseCard";
 
@@ -89,5 +90,24 @@ describe("HeldReleaseCard", () => {
     const { container } = renderCard();
     await waitFor(() => expect(get).toHaveBeenCalled());
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("shows translated refusal wording when approving is refused", async () => {
+    get.mockResolvedValue(heldOverview);
+    post.mockRejectedValue(
+      new ApiError({
+        type: "about:blank#run_active",
+        title: "conflict",
+        status: 409,
+        code: "run_active",
+        detail: "an update is running",
+      })
+    );
+    const user = userEvent.setup();
+    renderCard();
+    await user.click(await screen.findByRole("button", { name: "Approve and update now" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The update can't start now: an update is already running."
+    );
   });
 });

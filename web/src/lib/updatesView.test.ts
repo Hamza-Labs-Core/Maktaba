@@ -4,6 +4,7 @@
 import { describe, it, expect } from "vitest";
 import en from "../i18n/en.json";
 import ar from "../i18n/ar.json";
+import { ApiError } from "./api";
 import {
   checkFailedWhy,
   dayText,
@@ -16,6 +17,7 @@ import {
   releaseMigrates,
   safeReleaseUrl,
   spanText,
+  updateRefusal,
   windowEnds,
 } from "./updatesView";
 import type { UpdateAttempt, UpdateMachine, UpdatesOverview } from "./updatesApi";
@@ -320,14 +322,122 @@ describe("the release", () => {
 });
 
 describe("why a check failed", () => {
-  it("names a refused release feed apart from GitHub being out of reach, in both languages", () => {
+  it("names a refused or old release feed apart from GitHub being out of reach, in both languages", () => {
     for (const cat of [en, ar] as Record<string, string>[]) {
       const t = (k: string) => cat[k] ?? k;
       const refused = checkFailedWhy("feed_refused", t);
       expect(refused).toBe(cat["updates.checkFailed.feed_refused"]);
       expect(refused).not.toBe(cat["updates.checkFailed.unreachable"]);
+      const old = checkFailedWhy("feed_old", t);
+      expect(old).toBe(cat["updates.checkFailed.feed_old"]);
+      expect(old).not.toBe(cat["updates.checkFailed.unreachable"]);
       // a code this app does not know reads as GitHub out of reach
       expect(checkFailedWhy("something_new", t)).toBe(cat["updates.checkFailed.unreachable"]);
+    }
+  });
+});
+
+describe("update action refusals", () => {
+  it("translates tv_not_held, gone runs, Check now 502/503, and 500 without a code in EN and AR", () => {
+    for (const [locale, cat] of [
+      ["en", en],
+      ["ar", ar],
+    ] as ["en" | "ar", Record<string, string>][]) {
+      const tl = (k: string, vars: Record<string, string | number> = {}) =>
+        (cat[k] ?? k).replace(/\{(\w+)\}/g, (_, key: string) => String(vars[key] ?? `{${key}}`));
+
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank#tv_not_held",
+            title: "conflict",
+            status: 409,
+            code: "tv_not_held",
+            detail: "the run's TV change is not held",
+          }),
+          locale,
+          tl
+        )
+      ).toBe(cat["updates.refused.tv_not_held"]);
+
+      // 404 with code and 404 without code (older server)
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank",
+            title: "not found",
+            status: 404,
+            code: "no_such_run",
+          }),
+          locale,
+          tl
+        )
+      ).toBe(cat["updates.refused.no_such_run"]);
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank",
+            title: "not found",
+            status: 404,
+            detail: "update run",
+          }),
+          locale,
+          tl
+        )
+      ).toBe(cat["updates.refused.no_such_run"]);
+
+      // Check now 503 rate limited & 502 with checkFailed code & 502 without code
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank",
+            title: "service unavailable",
+            status: 503,
+            code: "rate_limited",
+          }),
+          locale,
+          tl
+        )
+      ).toBe(cat["updates.checkFailed.rate_limited"]);
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank",
+            title: "bad gateway",
+            status: 502,
+            code: "feed_old",
+            detail: "check GitHub",
+          }),
+          locale,
+          tl
+        )
+      ).toBe(cat["updates.checkFailed.feed_old"]);
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank",
+            title: "bad gateway",
+            status: 502,
+            detail: "check GitHub",
+          }),
+          locale,
+          tl
+        )
+      ).toBe(cat["updates.checkFailed.unreachable"]);
+
+      // 500 without a code never shows raw English server detail
+      expect(
+        updateRefusal(
+          new ApiError({
+            type: "about:blank",
+            title: "internal error",
+            status: 500,
+            detail: "update",
+          }),
+          locale,
+          tl
+        )
+      ).toBe(cat["common.error"]);
     }
   });
 });

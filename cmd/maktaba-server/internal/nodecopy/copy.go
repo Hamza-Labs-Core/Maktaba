@@ -152,6 +152,10 @@ type Grant struct {
 	Version       int      `json:"server_version_num"`
 	Database      string   `json:"database"`
 	CA            *string  `json:"ca_pem"`
+	// CopiesPaused is true while the home rejects the machines' replication roles in
+	// pg_hba.conf for its own migrations (slot 0239: cluster_copies_paused). False on
+	// older homes.
+	CopiesPaused bool `json:"copies_paused"`
 	// SlotWAL is the slot's wal_status on the home ("" when it has none, or it could not
 	// be read): "lost" is a slot that no longer has the changes the copy has not applied
 	// (it was away, or paused, past the home's cap: max_slot_wal_keep_size), which no
@@ -173,6 +177,29 @@ func slotWAL(ctx context.Context, db *sql.DB, slot string) string {
 		return ""
 	}
 	return st.String
+}
+
+// copiesPaused reports whether the home currently rejects the machines' replication roles
+// for its own migrations (slot 0239: cluster_copies_paused). False on older homes or on error.
+func copiesPaused(ctx context.Context, db *sql.DB) bool {
+	var paused bool
+	if err := db.QueryRowContext(ctx, `SELECT cluster_copies_paused()`).Scan(&paused); err != nil {
+		return false
+	}
+	return paused
+}
+
+// CopiesPaused asks the home over this machine's own role whether the home has paused the
+// machines' copies for its own migrations. Returns false on older homes or on error.
+func (c Copy) CopiesPaused(ctx context.Context) bool {
+	qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	db, err := c.openHome(qctx)
+	if err != nil {
+		return false
+	}
+	defer db.Close()
+	return copiesPaused(qctx, db)
 }
 
 // Ask asks the home for the copy: its replication role (with this machine's password)
@@ -333,7 +360,8 @@ func (c Copy) Report(ctx context.Context, s Status) (Seen, error) {
 		return Seen{}, err
 	}
 	t1 := time.Now()
-	seen := Seen{Offset: home.Sub(t0.Add(t1.Sub(t0) / 2)), SlotLag: -1, SlotWAL: slotWAL(rctx, db, c.Slot())}
+	seen := Seen{Offset: home.Sub(t0.Add(t1.Sub(t0) / 2)), SlotLag: -1, SlotWAL: slotWAL(rctx, db, c.Slot()),
+		CopiesPaused: copiesPaused(rctx, db)}
 	// pg_replication_slots and the WAL position are anyone's to read
 	if err := db.QueryRowContext(rctx, `SELECT COALESCE((SELECT (pg_current_wal_lsn() - confirmed_flush_lsn)::bigint
 	    FROM pg_replication_slots WHERE slot_name = $1 AND confirmed_flush_lsn IS NOT NULL), -1)`, c.Slot()).Scan(&seen.SlotLag); err != nil {
@@ -349,6 +377,8 @@ type Seen struct {
 	SlotLag int64
 	// SlotWAL is the slot's wal_status (Grant.SlotWAL)
 	SlotWAL string
+	// CopiesPaused is true while the home paused the machines' copies for its own migrations.
+	CopiesPaused bool
 }
 
 // CaughtUp: a copy whose slot is within this of the home's WAL has applied every change

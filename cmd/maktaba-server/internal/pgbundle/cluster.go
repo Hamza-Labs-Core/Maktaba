@@ -385,6 +385,7 @@ const clusterSQL = `\set ON_ERROR_STOP on
 ALTER ROLE ` + AppRole + ` WITH CREATEROLE REPLICATION;
 GRANT pg_monitor TO ` + AppRole + `;
 GRANT pg_signal_backend TO ` + AppRole + `;
+GRANT SELECT ON pg_catalog.pg_hba_file_rules TO ` + AppRole + `;
 DO $$
 BEGIN
     IF current_setting('server_version_num')::int >= 150000 THEN
@@ -459,8 +460,9 @@ const slotFunctions = `'pg_create_logical_replication_slot', 'pg_create_physical
 // before the bundle had it. 5: pg_textsearch (textsearchSQL), for a home made before the
 // bundle had it (a home upgraded to PostgreSQL 18 runs clusterSQL at its first start anyway).
 // 6: the app role's search_path ends with pg_textsearch's schema (textsearchSQL), for a
-// home whose extension a release before made.
-const clusterRev = 6
+// home whose extension a release before made. 7: the app role reads pg_hba_file_rules so
+// cluster_copies_paused() can tell joined machines when copies are paused for migrations.
+const clusterRev = 7
 
 // MendClusterGrants runs the cluster bootstrap's grants again on the running server, as
 // its superuser: the home's API asks for it (its supervisor's mend-roles) when its user

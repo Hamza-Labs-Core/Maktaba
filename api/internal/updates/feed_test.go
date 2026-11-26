@@ -176,18 +176,28 @@ func (e *feedEnv) discoverer(store *Store, current string, platforms ...string) 
 	return d
 }
 
-// listHits counts GitHub list requests.
+// listHits counts GitHub list requests (and optionally fails the list endpoint with 503).
 type countingTransport struct {
-	mu   sync.Mutex
-	list int
-	base http.RoundTripper
+	mu       sync.Mutex
+	list     int
+	failList bool
+	base     http.RoundTripper
 }
 
 func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	if r.URL.Path == "/repos/o/r/releases" {
 		c.mu.Lock()
 		c.list++
+		fail := c.failList
 		c.mu.Unlock()
+		if fail {
+			return &http.Response{
+				StatusCode: http.StatusServiceUnavailable,
+				Header:     http.Header{},
+				Body:       http.NoBody,
+				Request:    r,
+			}, nil
+		}
 	}
 	return c.base.RoundTrip(r)
 }
@@ -584,6 +594,118 @@ func TestFeedTooOldFallsBack(t *testing.T) {
 	if st := store.LoadState(ctx); c.list == 0 || st.LastCheckSource != SourceGitHub || !strings.Contains(st.FeedError, "ago") {
 		t.Fatalf("a feed too old: list %d, state %+v", c.list, st)
 	}
+}
+
+// #1668: a feed signed more than FeedFreshAge (8 days) ago — up to FeedMaxAge (21 days) —
+// is still read, but does not count as a fresh read: the home checks GitHub's list too, and
+// when GitHub cannot be read it keeps the feed's releases and withdrawals, leaves
+// LastCheckOK at the feed's signing time, and reports feed_old so automatic installs wait.
+func TestFeedNineDaysOldFreshness(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	signedAt := now.Add(-9 * 24 * time.Hour)
+
+	t.Run("github reachable", func(t *testing.T) {
+		ctx := context.Background()
+		e := newFeedEnv(t)
+		e.release("v1.5.0", false, true)
+		e.release("v1.5.5", false, true)
+		e.pulls["1.5.5"] = "pulled in feed"
+		// publish() adds 1 minute to e.at
+		e.at = signedAt.Add(-time.Minute)
+		e.publish()
+		// GitHub also has a newer release the 9-day-old feed does not know about
+		e.release("v1.6.0", false, true)
+
+		store := &Store{DB: backends(t)[0].db}
+		d := e.discoverer(store, "1.4.0")
+		d.Now = func() time.Time { return now }
+		c := countList(d)
+		if _, err := d.Check(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if c.list == 0 {
+			t.Fatal("GitHub's list was not checked for a 9-day-old feed")
+		}
+		cat := catalogOf(t, store)
+		if cat["1.6.0"].VerifyState != VerifyVerified {
+			t.Fatalf("1.6.0 from GitHub not verified: %+v", cat["1.6.0"])
+		}
+		if cat["1.5.5"].WithdrawnAt == nil {
+			t.Fatalf("1.5.5 pulled in feed was not withdrawn: %+v", cat["1.5.5"])
+		}
+		st := store.LoadState(ctx)
+		if st.LastCheckSource != SourceGitHub || st.LastCheckCode != "" || st.LastCheckOK == nil || !st.LastCheckOK.Equal(now) {
+			t.Fatalf("state: %+v", st)
+		}
+	})
+
+	t.Run("github down reads feed but holds auto install with feed_old", func(t *testing.T) {
+		ctx := context.Background()
+		e := newFeedEnv(t)
+		e.release("v1.5.0", false, false)
+		e.release("v1.6.0", false, false)
+		e.pulls["1.6.0"] = "pulled"
+		e.at = signedAt.Add(-time.Minute)
+		e.publish()
+		// Make GitHub's /releases listing fail while asset downloads still succeed
+		store := &Store{DB: backends(t)[0].db}
+		d := e.discoverer(store, "1.4.0")
+		d.Now = func() time.Time { return now }
+		c := countList(d)
+		c.failList = true
+		_, err := d.Check(ctx)
+		if !errors.Is(err, errFeedOld) || CheckErrorCode(err) != CheckFailFeedOld {
+			t.Fatalf("check err = %v (code %q), want errFeedOld / %q", err, CheckErrorCode(err), CheckFailFeedOld)
+		}
+		if c.list == 0 {
+			t.Fatal("GitHub's list was not tried for a 9-day-old feed")
+		}
+		cat := catalogOf(t, store)
+		if cat["1.5.0"].VerifyState != VerifyVerified || cat["1.6.0"].WithdrawnAt == nil {
+			t.Fatalf("9-day-old feed was not read: 1.5.0=%+v 1.6.0=%+v", cat["1.5.0"], cat["1.6.0"])
+		}
+		st := store.LoadState(ctx)
+		if st.LastCheckSource != SourceFeed || st.LastCheckCode != CheckFailFeedOld || st.Failures != 1 {
+			t.Fatalf("state: %+v", st)
+		}
+		if st.LastCheckOK == nil || !st.LastCheckOK.Equal(signedAt) {
+			t.Fatalf("LastCheckOK = %v, want feed signing time %v", st.LastCheckOK, signedAt)
+		}
+		if why := catalogStale(st, now, CheckInterval); why == "" {
+			t.Fatal("catalogStale should hold automatic installs on a 9-day-old feed")
+		}
+	})
+
+	t.Run("previously fresh feed ages past 8 days", func(t *testing.T) {
+		ctx := context.Background()
+		e := newFeedEnv(t)
+		e.release("v1.5.0", false, false)
+		e.at = signedAt.Add(-time.Minute)
+		e.publish()
+		store := &Store{DB: backends(t)[0].db}
+		d := e.discoverer(store, "1.4.0")
+		// First check at 7 days + 23 hours: fresh feed
+		c := countList(d)
+		cur := signedAt.Add(releaseverify.FeedFreshAge - time.Hour)
+		d.Now = func() time.Time { return cur }
+		if _, err := d.Check(ctx); err != nil {
+			t.Fatal(err)
+		}
+		// Two hours later (past 8 days), GitHub is down
+		cur = signedAt.Add(releaseverify.FeedFreshAge + time.Hour)
+		c.failList = true
+		_, err := d.Check(ctx)
+		if !errors.Is(err, errFeedOld) {
+			t.Fatalf("expected errFeedOld, got %v", err)
+		}
+		st := store.LoadState(ctx)
+		if st.LastCheckOK == nil || !st.LastCheckOK.Equal(signedAt) {
+			t.Fatalf("LastCheckOK = %v, want capped at signing time %v", st.LastCheckOK, signedAt)
+		}
+		if why := catalogStale(st, cur, CheckInterval); why == "" {
+			t.Fatal("catalogStale should hold automatic installs once feed ages past 8 days")
+		}
+	})
 }
 
 // A machine on a platform with no feed does not turn the feed off for the home; its files

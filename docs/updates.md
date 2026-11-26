@@ -65,7 +65,10 @@ past every home's cap, and no home saw a release for a day.
   than 200, a 404 included) is passed over: the home reads GitHub's list instead, in pages of
   10, for that check. So does a feed signed before the last one the home read (maktaba.tv rolled
   back, or an old feed served again), or more than 21 days ago (`update-feed.yml` signs it again
-  every week). A feed that is reached but fails its checks is never
+  every week). A feed signed more than 8 days ago (up to 21 days) is still read so releases and
+  withdrawals are not missed, but does not count as a fresh read: the home checks GitHub's list
+  too, and when GitHub cannot be reached it leaves `last_check_ok` at the feed's signing time and
+  reports `feed_old` so automatic installs wait. A feed that is reached but fails its checks is never
   passed over: the check fails with `update feed refused: …`, and nothing of it is used. That
   covers an unsigned feed, a wrong signature, a wrong identity, content that disagrees with the
   request, or a file over 1 MiB. Admin → Updates shows where the last check read
@@ -527,10 +530,16 @@ from before it counts nothing; the release stops pushing the deadline itself at 
   - When they cannot be kept out (the file cannot be written, the server does not reload it), that
     is logged at level=error and the migrations run all the same, as before this rule: what they
     wait on is ended, and their index builds wait on no snapshot.
+  - While copies are paused, `cluster_copies_paused()` (and `copies_paused` in
+    `cluster_node_replica_grant()`, slot 0239) tells joined machines that the pause is the home's
+    own, so they check again every few seconds without counting login refusals or backing off up to
+    30 minutes. Server-side TCP keepalives (`tcp_keepalives_idle=30`, `tcp_keepalives_interval=10`,
+    `tcp_keepalives_count=3`) end stuck `COPY` sessions from sleeping machines promptly.
   - Only a `COPY` that runs now counts (`pg_stat_progress_copy`, of a machine's replication role): it
     is a table at a time, and between two tables of a machine's first copy there are moments with
     none, where the hold or the wait ends. The table begun after that is the one copied again. The
-    day of the hold is not one copy's: another machine's, the next day, is gone past too.
+    scheduler also checks outside the quiet window so a copy that ended after day 1's window clears
+    the hold before day 2.
     The slot of a table sync is permanent: one left by a machine that went away holds nothing up,
     and goes when its machine is back, or when its WAL is past the home's cap
     (`rules.cluster.replica_wal_keep_gb`) or lost, which the home looks at on its own.

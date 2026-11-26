@@ -7,12 +7,12 @@
 // install anything, so the card says so instead of offering the button.
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@ds/components/Button/Button";
-import { ApiError } from "../../../lib/api";
 import { useI18n } from "../../../lib/i18n";
 import { updatesApi, type CatalogRelease } from "../../../lib/updatesApi";
+import { updateRefusal } from "../../../lib/updatesView";
 
 export function HeldReleaseCard() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [held, setHeld] = useState<CatalogRelease | null>(null);
   const [canInstall, setCanInstall] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -47,7 +47,7 @@ export function HeldReleaseCard() {
       setNote({ ok: true, text: done });
       await load();
     } catch (e) {
-      setNote({ ok: false, text: e instanceof ApiError ? e.message : t("common.error") });
+      setNote({ ok: false, text: updateRefusal(e, locale, t, true) });
     } finally {
       setBusy(false);
     }

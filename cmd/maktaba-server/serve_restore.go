@@ -464,10 +464,13 @@ func (r *restorer) mark(ctx context.Context, pl restorePlan, by string, withoutC
 	slices.Sort(maybe)
 	rec.MaybeSchemas = slices.Compact(maybe)
 	for _, o := range []*apppayload.Database{orig, was} {
-		if o != nil && pgbundle.OriginalPath(o.Dump) == p && o.DumpKeptFor != "" && sameRelease(o.DumpKeptFor, pl.Release) {
+		if o != nil && pgbundle.OriginalPath(o.Dump) == p && o.DumpKeptFor != "" &&
+			(sameRelease(o.DumpKeptFor, pl.Release) ||
+				(o.DumpSchemaRelease != "" && apppayload.Older(o.DumpKeptFor, pl.Release) && apppayload.Older(pl.Release, o.DumpSchemaRelease))) {
 			// the dump of a schema kept for the release it goes back for (a held update from a
 			// kept schema): put back, it is that schema again, kept for it
 			rec.DumpKeptFor = o.DumpKeptFor
+			rec.DumpSchemaRelease = o.DumpSchemaRelease
 		}
 	}
 	if older {

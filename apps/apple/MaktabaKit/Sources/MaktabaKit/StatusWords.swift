@@ -437,6 +437,17 @@ public enum StatusWords {
         "sqlite": "Joining machines needs a Postgres home (this home runs on SQLite).",
     ]
 
+    /// Why an update check failed (`updates.checkFailed.*`)
+    public static let checkFailed: [String: String] = [
+        "too_large": "GitHub's list of releases is larger than this version of Maktaba reads",
+        "rate_limited": "GitHub asked Maktaba to wait (too many requests from this network)",
+        "http_error": "GitHub answered with an error",
+        "decode": "GitHub's answer could not be read",
+        "unreachable": "GitHub could not be reached",
+        "feed_refused": "Maktaba's release feed failed its signature or content checks, so it was not used",
+        "feed_old": "Maktaba's release feed is older than a week and GitHub could not be reached",
+    ]
+
     /// A process's name: its role's words, a TV slot with its colour ("TV slot blue"), a
     /// pipeline instance in words ("Processing pipeline search index", "... transcription 2").
     static func processName(role: String, instance: String?, locale: Locale = AppLanguage.locale) -> String {
@@ -483,6 +494,7 @@ extension StatusWords {
     /// Each table with the web's key its values are under (en.json, ar.json and the catalog).
     public static let tables: [(prefix: String, words: [String: String])] = [
         ("updates.state.", states), ("updates.step.", steps), ("updates.code.", codes),
+        ("updates.checkFailed.", checkFailed),
         ("updates.waiting.", waiting), ("updates.plan.waiting.", planWaitingTable),
         ("updates.blocked.reason.", blockedReasons), ("machines.homeDb.code.", homeDBCodes),
         ("health.processes.state.", processStates), ("health.processes.role.", processRoles),
@@ -516,6 +528,14 @@ public enum UpdateWords {
     /// Who or what started a run (its trigger: auto, manual, catch_up, retry).
     public static func trigger(_ t: String, locale: Locale = AppLanguage.locale) -> String {
         words(StatusWords.triggers, "updates.trigger.", t, locale)
+    }
+
+    /// Why an update check failed (`last_check_code`), in the app's language (GitHub unreachable when unknown).
+    public static func checkFailed(_ code: String?, locale: Locale = AppLanguage.locale) -> String {
+        if let code, StatusWords.checkFailed[code] != nil {
+            return words(StatusWords.checkFailed, "updates.checkFailed.", code, locale)
+        }
+        return words(StatusWords.checkFailed, "updates.checkFailed.", "unreachable", locale)
     }
 
     /// An error code's words: its own, a check of the release's verification, a step's

@@ -27,6 +27,7 @@ data class UpdatesOverview(
     val catalog: List<CatalogRelease> = emptyList(),
     @SerialName("last_check_ok") val lastCheckOk: String? = null,
     @SerialName("last_check_error") val lastCheckError: String? = null,
+    @SerialName("last_check_code") val lastCheckCode: String? = null,
     /** no successful check for 14 days */
     @SerialName("check_stale") val checkStale: Boolean = false,
     @SerialName("time_zone") val timeZone: String? = null,
