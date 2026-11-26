@@ -170,7 +170,8 @@ type Health interface {
 	Check(ctx context.Context, version string) Verdict
 }
 
-// Records is the home's database record (state/database.json, the database step of
+// Records is the home's database record (selected by apppayload.ClusterMajorIn for
+// PostgreSQL 16 or 18, and written by the database step of
 // serve_appbundle.go): a rollback after the new release's migrations ran, when neither
 // keeping its schema nor its Down scripts take the database back, marks the record held:
 // nothing is put back by itself, and a person decides (db_held).

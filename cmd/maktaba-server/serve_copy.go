@@ -3,11 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -105,8 +108,7 @@ func resolveNodeCopy(cfg *config.Config, wholeMachine bool) (*nodeCopy, error) {
 				return nil, nil
 			}
 			if aside != "" {
-				fmt.Fprintf(os.Stderr, "[serve] this machine's copy runs on PostgreSQL %s: the cluster in %s is set "+
-					"aside in %s, and the copy is made again from the home\n", major, d.dir, aside)
+				logCopyClusterAside(os.Stderr, major, d.dir, aside)
 			}
 		}
 	}
@@ -219,6 +221,15 @@ var copyMajors = []string{pgbin.Major, "18"}
 
 func copyMajor(m string) bool { return slices.Contains(copyMajors, m) }
 
+func logCopyClusterAside(log io.Writer, major, dir, aside string) {
+	cluster := nodecopy.Copy{DB: pgbundle.Bundle{Data: aside}}
+	if cluster.HasMark() {
+		fmt.Fprintf(log, "[serve] the old copy in %s is set aside in %s; the copy is made again from the home on PostgreSQL %s\n", dir, aside, major)
+	} else {
+		fmt.Fprintf(log, "[serve] this machine's own database in %s is preserved in %s; a separate copy from the home will use PostgreSQL %s\n", dir, aside, major)
+	}
+}
+
 // setAsideCluster moves a cluster out of the way (dir, with its marker files, to
 // <dir>.pg<its major>-<time>), never deleting it: any cluster there (anyMajor), or only one
 // another major than major made. "" when nothing was moved.
@@ -231,7 +242,16 @@ func setAsideCluster(dir, major string, anyMajor bool, now time.Time) (string, e
 	if have == major && !anyMajor {
 		return "", nil
 	}
+	if _, err := strconv.Atoi(have); err != nil {
+		return "", fmt.Errorf("invalid PostgreSQL major in %s", dir)
+	}
+	if (pgbundle.Bundle{Data: dir}).Running() {
+		return "", fmt.Errorf("the cluster in %s is still running", dir)
+	}
 	aside := dir + ".pg" + have + "-" + now.UTC().Format("20060102-150405")
+	if _, err := os.Lstat(aside); !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("cannot set aside %s: destination %s is occupied or inaccessible", dir, aside)
+	}
 	if err := os.Rename(dir, aside); err != nil {
 		return "", err
 	}

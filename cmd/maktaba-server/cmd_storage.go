@@ -210,7 +210,7 @@ func runStorageMove(ctx context.Context, out io.Writer, cfg config.Config, targe
 		return err
 	}
 	fmt.Fprintf(out, "Maktaba's data is now in %s (server.toml says data_dir = %q).\n", res.Target, res.Target)
-	printOldCopies(out, res.Old)
+	printOldCopies(out, res.Old, res.SetAside)
 	fmt.Fprintln(out, "Start Maktaba again.")
 	return nil
 }
@@ -222,17 +222,23 @@ func percentOf(done, total uint64) uint64 {
 	return done * 100 / total
 }
 
-func printOldCopies(out io.Writer, old []string) {
-	if len(old) == 0 {
-		return
+func printOldCopies(out io.Writer, old, setAside []string) {
+	if len(old) > 0 {
+		fmt.Fprintln(out, "The old copy is kept, in case anything went wrong:")
+		for _, path := range old {
+			fmt.Fprintf(out, "  %s\n", path)
+		}
+		fmt.Fprintln(out, "Once Maktaba runs well from the new place, remove it yourself, for example:")
+		for _, path := range old {
+			fmt.Fprintf(out, "  rm -rf %q\n", path)
+		}
 	}
-	fmt.Fprintln(out, "The old copy is kept, in case anything went wrong:")
-	for _, o := range old {
-		fmt.Fprintf(out, "  %s\n", o)
-	}
-	fmt.Fprintln(out, "Once Maktaba runs well from the new place, remove it yourself, for example:")
-	for _, o := range old {
-		fmt.Fprintf(out, "  rm -rf %q\n", o)
+	if len(setAside) > 0 {
+		fmt.Fprintln(out, "Set-aside database folders kept at the source:")
+		for _, path := range setAside {
+			fmt.Fprintf(out, "  %s\n", path)
+		}
+		fmt.Fprintln(out, "You can remove these folders after verifying the move and confirming you no longer need their data.")
 	}
 }
 
@@ -283,9 +289,9 @@ func printStorage(out io.Writer, d storage.Doc) {
 	case "failed":
 		fmt.Fprintf(out, "\nThe last move, to %s, did not happen: %s\n", d.Move.Target, d.Move.Error)
 	case "done":
-		if len(d.Move.Old) > 0 {
+		if len(d.Move.Old)+len(d.Move.SetAside) > 0 {
 			fmt.Fprintln(out)
-			printOldCopies(out, d.Move.Old)
+			printOldCopies(out, d.Move.Old, d.Move.SetAside)
 		}
 	}
 	if !d.CanMove {

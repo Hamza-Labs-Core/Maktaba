@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/storage"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/components"
 )
 
@@ -90,5 +91,16 @@ func TestStagesImplRefusesBeforeTheDatabase(t *testing.T) {
 	}
 	if newStagesCmd().Commands()[0].Name() != "impl" {
 		t.Fatal("stages impl")
+	}
+}
+
+func TestStorageShowPrintsSetAsideClusters(t *testing.T) {
+	aside := filepath.Join(t.TempDir(), "postgres-18.stale")
+	var out bytes.Buffer
+	printStorage(&out, storage.Doc{Move: storage.MoveState{State: "done", SetAside: []string{aside}}})
+	for _, want := range []string{aside, "after verifying the move", "no longer need their data"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("storage show missing %q: %s", want, out.String())
+		}
 	}
 }

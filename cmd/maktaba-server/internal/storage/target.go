@@ -46,7 +46,7 @@ func CheckTarget(raw string, roots []string) (string, error) {
 	if strings.Contains(t, "..") {
 		return "", &TargetError{note("target_relative", "the folder must not go up with \"..\"")}
 	}
-	resolved, err := resolve(t)
+	resolved, err := ResolvePath(t)
 	if err != nil {
 		return "", &TargetError{note("target_unwritable", "cannot read "+t+": "+err.Error(), "error", err.Error())}
 	}
@@ -77,9 +77,9 @@ func CheckTarget(raw string, roots []string) (string, error) {
 	return resolved, nil
 }
 
-// resolve is p with the links of its folders that exist resolved (the rest, not
+// ResolvePath is p with the links of its folders that exist resolved (the rest, not
 // made yet, joined back).
-func resolve(p string) (string, error) {
+func ResolvePath(p string) (string, error) {
 	var rest []string
 	cur := p
 	for {

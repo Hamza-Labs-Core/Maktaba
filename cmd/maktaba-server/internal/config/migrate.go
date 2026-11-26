@@ -8,6 +8,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -40,6 +41,28 @@ var moveLockWait = 30 * time.Second
 // its upgrade beside postgres (Epic 49 story 49.2): a move that left it behind would leave
 // the home on its old cluster, without what was written since the upgrade.
 var stateFolders = []string{"models", "cache", "chroma", "postgres", "postgres-18", "backups"}
+
+var setAsideClusterName = regexp.MustCompile(`^postgres(-[0-9]+)?(\.pg[0-9]+-[0-9]{8}-[0-9]{6}|\.before-copy-[0-9]{8}-[0-9]{6}|\.stale)$`)
+
+// IsSetAsideClusterName reports whether name matches a Maktaba cluster aside.
+func IsSetAsideClusterName(name string) bool {
+	return setAsideClusterName.MatchString(name)
+}
+
+// SetAsideClusters lists the known set-aside cluster directories directly under root.
+func SetAsideClusters(root string) ([]string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() && IsSetAsideClusterName(e.Name()) {
+			out = append(out, e.Name())
+		}
+	}
+	return out, nil
+}
 
 // MigrateDirs brings an install made before this platform's paths into them
 // (MigrateMacDirs moves it, MigrateWindowsDirs copies it) and says what it did, a
@@ -125,7 +148,11 @@ func migrateDirs(m mover, old, cur Dirs) (string, error) {
 		// that stopped half way finishes here
 		if exists(cur.Data) {
 			root := filepath.Dir(cur.Data)
-			for _, d := range stateFolders {
+			asides, err := SetAsideClusters(cur.Data)
+			if err != nil {
+				return "", fmt.Errorf("list set-aside clusters in %s: %w", cur.Data, err)
+			}
+			for _, d := range append(append([]string(nil), stateFolders...), asides...) {
 				// one already beside data/ stays as it is
 				from := filepath.Join(cur.Data, d)
 				if _, err := m.dir(from, filepath.Join(root, d)); err != nil && !errors.Is(err, errKept) {
@@ -206,7 +233,7 @@ func migrateDirs(m mover, old, cur Dirs) (string, error) {
 // original (the older version changed it since) stays as it is, with a line that
 // says so once (and again only when that changes). A copy cut short is made again
 // by the next start, and one start at a time copies (lockMove). The large state
-// (models, cache, chroma, postgres, backups) is not copied: an install from before
+// (models, cache, chroma, postgres, postgres-18, backups) is not copied: an install from before
 // keeps it in its data folder, which stays its state root (Config.StateDir); a
 // running Postgres's folder is never touched. With $MAKTABA_CONFIG set, server.toml
 // and the keys stay beside that file (where they always were). The node

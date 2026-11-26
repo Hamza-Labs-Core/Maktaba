@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/apppayload"
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
@@ -433,4 +434,78 @@ func TestSeedClusterRecordIfPending(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestSeedKeepsOnlyNewerUntriedRestoreOn18(t *testing.T) {
+	earlier := time.Date(2026, 11, 25, 12, 0, 0, 0, time.UTC)
+	later := earlier.Add(time.Hour)
+	base := apppayload.Database{At: earlier, Version: "0.3.150", State: apppayload.DatabaseMigrated}
+	oldRequest := apppayload.Database{At: later, State: apppayload.DatabaseRestoring, By: "admin", Dump: "/backups/16.dump"}
+	request := apppayload.Database{At: later, State: apppayload.DatabaseRestoring, By: "admin", Dump: "/backups/18.dump",
+		Data: apppayload.DataUntouched, DataID: "123/456/789", DataTable: "10", Aside: "/backups/stale.dump", AsideBytes: 100,
+		Before: &apppayload.Database{Version: "0.3.151"}, NoCopy: apppayload.NoCopyAny}
+	for _, tc := range []struct {
+		name   string
+		source *apppayload.Database
+		change func(*apppayload.Database)
+		want18 bool
+	}{
+		{"failed", &base, func(r *apppayload.Database) { r.TriedBy = "0.3.151" }, false},
+		{"replaced", &base, func(r *apppayload.Database) { r.Data = apppayload.DataReplaced }, false},
+		{"gone", &base, func(r *apppayload.Database) { r.Data = apppayload.DataGone }, false},
+		{"older than 16 request", &oldRequest, func(r *apppayload.Database) { r.At = earlier }, false},
+		{"same time as 16 request", &oldRequest, func(*apppayload.Database) {}, false},
+		{"newer with stale aside", &base, func(*apppayload.Database) {}, true},
+		{"newer without 16 record", nil, func(*apppayload.Database) {}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "state")
+			if err := os.MkdirAll(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			write := func(major string, rec *apppayload.Database) {
+				t.Helper()
+				raw, err := json.Marshal(rec)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, apppayload.ClusterRecordName(major)), raw, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.source != nil {
+				write("16", tc.source)
+			}
+			req := request
+			tc.change(&req)
+			write("18", &req)
+			if err := seedClusterRecord(root, "16", "18", "", "", "321", &bytes.Buffer{}); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(filepath.Join(dir, apppayload.ClusterRecordName("18")))
+			var got apppayload.Database
+			if err != nil || json.Unmarshal(raw, &got) != nil {
+				t.Fatalf("record %s: %v", raw, err)
+			}
+			if !tc.want18 {
+				if got.State != tc.source.State || got.Dump != tc.source.Dump || got.Version != tc.source.Version {
+					t.Fatalf("should use the 16 record, got %+v", got)
+				}
+				return
+			}
+			if !asked(got) || got.Dump != req.Dump || got.DataID != "" || got.DataTable != "" || got.Aside != "" || got.AsideBytes != 0 || got.NoCopy != "" {
+				t.Fatalf("request should have fresh safety-copy state: %+v", got)
+			}
+			if tc.source == nil && got.Before != nil || tc.source != nil && (got.Before == nil || got.Before.Version != tc.source.Version) {
+				t.Fatalf("wrong prior record: %+v", got.Before)
+			}
+			settled, err := settleData(context.Background(), got, dataProbe{
+				identity: func(context.Context) (string, int64, error) { return "321/456/789#123", 150, nil },
+			})
+			if err != nil || settled.Data != apppayload.DataUntouched || settled.DataID != "321/456/789" {
+				t.Fatalf("restore would skip keeping the rebuilt data: %+v (%v)", settled, err)
+			}
+		})
+	}
 }

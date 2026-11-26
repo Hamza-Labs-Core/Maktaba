@@ -41,7 +41,7 @@ type Guard struct {
 	// bundle); PreviousRuntime the runtime directory that did (runtime copy).
 	PreviousPayload string `json:"previous_payload,omitempty"`
 	PreviousRuntime string `json:"previous_runtime,omitempty"`
-	// Record is the database's record (state/database.json) the fallback marks held
+	// Record is the database's record (state/database.json on 16 or state/database-pg18.json on 18) the fallback marks held
 	// (MarkRecordHeld; a home's, "" on a node).
 	Record string `json:"record,omitempty"`
 }
@@ -154,7 +154,7 @@ func trimSpace(b []byte) []byte {
 	return b
 }
 
-// MarkRecordRestoring marks the database's record (state/database.json, written by the
+// MarkRecordRestoring marks the database's record (state/database.json on 16 or state/database-pg18.json on 18, written by the
 // server's database step at its start) so that the next start puts back the dump taken
 // before failed's migrations: when the record says failed's migrations ran (or were
 // running) over a database it dumped first, its state becomes "restoring" with failed

@@ -39,7 +39,8 @@ import (
 //     home's own start does this): there it does not run and writes nothing. It
 //     reads the record
 //     of the release whose migrations the database holds
-//     (<state>/state/database.json) and refuses an older release than that; with
+//     (selected by apppayload.ClusterMajorIn: state/database.json on 16,
+//     state/database-pg18.json on 18) and refuses an older release than that; with
 //     another release than the one that ran last (or no record: an install from
 //     before it) it is an update. One that adds no migration (none of its own the
 //     database lacks) takes no dump: the switch is a restart, and the release before
