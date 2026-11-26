@@ -264,7 +264,7 @@ func TestHoldClearsOutsideWindowWithUnrelatedBlockerAndNoHealthPoll(t *testing.T
 	seed(t, f.store, rel("1.5.0"))
 	copying, other := BlockMachineCopying, ""
 	healthHits := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		healthHits++
 		w.WriteHeader(http.StatusInternalServerError)
 	}))

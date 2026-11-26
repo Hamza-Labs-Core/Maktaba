@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -158,7 +159,7 @@ func TestManagerWatchReturnsPromptlyWhenUnpausedDuringSleep(t *testing.T) {
 	defer cancel()
 	now := time.Date(2026, 11, 26, 0, 0, 0, 0, time.UTC)
 	sleeping := make(chan struct{}, 1)
-	unpaused := false
+	var unpaused atomic.Bool
 	m := &Manager{
 		Retry:           time.Minute,
 		Every:           time.Hour,
@@ -173,7 +174,7 @@ func TestManagerWatchReturnsPromptlyWhenUnpausedDuringSleep(t *testing.T) {
 			case sleeping <- struct{}{}:
 			default:
 			}
-			return !unpaused
+			return !unpaused.Load()
 		},
 	}
 	m.homeRefusedLogin()
@@ -186,7 +187,7 @@ func TestManagerWatchReturnsPromptlyWhenUnpausedDuringSleep(t *testing.T) {
 
 	<-sleeping
 	// Simulate background report() clearing homePaused while watch() is sleeping.
-	unpaused = true
+	unpaused.Store(true)
 	m.setHomePaused(false)
 
 	select {
