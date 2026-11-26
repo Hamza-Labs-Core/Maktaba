@@ -12,15 +12,15 @@ const relativeTimeFormats = new Map<string, Intl.RelativeTimeFormat>();
  * and underscore separators remain valid BCP 47 tags.
  */
 export function intlLocale(tag: string): string {
-  const normalized = tag.replace(/_/g, "-");
+  const normalized = tag.trim().replace(/_/g, "-");
   try {
     const loc = new Intl.Locale(normalized);
     if (loc.language === "ar") {
       return new Intl.Locale(loc, { numberingSystem: "latn" }).toString();
     }
-    return tag;
+    return loc.toString();
   } catch {
-    return tag;
+    return /^ar(?:$|-)/i.test(normalized) ? "ar-u-nu-latn" : "en";
   }
 }
 

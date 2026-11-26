@@ -8,8 +8,10 @@ describe("kept Intl formatters", () => {
   it("normalizes Arabic locales to Western digits and keeps extensions/private-use tags valid", () => {
     expect(intlLocale("en")).toBe("en");
     expect(intlLocale("en-US")).toBe("en-US");
+    expect(intlLocale("en_US")).toBe("en-US");
     expect(intlLocale("fr-FR")).toBe("fr-FR");
-    expect(intlLocale("not_a_valid_tag!!")).toBe("not_a_valid_tag!!");
+    expect(intlLocale("not_a_valid_tag!!")).toBe("en");
+    expect(intlLocale("ar-")).toBe("ar-u-nu-latn");
     expect(intlLocale("ar")).toBe("ar-u-nu-latn");
     expect(intlLocale("ar-EG")).toBe("ar-EG-u-nu-latn");
     expect(intlLocale("ar_SA")).toBe("ar-SA-u-nu-latn");
@@ -18,10 +20,25 @@ describe("kept Intl formatters", () => {
     expect(intlLocale("AR-U-CA-GREGORY")).toBe("ar-u-ca-gregory-nu-latn");
     expect(intlLocale("ar-SA-x-demo")).toBe("ar-SA-u-nu-latn-x-demo");
 
-    for (const tag of ["AR-U-CA-GREGORY", "ar-SA-x-demo", "ar_EG-u-nu-arab"]) {
+    for (const tag of [
+      "AR-U-CA-GREGORY",
+      "ar-SA-x-demo",
+      "ar_EG-u-nu-arab",
+      "ar-",
+      "en_US",
+      "not_a_valid_tag!!",
+    ]) {
       const num = numberFormat(tag).format(2026);
       expect(num).toContain("2");
       expect(num).not.toMatch(EASTERN_ARABIC_DIGITS);
+      const dt = dateTimeFormat(tag, { timeZone: "UTC" }).format(
+        new Date(Date.UTC(2026, 10, 6, 21, 5))
+      );
+      expect(dt).toMatch(/[0-9]/);
+      expect(dt).not.toMatch(EASTERN_ARABIC_DIGITS);
+      const rel = relativeTimeFormat(tag, { numeric: "auto" }).format(-5, "minute");
+      expect(rel).toContain("5");
+      expect(rel).not.toMatch(EASTERN_ARABIC_DIGITS);
     }
   });
 
