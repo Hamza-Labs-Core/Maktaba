@@ -106,6 +106,15 @@ class Counts(unittest.TestCase):
         self.assertEqual(es.status_of("**deferred by design (removed)**"), es.DEFERRED)
         self.assertEqual(es.status_of("**Removed**"), es.DEFERRED)
 
+    def test_emphasized_story_header_with_mixed_case(self) -> None:
+        page = PAGE.replace("| Story |", "| **sToRy** |")
+        self.assertIn("| 01 Scanner | 2* | 0 | 0 | 0 | Done |", fixed(page))
+
+    def test_indented_story_rows(self) -> None:
+        page = PAGE.replace("| 01.01 File discovery", "  | 01.01 File discovery")
+        page = page.replace("| 02.02 Suggestions", "  | 02.02 Suggestions")
+        self.assertIn("| 01 Scanner | 2* | 0 | 0 | 0 | Done |", fixed(page))
+
     def test_the_star_marks_only_an_epic_with_sampled_rows(self) -> None:
         page = PAGE.replace("Done (sampled)", "Done")
         self.assertIn("| 01 Scanner | 2 | 0 | 0 | 0 | Done |", fixed(page))
@@ -151,6 +160,16 @@ class Errors(unittest.TestCase):
     def test_an_epic_with_no_summary_row(self) -> None:
         page = PAGE.replace("| 02 Search | 9 | 9 | 9 | 9 | **Partial** (hand-written verdict) |\n", "")
         self.assertIn("Epic 02 has no row in the Summary table", " ".join(self.errors(page)))
+
+    def test_a_summary_row_without_an_epic_section(self) -> None:
+        page = PAGE.replace("| **Total**", "| 03 Missing | 0 | 0 | 0 | 0 | Pending |\n| **Total**")
+        self.assertIn("the Summary lists Epic 03, which has no `### Epic` section", self.errors(page)[0])
+
+    def test_an_epic_without_story_rows(self) -> None:
+        page = PAGE.replace("| 01.01 File discovery | Done (sampled) | E01 |\n", "")
+        page = page.replace("| 01.02 Content identity | Done (sampled) | E01 |\n", "")
+        with self.assertRaisesRegex(es.PageError, "Epic 01 has no story rows"):
+            es.render(page)
 
     def test_a_story_with_two_rows(self) -> None:
         page = PAGE.replace("| 02.1 Bundles |", "| 02.01 Bundles again | Done | x |\n| 02.1 Bundles |")

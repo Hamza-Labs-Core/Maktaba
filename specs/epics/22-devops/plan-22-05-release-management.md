@@ -12,7 +12,7 @@
 |---|---|
 | Trigger | Pushing a `vMAJOR.MINOR.PATCH` tag onto a green main commit triggers `.github/workflows/release.yml`. Tags only — no "release the artifacts CI happened to produce." |
 | Version surface | `internal/version/version.go` is embedded into every Go binary; Pipeline reads `pyproject.toml`'s version; web reads `package.json`. A single `VERSION` file at the repo root is the source of truth that all four read at build time. |
-| Changelog | `CHANGELOG.md` follows Keep-a-Changelog. CI's `_changelog-gate.yml` requires every PR to add an entry under `Unreleased` unless labeled `docs-only`. |
+| Changelog | English and Arabic fragments follow Keep a Changelog. CI validates submitted pairs and protects frozen legacy entries. |
 | Mobile/desktop versions | Tagged separately: `mobile-vN.M.P`, `desktop-vN.M.P`, `tvos-vN.M.P` — each pinned to a platform `vN.M.P` via `compatibleApiVersion`. |
 | Out of scope | Mobile/desktop *signing* (Story 22.7); upgrade/rollback (Story 22.6); hotfix branch policy beyond what's documented in EC1. |
 
@@ -32,7 +32,6 @@ git tag v1.2.0 → push
 │  6. publish images (cosign)   │
 │  7. gh release create + assets│
 │  8. update Homebrew tap       │
-│  9. publish CHANGELOG section │
 └───────────────────────────────┘
 ```
 
@@ -48,10 +47,10 @@ git tag v1.2.0 → push
 | `web/src/version.ts` | Same; `export const version = "1.2.0"`. |
 | `tools/bump-version.sh` | Idempotent rewrite of all four version files. |
 | `tools/check-version-consistency.sh` | CI helper: asserts `VERSION` == every version file. |
-| `tools/changelog-check.sh` | Asserts the PR adds a CHANGELOG line under Unreleased. |
+| `tools/dev/changelog_fragment.py` | Validates fragment pairs and protects frozen entries. |
 | `.github/workflows/release.yml` | Tag-driven release pipeline. |
-| `.github/workflows/_changelog-gate.yml` | Reusable PR-time changelog gate. |
-| `CHANGELOG.md` | Initial Keep-a-Changelog file. |
+| `.github/workflows/_lint.yml` | Runs the changelog gate against the pull request base. |
+| `changelog.d/` | English and Arabic fragment pairs, grouped by release tags on the portal. |
 | `RELEASING.md` | Maintainer-only operations doc. |
 | `deploy/homebrew/Formulafile.tpl` | Template the release fills with the tag's URLs + sha256s. |
 
@@ -96,67 +95,19 @@ func Current() Info {
 streaming binary returns the same struct on its admin debug port. The
 Pipeline service exposes the same struct via gRPC `Diagnostics.Version`.
 
-### 2.4 CHANGELOG.md format
+### 2.4 Changelog format
 
-```
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-The format is based on Keep a Changelog (https://keepachangelog.com),
-and this project adheres to Semantic Versioning.
-
-## [Unreleased]
-### Added
-### Changed
-### Deprecated
-### Removed
-### Fixed
-### Security
-
-## [1.1.0] — 2026-04-12
-### Added
-- Smart collections (#412).
-### Fixed
-- Race in chapter inference on resume (#421).
-```
+The pair `changelog.d/YYYY-MM-DD-slug.md` and
+`changelog.d/YYYY-MM-DD-slug.ar.md` records each user-visible change. Both files
+use matching Keep a Changelog sections and entry counts. The developer portal
+groups fragments by the first release tag that contains them. The legacy
+CHANGELOG files carry the earlier entries.
 
 ### 2.5 Changelog gate
 
-`tools/changelog-check.sh`:
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-BASE="${1:-origin/main}"
-
-# Skip docs-only PRs.
-if [[ "${PR_LABELS:-}" == *"docs-only"* ]]; then exit 0; fi
-
-# Diff CHANGELOG.md against base; require at least one new line under
-# the Unreleased section.
-diff=$(git diff "${BASE}"...HEAD -- CHANGELOG.md || true)
-if [[ -z "$diff" ]]; then
-  echo "No CHANGELOG.md change in this PR. Add an entry under Unreleased,"
-  echo "or apply the docs-only label."
-  exit 1
-fi
-
-# Validate the diff actually adds a line under Unreleased (not just edits
-# a previous version's section).
-unreleased_added=$(awk '
-  /^## \[Unreleased\]/ {seen=1; next}
-  /^## \[/ {seen=0}
-  seen && /^\+\s*-/ {print; exit}
-' <<< "$diff")
-if [[ -z "$unreleased_added" ]]; then
-  echo "CHANGELOG.md change must add a bullet under [Unreleased]."
-  exit 1
-fi
-```
-
-`_changelog-gate.yml` invokes this; the `docs-only` label is the
-exemption (TC2).
+`_lint.yml` runs `tools/dev/changelog_fragment.py check` against the PR's base.
+CI checks each fragment pair and guards the frozen legacy changelogs. A PR
+without a new fragment can pass this check.
 
 ### 2.6 Bump-version helper
 
@@ -242,15 +193,11 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Extract changelog section
-        run: |
-          awk '/^## \['"${GITHUB_REF_NAME#v}"'\]/{flag=1;next}/^## \[/{flag=0}flag' \
-            CHANGELOG.md > release-notes.md
       - name: Create release
         run: |
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes-file release-notes.md \
+            --notes "Platform release ${GITHUB_REF_NAME}" \
             api/bin/maktaba-api \
             streaming/bin/maktaba-streaming \
             dist/web-${GITHUB_REF_NAME#v}.tar.gz \
@@ -313,9 +260,9 @@ the labels with the matching SHA.
 
 | Test | What it pins |
 |---|---|
-| `TestChangelogMissingFails` (TC2) | A feature PR without a CHANGELOG line fails `_changelog-gate.yml`. |
-| `TestChangelogDocsOnlyExempt` | A `docs-only`-labeled PR passes without CHANGELOG. |
-| `TestChangelogMustBeUnderUnreleased` | A diff that edits an old version's section but not Unreleased fails. |
+| No new fragment (TC2) | A PR without a fragment passes when it leaves the frozen changelogs alone. |
+| Invalid fragment | Missing translations, mismatched sections, and repeated entries fail the check. |
+| Frozen entry | A new entry under a legacy release heading fails. A correction requires a `Changelog-Edit` trailer. |
 
 ### 3.3 Lineage
 

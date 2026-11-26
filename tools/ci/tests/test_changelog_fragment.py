@@ -313,7 +313,7 @@ def test_a_push_of_main_checks_the_fragments_alone(repo: Repo) -> None:
     assert check(repo, "main")[0] == 0
 
 
-def test_the_files_intro_and_releases_are_not_frozen(repo: Repo) -> None:
+def test_the_changelog_intro_is_not_frozen(repo: Repo) -> None:
     repo.land()
     repo.git("checkout", "-q", "-b", "topic")
     repo.write(**{"CHANGELOG.md": changelog("en").replace("# C\n", "# C\n\nAn intro.\n")})
@@ -333,6 +333,81 @@ def test_correcting_a_frozen_entry_needs_the_trailer_and_adds_none(repo: Repo) -
     repo.write(**{"CHANGELOG.md": changelog("en", LINE["en"])})
     repo.commit("feat: sneak one in")
     assert check(repo)[0] == 1
+
+
+@pytest.mark.parametrize("lang", ["en", "ar"])
+def test_released_sections_refuse_new_entries_even_with_the_trailer(repo: Repo, lang: str) -> None:
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    f = cf.FILES[lang]
+    repo.write(**{f: repo.read(f) + LINE[lang]})
+    repo.commit("add to a release\n\nChangelog-Edit: correct a typo")
+    code, out = check(repo)
+    assert code == 1 and "[0.2.0] is frozen" in out
+
+
+@pytest.mark.parametrize("lang", ["en", "ar"])
+@pytest.mark.parametrize("released", [False, True])
+def test_a_trailer_does_not_allow_replacing_an_entry_with_an_unrelated_one(
+    repo: Repo, lang: str, released: bool
+) -> None:
+    f = cf.FILES[lang]
+    original = ("old entry of some words", "مُدخل قديم من كلمات")[lang == "ar"]
+    if released:
+        repo.write(**{f: repo.read(f).replace("- first", f"- {original} in a release")})
+        repo.commit("longer release entry")
+        original += " in a release"
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{f: repo.read(f).replace(original, "an unrelated addition كل شيء مختلف")})
+    repo.commit("swap an entry\n\nChangelog-Edit: correct a typo")
+    assert check(repo)[0] == 1
+
+
+def test_a_list_marker_does_not_make_two_short_entries_a_match(repo: Repo) -> None:
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{"CHANGELOG.md": repo.read("CHANGELOG.md").replace("- first", "- unrelated")})
+    repo.commit("swap a short entry\n\nChangelog-Edit: correct a typo")
+    assert check(repo)[0] == 1
+
+
+def test_a_released_entry_can_be_corrected(repo: Repo) -> None:
+    repo.write(**{"CHANGELOG.md": repo.read("CHANGELOG.md").replace("- first", "- first release with a player")})
+    repo.commit("release entry")
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{"CHANGELOG.md": repo.read("CHANGELOG.md").replace("with a player", "with the player")})
+    repo.commit("correct a released entry\n\nChangelog-Edit: clarify the description")
+    assert check(repo)[0] == 0
+
+
+@pytest.mark.parametrize("rename", [False, True])
+def test_removing_a_committed_fragment_needs_a_trailer(repo: Repo, rename: bool) -> None:
+    repo.land()
+    repo.write(**{f"{cf.DIR}/{name}": body for name, body in GOOD.items()})
+    repo.commit("fragment")
+    repo.git("tag", "v0.3.0")
+    repo.git("checkout", "-q", "-b", "topic")
+    for name in GOOD:
+        if rename:
+            repo.git("mv", f"{cf.DIR}/{name}", f"{cf.DIR}/{name.replace('-a.', '-b.')}")
+        else:
+            repo.git("rm", f"{cf.DIR}/{name}")
+    repo.commit("remove old filename")
+    code, out = check(repo)
+    assert code == 1 and "removing or renaming a committed fragment needs" in out
+    repo.git("commit", "--amend", "-qm", "remove old filename\n\nChangelog-Edit: retire obsolete entry")
+    assert check(repo)[0] == 0
+
+
+def test_a_repeated_entry_inside_one_fragment_fails_the_gate(repo: Repo) -> None:
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{f"{cf.DIR}/{name}": body + "\n" + body.split("\n\n", 1)[1] for name, body in GOOD.items()})
+    repo.commit("repeat")
+    code, out = check(repo)
+    assert code == 1 and "the section Fixed repeats entry" in out
 
 
 def pair(r: Repo, slug: str) -> tuple[str, str]:
@@ -413,6 +488,48 @@ def test_convert_stops_writing_nothing_when_a_person_must_look(repo: Repo, files
     code, out = repo.tool("convert", "--base", "main")
     assert code == 3 and want in out, out
     assert repo.git("status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize(
+    ("edit", "want"),
+    [
+        (lambda text: text.replace("### Fixed\n\n- old", "### Added\n\n- old"), "moved between sections"),
+        (lambda text: text.replace("old entry of some words", "complete rewrite"), "without a matching edit"),
+    ],
+)
+def test_convert_leaves_moved_or_rewritten_entries_for_review(repo: Repo, edit, want: str) -> None:
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    repo.write(**{"CHANGELOG.md": edit(repo.read("CHANGELOG.md"))})
+    repo.commit("edit")
+    code, out = repo.tool("convert", "--base", "main")
+    assert code == 3 and want in out
+    assert repo.git("status", "--porcelain") == ""
+
+
+def test_convert_preserves_a_resolution_with_multiple_merge_bases(repo: Repo) -> None:
+    repo.land()
+    repo.git("branch", "side")
+    repo.write(**{"CHANGELOG.md": changelog("en", "\n- main\n")})
+    main = repo.commit("main entry")
+    repo.git("checkout", "-q", "side")
+    repo.write(**{"CHANGELOG.md": changelog("en", "\n- side\n")})
+    side = repo.commit("side entry")
+    # Both tips merged the other's former tip, producing two common ancestors.
+    for branch, other, msg in [("main", side, "main merged side"), ("side", main, "side merged main")]:
+        repo.git("checkout", "-q", branch)
+        repo.git("merge", "--no-ff", "-s", "ours", "-m", msg, other)
+    assert set(repo.git("merge-base", "--all", "main", "side").splitlines()) == {main, side}
+    # Create a merge in progress and leave an explicit resolution in the index.
+    repo.git("revert", "--no-edit", side)
+    repo.git("merge", "--no-commit", "--no-ff", "main", check=False)
+    assert repo.git("rev-parse", "MERGE_HEAD")
+    repo.write(**{"CHANGELOG.md": changelog("en", "\n- manually resolved\n")})
+    repo.git("add", "CHANGELOG.md")
+    staged = repo.git("diff", "--cached")
+    code, out = repo.tool("convert", "--merge")
+    assert code == 3 and "different contents at multiple merge bases" in out
+    assert repo.git("diff", "--cached") == staged
 
 
 def test_convert_in_a_merge_takes_mains_files(repo: Repo) -> None:
@@ -499,16 +616,20 @@ def test_the_same_entry_in_two_fragments_the_branch_adds_is_an_error(repo: Repo)
         repo.git("commit", "-q", "--allow-empty", "-m", "feat")
 
 
-@pytest.mark.parametrize(("en", "ar"), [("### Added\n\n- **A.** x\n", "### أُضيف\n\n- **أ.** س\n"),
-                                        ("### Fixed\n\n- **A.** x\n", "### أُصلح\n\n- **أ.** غيره\n"),
-                                        ("### Fixed\n\n- **A.** y\n", "### أُصلح\n\n- **أ.** س\n")])  # fmt: skip
-def test_another_section_or_another_half_is_another_entry(repo: Repo, en: str, ar: str) -> None:
+@pytest.mark.parametrize(("en", "ar", "duplicates"), [
+    ("### Added\n\n- **A.** x\n", "### أُضيف\n\n- **أ.** س\n", False),
+    ("### Fixed\n\n- **A.** x\n", "### أُصلح\n\n- **أ.** غيره\n", True),
+    ("### Fixed\n\n- **A.** y\n", "### أُصلح\n\n- **أ.** س\n", True),
+])
+def test_a_matching_translation_identifies_the_same_entry(repo: Repo, en: str, ar: str, duplicates: bool) -> None:
     repo.land()
     repo.git("checkout", "-q", "-b", "topic")
-    repo.write(**{f"{cf.DIR}/2026-11-25-a.md": "### Fixed\n\n- **A.** x\n", f"{cf.DIR}/2026-11-25-a.ar.md": "### أُصلح\n\n- **أ.** س\n",
+    repo.write(**{f"{cf.DIR}/2026-11-25-a.md": "### Fixed\n\n- **A.** x\n",
+                  f"{cf.DIR}/2026-11-25-a.ar.md": "### أُصلح\n\n- **أ.** س\n",
                   f"{cf.DIR}/2026-11-26-a.md": en, f"{cf.DIR}/2026-11-26-a.ar.md": ar})  # fmt: skip
     code, out = check(repo)
-    assert code == 0 and "::" not in out
+    assert code == int(duplicates)
+    assert ("which this branch also adds" in out) == duplicates
 
 
 def test_an_entry_main_has_is_a_warning_with_nothing_to_do(repo: Repo) -> None:
@@ -640,6 +761,18 @@ def test_a_child_that_merged_its_converted_parent_is_only_warned(repo: Repo) -> 
     assert repo.git("status", "--porcelain") == "" and st.entries() == [NEW, NEW, "- second"]
 
 
+def test_a_rebased_child_can_be_checked_against_its_converted_parent(repo: Repo) -> None:
+    st = Stack(repo)
+    repo.git("checkout", "-q", "-b", "rebased-child", "first")
+    for name in st.fragments("second").keys() - st.fragments("first").keys():
+        repo.git("checkout", "second", "--", name)
+    repo.commit("rebased conversion")
+    assert st.entries() == [NEW, NEW, "- second"]
+    assert check(repo)[0] == 1
+    code, out = repo.tool("check", "--base", "first")
+    assert code == 0 and "::warning" in out
+
+
 def merge_main(r: Repo) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["bash", str(ROOT / "tools/dev/merge-main.sh"), "main"], cwd=r.path, capture_output=True, text=True)
 
@@ -665,7 +798,7 @@ def test_a_renamed_fragment_is_never_touched(repo: Repo, moves: bool) -> None:
     assert repo.git("rev-parse", "HEAD:changelog.d") == tree
     assert repo.git("status", "--porcelain") == ""
     code, out = check(repo)
-    assert code == 0 and "::" not in out
+    assert code == 1 and "removing or renaming a committed fragment needs" in out
 
 
 @pytest.mark.parametrize("state", ["up to date", "behind", "diverged"])
@@ -844,7 +977,12 @@ def test_the_lint_job_runs_the_gate_on_the_pull_requests_own_head() -> None:
     assert repo_job["steps"][0]["with"]["fetch-depth"] == 0
     step, = (s for s in repo_job["steps"] if "changelog_fragment.py check" in s.get("run", ""))
     assert "github.event.pull_request.head.sha || github.sha" in step["env"]["HEAD"]
-    assert "github.base_ref" in step["env"]["BASE"]
+    assert "github.base_ref || inputs.base_ref" in step["env"]["BASE"]
+    branch = yaml.safe_load((ROOT / ".github/workflows/ci-branch.yml").read_text(encoding="utf-8"))["jobs"]
+    assert branch["pr"]["outputs"]["base_ref"] == "${{ steps.pr.outputs.base_ref }}"
+    assert branch["ci"]["with"]["base_ref"] == "${{ needs.pr.outputs.base_ref }}"
+    ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8"))["jobs"]
+    assert ci["lint"]["with"]["base_ref"] == "${{ inputs.base_ref }}"
 
 
 def test_the_portal_reads_the_release_tags() -> None:

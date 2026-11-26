@@ -99,8 +99,7 @@ func TestListTooLong(t *testing.T) {
 // The check reads GitHub's list of 30 releases (about 7 MB, some 150 assets each) at
 // every start and every check. Read whole and then decoded it allocated more than
 // twice its size in one burst, and the API's resident memory stayed some 35 MB higher
-// for good (the Core home's idle memory budget, tools/release/bundle-size). Read one
-// release at a time it allocates less than the list is long.
+// afterward. Reading one release at a time allocates less than the size of the list.
 func TestListAllocatesLessThanTheList(t *testing.T) {
 	if testing.Short() {
 		// it decodes a 7 MiB list, about a second under -race: past the unit tier's per-test

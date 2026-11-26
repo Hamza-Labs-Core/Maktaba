@@ -804,7 +804,7 @@
       "title": "Release management and versioning",
       "epic": "22-devops",
       "phase": 4,
-      "content": "# Story 22.5 — Release management and versioning\n\nSemVer for the platform; releases are tagged, changelogged, and built\nfrom a green main.\n\n## Acceptance criteria\n\n- AC1. Versions follow `MAJOR.MINOR.PATCH`; the platform's \"version\"\n  spans api + streaming + pipeline + web in lockstep. App-store\n  releases for mobile/desktop/TV are tagged separately but pinned to\n  a platform version.\n- AC2. A release is a Git tag `v{MAJOR}.{MINOR}.{PATCH}` on a green\n  main commit; the release workflow rebuilds artifacts from that tag\n  (no \"release the artifacts CI happened to produce\" path).\n- AC3. CHANGELO",
+      "content": "# Story 22.5 — Release management and versioning\n\nSemVer for the platform; releases are tagged, changelogged, and built\nfrom a green main.\n\n## Acceptance criteria\n\n- AC1. Versions follow `MAJOR.MINOR.PATCH`; the platform's \"version\"\n  spans api + streaming + pipeline + web in lockstep. App-store\n  releases for mobile/desktop/TV are tagged separately but pinned to\n  a platform version.\n- AC2. A release is a Git tag `v{MAJOR}.{MINOR}.{PATCH}` on a green\n  main commit; the release workflow rebuilds artifacts from that tag\n  (no \"release the artifacts CI happened to produce\" path).\n- AC3. User-vis",
       "tags": [
         "story",
         "22-devops",

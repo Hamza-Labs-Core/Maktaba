@@ -30,7 +30,7 @@ APPLE = DOCS["_apple-apps.yml"]["jobs"]
 DEVICES = ("iphone", "ipad")
 
 # a runner there are few of: GitHub's macOS and Windows images, and the Xcode 27 one
-SCARCE = re.compile(r"\b(macos|windows|xcode)-")
+SCARCE = re.compile(r'"(?:macos|windows|xcode)(?:-[^"]+)?"', re.IGNORECASE)
 # what asks GitHub about runs, jobs, artifacts or checks, or about a release another job
 # publishes; asking in a loop, or with a sleep, is waiting (asked once, for what an earlier run
 # left, it holds nothing: nightly-perf.yml's last night's numbers)
@@ -59,13 +59,16 @@ def _scripts(text: str) -> list[str]:
     """What a step runs: its own text, and each of the repository's shell and PowerShell scripts
     it names (one run only to test itself asks nothing)."""
     found = [text]
-    for line in text.splitlines():
-        if "--self-test" in line or line.strip().startswith("#"):
-            continue
-        for name in SCRIPT.findall(line):
-            path = ROOT / name
-            if path.is_file():
-                found.append(path.read_text(encoding="utf-8"))
+    visited: set[Path] = set()
+    for source in found:
+        for line in source.splitlines():
+            if "--self-test" in line or line.strip().startswith("#"):
+                continue
+            for name in SCRIPT.findall(line):
+                path = (ROOT / name).resolve()
+                if path not in visited and path.is_relative_to(ROOT) and path.is_file():
+                    visited.add(path)
+                    found.append(path.read_text(encoding="utf-8"))
     return found
 
 
@@ -128,6 +131,27 @@ def test_the_old_wait_is_caught() -> None:
     assert _waits([step])
     assert _waits([{"run": "bash tools/release/tag-guard.sh"}])  # inside a script
     assert not _waits([{"run": "# gh run watch\npython3 tools/apple/snapshots.py --self-test"}])
+
+
+@pytest.mark.parametrize("label", ["macos", "MacOS", "windows", "WINDOWS"])
+def test_plain_self_hosted_labels_are_scarce(label: str) -> None:
+    assert _scarce({"runs-on": ["self-hosted", label]})
+
+
+def test_nested_scripts_are_scanned_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    guard = ROOT / "tools/release/tag-guard.sh"
+    release = tmp_path / "tools/release"
+    release.mkdir(parents=True)
+    (release / guard.name).write_bytes(guard.read_bytes())
+    wrapper = release / "wrapper.sh"
+    wrapper.write_text("bash tools/release/inner.sh\n", encoding="utf-8")
+    (release / "inner.sh").write_text(
+        "bash tools/release/wrapper.sh\nbash tools/release/tag-guard.sh\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(sys.modules[__name__], "ROOT", tmp_path)
+    direct = _waits([{"run": "bash tools/release/tag-guard.sh"}])
+    assert direct
+    assert _waits([{"run": "bash tools/release/wrapper.sh"}]) == direct
 
 
 # ---- the Player's UI tests: each device's shards after its own build ----

@@ -86,7 +86,7 @@ def test_the_merge_base_comes_from_comparing_the_base_with_the_head() -> None:
 def test_main_writes_the_outputs(tmp_path: Path, monkeypatch: Any) -> None:
     out = tmp_path / "out"
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
-    monkeypatch.setattr(bh, "resolve", lambda repo, branch: bh.decide([pr(608, mergeable=False)]))
+    monkeypatch.setattr(bh, "resolve", lambda repo, branch: bh.decide([pr(608, base="release/0.3", mergeable=False)]))
     monkeypatch.setattr(bh, "merge_base", lambda repo, ref, sha: "c" * 40)
     assert bh.main(["--repo", "o/r", "--branch", "feat/x", "--sha", "a" * 40]) == 0
-    assert out.read_text().splitlines() == ["run=true", f"base={'c' * 40}", "pr=608"]
+    assert out.read_text().splitlines() == ["run=true", f"base={'c' * 40}", "base_ref=release/0.3", "pr=608"]

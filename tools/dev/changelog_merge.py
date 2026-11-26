@@ -111,7 +111,7 @@ SAME_ENTRY = 0.5
 
 
 def _alike(a: str, b: str) -> float:
-    return difflib.SequenceMatcher(None, a.split(), b.split(), autojunk=False).ratio()
+    return difflib.SequenceMatcher(None, a.removeprefix("- ").split(), b.removeprefix("- ").split(), autojunk=False).ratio()
 
 
 def replacements(base: Doc, ours: Doc) -> dict[str, str]:
@@ -139,6 +139,18 @@ def replacements(base: Doc, ours: Doc) -> dict[str, str]:
     return replaced
 
 
+def check_entry_moves(base: Doc, ours: Doc, replaced: dict[str, str]) -> None:
+    """Stop when a move or a rewrite cannot be carried into the same section."""
+    before = {e.text: e.section for e in base.entries()}
+    after = {e.text: e.section for e in ours.entries()}
+    for text, section in before.items():
+        new = replaced.get(text, text)
+        if new in after and after[new] != section:
+            raise Unmergeable("an entry moved between sections: " + text.splitlines()[0][:80])
+    if before.keys() - after.keys() - replaced.keys() and after.keys() - before.keys() - set(replaced.values()):
+        raise Unmergeable("entries were both removed and added without a matching edit: place them by hand")
+
+
 def merge(base_text: str, ours_text: str, theirs_text: str) -> str:
     base, ours, theirs = parse(base_text), parse(ours_text), parse(theirs_text)
     if ours.prose() != base.prose() and ours.prose() != theirs.prose():
@@ -154,6 +166,7 @@ def merge(base_text: str, ours_text: str, theirs_text: str) -> str:
     added_ours = [e for e in ours.entries() if e.text not in base_set]
 
     replaced = replacements(base, ours)
+    check_entry_moves(base, ours, replaced)
 
     out: list[Entry | str] = []
     for p in theirs.parts:

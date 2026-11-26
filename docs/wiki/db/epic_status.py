@@ -85,6 +85,10 @@ def is_table_row(line: str) -> bool:
     return line.startswith("|") and not is_separator(line)
 
 
+def is_story_header(cell: str) -> bool:
+    return cell.replace("*", "").strip().lower() == "story"
+
+
 def status_of(cell: str) -> str | None:
     s = cell.replace("*", "").strip().lower()
     for prefix, status in _PREFIXES:
@@ -117,6 +121,7 @@ def parse_epics(lines: list[str]) -> list[Epic]:
         if line.startswith("## ") or line.startswith("### "):
             current = None
             continue
+        line = line.lstrip()
         if current is None or is_separator(line):
             continue
         if not is_table_row(line):
@@ -124,7 +129,7 @@ def parse_epics(lines: list[str]) -> list[Epic]:
             continue
         row = cells(line)
         if not in_table:  # a table's header row
-            in_table = row[0] == "Story"
+            in_table = is_story_header(row[0])
             continue
         status = status_of(row[1]) if len(row) > 1 else None
         if status is None:
@@ -135,6 +140,9 @@ def parse_epics(lines: list[str]) -> list[Epic]:
                                      "sampled" in row[1].lower(), i))
     if not epics:
         raise PageError("no `### Epic NN` sections")
+    for epic in epics:
+        if not epic.stories:
+            raise PageError(f"line {epic.line}: Epic {epic.number:02d} has no story rows")
     return epics
 
 
@@ -240,9 +248,9 @@ def parse_left(lines: list[str]) -> dict[str, list[tuple[str, int]]]:
                 raise PageError(f"line {j + 1}: a \"What is left\" item does not start with a "
                                 "bold story id")
             entry = m.group(1)
-        elif is_table_row(line):
+        elif is_table_row(line.lstrip()):
             entry = cells(line)[0]
-            if entry == "Story":
+            if is_story_header(entry):
                 continue
         else:
             continue

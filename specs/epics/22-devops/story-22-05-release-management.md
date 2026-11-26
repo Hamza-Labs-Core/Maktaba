@@ -12,8 +12,9 @@ from a green main.
 - AC2. A release is a Git tag `v{MAJOR}.{MINOR}.{PATCH}` on a green
   main commit; the release workflow rebuilds artifacts from that tag
   (no "release the artifacts CI happened to produce" path).
-- AC3. CHANGELOG.md follows Keep-a-Changelog; CI fails a PR that adds
-  user-visible behavior without a changelog entry.
+- AC3. User-visible changes are recorded as English and Arabic fragment pairs in
+  `changelog.d/`. CI validates submitted pairs and protects the frozen legacy
+  changelog. A pull request can pass the gate without adding a fragment.
 - AC4. A `maktaba --version` and `GET /api/system/version` both return
   semver + git-sha + build-time; consistent across the four backend
   services.

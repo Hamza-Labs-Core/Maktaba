@@ -309,12 +309,9 @@ describe("T08 strings", () => {
 });
 
 describe("the watch pages", () => {
-  // Midday UTC: the pages list today's programmes (the UTC day, `today` in src/guide.ts), and
-  // a guide made at `now()` has its next programme 30 minutes on, tomorrow after 23:30 UTC
-  // (main's CI run 45292196113 at 23:51 UTC: "Cartoons next" and its CC BY credit missing).
+  // The guide lists programmes in the current UTC day, including fixtures scheduled 30 minutes ahead.
   beforeEach(() => {
-    const d = new Date(now());
-    advanceClock(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12) - now());
+    advanceClock(Date.UTC(2026, 10, 14, 12) - now());
   });
 
   it("an invite opened on a phone: redeemed, then the grid in Arabic, right to left", async () => {

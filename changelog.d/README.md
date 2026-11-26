@@ -33,20 +33,20 @@ request). A change nobody outside the code sees needs no fragment.
 
 ## What becomes of a fragment
 
-Nothing: it stays here. No release moves it, so no release needs a person or an edit of main.
-[maktaba.dev/changelog](https://maktaba.dev/changelog/) is built from `CHANGELOG.md`,
-`CHANGELOG.ar.md` and these files (`web/packages/devportal/scripts/changelog.mjs`). A fragment's
-release is the first `vX.Y.Z` tag whose tree has the file, read from git at each build; one no
-tag has yet is under `[Unreleased]`. Releases are tags a session makes every 30 minutes, with no
-commit of their own, so folding fragments into `CHANGELOG.md` would take a commit to main for
-each release, with its own pull request and CI, and would bring back the file every branch
-conflicts on. The tag already says what a release contains, and the page cannot disagree with it.
-A fragment corrected later stays in its release; a renamed one moves to the next release.
+A fragment stays here after release. [maktaba.dev/changelog](https://maktaba.dev/changelog/)
+is built from both legacy CHANGELOGs and the fragments. The portal uses the earliest dated
+`vX.Y.Z` tag containing the fragment, with the version as a tie-breaker. For annotated tags it
+uses the tag date, and for lightweight tags it uses the tagged commit date. A fragment absent
+from all release tags is under `[Unreleased]`.
 
-The `[Unreleased]` entries of `CHANGELOG.md` and `CHANGELOG.ar.md` are frozen: they were written
-before the fragments, in releases since 0.2.0 that they do not name. On the page they are under
-`[Unreleased]` until a release brings a fragment, then under their own heading below the
-releases. To correct one, add a `Changelog-Edit: <reason>` trailer to the commit.
+Correct a fragment in place to keep it in its original release. Removing or renaming a
+committed fragment requires a `Changelog-Edit: <reason>` trailer. Renaming also changes the
+path the portal uses to find its first release.
+
+The legacy release sections, including `[Unreleased]`, are frozen. A recognizable correction
+in its original section requires a `Changelog-Edit: <reason>` trailer. Add new entries as
+fragments. The portal shows legacy `[Unreleased]` entries under their own heading once a release
+includes a fragment.
 
 ## A branch with lines in CHANGELOG.md
 
@@ -61,14 +61,19 @@ python3 tools/dev/changelog_fragment.py convert
 git commit -m "chore: the changelog entry as a fragment"
 ```
 
-From then on `merge-main.sh` moves them itself when a CHANGELOG conflicts, unless one was already
-resolved by hand. `convert` never changes a fragment that is there. A branch begun after the fragments that adds a line there fails the check; the
-same command fixes it.
+After that, `merge-main.sh` moves entries when a CHANGELOG conflicts. If a CHANGELOG was
+resolved by hand, the script keeps that resolution. When an entry moves between sections or
+looks like an unrelated replacement, conversion stops for manual placement. Existing
+fragments stay as they are.
 
 ## The same entry twice
 
-An entry (its section, its English and its Arabic) that two fragments have is on the page once, in
-the earliest release that has it. Two stacked branches that each moved the same entry leave one
-that way: nothing needs removing, and the check only warns. So an identical entry repeated on
-purpose for a later release does not show again: say what is different this time. A branch that
-adds the same entry in two fragments of its own fails the check.
+Matching wording in either language within a section identifies the same entry. The portal
+shows the bilingual pair once, in the earliest release that has it, or from the older filename
+if both are unreleased. Correct the original pair. When both translations need a rewrite,
+remove any stale copy with a `Changelog-Edit: <reason>` trailer so readers see the correction.
+
+The gate rejects repeats within a fragment or across fragments the branch adds. A duplicate
+already on the base or brought in by a merge produces a warning. A child rebased onto a
+converted parent may have both fragments counted as its own when checked against main. Compare
+against the parent when it is the PR target, or remove the duplicate before targeting main.
