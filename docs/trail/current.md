@@ -1,15 +1,18 @@
 ---
 schema: 1
-tag: v0.3.165
-up_to_commit: 33b9cbecd
-built_from: v0.3.164
+tag: v0.3.166
+up_to_commit: 319d2b087
+built_from: v0.3.165
 ---
 
-# Trail snapshot: v0.3.165
+# Trail snapshot: v0.3.166
 
 ## Keep doing
 
 **Working**
+- Reproduce an intermittent Docker state in isolation before fixing it, and find the line that differs before calling a rehearsal flaky; a power cut can leave a container that Docker lists but cannot inspect, start or remove. (#1708)
+- Deploy each QA release from the version QA currently serves, and test migration readiness and rollback from the previous release's migrated database, not only a fresh one. (#1737)
+- Give every selected row in a bounded healing sweep an outcome, preserve a replacement job's payload and cascade flag, and remove each guard once to prove a test fails without it. (#1761)
 - Search specs as well as code when retiring a target or bundle ID; a wording-only specs change runs the wiki jobs, not platform jobs. (#1721)
 - Check authorization at every entry point and re-check existing connections when access changes; copying another row's value during insertion requires the same lock as its writers, with reads in a statement after the lock. (d20261124-cloud-claim-races)
 - File product decisions through the shared decisions inbox with one recommendation and the full context; do not ask for a decision in chat or a pull request. (#1610)
@@ -329,6 +332,7 @@ built_from: v0.3.164
 
 ## Stop doing
 
+- Running native Postgres servers or update rehearsals on the live home's Mac; use CPU-limited Docker or CI, and clean up leaked System V shared-memory segments by their owning PIDs. (#1754)
 - Treating a failed query as an empty answer, a first-refusal migration check as sufficient, or a mutation test's unrelated failure as proof that it caught the mutation. (d20261124-cloud-deploy-without-its-runner, d20261125-cloud-first-deploy-stays-down)
 - Sending account mail without abuse limits that preserve the recipient's access; per-address daily caps, link supersession and Origin-only bot checks each create lock-out or bypass paths. (#1716)
 - Naming a woman or girl in a fixture whose screen can be captured. (#1582)
@@ -436,6 +440,9 @@ built_from: v0.3.164
 
 ## What we learned
 
+- Goose's current version is the migration applied last, not the highest slot: a lower-slot migration applied late can make readiness report both a fully migrated database as behind and a database with a missing lower slot as current. Record the newest version last and preserve the failed release's logs before rollback removes them. (#1737)
+- Error-code wording must cover every place that returns the code, and test fakes must reproduce the real error body. Audit an action only after it happens, with durable state for a one-time event; a shallow clone can also make `trail check` compute the wrong missing-event list. (#1754)
+- A failure whose cause has passed needs healing independent of scans, which some homes never schedule. Retry state can live on the failed row itself; follow-up jobs retain the replacement's priority, and new healing work must be included in quiet-hours accounting. (#1761)
 **Architecture decisions**
 - Broadcasting stays off: edge, cloud, home, native apps, help and copyright surfaces are hidden or answer as unknown while disabled. A route-existence gate belongs on the root router before method matching and path-specific CORS. (#1613, #1624, #1653, #1657)
 - The Windows and Linux desktop Player uses an LGPL libmpv software renderer with a small bitmap pool and `RTLD_LOCAL`; JavaFX remains the fallback. Its `device_caps` report follows every API and streaming layer, with unmeasured codecs listed without limits and probe failures answered cautiously. (#1591, #1633)
@@ -883,6 +890,8 @@ built_from: v0.3.164
 
 ## Open
 
+- Cloud QA still needs a full pass with broadcasting, licensing and applied-set readiness (issue #1707, issue #1715); update-hold wording and the interrupted WAL-open failure remain on issue #1753 and issue #1751. (#1708, #1737, #1754)
+- Failure healing currently covers only video stages; scan-based healing still has no retry cap, older failures without `error_cause` are not matched, and some web retry paths drop job payloads. Re-review minors are on issue #1764. (#1761)
 - Cloud: finish production deployment and off-node backups; mail webhooks (issue #1714), applied-set readiness (issue #1715), privacy retention (issue #1731), and the intermittent apply power-cut rehearsal (issue #1722) remain. Production mail still needs Turnstile keys and delivered-mail DKIM/DMARC verification. (d20261124-cloud-deploy-goes-back, d20261124-cloud-single-node-qa, #1716)
 - Desktop Player: stories 13.20–13.22 (subtitles, engine setting, Live TV and JavaFX removal) remain unbuilt; the device probe's easy committed clips overstate 2160p support and need realistic media or a correction. (#1591, #1629, #1633)
 - Apple: migrate testers from the retired tablet apps and remove their old App IDs after expiry; Cast still needs receiver registration, publication and device checks, and SDK 4.8.6 crashes on a malformed TXT record. (#1616, #1621)
@@ -1011,8 +1020,9 @@ built_from: v0.3.164
 | #1451 | 2026-11-19 | search: retire Chroma, semantic search on pgvector only (story 43.5) |
 | #1471 | 2026-11-19 | docs(wiki): derive epic-status.md's counts from its story rows |
 | #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
-| #1708 | 2026-11-25 | fix(cloud-relay): a rollback that can't reach Docker says so, and the rest of the review's minors |
-| #1737 | 2026-11-25 | fix(cloud): a release whose migration has a lower slot is ready on the database it updates |
+| #1748 | 2026-11-25 | fix(cloud): the newest migration is recorded last, so an older release is ready on a kept schema |
+| #1752 | 2026-11-25 | test(cloud-relay): the single node's rehearsal starts from the last release too |
+| #1759 | 2026-11-25 | fix(second_listen): a sentence without words no longer leaves a whole transcript out |
 
 ## Index
 
@@ -1877,6 +1887,7 @@ built_from: v0.3.164
 | d20261124-stale-catalog-step-down | 2026-11-24 | incident | The live home installed v0.3.157 below its rolled-back v0.3.158 from a catalog frozen by GitHub's 8 MiB release list, and rolled back again |
 | 1670-restore-ways-out | 2026-11-25 | pr | A restore that cannot finish always has a safe way out |
 | 1698-restore-killed-commits-nothing | 2026-11-25 | pr | A killed or damaged restore on an own Postgres commits nothing |
+| 1708-cloud-rollout-minors | 2026-11-25 | pr | The first QA runs from main, and a power cut that leaves Docker a container it cannot remove |
 | 1710-first-run | 2026-11-25 | pr | With PosterBoard and apsd off: the first run, and two corrections |
 | 1713-mac-full-screen-menu-bar | 2026-11-25 | pr | The Mac full-screen test waited for a menu bar macOS sometimes does not slide down |
 | 1716-cloud-resend-mail | 2026-11-25 | pr | Maktaba Cloud sends its account mails through Resend, from an outbox |
@@ -1886,9 +1897,12 @@ built_from: v0.3.164
 | 1727-restore-follow-ups | 2026-11-25 | pr | An own PostgreSQL 18 with pg_textsearch can put a backup back, and the restore's smaller follow-ups |
 | 1729-tv-keyboard-daemon | 2026-11-25 | pr | TV testGuide's \"could not focus\" was the keyboard daemon starting 15 s late |
 | 1732-restore-inside-public | 2026-11-25 | pr | A backup is put back inside public when the database's user may not make it again |
+| 1737-cloud-readiness-late-slot | 2026-11-25 | pr | v0.3.163 was never ready on a database v0.3.162 had migrated: readiness asked goose for the migration applied last |
 | 1738-desktop-tests-v2 | 2026-11-25 | pr | The desktop screen tests ran effects on OkHttp's thread, and a screen could lose a change |
 | 1743-ai-refusal-main-thread | 2026-11-25 | pr | Android: AI mode's refusal was read on the main thread, and a swallowed exception chose the reason |
 | 1745-rehearsal-previous | 2026-11-25 | pr | Update now goes on past a machine's copy; the update rehearsal's old-release scenarios are pinned to v0.3.162 |
 | 1749-updates-see-the-copy | 2026-11-25 | pr | An update sees a machine's running copy, and waits for it before its restart |
+| 1754-updates-copy-words | 2026-11-25 | pr | A refused machine action says its own reason; going past a copy is audited when it happens |
+| 1761-failures-come-back | 2026-11-25 | pr | Failures whose cause has passed come back by themselves |
 | d20261125-cloud-first-deploy-stays-down | 2026-11-25 | incident | A failed first deploy started again at the next boot, and only a machine that really reboots shows what a boot does |
 
