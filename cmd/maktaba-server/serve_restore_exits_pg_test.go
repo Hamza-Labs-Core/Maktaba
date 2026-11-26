@@ -227,14 +227,10 @@ var pgDamages = []damage{
 		}
 	}, apppayload.DataUntouched, "db_restore_backup_failed"},
 	{"a table's rows are cut", "bundled|external|external, a plain user", cutRows, apppayload.DataUntouched, "db_restore_backup_failed"},
-	// the schema is dropped before the dump goes in: the database is empty
-	{"a table's rows are cut", "external without psql", cutRows, apppayload.DataGone, "db_restore_backup_gone"},
 	// the bundled one is checked before it takes the database's place
 	{"it comes out not whole", "bundled", shortRows, apppayload.DataUntouched, "db_restore_backup_failed"},
 	// another's rows are counted before its commit
 	{"it comes out not whole", "external|external, a plain user", shortRows, apppayload.DataUntouched, "db_restore_backup_failed"},
-	// without psql it is committed first
-	{"it comes out not whole", "external without psql", shortRows, apppayload.DataReplaced, "db_restore_backup_part"},
 	{"the database dropped for room, then no room all the same", "bundled", func(e *pgExits) func() {
 		prev := restoreDump
 		restoreDump = func(ctx context.Context, b pgbundle.Bundle, _ string, before func(string) error, _ io.Writer) error {
@@ -286,7 +282,7 @@ func shortRows(e *pgExits) func() {
 // Opt-in: MAKTABA_TEST_PG_BIN (pgtest.Programs).
 func TestEveryWayOutOfAFailedRestore(t *testing.T) {
 	t.Setenv(envLauncherRoot, "")
-	for _, kind := range []string{"bundled", "external", "external without psql", "external, a plain user"} {
+	for _, kind := range []string{"bundled", "external", "external, a plain user"} {
 		for _, d := range pgDamages {
 			if d.kind != "" && !strings.Contains("|"+d.kind+"|", "|"+kind+"|") {
 				continue
@@ -298,6 +294,27 @@ func TestEveryWayOutOfAFailedRestore(t *testing.T) {
 			}
 		}
 	}
+	// An external restore without psql beside pg_restore is refused up front (before any
+	// record change, release switch, or database touch), leaving the library untouched.
+	t.Run("external without psql/refused up front", func(t *testing.T) {
+		e := newPGExits(t, "external without psql")
+		if _, err := e.r.restore(e.ctx, pgFirst, "admin", true, false); restoreCode(err) != "restore_database_user" ||
+			!strings.Contains(err.Error(), "psql") {
+			t.Fatalf("ask without psql: %v", err)
+		}
+		if len(e.inst.ran) != 0 {
+			t.Fatalf("switched releases despite missing psql: %v", e.inst.ran)
+		}
+		if rec := e.rec(); rec.State != apppayload.DatabaseMigrated {
+			t.Fatalf("record changed despite missing psql: %+v", rec)
+		}
+		e.want("refused without psql", 2, 1, 2)
+		if err := e.ext.Restore(e.ctx, filepath.Join(e.b.Backups, pgFirst), &e.log); err == nil ||
+			!dbsafe.CannotRestore(err) || !strings.Contains(err.Error(), "(nothing changed)") {
+			t.Fatalf("direct Restore without psql: %v", err)
+		}
+		e.want("direct restore refused without psql", 2, 1, 2)
+	})
 }
 
 func wayOut(t *testing.T, kind string, d damage, exit string) {
