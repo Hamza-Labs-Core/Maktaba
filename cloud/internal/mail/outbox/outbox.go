@@ -396,6 +396,7 @@ func (o *Outbox) Sweep(ctx context.Context) error {
 		{`DELETE FROM mail_outbox WHERE state = 'dropped' AND created_at <= $1`, []any{day}},
 		{`UPDATE mail_outbox SET net_hash = '' WHERE net_hash <> '' AND created_at <= $1`, []any{day}},
 		{`DELETE FROM mail_outbox WHERE finished_at < $1`, []any{now.Add(-Retention)}},
+		{`DELETE FROM mail_events WHERE received_at < $1`, []any{now.Add(-Retention)}},
 	} {
 		if _, err := o.DB.ExecContext(ctx, q.sql, q.args...); err != nil {
 			return err
@@ -437,8 +438,13 @@ func (o *Outbox) tooSoon(ctx context.Context, tx *sql.Tx, hash, kind string, rat
 }
 
 func finish(ctx context.Context, q execer, id, state, why string, now time.Time) error {
+	return finishSent(ctx, q, id, state, why, "", now)
+}
+
+func finishSent(ctx context.Context, q execer, id, state, why, providerID string, now time.Time) error {
 	_, err := q.ExecContext(ctx, `UPDATE mail_outbox SET state = $2, sealed = NULL, finished_at = $3, lease_until = NULL, last_error = $4,
-        to_hash = CASE WHEN $2 = 'dropped' THEN '' ELSE to_hash END WHERE id = $1::uuid`, id, state, now, why)
+        provider_id = CASE WHEN $5 <> '' THEN $5 ELSE provider_id END,
+        to_hash = CASE WHEN $2 = 'dropped' THEN '' ELSE to_hash END WHERE id = $1::uuid`, id, state, now, why, providerID)
 	return err
 }
 
@@ -470,6 +476,14 @@ func (o *Outbox) Resolve(ctx context.Context) (bool, error) {
 		}
 		if !ok {
 			return finish(ctx, tx, id, StateDropped, "", now)
+		}
+		if kind != mail.KindPasswordReset {
+			if reason, suppressed, err := o.isSuppressed(ctx, tx, hash); err != nil {
+				return err
+			} else if suppressed {
+				o.Logger.Info("mail: not sent, recipient hash is suppressed", "mail", id, "kind", kind, "reason", reason, "event", "mail_suppressed")
+				return finish(ctx, tx, id, StateSuppressed, "suppressed:"+reason, now)
+			}
 		}
 		class, rate := ClassStranger, o.Limits.Address[kind]
 		if kind == mail.KindPasswordReset {
@@ -570,9 +584,9 @@ func (o *Outbox) claim(ctx context.Context) (*claimed, error) {
 		// a reset is the first of its hour, or a repeat: decided now, as one that waited becomes
 		// the first when the hour since the last one passes
 		k := &claimed{}
-		var class, sealed string
+		var toHash, class, sealed string
 		err := tx.QueryRowContext(ctx, `
-            SELECT id::text, kind, lang, sealed, attempts, c FROM (
+            SELECT id::text, kind, to_hash, lang, sealed, attempts, c FROM (
                 SELECT m.*, CASE WHEN m.class NOT IN ('account', 'repeat') THEN m.class
                     WHEN EXISTS (SELECT 1 FROM mail_outbox s WHERE s.to_hash = m.to_hash AND s.kind = m.kind AND s.id <> m.id
                          AND ((s.state = 'sent' AND s.finished_at > $2) OR (s.state = 'sending' AND s.lease_until >= $1))) THEN 'repeat'
@@ -581,7 +595,7 @@ func (o *Outbox) claim(ctx context.Context) (*claimed, error) {
                  WHERE ((m.state = 'ready' AND m.next_at <= $1) OR (m.state = 'sending' AND m.lease_until < $1)) AND m.expires_at > $1) q
              WHERE NOT ($3::boolean AND c = 'stranger' AND NOT checked) AND NOT ($4::boolean AND c = 'stranger') AND NOT ($5::boolean AND c = 'repeat')
              ORDER BY CASE c WHEN 'stranger' THEN 2 WHEN 'repeat' THEN 1 ELSE 0 END, next_at, id LIMIT 1`,
-			now, now.Add(-time.Hour), noUnchecked, noStranger, noRepeat).Scan(&k.id, &k.kind, &k.lang, &sealed, &k.attempts, &class)
+			now, now.Add(-time.Hour), noUnchecked, noStranger, noRepeat).Scan(&k.id, &k.kind, &toHash, &k.lang, &sealed, &k.attempts, &class)
 		if errors.Is(err, sql.ErrNoRows) {
 			if noUnchecked {
 				return o.waits(ctx, tx, now, ClassStranger, all.day, all.month)
@@ -596,6 +610,14 @@ func (o *Outbox) claim(ctx context.Context) (*claimed, error) {
 		if !ok {
 			o.Logger.Error("mail: a mail does not open (was the token secret changed?)", "mail", k.id, "kind", k.kind, "event", "mail_failed")
 			return finish(ctx, tx, k.id, StateFailed, "unreadable", now)
+		}
+		if k.kind != mail.KindPasswordReset {
+			if reason, suppressed, err := o.isSuppressed(ctx, tx, toHash); err != nil {
+				return err
+			} else if suppressed {
+				o.Logger.Info("mail: not sent, recipient hash is suppressed", "mail", k.id, "kind", k.kind, "reason", reason, "event", "mail_suppressed")
+				return finish(ctx, tx, k.id, StateSuppressed, "suppressed:"+reason, now)
+			}
 		}
 		still := time.Duration(0)
 		if asked(k.kind) {
@@ -675,7 +697,12 @@ func (o *Outbox) SendOne(ctx context.Context) (bool, error) {
 	defer cancelKeep()
 	log := o.Logger.With("mail", c.id, "kind", c.kind, "lang", c.lang, "attempt", c.attempts)
 	sendCtx, cancel := context.WithTimeout(ctx, o.SendTimeout)
-	err = o.Mailer.Send(sendCtx, *c.msg)
+	var providerID string
+	if idm, ok := o.Mailer.(mail.IDMailer); ok {
+		providerID, err = idm.SendID(sendCtx, *c.msg)
+	} else {
+		err = o.Mailer.Send(sendCtx, *c.msg)
+	}
 	cancel()
 	now := o.now().UTC()
 	var se *mail.SendError
@@ -685,7 +712,7 @@ func (o *Outbox) SendOne(ctx context.Context) (bool, error) {
 			return true, finish(keepCtx, o.DB, c.id, StateLogged, "", now)
 		}
 		log.Info("mail: sent", "event", "mail_sent")
-		return true, finish(keepCtx, o.DB, c.id, StateSent, "", now)
+		return true, finishSent(keepCtx, o.DB, c.id, StateSent, "", providerID, now)
 	case errors.Is(err, mail.ErrSuppressed):
 		log.Info("mail: not sent, this deployment does not mail the recipient", "event", "mail_suppressed")
 		return true, finish(keepCtx, o.DB, c.id, StateSuppressed, "", now)
@@ -731,13 +758,18 @@ func (o *Outbox) again(ctx context.Context, id string, at time.Time, why string)
 }
 
 // Forget takes an address out of the outbox, for an account being erased: its mails waiting are
-// not sent, and the ones sent stay in the counts only, with no address.
+// not sent, and the ones sent stay in the counts only, with no address. Any keyed hash already in
+// mail_suppressions is intentionally kept so future sign-ups or notices continue honoring prior
+// hard bounces and spam complaints without storing any plaintext email address.
 func (o *Outbox) Forget(ctx context.Context, addr string) error {
 	hash := o.toHash(addr)
 	if _, err := o.DB.ExecContext(ctx, `DELETE FROM mail_outbox WHERE to_hash = $1 AND state <> 'sent'`, hash); err != nil {
 		return err
 	}
-	_, err := o.DB.ExecContext(ctx, `UPDATE mail_outbox SET to_hash = '' WHERE to_hash = $1`, hash)
+	if _, err := o.DB.ExecContext(ctx, `UPDATE mail_outbox SET to_hash = '' WHERE to_hash = $1`, hash); err != nil {
+		return err
+	}
+	_, err := o.DB.ExecContext(ctx, `UPDATE mail_events SET to_hash = '' WHERE to_hash = $1`, hash)
 	return err
 }
 
@@ -763,6 +795,8 @@ type Counts struct {
 	Sent30d int            `json:"sent_30d"`
 	// LastErrors are the refusals of the mails still waiting or given up in the last day.
 	LastErrors map[string]int `json:"last_errors,omitempty"`
+	// Events are the provider webhook counts, rates and active alerts over the last 30 days.
+	Events EventCounts `json:"events"`
 }
 
 // Count reads them (`maktaba-cloud mail status`).
@@ -791,7 +825,12 @@ func Count(ctx context.Context, db *sql.DB) (Counts, error) {
 	if err := into(c.States, `SELECT state, count(*) FROM mail_outbox WHERE created_at > now() - INTERVAL '30 days' GROUP BY state`); err != nil {
 		return c, err
 	}
-	return c, into(c.LastErrors, `SELECT last_error, count(*) FROM mail_outbox WHERE last_error <> '' AND created_at > now() - INTERVAL '1 day' AND state <> 'sent' GROUP BY last_error`)
+	if err := into(c.LastErrors, `SELECT last_error, count(*) FROM mail_outbox WHERE last_error <> '' AND created_at > now() - INTERVAL '1 day' AND state <> 'sent' GROUP BY last_error`); err != nil {
+		return c, err
+	}
+	var err error
+	c.Events, err = countEvents(ctx, db, c.Sent30d)
+	return c, err
 }
 
 // State is the state of one mail and its last refusal.

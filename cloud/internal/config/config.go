@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/shared/go/clientip"
 )
 
@@ -259,6 +260,10 @@ type MailConfig struct {
 	// The provider's API key: env MAKTABA_CLOUD_RESEND_API_KEY, or the file at
 	// mail.resend_api_key_path (env MAKTABA_CLOUD_RESEND_API_KEY_FILE). Never in the config file.
 	APIKey, APIKeyPath string
+	// Resend's webhook signing secret (Svix whsec_*): env MAKTABA_CLOUD_RESEND_WEBHOOK_SECRET, or
+	// the file at mail.resend_webhook_secret_path (env MAKTABA_CLOUD_RESEND_WEBHOOK_SECRET_FILE).
+	// Never in the config file. Unset (or missing file): the webhook route answers 404.
+	WebhookSecret, WebhookSecretPath string
 	// AllowRecipients keeps the deployment to these addresses and "@domain"s (QA); empty is
 	// everyone. SubjectPrefix goes before each subject.
 	AllowRecipients []string
@@ -300,6 +305,30 @@ func (m MailConfig) ResendKey() (string, error) {
 		return "", errors.New("mail: the Resend API key holds a space or a character that is not ASCII")
 	}
 	return key, nil
+}
+
+// ResendWebhookSecret returns the Svix signing secret from the environment or file (read on each
+// call so rotation needs no restart). Returns ErrMissing when unset or the file does not exist.
+func (m MailConfig) ResendWebhookSecret() (string, error) {
+	sec := m.WebhookSecret
+	if sec == "" && m.WebhookSecretPath != "" {
+		raw, err := os.ReadFile(m.WebhookSecretPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return "", fmt.Errorf("%w: the Resend webhook secret", ErrMissing)
+			}
+			return "", fmt.Errorf("mail: the Resend webhook secret file can't be read: %w", err)
+		}
+		sec = string(raw)
+	}
+	sec = strings.TrimSpace(sec)
+	if sec == "" {
+		return "", fmt.Errorf("%w: the Resend webhook secret", ErrMissing)
+	}
+	if _, err := mail.DecodeWebhookSecret(sec); err != nil {
+		return "", err
+	}
+	return sec, nil
 }
 
 type EntitlementConfig struct {
@@ -525,6 +554,12 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_RESEND_API_KEY_FILE"); v != "" {
 		c.Mail.APIKeyPath = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_RESEND_WEBHOOK_SECRET"); v != "" {
+		c.Mail.WebhookSecret = v
+	}
+	if v := os.Getenv("MAKTABA_CLOUD_RESEND_WEBHOOK_SECRET_FILE"); v != "" {
+		c.Mail.WebhookSecretPath = v
 	}
 	if v := os.Getenv("MAKTABA_CLOUD_TOKEN_SECRET"); v != "" {
 		c.Auth.TokenSecret = v
@@ -783,6 +818,11 @@ func assign(c *Config, section, key, val string) error {
 	case "mail.resend_api_key", "mail.api_key":
 		// the key is never in a file of settings
 		return fmt.Errorf("%s: the key is not read from this file; set mail.resend_api_key_path or MAKTABA_CLOUD_RESEND_API_KEY", section+"."+key)
+	case "mail.resend_webhook_secret_path":
+		c.Mail.WebhookSecretPath = val
+	case "mail.resend_webhook_secret", "mail.webhook_secret":
+		// the signing secret is never in a file of settings
+		return fmt.Errorf("%s: the webhook secret is not read from this file; set mail.resend_webhook_secret_path or MAKTABA_CLOUD_RESEND_WEBHOOK_SECRET", section+"."+key)
 	case "mail.allow_recipients":
 		c.Mail.AllowRecipients = parseList(val)
 	case "mail.subject_prefix":

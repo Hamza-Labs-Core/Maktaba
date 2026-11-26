@@ -5,16 +5,19 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/config"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/mailwebhook"
 	mailpkg "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/mail"
 	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/server"
 )
@@ -270,5 +273,87 @@ func TestMailCommands(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "@") {
 		t.Fatalf("the status names an address: %s", out.String())
+	}
+}
+
+// Resend's webhook returns 404 when no secret is set; with a secret file it verifies Svix headers,
+// records idempotent events matched by provider_id, and surfaces counts and alerts in mail status.
+func TestResendWebhookEndToEnd(t *testing.T) {
+	// Without a secret file: 404.
+	e0 := newEnv(t)
+	if r := e0.client().do("POST", mailwebhook.Path, map[string]any{"type": "email.bounced"}); r.code != http.StatusNotFound {
+		t.Fatalf("unconfigured webhook = %d, want 404", r.code)
+	}
+
+	// With a secret file: signed events work and update mail status.
+	sec := "whsec_" + base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	secFile := filepath.Join(t.TempDir(), "resend-webhook.key")
+	if err := os.WriteFile(secFile, []byte(sec+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	keyFile := filepath.Join(t.TempDir(), "resend.key")
+	if err := os.WriteFile(keyFile, []byte("re_test_key\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e := newEnvCfg(t, nil, func(c *config.Config) {
+		c.Mail = config.MailConfig{
+			Driver:            "resend",
+			From:              "no-reply@example.test",
+			APIKeyPath:        keyFile,
+			WebhookSecretPath: secFile,
+			DailyLimit:        100,
+			MonthlyLimit:      1000,
+		}
+	})
+	// Seed a sent row with a known Resend provider_id.
+	e.exec(`INSERT INTO mail_outbox (id, kind, class, to_hash, state, provider_id, created_at, next_at, expires_at, finished_at)
+	        VALUES (gen_random_uuid(), 'verify_email', 'stranger', 'hash-victim', 'sent', 're-email-99', now(), now(), now() + INTERVAL '1 hour', now())`)
+
+	body := []byte(`{"type":"email.complained","created_at":"2026-11-25T12:00:00Z","data":{"email_id":"re-email-99","to":["victim@example.test"]}}`)
+	ts := strconv.FormatInt(time.Now().Unix(), 10)
+	sig, err := mailpkg.SignSvix(sec, "msg_e2e_1", ts, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(sigHdr string) *resp {
+		req, _ := http.NewRequest(http.MethodPost, "https://api.example.test"+mailwebhook.Path, bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("svix-id", "msg_e2e_1")
+		req.Header.Set("svix-timestamp", ts)
+		req.Header.Set("svix-signature", sigHdr)
+		rec := e.raw("user", req)
+		return &resp{code: rec.Code, body: rec.Body.Bytes(), header: rec.Header()}
+	}
+	if r := post("v1,AAAA"); r.code != http.StatusBadRequest {
+		t.Fatalf("bad sig = %d %s", r.code, r.body)
+	}
+	if r := post(sig); r.code != http.StatusOK {
+		t.Fatalf("good sig = %d %s", r.code, r.body)
+	}
+	if r := post(sig); r.code != http.StatusOK {
+		t.Fatalf("replay = %d %s", r.code, r.body)
+	}
+	var out bytes.Buffer
+	if err := (mailCmd{Cfg: e.cfg, Pool: e.pool, Out: &out}).status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var st struct {
+		Webhook string   `json:"webhook"`
+		Alerts  []string `json:"alerts"`
+		Mails   struct {
+			Events struct {
+				Complained          int `json:"complained"`
+				SuppressedAddresses int `json:"suppressed_addresses"`
+			} `json:"events"`
+		} `json:"mails"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &st); err != nil {
+		t.Fatalf("%v: %s", err, out.String())
+	}
+	if st.Webhook != "set" || st.Mails.Events.Complained != 1 || st.Mails.Events.SuppressedAddresses != 1 || len(st.Alerts) == 0 {
+		t.Fatalf("unexpected mail status: %s", out.String())
+	}
+	if strings.Contains(out.String(), "victim@example.test") || strings.Contains(e.logs.String(), "victim@example.test") {
+		t.Fatalf("raw email leaked")
 	}
 }

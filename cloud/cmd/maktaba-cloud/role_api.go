@@ -37,6 +37,7 @@ import (
 	edgeh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/edge"
 	healthh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/health"
 	homesh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/homes"
+	"github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/mailwebhook"
 	metricsh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/metrics"
 	moderationh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/moderation"
 	pushh "github.com/Hamza-Labs-Core/Maktaba/cloud/internal/handlers/push"
@@ -430,6 +431,14 @@ func newAPI(logger *slog.Logger, cfg config.Config, pool *db.Pool, mig *db.Migra
 		// Public billing routes: the catalog, the entitlement key, and the
 		// payment-provider webhook (verified by the provider, not our token).
 		billingh.MountPublic(app, billing)
+
+		// Resend bounce and complaint webhook (Svix-signed; 404 while no secret is set).
+		mailwebhook.Mount(app, &mailwebhook.Deps{
+			Secret: cfg.Mail.ResendWebhookSecret,
+			Store:  mailer,
+			Abuse:  detector,
+			Logger: logger,
+		})
 
 		// Authenticated group.
 		app.Group(func(g chi.Router) {

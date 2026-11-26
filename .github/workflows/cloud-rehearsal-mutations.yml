@@ -77,6 +77,10 @@ jobs:
           - reserve-for-nothing
           - boot-never-waits
           - downgrades
+          - boot-no-stop-held
+          - no-docker-info-timeout
+          - pending-new-left
+          - unhold-stopped-first
     steps:
       - uses: actions/checkout@v6.0.2
         with:
@@ -95,7 +99,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        mutation: [boots-a-failed-first, first-unsaved, half-removed]
+        mutation: [boots-a-failed-first, first-unsaved, half-removed, begin-no-heal]
     steps:
       - uses: actions/checkout@v6.0.2
         with:

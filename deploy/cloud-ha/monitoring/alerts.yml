@@ -209,6 +209,18 @@ groups:
         annotations:
           summary: "An urgent report about a broadcast channel: decide within the hour"
           runbook_url: docs/runbooks/cloud/broadcast-urgent-report.md
+      - alert: mail_bounce_rate_high
+        expr: sum by (service) (increase(maktaba_errors_total{code="mail_bounce_rate_high"}[1h])) > 0
+        labels: {severity: sev2}
+        annotations:
+          summary: "Account mail hard-bounce rate is nearing Resend's 4 % limit"
+          runbook_url: docs/runbooks/cloud/mail-reputation.md
+      - alert: mail_complaint_rate_high
+        expr: sum by (service) (increase(maktaba_errors_total{code="mail_complaint_rate_high"}[1h])) > 0
+        labels: {severity: sev2}
+        annotations:
+          summary: "Account mail complaint rate is nearing Resend's 0.08 % limit"
+          runbook_url: docs/runbooks/cloud/mail-reputation.md
       - alert: log_forward_lagging
         expr: max by (node) (maktaba_log_forward_lag_seconds) > 60
         for: 5m

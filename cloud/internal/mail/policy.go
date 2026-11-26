@@ -22,13 +22,22 @@ type Guard struct {
 
 // Send passes m on, or answers ErrSuppressed.
 func (g Guard) Send(ctx context.Context, m Message) error {
+	_, err := g.SendID(ctx, m)
+	return err
+}
+
+// SendID passes m on and returns the provider's message id when Next implements IDMailer.
+func (g Guard) SendID(ctx context.Context, m Message) (string, error) {
 	if !g.Allows(m.To) {
-		return ErrSuppressed
+		return "", ErrSuppressed
 	}
 	if g.Prefix != "" {
 		m.Subject = g.Prefix + " " + m.Subject
 	}
-	return g.Next.Send(ctx, m)
+	if idm, ok := g.Next.(IDMailer); ok {
+		return idm.SendID(ctx, m)
+	}
+	return "", g.Next.Send(ctx, m)
 }
 
 // Allows reports whether addr may be mailed.

@@ -98,9 +98,49 @@ func TestMailResend(t *testing.T) {
 }
 
 func TestMailKeyIsNeverInTheFile(t *testing.T) {
-	for _, k := range []string{"api_key", "resend_api_key"} {
+	for _, k := range []string{"api_key", "resend_api_key", "webhook_secret", "resend_webhook_secret"} {
 		if _, err := mailConfig(t, k+" = \"re_x\"\n"); err == nil || strings.Contains(err.Error(), "re_x") {
 			t.Errorf("%s: %v", k, err)
+		}
+	}
+}
+
+func TestMailWebhookSecret(t *testing.T) {
+	const good = "whsec_MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+	// Absent file is optional (returns ErrMissing; Validate passes).
+	c, err := mailConfig(t, "resend_webhook_secret_path = \"/nonexistent/resend-webhook.key\"\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Mail.ResendWebhookSecret(); !errors.Is(err, ErrMissing) {
+		t.Fatalf("missing file: %v", err)
+	}
+	if err := Validate(c, RoleAPI); err != nil {
+		t.Fatalf("missing optional webhook file refused: %v", err)
+	}
+	// File hot-reloads on rotation.
+	p := keyFile(t, good+"\n")
+	t.Setenv("MAKTABA_CLOUD_RESEND_WEBHOOK_SECRET_FILE", p)
+	c, err = mailConfig(t, "")
+	if err != nil || Validate(c, RoleAPI) != nil {
+		t.Fatalf("%v / %v", err, Validate(c, RoleAPI))
+	}
+	if got, err := c.Mail.ResendWebhookSecret(); err != nil || got != good {
+		t.Fatalf("%q %v", got, err)
+	}
+	const rotated = "whsec_ZmVkY2JhOTg3NjU0MzIxMGZlZGNiYTk4NzY1NDMyMTA="
+	if err := os.WriteFile(p, []byte(rotated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := c.Mail.ResendWebhookSecret(); err != nil || got != rotated {
+		t.Fatalf("rotated: %q %v", got, err)
+	}
+	// Malformed secret is refused without echoing the secret.
+	for _, bad := range []string{"bad_prefix", "whsec_not!base64", "whsec_a b"} {
+		c.Mail.WebhookSecretPath = keyFile(t, bad)
+		err := Validate(c, RoleAPI)
+		if err == nil || strings.Contains(err.Error(), bad) {
+			t.Errorf("%q: %v", bad, err)
 		}
 	}
 }

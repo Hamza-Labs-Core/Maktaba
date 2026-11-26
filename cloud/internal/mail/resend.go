@@ -96,39 +96,45 @@ func oneLine(s string) string { return strings.NewReplacer("\r", " ", "\n", " ")
 
 // Send delivers m, or says why not (*SendError, or the context's error).
 func (r *Resend) Send(ctx context.Context, m Message) error {
+	_, err := r.SendID(ctx, m)
+	return err
+}
+
+// SendID delivers m and returns Resend's message id, or says why not.
+func (r *Resend) SendID(ctx context.Context, m Message) (string, error) {
 	if m.ID == "" {
-		return errors.New("resend: the message has no ID (its idempotency key)")
+		return "", errors.New("resend: the message has no ID (its idempotency key)")
 	}
 	key, err := r.Key()
 	if err != nil {
 		// the file's path at most, never what is in it
-		return &SendError{Temporary: true, Refused: true, Name: "no_api_key", err: err}
+		return "", &SendError{Temporary: true, Refused: true, Name: "no_api_key", err: err}
 	}
 	body, err := json.Marshal(resendMail{From: r.From, To: []string{m.To}, Subject: oneLine(m.Subject), Text: m.Body,
 		HTML: m.HTML, ReplyTo: r.ReplyTo,
 		Headers: map[string]string{"Auto-Submitted": "auto-generated"},
 		Tags:    []resendTag{{Name: "kind", Value: tagValue(m.Kind)}}})
 	if err != nil {
-		return err
+		return "", err
 	}
 	select {
 	case r.slots <- struct{}{}:
 		defer func() { <-r.slots }()
 	case <-ctx.Done():
-		return ctx.Err()
+		return "", ctx.Err()
 	}
 	for try := 1; ; try++ {
-		err := r.once(ctx, key, "maktaba-"+m.ID, body)
+		id, err := r.once(ctx, key, "maktaba-"+m.ID, body)
 		if err == nil {
-			return nil
+			return id, nil
 		}
 		// a cancelled caller is not the provider's failure
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return "", ctx.Err()
 		}
 		var se *SendError
 		if !errors.As(err, &se) || !se.Temporary || se.Refused || se.Quota || try >= r.Tries {
-			return err
+			return "", err
 		}
 		wait := se.RetryAfter
 		if wait == 0 {
@@ -136,25 +142,25 @@ func (r *Resend) Send(ctx context.Context, m Message) error {
 			wait += time.Duration(rand.Int64N(int64(wait)/4 + 1))
 		}
 		if wait > r.MaxWait {
-			return err
+			return "", err
 		}
 		t := time.NewTimer(wait)
 		select {
 		case <-t.C:
 		case <-ctx.Done():
 			t.Stop()
-			return ctx.Err()
+			return "", ctx.Err()
 		}
 	}
 }
 
 // once is one attempt.
-func (r *Resend) once(ctx context.Context, key, idem string, body []byte) error {
+func (r *Resend) once(ctx context.Context, key, idem string, body []byte) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.Timeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.URL, "/")+"/emails", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
@@ -162,12 +168,16 @@ func (r *Resend) once(ctx context.Context, key, idem string, body []byte) error 
 	req.Header.Set("User-Agent", "maktaba-cloud")
 	resp, err := r.Client.Do(req)
 	if err != nil {
-		return &SendError{Temporary: true, err: err}
+		return "", &SendError{Temporary: true, err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
 	if resp.StatusCode/100 == 2 {
-		return nil
+		var ok struct {
+			ID string `json:"id"`
+		}
+		_ = json.Unmarshal(raw, &ok)
+		return strings.TrimSpace(ok.ID), nil
 	}
 	// the answer's message may quote the address: only its short name is kept
 	var a struct {
@@ -191,7 +201,7 @@ func (r *Resend) once(ctx context.Context, key, idem string, body []byte) error 
 	case resp.StatusCode >= 500:
 		se.Temporary = true
 	}
-	return se
+	return "", se
 }
 
 // retryAfter reads a Retry-After: seconds, or a date.

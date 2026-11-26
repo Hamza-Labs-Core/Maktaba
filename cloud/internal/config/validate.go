@@ -54,6 +54,9 @@ func Validate(c Config, role Role) error {
 				return err
 			}
 		}
+		if _, err := c.Mail.ResendWebhookSecret(); err != nil && !errors.Is(err, ErrMissing) {
+			return err
+		}
 		if err := validateBilling(c.Billing); err != nil {
 			return err
 		}

@@ -135,9 +135,42 @@ describe("broadcasting off", () => {
         );
     await refused(await call(`${WATCH}/api/v1/pair/nonce-1?wait=25`, {}, OFF), "the pair poll");
     await refused(await call(`${WATCH}/i/mkbn1.a.b`, {}, OFF), "an invite link");
-    // the kept control path is the ingest host's alone
+    // the kept control path is the configured ingest hostname alone
     await refused(await call(`${WATCH}/v1/control/revocations`, {}, OFF), "control on watch");
     await refused(await call(`${LIVE}/v1/control/revocations`, {}, OFF), "control on live");
+    await refused(
+      await call("https://ingest.maktaba.tv./v1/control/revocations", {}, OFF),
+      "control on trailing-dot ingest host"
+    );
+    await refused(
+      await call("https://other.example/v1/control/revocations", {}, OFF),
+      "control on unrecognised host"
+    );
+    await refused(
+      await call(
+        `${INGEST}/v1/control/revocations`,
+        {},
+        { ...OFF, INGEST_HOST: "staging-ingest.maktaba.dev" }
+      ),
+      "default ingest host when another INGEST_HOST is configured"
+    );
+    expect(
+      (
+        await call(
+          "https://staging-ingest.maktaba.dev/v1/control/revocations",
+          {},
+          { ...OFF, INGEST_HOST: "staging-ingest.maktaba.dev" }
+        )
+      ).status
+    ).toBe(200);
+    await refused(
+      await call(
+        "https://staging-ingest.maktaba.dev./v1/control/revocations",
+        {},
+        { ...OFF, INGEST_HOST: "staging-ingest.maktaba.dev" }
+      ),
+      "trailing-dot custom ingest host"
+    );
   });
 
   it("the ingest host: a valid token uploads nothing, and nothing is stored", async () => {

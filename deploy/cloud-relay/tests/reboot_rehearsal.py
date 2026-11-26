@@ -44,9 +44,11 @@ STATE, DEPLOY, SRC = rr.STATE, rr.DEPLOY, rr.SRC
 # the cases, and what they must say: one that fails for another reason notices nothing
 NOTICE = {"boots-a-failed-first": (["a first deploy's tests fail, then a reboot", "a first deploy's tests fail, then a power cut"], "a refused release"),
           "first-unsaved": (["the next deploy backs it up"], "begin took no backup"),
-          "half-removed": (["a power cut with a container half removed"], "")}
+          "half-removed": (["a power cut with a container half removed"], ""),
+          "begin-no-heal": (["begin heals a half-removed container"], "begin did not heal")}
 # the cases a mutation's are run after (the ones that start from nothing run from the first)
-AFTER = {"half-removed": ["the first deploy, then a power cut"]}
+AFTER = {"half-removed": ["the first deploy, then a power cut"],
+         "begin-no-heal": ["the first deploy, then a power cut"]}
 
 
 # --- the machine ----------------------------------------------------------------------------
@@ -271,7 +273,8 @@ def nothing_serves() -> None:
     out = on("docker ps --filter label=com.docker.compose.project=maktaba-relay --format '{{.Label \"com.docker.compose.service\"}}'")[1].split()
     assert not set(out) & {"maktaba-cloud", "api", "worker", "caddy"}, f"a refused release runs: {out}"
     assert on(f"curl -sk --max-time 5 --resolve {rr.APP}:443:127.0.0.1 https://{rr.APP}/", check=False)[0] != 0, "a refused release answers"
-    assert status() == "committed: none", status()
+    st = status()
+    assert st.splitlines()[0] == "committed: none" and "skips starting" in st, st
 
 
 def psql(sql: str) -> str:
@@ -388,6 +391,36 @@ def half_removed_container() -> str:
     return "taken out, and the node serves"
 
 
+def begin_heals_half_removed() -> str:
+    """A half-removed container present when begin starts: begin's heal_docker clears it."""
+    before = snapshot()
+    c = on(f"cd {DEPLOY} && docker compose --env-file .env ps -q --no-trunc worker")[1].strip()
+    assert len(c) == 64, c
+    # Disable maktaba-relay across the power cut so boot's heal_docker does not clear it first;
+    # Docker 29 then starts with the half-removed folder listed and inspect failing.
+    on(f"cp -a /var/lib/docker/containers/{c} /root/half-begin && docker rm -f {c} >/dev/null && "
+       f"mv /root/half-begin /var/lib/docker/containers/{c} && systemctl disable maktaba-relay.service && sync")
+    try:
+        power_cut()
+        code, _ = on(f"docker ps -aq --no-trunc | grep -qx {c}", check=False)
+        assert code == 0, f"docker did not list half-removed container {c}"
+        code, insp = on(f"docker inspect --type container {c}", check=False)
+        assert code != 0 and "no such" in insp.lower(), f"expected No such container: {code} {insp}"
+        try:
+            out = begin("expand")
+        except AssertionError as e:
+            raise AssertionError(f"begin did not heal half-removed container: {e}") from None
+        assert "half removed" in out, f"begin did not heal half-removed container: {out[-2000:]}"
+        code, listed = on("docker ps -aq --no-trunc | while read -r x; do docker inspect $x >/dev/null 2>&1 || echo half $x; done", check=False)
+        assert "half" not in listed, f"begin left half-removed container: {listed}"
+    finally:
+        on("systemctl enable maktaba-relay.service", check=False)
+    must("rollback")
+    settled()
+    same(before)
+    return "begin healed docker and proceeded"
+
+
 def reboot_in_the_tests() -> str:
     before = snapshot()
     live("expand")
@@ -494,6 +527,7 @@ def main() -> int:
         ("the first deploy, then a power cut", first_deploy_then_a_power_cut),
         ("a reboot of a node that serves", reboot_of_a_node_that_serves),
         ("a power cut with a container half removed", half_removed_container),
+        ("begin heals a half-removed container", begin_heals_half_removed),
         ("a reboot in the tests", reboot_in_the_tests),
         ("a power cut in the tests", power_cut_in_the_tests),
         ("a power cut before apply", power_cut_before_apply),

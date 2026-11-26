@@ -61,3 +61,4 @@ heartbeat.
 | 0053 | 53.16 problem reports | problem_reports (the reports homes chose to send, scrubbed; 90 days); symbol_tables (the symbols of a release's Apple dSYMs, Android R8 mappings and native libraries, for the reports' crashes; each table's kind and a library's whole build id) |
 | 0058 | 58.03 TV codes | tv_codes (the codes TVs show to sign in through the cloud: a home claims one and leaves it a sealed payload, delivered once; swept an hour after expiry) |
 | 0058 (`00580002`) | 25.2 account mails | mail_outbox (the mails to send and, for the limits, those of the last 35 days; sealed, the address hashed). Numbered after the newest, not in a slot of its own: see below |
+| 0058 (`00580003`) | #1714 mail webhooks | mail_outbox.provider_id, mail_events (idempotent Resend webhook events by Svix id), and mail_suppressions (keyed address hashes suppressed after a hard bounce or complaint) |

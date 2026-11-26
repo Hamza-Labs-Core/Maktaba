@@ -1,0 +1,93 @@
+# Daily watch of the single cloud node's certificates, /readyz, and nightly backups between
+# deploys (#1665, docs/cloud-single-node.md). Runs each day after the 03:17 UTC backup timer and
+# on manual dispatch; any failure fails the run so GitHub notifies the repository owner.
+# The outside pair probe (cloud-probe.yml, story 50.10) stays off.
+name: Cloud node watch
+
+on:
+  schedule:
+    - cron: '17 5 * * *' # daily at 05:17 UTC (after the 03:17 UTC nightly backup)
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target environment to watch'
+        type: choice
+        options: [prod, qa]
+        default: prod
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloud-node-watch-${{ inputs.target || 'prod' }}
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: ${{ inputs.target || 'prod' }}
+    env:
+      TARGET: ${{ inputs.target || 'prod' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Load target names
+        run: |
+          set -euo pipefail
+          grep -E '^[A-Z_]+=' "deploy/cloud-relay/targets/$TARGET.env" >> "$GITHUB_ENV"
+
+      - name: Configure SSH (pinned host key)
+        id: ssh
+        env:
+          NODE_HOST: ${{ secrets.NODE_HOST }}
+          NODE_KNOWN_HOSTS: ${{ secrets.NODE_KNOWN_HOSTS }}
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${NODE_HOST:-}" ] || [ -z "${NODE_KNOWN_HOSTS:-}" ] || [ -z "${RELAY_SSH_KEY:-}" ]; then
+            echo "::warning::the $TARGET environment is missing NODE_HOST, NODE_KNOWN_HOSTS, or RELAY_SSH_KEY: skipping SSH backup checks"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          umask 077
+          printf '%s\n' "$NODE_KNOWN_HOSTS" > ~/.ssh/known_hosts_node
+          printf '%s\n' "$RELAY_SSH_KEY" > ~/.ssh/node_key
+          cat > ~/.ssh/config <<EOF
+          Host node
+            HostName $NODE_HOST
+            User root
+            IdentityFile ~/.ssh/node_key
+            IdentitiesOnly yes
+            UserKnownHostsFile ~/.ssh/known_hosts_node
+            StrictHostKeyChecking yes
+            BatchMode yes
+            ConnectTimeout 15
+            ServerAliveInterval 20
+          EOF
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check TLS certificates, /readyz, and backups
+        env:
+          SSH_READY: ${{ steps.ssh.outputs.ready }}
+        run: |
+          set -euo pipefail
+          args=(
+            --relay-domain "$RELAY_DOMAIN"
+            --api-domain "$API_DOMAIN"
+            --app-domain "$APP_DOMAIN"
+            --min-cert-days 14
+            --max-backup-hours 26
+          )
+          if [ "$SSH_READY" = true ]; then
+            args+=(--ssh-cmd "ssh -F $HOME/.ssh/config node")
+          fi
+          python3 -I deploy/cloud-relay/ops/node-watch.py "${args[@]}"
+
+      - name: Forget the key
+        if: always()
+        run: rm -f ~/.ssh/node_key ~/.ssh/config ~/.ssh/known_hosts_node
