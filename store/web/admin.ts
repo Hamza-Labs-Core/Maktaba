@@ -71,17 +71,56 @@ export async function setMaktabaPublisher(ctx: Ctx): Promise<Response> {
   const target = str(b.account, "account", 64);
   const dev = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM developers WHERE account = ? AND status = 'active'").bind(target).first();
   if (!dev) refuse(404, "not_found");
-  const held = await ctx.env.DB_CATALOG.prepare("SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba'").first<{ account: string }>();
-  if (held && held.account !== target) refuse(409, "maktaba_publisher_taken");
-  if (!held) {
-    await ctx.env.DB_CATALOG.prepare(
-      "INSERT INTO developer_prefixes (prefix, account, kind, verified_at) VALUES ('tv.maktaba', ?, 'maktaba', ?)",
-    )
-      .bind(target, iso(now()))
-      .run();
+  const ins = await ctx.env.DB_CATALOG.prepare(
+    "INSERT OR IGNORE INTO developer_prefixes (prefix, account, kind, verified_at) VALUES ('tv.maktaba', ?, 'maktaba', ?)",
+  )
+    .bind(target, iso(now()))
+    .run();
+  if (ins.meta.changes === 1) {
     await audit(ctx, a.id, "maktaba_publisher.set", target);
+    return json({ status: "set", account: target, prefix: "tv.maktaba" });
   }
+  const held = await ctx.env.DB_CATALOG.prepare("SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba'").first<{
+    account: string;
+  }>();
+  if (!held || held.account !== target) refuse(409, "maktaba_publisher_taken");
   return json({ status: "set", account: target, prefix: "tv.maktaba" });
+}
+
+/**
+ * POST /v1/admin/maktaba-publisher/move {account, reason?}: re-points tv.maktaba (and any
+ * first-party plugin rows owned by the previous publisher) to another active developer account.
+ * Passkey-confirmed and audited, for recovery if the current publisher account is lost or
+ * compromised.
+ */
+export async function moveMaktabaPublisher(ctx: Ctx): Promise<Response> {
+  const a = admin(ctx);
+  const b = await body(ctx.req);
+  const target = str(b.account, "account", 64);
+  const reason = optStr(b.reason, "reason", 200);
+  const dev = await ctx.env.DB_CATALOG.prepare("SELECT 1 FROM developers WHERE account = ? AND status = 'active'").bind(target).first();
+  if (!dev) refuse(404, "not_found");
+  const held = await ctx.env.DB_CATALOG.prepare(
+    "SELECT account FROM developer_prefixes WHERE prefix = 'tv.maktaba' AND kind = 'maktaba'",
+  ).first<{ account: string }>();
+  if (!held) refuse(404, "not_found");
+  const prev = held!.account;
+  if (prev === target) {
+    return json({ status: "moved", previous: prev, account: target, prefix: "tv.maktaba" });
+  }
+  const upd = await ctx.env.DB_CATALOG.prepare(
+    "UPDATE developer_prefixes SET account = ?, verified_at = ? WHERE prefix = 'tv.maktaba' AND kind = 'maktaba' AND account = ?",
+  )
+    .bind(target, iso(now()), prev)
+    .run();
+  if (upd.meta.changes !== 1) refuse(409, "maktaba_publisher_taken");
+  await ctx.env.DB_CATALOG.prepare(
+    "UPDATE plugins SET developer = ? WHERE developer = ? AND id LIKE 'tv.maktaba.%' AND id NOT LIKE 'tv.maktaba.community.%'",
+  )
+    .bind(target, prev)
+    .run();
+  await audit(ctx, a.id, "maktaba_publisher.move", `${prev}->${target}${reason ? `:${reason}` : ""}`);
+  return json({ status: "moved", previous: prev, account: target, prefix: "tv.maktaba" });
 }
 
 export async function revokeRole(ctx: Ctx, target: string, role: string): Promise<Response> {

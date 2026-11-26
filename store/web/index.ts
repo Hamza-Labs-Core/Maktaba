@@ -71,6 +71,7 @@ const ROUTES: [string, RegExp, Handler][] = [
   ["POST", /^\/v1\/admin\/bootstrap$/, admin.bootstrap],
   ["POST", /^\/v1\/admin\/roles$/, admin.grantRole],
   ["POST", /^\/v1\/admin\/maktaba-publisher$/, admin.setMaktabaPublisher],
+  ["POST", /^\/v1\/admin\/maktaba-publisher\/move$/, admin.moveMaktabaPublisher],
   ["DELETE", /^\/v1\/admin\/roles\/([\w-]+)\/([a-z_]+)$/, admin.revokeRole],
   ["POST", /^\/v1\/admin\/accounts\/([\w-]+)\/suspend$/, admin.suspend],
   ["POST", /^\/v1\/admin\/accounts\/([\w-]+)\/mfa-reset$/, admin.startMfaReset],

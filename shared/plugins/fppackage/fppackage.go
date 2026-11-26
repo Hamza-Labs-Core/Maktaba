@@ -10,12 +10,14 @@
 package fppackage
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 
@@ -85,6 +87,7 @@ func parseBundle(raw []byte) ([]*Embedded, error) {
 		return nil, fmt.Errorf("fppackage: firstparty.json: %w", err)
 	}
 	out := make([]*Embedded, 0, len(doc.Plugins))
+	seen := map[string]bool{}
 	for _, p := range doc.Plugins {
 		strs := p.Strings
 		m, errs := pluginmanifest.ValidateTrusted([]byte(p.Manifest), func(path string) ([]byte, bool) {
@@ -102,7 +105,12 @@ func parseBundle(raw []byte) ([]*Embedded, error) {
 		if len(errs) > 0 {
 			return nil, fmt.Errorf("fppackage: first-party %s: %w", p.Folder, errs)
 		}
-		e := &Embedded{ID: p.ID, Folder: p.Folder, Manifest: m, Strings: p.Strings, Statements: p.Statements}
+		id, _ := m["id"].(string)
+		if id != p.ID || seen[id] {
+			return nil, fmt.Errorf("fppackage: first-party %s: id %q twice or not its own", p.Folder, id)
+		}
+		seen[id] = true
+		e := &Embedded{ID: id, Folder: p.Folder, Manifest: m, Strings: p.Strings, Statements: p.Statements}
 		if t, ok := m["trusted"].(map[string]any); ok {
 			e.Component, _ = t["component"].(string)
 		}
@@ -111,6 +119,7 @@ func parseBundle(raw []byte) ([]*Embedded, error) {
 		}
 		out = append(out, e)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
 
@@ -183,6 +192,9 @@ func CheckContents(u Unpacked, e *Embedded, version string, pipeline map[string]
 	expect := []string{"manifest.toml", "i18n/en.json", "i18n/ar.json", "statements.json", wheel}
 	members := map[string]bool{}
 	for _, f := range u.Files {
+		if members[f] {
+			return nil, unsigned("it lists %s more than once", f)
+		}
 		members[f] = true
 	}
 	if len(members) != len(expect) {
@@ -204,14 +216,14 @@ func CheckContents(u Unpacked, e *Embedded, version string, pipeline map[string]
 	for lang, words := range e.Strings {
 		b, ok := u.read("i18n/" + lang + ".json")
 		var got map[string]string
-		if !ok || json.Unmarshal(b, &got) != nil || !reflect.DeepEqual(got, words) {
+		if !ok || checkNoDuplicateKeys(b) != nil || json.Unmarshal(b, &got) != nil || !reflect.DeepEqual(got, words) {
 			return nil, unsigned("its i18n/%s.json is not the one this server embeds", lang)
 		}
 	}
 	// a Maktaba plugin's statements change only with a server release (54.45 §3)
 	b, ok := u.read("statements.json")
 	var sts []any
-	if !ok || json.Unmarshal(b, &sts) != nil || !reflect.DeepEqual(sts, e.Statements) {
+	if !ok || checkNoDuplicateKeys(b) != nil || json.Unmarshal(b, &sts) != nil || !reflect.DeepEqual(sts, e.Statements) {
 		return nil, unsigned("its statements.json is not the one this server embeds")
 	}
 	whl, _ := u.read(wheel)
@@ -219,4 +231,62 @@ func CheckContents(u Unpacked, e *Embedded, version string, pipeline map[string]
 		return nil, unsigned("%s: %v", wheel, err)
 	}
 	return m, nil
+}
+
+// checkNoDuplicateKeys rejects malformed JSON, trailing tokens, and any JSON object
+// (at any nesting depth) that repeats a key.
+func checkNoDuplicateKeys(raw []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := checkJSONValue(dec); err != nil {
+		return err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return fmt.Errorf("trailing data after JSON value")
+	}
+	return nil
+}
+
+func checkJSONValue(dec *json.Decoder) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	d, ok := tok.(json.Delim)
+	if !ok {
+		return nil
+	}
+	switch d {
+	case '{':
+		seen := map[string]bool{}
+		for dec.More() {
+			kt, err := dec.Token()
+			if err != nil {
+				return err
+			}
+			k, ok := kt.(string)
+			if !ok {
+				return fmt.Errorf("expected string key")
+			}
+			if seen[k] {
+				return fmt.Errorf("duplicate key %q", k)
+			}
+			seen[k] = true
+			if err := checkJSONValue(dec); err != nil {
+				return err
+			}
+		}
+		_, err := dec.Token()
+		return err
+	case '[':
+		for dec.More() {
+			if err := checkJSONValue(dec); err != nil {
+				return err
+			}
+		}
+		_, err := dec.Token()
+		return err
+	default:
+		return fmt.Errorf("unexpected delimiter %q", d)
+	}
 }

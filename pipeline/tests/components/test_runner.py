@@ -700,3 +700,100 @@ def test_plugin_the_host_off_keeps_every_plugin_waiting() -> None:
     }
     g = plugin_gates(desired, _plugin_cat(), None, {PLUGIN_CID: ("", {})})
     assert not g[PLUGIN_CID].open and g[PLUGIN_CID].reason == "dependency_off"
+
+
+@pytest.mark.asyncio
+async def test_removed_maktaba_plugin_parks_and_drains_then_runs_once_after_reinstall(
+    db: Database,
+) -> None:
+    """Story 54.46 (#1463 item 1): removing a Maktaba plugin under load drains running
+    jobs without losing them, parks queued jobs with component_off so no worker claims
+    them, and after reinstalling and enabling the plugin each job is claimed and runs
+    exactly once."""
+    from maktaba_pipeline.engine.claim import claim_for_pool
+    from maktaba_pipeline.engine.enqueue import enqueue_job
+    from tests.engine.factory import make_library, make_video
+
+    await sync_graph(db, GRAPH, gates={})
+    r, sel = _runner(db)
+    assert await r.prime() == {}
+    await _pass(r)
+
+    stage = "thumb_small"
+    pool = next(s.pool for s in GRAPH if s.name == stage)
+    assert stage in sel.served
+
+    lib = await make_library(db)
+    v1 = await make_video(db, lib)
+    v2 = await make_video(db, lib)
+    e1 = await enqueue_job(db, subject_kind="video", subject_id=v1, stage=stage)
+    e2 = await enqueue_job(db, subject_kind="video", subject_id=v2, stage=stage)
+    assert e1.job_id is not None and e2.job_id is not None
+
+    # Simulate load: job 1 is claimed and running while job 2 waits in the queue.
+    first = await claim_for_pool(db, worker_id="w-test", pool=pool, stages=[stage])
+    assert first is not None and first.id == e1.job_id
+    await db.execute("UPDATE processing_jobs SET state = 'running' WHERE id = $1", first.id)
+
+    async def cooperative_pause() -> None:
+        while True:
+            row = await db.fetchrow(
+                "SELECT pause_requested FROM processing_jobs WHERE id = $1", e1.job_id
+            )
+            if row and row["pause_requested"]:
+                break
+            await asyncio.sleep(0.01)
+        await db.execute(
+            "UPDATE processing_jobs SET state = 'paused', paused_reason = 'component_off',"
+            " pause_requested = $2, claimed_by = NULL WHERE id = $1",
+            e1.job_id,
+            False if is_pg(db) else 0,
+        )
+
+    # Remove the Maktaba plugin (want = absent) while job 1 is running.
+    await set_want(db, "media.thumbnails", "absent")
+    pauser = asyncio.create_task(cooperative_pause())
+    await _pass(r)
+    await pauser
+
+    assert stage not in sel.served
+    assert sel.stages_off[stage] == "component_off:media.thumbnails"
+    assert await stage_row(db, stage) == (False, "component_off")
+
+    j1 = await db.fetchrow(
+        "SELECT state, paused_reason FROM processing_jobs WHERE id = $1", e1.job_id
+    )
+    j2 = await db.fetchrow("SELECT state FROM processing_jobs WHERE id = $1", e2.job_id)
+    assert (j1["state"], j1["paused_reason"]) == ("paused", "component_off")
+    assert j2["state"] == "pending"
+
+    # While removed (absent), no worker claims either the drained job or the queued job.
+    assert await claim_for_pool(db, worker_id="w-test", pool=pool, stages=[stage]) is None
+
+    # Reinstall without enabling (want = installed): still off, still no claims.
+    await set_want(db, "media.thumbnails", "installed")
+    await _pass(r)
+    assert await stage_row(db, stage) == (False, "component_off")
+    assert await claim_for_pool(db, worker_id="w-test", pool=pool, stages=[stage]) is None
+
+    # Enable the reinstalled plugin: stage opens and every parked/paused job runs once.
+    await set_want(db, "media.thumbnails", "enabled")
+    await _pass(r)
+    assert stage in sel.served
+    assert await stage_row(db, stage) == (True, None)
+
+    ran: list[int] = []
+    while True:
+        claimed = await claim_for_pool(db, worker_id="w-test", pool=pool, stages=[stage])
+        if claimed is None:
+            break
+        ran.append(claimed.id)
+        await db.execute(
+            "UPDATE processing_jobs SET state = 'done', outcome = 'changed' WHERE id = $1",
+            claimed.id,
+        )
+
+    assert sorted(ran) == sorted([e1.job_id, e2.job_id])
+    assert len(ran) == 2
+    assert await claim_for_pool(db, worker_id="w-test", pool=pool, stages=[stage]) is None
+    await r.close()

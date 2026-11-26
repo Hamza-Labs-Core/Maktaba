@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { prefixCovers } from "../../web/developers";
 import { runChecks } from "../../web/checks";
 import { pack, inspect } from "../../web/wasm";
-import { type Dev, E, account, addPasskey, call, developer, grant, submit } from "./helpers";
+import { type Dev, E, account, addPasskey, ageFactor, call, developer, grant, submit } from "./helpers";
 
 const enc = new TextEncoder();
 const VERSION = "0.9.0";
@@ -93,8 +93,11 @@ describe("the Maktaba publisher", () => {
     expect((await call("POST", "/v1/admin/maktaba-publisher", { cookie: admin, body: { account: plain.id } })).status).toBe(404);
     // the account set holds it, again idempotently; a second account is refused
     const owner = (await publisher()).id;
-    const held = await E.DB_CATALOG.prepare("SELECT account, kind, verified_at FROM developer_prefixes WHERE prefix = 'tv.maktaba'")
-      .first<{ account: string; kind: string; verified_at: string | null }>();
+    const held = await E.DB_CATALOG.prepare("SELECT account, kind, verified_at FROM developer_prefixes WHERE prefix = 'tv.maktaba'").first<{
+      account: string;
+      kind: string;
+      verified_at: string | null;
+    }>();
     expect(held).toMatchObject({ account: owner, kind: "maktaba" });
     expect(held?.verified_at).toBeTruthy();
     expect((await call("POST", "/v1/admin/maktaba-publisher", { cookie: admin, body: { account: owner } })).status).toBe(200);
@@ -104,6 +107,110 @@ describe("the Maktaba publisher", () => {
     // the prefix can never be claimed: tv.maktaba is refused at a claim
     const claim = await call("POST", "/v1/developers/prefixes", { cookie: other.cookie, body: { prefix: "tv.maktaba" } });
     expect(claim.status).toBe(400);
+  });
+
+  it("handles concurrent setup cleanly with 409 maktaba_publisher_taken instead of 500 (#1458)", async () => {
+    const owner = await publisher();
+    const admin1 = await storeAdmin();
+    const admin2 = await storeAdmin();
+    const d1 = await developer();
+    const d2 = await developer();
+    // Temporarily clear tv.maktaba so both admins race on the initial insert.
+    await E.DB_CATALOG.prepare("DELETE FROM developer_prefixes WHERE prefix = 'tv.maktaba'").run();
+    try {
+      const [r1, r2] = await Promise.all([
+        call("POST", "/v1/admin/maktaba-publisher", { cookie: admin1, body: { account: d1.id } }),
+        call("POST", "/v1/admin/maktaba-publisher", { cookie: admin2, body: { account: d2.id } }),
+      ]);
+      const statuses = [r1.status, r2.status].sort((a, b) => a - b);
+      expect(statuses).toEqual([200, 409]);
+      const loser = r1.status === 409 ? r1 : r2;
+      expect(loser.body.error).toBe("maktaba_publisher_taken");
+    } finally {
+      await E.DB_CATALOG.prepare("DELETE FROM developer_prefixes WHERE prefix = 'tv.maktaba'").run();
+      const restored = await call("POST", "/v1/admin/maktaba-publisher", { cookie: admin1, body: { account: owner.id } });
+      expect(restored.status).toBe(200);
+    }
+  });
+
+  it("can be moved by a passkey-confirmed store admin with an audit row and plugin ownership transfer (#1458)", async () => {
+    const owner = await publisher();
+    const replacement = await developer();
+    const admin = await storeAdmin();
+    const staleAdmin = await storeAdmin();
+    await ageFactor(staleAdmin, 6);
+
+    // Ensure the current publisher already owns a tv.maktaba.* plugin row.
+    const pluginId = "tv.maktaba.thumbnails";
+    const v1 = `0.7.${(Date.now() % 1e6) + 1}`;
+    await submit(owner, pluginId, v1, await signed(owner, files(pluginId, v1), pluginId, v1));
+
+    // Role, re-auth, and target validation checks.
+    expect(
+      (await call("POST", "/v1/admin/maktaba-publisher/move", { cookie: replacement.cookie, body: { account: replacement.id } })).status,
+    ).toBe(403);
+    expect(await call("POST", "/v1/admin/maktaba-publisher/move", { cookie: staleAdmin, body: { account: replacement.id } })).toMatchObject(
+      { status: 401, body: { error: "reauth_required" } },
+    );
+    const plain = await account();
+    expect((await call("POST", "/v1/admin/maktaba-publisher/move", { cookie: admin, body: { account: plain.id } })).status).toBe(404);
+
+    try {
+      const moved = await call("POST", "/v1/admin/maktaba-publisher/move", {
+        cookie: admin,
+        body: { account: replacement.id, reason: "key_compromised" },
+      });
+      expect(moved).toMatchObject({
+        status: 200,
+        body: { status: "moved", previous: owner.id, account: replacement.id, prefix: "tv.maktaba" },
+      });
+
+      const held = await E.DB_CATALOG.prepare(
+        "SELECT account, kind, verified_at FROM developer_prefixes WHERE prefix = 'tv.maktaba'",
+      ).first<{
+        account: string;
+        kind: string;
+        verified_at: string | null;
+      }>();
+      expect(held).toMatchObject({ account: replacement.id, kind: "maktaba" });
+      expect(held?.verified_at).toBeTruthy();
+
+      const auditRow = await E.DB_ACCOUNTS.prepare(
+        "SELECT action, target FROM audit WHERE action = 'maktaba_publisher.move' ORDER BY id DESC LIMIT 1",
+      ).first<{ action: string; target: string }>();
+      expect(auditRow).toEqual({
+        action: "maktaba_publisher.move",
+        target: `${owner.id}->${replacement.id}:key_compromised`,
+      });
+
+      // Moving to the same account is idempotent.
+      expect(await call("POST", "/v1/admin/maktaba-publisher/move", { cookie: admin, body: { account: replacement.id } })).toMatchObject({
+        status: 200,
+        body: { status: "moved", previous: replacement.id, account: replacement.id, prefix: "tv.maktaba" },
+      });
+
+      // The previous publisher can no longer submit tv.maktaba.* plugins.
+      const denied = await call("POST", "/v1/submissions", {
+        cookie: owner.cookie,
+        body: {
+          plugin_id: pluginId,
+          version: `0.7.${(Date.now() % 1e6) + 2}`,
+          package_sha256: "0".repeat(64),
+          package_size: 10,
+          source_size: 1,
+        },
+      });
+      expect(denied).toMatchObject({ status: 403, body: { error: "prefix_unverified" } });
+
+      // The new publisher owns the transferred plugin and can submit a new version.
+      const v2 = `0.7.${(Date.now() % 1e6) + 3}`;
+      const sid = await submit(replacement, pluginId, v2, await signed(replacement, files(pluginId, v2), pluginId, v2));
+      expect(sid).toBeTruthy();
+    } finally {
+      // Restore tv.maktaba to the shared fixture publisher for subsequent tests.
+      const back = await call("POST", "/v1/admin/maktaba-publisher/move", { cookie: admin, body: { account: owner.id } });
+      expect(back.status).toBe(200);
+    }
   });
 });
 
@@ -140,13 +247,18 @@ describe("a Maktaba plugin's submission", () => {
     const sid = await submit(dev, id, version, await signed(dev, files(id, version), id, version));
     const report = await runChecks(E, sid);
     const byId = Object.fromEntries(report.checks.map((c) => [c.id, c]));
-    expect(report.checks.find((c) => c.result === "block"), JSON.stringify(report.checks)).toBeUndefined();
+    expect(
+      report.checks.find((c) => c.result === "block"),
+      JSON.stringify(report.checks),
+    ).toBeUndefined();
     expect(byId.C2).toMatchObject({ result: "pass" });
     expect(byId.C3).toMatchObject({ result: "pass" });
     expect(byId.C4).toMatchObject({ result: "pass" });
     expect(byId.C5).toMatchObject({ result: "skip" });
     expect(byId.C8).toMatchObject({ result: "skip" });
-    const row = await E.DB_CATALOG.prepare("SELECT status, route FROM submissions WHERE id = ?").bind(sid).first<{ status: string; route: string }>();
+    const row = await E.DB_CATALOG.prepare("SELECT status, route FROM submissions WHERE id = ?")
+      .bind(sid)
+      .first<{ status: string; route: string }>();
     expect(row).toMatchObject({ status: "in_review", route: "human" });
   });
 
@@ -162,7 +274,13 @@ describe("a Maktaba plugin's submission", () => {
     const dev = await publisher();
     const s = await call("POST", "/v1/submissions", {
       cookie: dev.cookie,
-      body: { plugin_id: "tv.maktaba.community.someone.tags", version: "1.0.0", package_sha256: "0".repeat(64), package_size: 1, source_size: 1 },
+      body: {
+        plugin_id: "tv.maktaba.community.someone.tags",
+        version: "1.0.0",
+        package_sha256: "0".repeat(64),
+        package_size: 1,
+        source_size: 1,
+      },
     });
     expect(s).toMatchObject({ status: 403, body: { error: "prefix_unverified" } });
   });
