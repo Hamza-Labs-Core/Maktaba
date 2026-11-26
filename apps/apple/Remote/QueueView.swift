@@ -264,10 +264,10 @@ struct StageView: View {
                     if let s = row.summary {
                         LabeledContent("Done in 24 h", value: s.counts.done24h, format: .number)
                         if s.ratePerMin > 0 {
-                            LabeledContent("Rate", value: String(localized: "\(s.ratePerMin.formatted(.number.precision(.fractionLength(0...1)))) a minute"))
+                            LabeledContent("Rate", value: String(localized: "\(s.ratePerMin.formatted(.number.precision(.fractionLength(0...1)).locale(AppLanguage.locale))) a minute"))
                         }
                         if let eta = s.etaSec, eta > 0 {
-                            LabeledContent("Time left", value: Duration.seconds(eta).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated)))
+                            LabeledContent("Time left", value: Duration.seconds(eta).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated).locale(AppLanguage.locale)))
                         }
                     }
                 }

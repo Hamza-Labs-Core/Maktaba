@@ -131,7 +131,7 @@ struct VideoPage: View {
 
     static func clock(_ seconds: Double) -> String {
         Duration.seconds(seconds.rounded(.down))
-            .formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond))
+            .formatted(.time(pattern: seconds >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(AppLanguage.locale))
     }
 }
 

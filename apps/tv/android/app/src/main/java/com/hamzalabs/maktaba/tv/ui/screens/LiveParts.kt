@@ -39,6 +39,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
+import com.hamzalabs.maktaba.core.i18n.withWesternArabicLocale
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 
@@ -66,7 +67,7 @@ fun rememberServerNow(answer: Timed<*>?, tickMs: Long = 15_000): Long {
 fun rememberTimeFormat(): (Long) -> String {
     val locale = LocalConfiguration.current.locales[0]
     return remember(locale) {
-        val f = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withLocale(locale).withZone(ZoneId.systemDefault())
+        val f = DateTimeFormatter.ofLocalizedTime(FormatStyle.SHORT).withWesternArabicLocale(locale).withZone(ZoneId.systemDefault())
         ({ ms: Long -> f.format(Instant.ofEpochMilli(ms)) })
     }
 }

@@ -50,7 +50,9 @@ public struct ErrorStrings: Sendable {
         case .off: text(.off)
         case .relay(.needsPlan): text(.relayNeedsPlan)
         case let .relay(.streamLimit(n)):
-            text(.relayStreamLimit).replacingOccurrences(of: "%@", with: n.map { $0.formatted() } ?? "")
+            text(.relayStreamLimit).replacingOccurrences(
+                of: "%@",
+                with: n.map { $0.formatted(.number.locale(AppLanguage.westernDigits(Locale(identifier: language.rawValue)))) } ?? "")
         case .relay(.homeBusy): text(.relayHomeBusy)
         case .transcodeBusy: text(.transcodeBusy)
         case .timeUnknown: text(.timeUnknown)

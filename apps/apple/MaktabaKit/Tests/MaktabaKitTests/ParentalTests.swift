@@ -1558,11 +1558,11 @@ final class Clock: @unchecked Sendable {
         let arCal = calendar(.gregorian, arabic)
         let headings = days.map { ActivityModel.heading($0.id, now: now, calendar: arCal, arabic) }
         #expect(headings[0] == "اليوم" && headings[1] == "أمس")
-        #expect(headings[2].contains("الأحد") && headings[2].contains("٨") && headings[2].contains("٢٠٢٦"), "Arabic words and digits: \(headings[2])")
+        #expect(headings[2].contains("الأحد") && headings[2].contains("8") && headings[2].contains("2026"), "Arabic words with Western digits: \(headings[2])")
 
-        // the Islamic calendar when it is the app's
+        // the Islamic calendar when it is the app's, still with Western digits
         let hijri = ActivityModel.heading(days[2].id, now: now, calendar: calendar(.islamicUmmAlQura, arabic), arabic)
-        #expect(hijri.contains("١٤٤٨"), "the app's calendar: \(hijri)")
+        #expect(hijri.contains("1448"), "the app's calendar: \(hijri)")
     }
 
     @Test func aLateEveningEventFallsOnTheHomesDay() {

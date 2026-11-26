@@ -91,7 +91,7 @@ export function reasonWords(code: string, t: T): string {
 
 export function useClusterFmt(): ClusterFmt {
   const { t, locale } = useI18n();
-  const loc = locale === "ar" ? "ar-EG" : "en";
+  const loc = locale;
   const reason = useCallback((code: string) => reasonWords(code, t), [t]);
   return useMemo(() => {
     const unit = (v: number, u: string, digits: number) =>

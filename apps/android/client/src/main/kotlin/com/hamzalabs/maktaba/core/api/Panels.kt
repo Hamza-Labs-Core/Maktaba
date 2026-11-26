@@ -82,7 +82,8 @@ object PanelText {
         val h = s / 3600
         val m = (s % 3600) / 60
         val sec = s % 60
-        return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
+        return if (h > 0) "%d:%02d:%02d".format(java.util.Locale.ROOT, h, m, sec)
+        else "%d:%02d".format(java.util.Locale.ROOT, m, sec)
     }
 
     /** The blocks a screen draws: the TV shows kv, badges and markers only. */

@@ -1,5 +1,6 @@
 package com.hamzalabs.maktaba.core.ui
 
+import com.hamzalabs.maktaba.core.i18n.withWesternDigits
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -249,7 +250,11 @@ private fun CloudHomeList(session: AppSession, onSignedOut: () -> Unit) {
         Text(stringResource(R.string.cloud_signed_in_as, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     saved?.let { list ->
-        val at = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(list.savedAtMs))
+        val at = java.text.DateFormat.getDateTimeInstance(
+            java.text.DateFormat.MEDIUM,
+            java.text.DateFormat.SHORT,
+            java.util.Locale.getDefault().withWesternDigits(),
+        ).format(java.util.Date(list.savedAtMs))
         Text(stringResource(R.string.cloud_homes_saved, at), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.testTag("cloud-saved"))
         if (list.isOld(session.now())) {
             Text(stringResource(R.string.cloud_homes_saved_old), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

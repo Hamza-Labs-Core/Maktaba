@@ -618,11 +618,11 @@ describe("AI mode tab (story 49.14)", () => {
     expect(screen.getByRole("tablist", { name: A["search.tabs"] })).toBeInTheDocument();
     await waitFor(() => expect(streams).toHaveLength(1));
     await write(ev("queue", { position: 3 }));
-    expect(turns()[0]).toHaveTextContent("تُكتب إجابة أخرى الآن. سؤالك رقم ٣ في الصف.");
+    expect(turns()[0]).toHaveTextContent("تُكتب إجابة أخرى الآن. سؤالك رقم 3 في الصف.");
     await write(ev("sources", SOURCES) + ev("text", S1) + ev("done", { answered: true }));
     expect(screen.getByRole("heading", { name: A["search.ai.sources"] })).toBeInTheDocument();
     expect(
-      screen.getAllByRole("link", { name: "المصدر ١: On patience عند 1:01" }).length
+      screen.getAllByRole("link", { name: "المصدر 1: On patience عند 1:01" }).length
     ).toBeGreaterThan(0);
     expect(screen.getByTestId("ai-answer")).toHaveAttribute("dir", "auto");
     expect(document.documentElement.dir).toBe("rtl");

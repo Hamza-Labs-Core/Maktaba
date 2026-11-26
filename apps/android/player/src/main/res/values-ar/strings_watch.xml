@@ -4,8 +4,8 @@
 <resources>
     <string name="watch_play">تشغيل</string>
     <string name="watch_pause">إيقاف مؤقت</string>
-    <string name="watch_back_10">رجوع ١٠ ثوانٍ</string>
-    <string name="watch_forward_10">تقديم ١٠ ثوانٍ</string>
+    <string name="watch_back_10">رجوع 10 ثوانٍ</string>
+    <string name="watch_forward_10">تقديم 10 ثوانٍ</string>
     <string name="watch_position">الموضع</string>
     <string name="watch_next">التالي</string>
     <string name="watch_tracks">الترجمة والصوت</string>

@@ -664,12 +664,13 @@ describe("Facets and sort (story 49.10)", () => {
     await submit("الصبرر");
     expect(await screen.findByTestId("did-you-mean")).toHaveTextContent("هل تقصد الصبر؟");
     expect(screen.getByRole("region", { name: "تضييق النتائج" })).toBeInTheDocument();
-    expect(chipText(facetButton("المدة", /أقل من/))).toBe("أقل من ٥ دقائق ٢");
+    expect(chipText(facetButton("المدة", /أقل من/))).toBe("أقل من 5 دقائق 2");
     expect(facetButton("المدة", /أكثر من ساعة/)).toHaveAccessibleName(
-      "أكثر من ساعة عدد المقاطع: ١٣"
+      "أكثر من ساعة عدد المقاطع: 13"
     );
-    expect(chipText(facetButton("اللغة", /العربية/))).toBe("العربية ١٠");
-    expect(chipText(within(facetGroup("السنة")).getAllByRole("button")[0]!)).toBe("٢٠٢٤ ٩");
+    expect(chipText(facetButton("اللغة", /العربية/))).toBe("العربية 10");
+    expect(chipText(within(facetGroup("السنة")).getAllByRole("button")[0]!)).toBe("2024 9");
+    expect(screen.getByRole("region", { name: "تضييق النتائج" }).textContent).not.toMatch(/[٠-٩]/);
     const sort = screen.getByRole("combobox", { name: "الترتيب حسب" });
     expect(
       within(sort)
@@ -969,7 +970,7 @@ describe("Search state kept (story 49.10 follow-up)", () => {
       within(active)
         .getAllByRole("listitem")
         .map((li) => li.textContent)
-    ).toEqual(["اللغة: العربية", "المدة: أقل من ٥ دقائق"]);
+    ).toEqual(["اللغة: العربية", "المدة: أقل من 5 دقائق"]);
     expect(screen.getByRole("combobox", { name: "الترتيب حسب" })).toHaveValue("newest");
   });
 });

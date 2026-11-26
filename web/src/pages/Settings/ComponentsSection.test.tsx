@@ -1440,7 +1440,7 @@ describe("Components page: the settings-reset dialog (story 51.13 §5)", () => {
       within(drawer).getByRole("button", { name: AR["components.settings.reset"]! })
     );
     expect(await screen.findByTestId("comp-reset-text")).toHaveTextContent(
-      "هل تريد إعادة إعدادات التفريغ النصي إلى الافتراضية؟ ستفقد تغييراتك على ٧ من الإعدادات."
+      "هل تريد إعادة إعدادات التفريغ النصي إلى الافتراضية؟ ستفقد تغييراتك على 7 من الإعدادات."
     );
   });
 });

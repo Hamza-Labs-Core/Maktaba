@@ -118,12 +118,24 @@ private extension NSColor {
 }
 #endif
 
-public extension View {
-    /// The app's theme: the picked mode (dark while `forceDark`, as while a video plays)
-    /// and the brass tint.
-    func maktabaTheme(_ mode: ThemeMode, forceDark: Bool = false) -> some View {
-        preferredColorScheme(forceDark ? .dark : mode.colorScheme)
+private struct MaktabaThemeModifier: ViewModifier {
+    let mode: ThemeMode
+    let forceDark: Bool
+    @Environment(\.locale) private var locale
+
+    func body(content: Content) -> some View {
+        content
+            .preferredColorScheme(forceDark ? .dark : mode.colorScheme)
             .tint(.brass)
+            .environment(\.locale, AppLanguage.westernDigits(locale))
+    }
+}
+
+public extension View {
+    /// The app's theme: the picked mode (dark while `forceDark`, as while a video plays),
+    /// the brass tint, and Western digits in Arabic.
+    func maktabaTheme(_ mode: ThemeMode, forceDark: Bool = false) -> some View {
+        modifier(MaktabaThemeModifier(mode: mode, forceDark: forceDark))
     }
 
     /// A list or scroll view on the theme's background instead of the system grey.

@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { ApiError } from "../../../lib/api";
 import { lookupMessage, useI18n, type Locale } from "../../../lib/i18n";
+import { dateTimeFormat } from "../../../lib/intl";
 import {
   checksSummary,
   type ChangeState,
@@ -191,7 +192,7 @@ export function Clock({ at }: { at: string | null | undefined }) {
   if (!at) return <span className="mkt-tvx-muted">—</span>;
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return <span>{at}</span>;
-  const clock = new Intl.DateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
+  const clock = dateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);

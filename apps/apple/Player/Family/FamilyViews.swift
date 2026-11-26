@@ -805,7 +805,7 @@ struct RulesView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(verbatim: model.title(of: rule))
                             if let until = rule.expiresAt {
-                                Text(verbatim: word("family.rules.until", until.formatted(date: .abbreviated, time: .shortened)))
+                                Text(verbatim: word("family.rules.until", until.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale))))
                                     .font(.footnote)
                                     .foregroundStyle(Color.mktMuted)
                             }

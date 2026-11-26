@@ -41,8 +41,9 @@ public enum AgeTier {
 public enum ParentalWords {
     /// The sentence for `key` with its arguments (`%@`, `%1$@`, `%lld`).
     public static func text(_ key: String, _ locale: Locale, _ args: CVarArg...) -> String {
-        let format = kitWord(key, locale) ?? key
-        return args.isEmpty ? format : String(format: format, locale: locale, arguments: args)
+        let loc = AppLanguage.westernDigits(locale)
+        let format = kitWord(key, loc) ?? key
+        return args.isEmpty ? format : String(format: format, locale: loc, arguments: args)
     }
 
     /// The same in the app's language.
@@ -52,10 +53,10 @@ public enum ParentalWords {
         return args.isEmpty ? format : String(format: format, locale: locale, arguments: args)
     }
 
-    /// A clock time in the app's language ("7:00 PM", «٧:٠٠ م»).
+    /// A clock time in the app's language ("7:00 PM", «7:00 م»).
     public static func clock(_ date: Date, _ locale: Locale = AppLanguage.locale, zone: TimeZone = .current) -> String {
         var style = Date.FormatStyle(date: .omitted, time: .shortened)
-        style.locale = locale
+        style.locale = AppLanguage.westernDigits(locale)
         style.timeZone = zone
         return date.formatted(style)
     }
@@ -65,7 +66,7 @@ public enum ParentalWords {
         let s = max(0, seconds)
         let shown = s >= 60 ? (s / 60) * 60 : s
         var style = Duration.UnitsFormatStyle(allowedUnits: s >= 60 ? [.hours, .minutes] : [.seconds], width: .abbreviated)
-        style.locale = locale
+        style.locale = AppLanguage.westernDigits(locale)
         return Duration.seconds(shown).formatted(style)
     }
 }

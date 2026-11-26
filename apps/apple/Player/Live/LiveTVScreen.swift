@@ -190,7 +190,7 @@ struct LiveChannelRow: View {
         HStack(alignment: .top, spacing: MaktabaTokens.Spacing.s3) {
             ChannelLogo(name: channel.name, number: channel.number, logo: logo, size: 52)
             VStack(alignment: .leading, spacing: MaktabaTokens.Spacing.s1) {
-                Text(verbatim: "\(channel.number.formatted()) · \(channel.name)")
+                Text(verbatim: "\(channel.number.formatted(.number.locale(AppLanguage.locale))) · \(channel.name)")
                     .font(.maktabaBody(MaktabaTokens.TypeSize.sm, weight: .semibold))
                     .foregroundStyle(Color.mktBrassText)
                     .lineLimit(1)
@@ -242,7 +242,7 @@ struct LiveNextLine: View {
     let block: GuideBlock
 
     var body: some View {
-        Text("Next: \(block.start.formatted(date: .omitted, time: .shortened)) \(block.displayTitle())", tableName: "Live",
+        Text("Next: \(block.start.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale))) \(block.displayTitle())", tableName: "Live",
              comment: "Live TV: what is on next, its start time then its title")
             .font(.maktabaBody(MaktabaTokens.TypeSize.sm))
             .foregroundStyle(Color.mktMuted)

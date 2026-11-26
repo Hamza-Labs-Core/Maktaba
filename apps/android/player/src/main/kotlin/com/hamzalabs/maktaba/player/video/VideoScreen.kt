@@ -104,6 +104,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.OffsetDateTime
+import com.hamzalabs.maktaba.core.i18n.withWesternArabicLocale
 import java.time.format.DateTimeFormatter
 import java.time.format.DecimalStyle
 import java.time.format.FormatStyle
@@ -546,7 +547,7 @@ internal fun formatDate(text: String?, locale: Locale): String? {
     val date = runCatching { OffsetDateTime.parse(t).toLocalDate() }.getOrNull()
         ?: runCatching { LocalDate.parse(t.take(10)) }.getOrNull()
         ?: return null
-    return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale).withDecimalStyle(DecimalStyle.of(locale)).format(date)
+    return DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withWesternArabicLocale(locale).format(date)
 }
 
 /** Play next and Add to queue (a queue starts at this video when none plays). */

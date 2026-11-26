@@ -170,11 +170,13 @@ struct HomeScreen: View {
     }
 
     private func heroDetail(_ hero: HomeHero) -> String? {
+        let locale = AppLanguage.locale
         if hero.isSeries, let n = hero.episodes, n > 0 {
-            return String(localized: "\(n) lessons", table: "Home", comment: "The hero's detail: how many lessons the series has")
+            return String(localized: LocalizedStringResource("\(n) lessons", table: "Home", locale: locale,
+                                                             comment: "The hero's detail: how many lessons the series has"))
         }
         let duration = hero.durationSec.flatMap { $0 > 0 ? $0 : nil }.map {
-            Duration.seconds($0).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+            Duration.seconds($0).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated).locale(locale))
         }
         let parts = [hero.seriesName, duration].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
@@ -248,7 +250,8 @@ struct HomeScreen: View {
 
     private func cardDetail(_ card: HomeCard) -> String? {
         if let n = card.newLessons {
-            return String(localized: "\(n) new lessons", table: "Home", comment: "A Recently Added series: how many lessons are new")
+            return String(localized: LocalizedStringResource("\(n) new lessons", table: "Home", locale: AppLanguage.locale,
+                                                             comment: "A Recently Added series: how many lessons are new"))
         }
         return card.subtitle
     }

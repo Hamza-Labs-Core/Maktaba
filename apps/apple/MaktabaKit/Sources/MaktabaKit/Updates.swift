@@ -111,7 +111,7 @@ public struct UpdatesOverview: Decodable, Sendable {
             if let (from, to) = UpdateWords.windowEnds(window) {
                 return kit("\(version) installs \(day) between \(from) and \(to) (\(span)).", locale)
             }
-            var time = Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)
+            var time = Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.westernDigits(locale))
             time.timeZone = calendar.timeZone
             return kit("\(version) installs \(day) at \(at.formatted(time)) (\(span)).", locale)
         }

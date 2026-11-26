@@ -62,7 +62,7 @@ export function ruleProblem(r: TimeRule): string | null {
 function useDayNames(): string[] {
   const { locale } = useI18n();
   return useMemo(() => {
-    const fmt = dateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
+    const fmt = dateTimeFormat(locale, {
       weekday: "long",
       timeZone: "UTC",
     });

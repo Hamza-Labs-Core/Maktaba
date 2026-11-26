@@ -439,7 +439,7 @@ public struct TimeUp: Equatable, Sendable {
     public func nextLine(_ locale: Locale = AppLanguage.locale, now: Date = .now, calendar: Calendar = .current) -> String? {
         guard let next = nextAllowedAt else { return nil }
         var style = Date.FormatStyle(date: calendar.isDate(next, inSameDayAs: now) ? .omitted : .abbreviated, time: .shortened)
-        style.locale = locale
+        style.locale = AppLanguage.westernDigits(locale)
         style.timeZone = calendar.timeZone
         return ParentalWords.text("parental.time.next", locale, next.formatted(style))
     }

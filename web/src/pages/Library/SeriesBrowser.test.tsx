@@ -340,7 +340,7 @@ describe("SeriesBrowser (test-cases/series-browser.md)", () => {
     expect(await screen.findByText("Show")).toBeInTheDocument();
   });
 
-  it("SER-17: Arabic UI uses ar strings and Arabic digits consistently", async () => {
+  it("SER-17: Arabic UI uses ar strings and Western digits consistently", async () => {
     localStorage.setItem("mkt:locale", "ar");
     get.mockResolvedValue({
       items: [
@@ -352,7 +352,8 @@ describe("SeriesBrowser (test-cases/series-browser.md)", () => {
     expect(name).toHaveAttribute("dir", "auto");
     await waitFor(() => expect(document.documentElement).toHaveAttribute("dir", "rtl"));
     expect(screen.getByRole("heading", { name: "المسلسلات" })).toBeInTheDocument();
-    expect(screen.getByText("١١ · ٤٠٠")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-label", "تمت مشاهدة ١٢ من ٤٠٠");
+    expect(screen.getByText("11 · 400")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-label", "تمت مشاهدة 12 من 400");
+    expect(document.body.textContent).not.toMatch(/[٠-٩]/);
   });
 });

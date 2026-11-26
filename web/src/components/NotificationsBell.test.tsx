@@ -114,7 +114,7 @@ describe("NotificationsBell", () => {
     await screen.findByTestId("notifications-count");
     await userEvent.setup().click(screen.getByTestId("notifications-bell"));
     expect(screen.getByRole("dialog", { name: "الإشعارات" })).toHaveTextContent(
-      "اجتاز تغيير البث رقم ٤٢ فحوصه وينتظر اعتمادك"
+      "اجتاز تغيير البث رقم 42 فحوصه وينتظر اعتمادك"
     );
   });
 

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
+import com.hamzalabs.maktaba.core.ui.WesternDigitsScope
 
 /**
  * Dark, TV-optimized "Ink & Brass" theme. Every colour comes from
@@ -37,13 +38,15 @@ private val MaktabaColors = darkColorScheme(
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun MaktabaTvTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = MaktabaColors,
-        typography = MaktabaTypography,
-    ) {
-        // The phones' core composables (Material 3, e.g. the plugin panels) drawn on the TV:
-        // the same palette, never Material's light defaults.
-        androidx.compose.material3.MaterialTheme(colorScheme = CoreColors, content = content)
+    WesternDigitsScope {
+        MaterialTheme(
+            colorScheme = MaktabaColors,
+            typography = MaktabaTypography,
+        ) {
+            // The phones' core composables (Material 3, e.g. the plugin panels) drawn on the TV:
+            // the same palette, never Material's light defaults.
+            androidx.compose.material3.MaterialTheme(colorScheme = CoreColors, content = content)
+        }
     }
 }
 

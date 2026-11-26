@@ -25,7 +25,7 @@ export function WorkersStalled({ workers }: { workers: WorkersState }) {
 
   const stalled = workers.stalled ?? [];
   const when = workers.since
-    ? dateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
+    ? dateTimeFormat(locale, {
         dateStyle: "medium",
         timeStyle: "short",
       }).format(new Date(workers.since))

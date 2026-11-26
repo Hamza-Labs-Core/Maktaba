@@ -122,7 +122,7 @@ export function useFmt(): Fmt {
             : dur(ms / 1000),
       rate: (perMin) =>
         t("queue.unit.perMin", {
-          n: numberFormat(locale === "ar" ? "ar-EG" : "en", {
+          n: numberFormat(locale, {
             maximumFractionDigits: perMin < 10 ? 1 : 0,
           }).format(perMin),
         }),
@@ -133,7 +133,7 @@ export function useFmt(): Fmt {
       },
       since: (iso) => (iso ? dur(Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)) : "–"),
       clock: (d) =>
-        dateTimeFormat(locale === "ar" ? "ar-EG" : "en", {
+        dateTimeFormat(locale, {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",

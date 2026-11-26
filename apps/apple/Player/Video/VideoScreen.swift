@@ -191,7 +191,7 @@ private struct VideoDetails: View {
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("video.title")
             let facts = [video.durationSec.flatMap { $0 > 0 ? Self.clock($0, locale) : nil },
-                         (video.publishedAt ?? video.createdAt).map { $0.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(locale)) }]
+                         (video.publishedAt ?? video.createdAt).map { $0.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(AppLanguage.westernDigits(locale))) }]
                 .compactMap { $0 }
             if !facts.isEmpty {
                 Text(verbatim: facts.joined(separator: " · "))
@@ -277,7 +277,7 @@ private struct VideoDetails: View {
     /// 7:05 or 1:02:05.
     static func clock(_ seconds: Double, _ locale: Locale) -> String {
         let s = max(0, seconds.isFinite ? seconds : 0)
-        return Duration.seconds(Int(s)).formatted(.time(pattern: s >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(locale))
+        return Duration.seconds(Int(s)).formatted(.time(pattern: s >= 3600 ? .hourMinuteSecond : .minuteSecond).locale(AppLanguage.westernDigits(locale)))
     }
 
     /// "Season 1, Episode 3", or "Episode 3"; nil when the series does not number it.

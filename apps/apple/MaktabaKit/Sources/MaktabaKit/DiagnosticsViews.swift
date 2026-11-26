@@ -532,7 +532,7 @@ public struct MyReportsView: View {
                             .background(Capsule().fill(Color.brass.opacity(0.2)))
                     }
                     if let at = r.at {
-                        Text(at.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                        Text(at.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale))).font(.caption).foregroundStyle(.secondary)
                     }
                     if let reply = r.reply, !reply.isEmpty {
                         Text(verbatim: kit("Reply: \(reply)")).font(.callout)

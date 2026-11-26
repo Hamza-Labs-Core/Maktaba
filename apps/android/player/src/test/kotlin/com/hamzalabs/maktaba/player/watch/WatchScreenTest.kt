@@ -283,7 +283,7 @@ class WatchScreenTest {
         compose.onNodeWithTag("watch-surface").performTouchInput { doubleClick(centerRight - androidx.compose.ui.geometry.Offset(40f, 0f)) }
         // bare: the seek flash fades by itself, and settling advances the clock between looks
         compose.waitUntil(2_000) { shown("seek-flash") }
-        compose.onNodeWithText("رجوع ١٠ ثوانٍ").assertIsDisplayed()
+        compose.onNodeWithText("رجوع 10 ثوانٍ").assertIsDisplayed()
     }
 
     @Test

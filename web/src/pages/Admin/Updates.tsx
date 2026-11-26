@@ -15,6 +15,7 @@ import { Modal } from "@ds/components/Modal/Modal";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError, downloadBlob } from "../../lib/api";
 import { lookupMessage, useI18n } from "../../lib/i18n";
+import { relativeTimeFormat } from "../../lib/intl";
 import { CopyField } from "../../components/CopyField";
 import { hrefOf, updateCodeHelp } from "../../help/registry";
 import { UpdatesBackups } from "./UpdatesBackups";
@@ -213,7 +214,7 @@ function when(iso?: string): string {
 function ago(iso: string, locale: string): string {
   const s = (Date.parse(iso) - Date.now()) / 1000;
   if (!Number.isFinite(s)) return "";
-  const rtf = new Intl.RelativeTimeFormat(locale === "ar" ? "ar-EG" : "en", { numeric: "auto" });
+  const rtf = relativeTimeFormat(locale, { numeric: "auto" });
   const a = Math.abs(s);
   if (a < 60) return rtf.format(Math.round(s), "second");
   if (a < 3600) return rtf.format(Math.round(s / 60), "minute");

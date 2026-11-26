@@ -70,6 +70,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Instant
 import java.time.ZoneId
+import com.hamzalabs.maktaba.core.i18n.withWesternArabicLocale
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
 import com.hamzalabs.maktaba.core.R as CoreR
@@ -614,7 +615,7 @@ private fun bytes(context: android.content.Context, n: Long): String = if (n < 0
 
 /** An RFC 3339 time in the device's zone and language, or the text as it came. */
 private fun localTime(s: String): String = runCatching {
-    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).format(Instant.parse(s).atZone(ZoneId.systemDefault()))
+    DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT).withWesternArabicLocale().format(Instant.parse(s).atZone(ZoneId.systemDefault()))
 }.getOrDefault(s)
 
 /** The account menu's entry (Remote only, admins). */

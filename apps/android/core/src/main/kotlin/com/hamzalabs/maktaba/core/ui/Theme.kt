@@ -198,10 +198,12 @@ fun MaktabaTheme(mode: ThemeMode, forceDark: Boolean = false, content: @Composab
         ThemeMode.Light -> false
         ThemeMode.Dark -> true
     }
-    MaterialTheme(colorScheme = if (dark) InkAndBrass.Dark else InkAndBrass.Light, typography = MaktabaFonts.typography) {
-        CompositionLocalProvider(LocalBrandColors provides if (dark) InkAndBrass.DarkBrand else InkAndBrass.LightBrand) {
-            SystemBars(dark)
-            content()
+    WesternDigitsScope {
+        MaterialTheme(colorScheme = if (dark) InkAndBrass.Dark else InkAndBrass.Light, typography = MaktabaFonts.typography) {
+            CompositionLocalProvider(LocalBrandColors provides if (dark) InkAndBrass.DarkBrand else InkAndBrass.LightBrand) {
+                SystemBars(dark)
+                content()
+            }
         }
     }
 }

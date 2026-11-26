@@ -4,6 +4,7 @@
 // superseded try), and what happens next, with a time that has its units.
 import { ApiError } from "./api";
 import { lookupMessage, type Locale } from "./i18n";
+import { dateTimeFormat, numberFormat } from "./intl";
 import {
   RUN_ENDED,
   compareVersions,
@@ -131,9 +132,8 @@ export function statusTone(s: UpdateStatusWord): "success" | "accent" | "warn" |
 export function spanText(ms: number, locale: string, t: T): string {
   const mins = Math.max(0, Math.round(ms / 60000));
   if (mins < 1) return t("updates.span.lessThanMinute");
-  const lang = locale === "ar" ? "ar-EG" : "en";
   const unit = (n: number, u: "day" | "hour" | "minute") =>
-    new Intl.NumberFormat(lang, { style: "unit", unit: u, unitDisplay: "long" }).format(n);
+    numberFormat(locale, { style: "unit", unit: u, unitDisplay: "long" }).format(n);
   const days = Math.floor(mins / 1440);
   const hours = Math.floor((mins % 1440) / 60);
   const rest = mins % 60;
@@ -160,11 +160,11 @@ export function dayText(iso: string, now: number, locale: string, t: T): string 
   const diff = Math.round((day(d) - day(n)) / 86_400_000);
   if (diff === 0) return t("updates.day.today");
   if (diff === 1) return t("updates.day.tomorrow");
-  return d.toLocaleDateString(locale === "ar" ? "ar-EG" : "en", {
+  return dateTimeFormat(locale, {
     weekday: "long",
     month: "short",
     day: "numeric",
-  });
+  }).format(d);
 }
 
 /** The quiet window's two ends ("03:00", "05:00"), or null without a valid one. */
@@ -203,10 +203,10 @@ export function homeNext(ov: UpdatesOverview, now: number, locale: string, t: T)
 }
 
 function timeOf(iso: string, locale: string): string {
-  return new Date(iso).toLocaleTimeString(locale === "ar" ? "ar-EG" : "en", {
+  return dateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
-  });
+  }).format(new Date(iso));
 }
 
 /** What happens next to a joined machine behind the cluster's release (the server's

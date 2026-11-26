@@ -7,6 +7,7 @@ import { Button } from "@ds/components/Button/Button";
 import { useToast } from "@ds/components/Toast/Toast";
 import { ApiError } from "../../../lib/api";
 import { useI18n } from "../../../lib/i18n";
+import { dateTimeFormat } from "../../../lib/intl";
 import { channelsApi, isFiller, type Program } from "../../../lib/channels";
 
 export const PREVIEW_HOURS = 48;
@@ -71,11 +72,10 @@ export function PreviewSection({ channelId }: { channelId: string }) {
     }
   }
 
-  const lang = locale === "ar" ? "ar-EG" : "en";
   const time = (s: string) =>
-    new Date(s).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+    dateTimeFormat(locale, { hour: "2-digit", minute: "2-digit" }).format(new Date(s));
   const day = (s: string) =>
-    new Date(s).toLocaleDateString(lang, { weekday: "long", day: "numeric", month: "short" });
+    dateTimeFormat(locale, { weekday: "long", day: "numeric", month: "short" }).format(new Date(s));
 
   const rows = programs ? collapseFiller(programs) : [];
   const groups: Array<{ day: string; rows: Row[] }> = [];

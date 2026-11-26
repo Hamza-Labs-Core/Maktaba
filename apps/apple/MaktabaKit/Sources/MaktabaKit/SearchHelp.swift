@@ -416,9 +416,9 @@ public enum SearchWords {
         kit("\(n) videos", locale)
     }
 
-    /// A number in the app's language (Arabic-Indic digits in Arabic).
+    /// A number in the app's language (Western digits 0–9 in Arabic too).
     public static func number(_ n: Int, _ locale: Locale = AppLanguage.locale) -> String {
-        n.formatted(.number.locale(locale))
+        n.formatted(.number.locale(AppLanguage.westernDigits(locale)))
     }
 
     /// "Library: Tafsir Lessons": a filter in use.
@@ -439,7 +439,7 @@ public enum SearchWords {
             return name.flatMap { $0.isEmpty || $0 == value ? nil : $0 } ?? value
         case .year:
             guard let y = Int(value) else { return value }
-            return y.formatted(.number.grouping(.never).locale(locale))
+            return y.formatted(.number.grouping(.never).locale(AppLanguage.westernDigits(locale)))
         case .duration:
             return band(value, locale)
         case .speaker:

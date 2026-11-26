@@ -409,7 +409,7 @@ class ParentalScreensTest {
         compose.onNodeWithTag("parental-blocked-title").assertTextEquals("هذا غير متاح")
         compose.onNodeWithTag("parental-stopped").assertTextEquals("لم يعد هذا المقطع متاحًا على هذا الحساب.")
         // the plus sign stays on the number's left: a left-to-right mark leads the label
-        compose.onNodeWithTag("parental-blocked-reason").assertTextEquals("هذا الجهاز مقيَّد بـ \u200E+١٣.")
+        compose.onNodeWithTag("parental-blocked-reason").assertTextEquals("هذا الجهاز مقيَّد بـ \u200E+13.")
         assertFalse("nothing to ask without a help", "parental-ask" in compose.shown())
     }
 

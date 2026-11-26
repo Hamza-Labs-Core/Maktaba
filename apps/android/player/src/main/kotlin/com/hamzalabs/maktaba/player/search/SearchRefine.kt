@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
+import com.hamzalabs.maktaba.core.i18n.withWesternDigits
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -136,7 +137,7 @@ internal fun facetName(f: Facet): String = stringResource(
  */
 @Composable
 internal fun bucketName(f: Facet, value: String, label: String?, libraries: Map<String, String>): String {
-    val locale = LocalConfiguration.current.locales[0]
+    val locale = LocalConfiguration.current.locales[0].withWesternDigits()
     return when (f) {
         Facet.Library -> label?.trim()?.takeIf { it.isNotEmpty() } ?: libraries[value] ?: value
         Facet.Language -> remember(value, locale) { languageName(value, locale) }
@@ -180,7 +181,7 @@ internal fun RefineBar(model: SearchModel, answer: SearchAnswer, onSort: (Search
                     trailingIcon = if (choice.isEmpty) {
                         null
                     } else {
-                        { Badge { Text(String.format(LocalConfiguration.current.locales[0], "%d", choice.count)) } }
+                        { Badge { Text(String.format(LocalConfiguration.current.locales[0].withWesternDigits(), "%d", choice.count)) } }
                     },
                     modifier = Modifier.testTag("search-filters").semantics { contentDescription = described },
                 )
@@ -307,7 +308,7 @@ private fun FacetSheet(model: SearchModel, answer: SearchAnswer, onToggle: (Face
 private fun FacetChip(model: SearchModel, f: Facet, b: FacetBucket, onToggle: (Facet, FacetBucket) -> Unit) {
     val name = bucketName(f, b.value, b.label, model.libraryNames)
     val on = model.choice.has(f, b.value)
-    val locale = LocalConfiguration.current.locales[0]
+    val locale = LocalConfiguration.current.locales[0].withWesternDigits()
     val count = if (b.counted) pluralStringResource(R.plurals.search_facet_videos, b.count, b.count) else null
     FilterChip(
         selected = on,

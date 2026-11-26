@@ -512,7 +512,7 @@ public final class ActivityModel {
             return ParentalWords.text("activity.day.yesterday", locale)
         }
         var style = Date.FormatStyle(date: .complete, time: .omitted)
-        style.locale = locale
+        style.locale = AppLanguage.westernDigits(locale)
         style.calendar = calendar
         style.timeZone = calendar.timeZone
         return day.formatted(style)

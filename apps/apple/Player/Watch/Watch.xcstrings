@@ -40,7 +40,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "رجوع ١٠ ثوانٍ"
+            "value" : "رجوع 10 ثوانٍ"
           }
         }
       }
@@ -84,7 +84,7 @@
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تقديم ١٠ ثوانٍ"
+            "value" : "تقديم 10 ثوانٍ"
           }
         }
       }

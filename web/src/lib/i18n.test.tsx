@@ -1,5 +1,5 @@
 // Story 11.12 — i18n: catalog-backed t(), {var} interpolation, missing
-// -key returns the key (+dev warn), Arabic-Indic numerals via Intl,
+// -key returns the key (+dev warn), Western numerals in Arabic via Intl,
 // <html dir> stamping, bidi isolate helper.
 import { describe, it, expect } from "vitest";
 import { render, screen, act } from "@testing-library/react";
@@ -8,13 +8,20 @@ import { Drawer } from "@ds/components/Drawer/Drawer";
 import { I18nProvider, useI18n, bidiIsolate } from "./i18n";
 
 function Probe() {
-  const { t, n, dir, setLocale } = useI18n();
+  const { t, n, formatDate, dir, setLocale } = useI18n();
   return (
     <div>
       <span data-testid="known">{t("nav.library")}</span>
       <span data-testid="missing">{t("totally.absent.key")}</span>
       <span data-testid="interp">{t("settings.signedInAs")}</span>
       <span data-testid="num">{n(1234)}</span>
+      <span data-testid="date">
+        {formatDate("2026-11-06T21:05:00Z", {
+          dateStyle: "medium",
+          timeStyle: "short",
+          timeZone: "UTC",
+        })}
+      </span>
       <span data-testid="dir">{dir}</span>
       <button onClick={() => setLocale("ar")}>ar</button>
     </div>
@@ -32,7 +39,7 @@ describe("i18n", () => {
     expect(screen.getByTestId("missing")).toHaveTextContent("totally.absent.key");
   });
 
-  it("switches to Arabic: rtl dir + Arabic-Indic digits", () => {
+  it("switches to Arabic: rtl dir + Western digits", () => {
     render(
       <I18nProvider>
         <Probe />
@@ -45,8 +52,11 @@ describe("i18n", () => {
     });
     expect(screen.getByTestId("dir")).toHaveTextContent("rtl");
     expect(document.documentElement.dir).toBe("rtl");
-    // ar-EG formats with Arabic-Indic digits.
-    expect(screen.getByTestId("num").textContent).toMatch(/[٠-٩]/);
+    // Arabic keeps Western digits (0-9) across numbers and dates (#1199).
+    expect(screen.getByTestId("num").textContent).toBe("1,234");
+    expect(screen.getByTestId("num").textContent).not.toMatch(/[٠-٩]/);
+    expect(screen.getByTestId("date").textContent).toMatch(/[0-9]/);
+    expect(screen.getByTestId("date").textContent).not.toMatch(/[٠-٩]/);
   });
 
   it("a dialog's and a drawer's close button speak the page's language", () => {

@@ -33,7 +33,10 @@ import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.Tracks
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.test.core.app.ApplicationProvider
 import androidx.tv.material3.MaterialTheme
@@ -196,6 +199,7 @@ class DemoScreenshotTest {
             durationMs = film["duration_sec"]!!.jsonPrimitive.int * 1000L,
             positionMs = mine["position_sec"]!!.jsonPrimitive.int * 1000L,
             subtitles = subtitles.map { Triple(it["lang"]!!.jsonPrimitive.content, it["label"]!!.jsonPrimitive.content, it["default"]!!.jsonPrimitive.boolean) },
+            subtitleLine = DEMO_ARABIC_SUBTITLE,
         )
         var view: PlayerView? = null
         compose.setContent {
@@ -206,11 +210,25 @@ class DemoScreenshotTest {
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
                             // as PlayerScreen sets it up, its controls kept on screen for the shot
+                            com.hamzalabs.maktaba.core.i18n.applyWesternDigitsDefaultLocale()
                             PlayerView(ctx).apply {
                                 useController = true
                                 setShowSubtitleButton(true)
                                 controllerShowTimeoutMs = 0
                                 setShutterBackgroundColor(android.graphics.Color.TRANSPARENT)
+                                subtitleView?.apply {
+                                    setStyle(
+                                        CaptionStyleCompat(
+                                            android.graphics.Color.WHITE,
+                                            0xCC000000.toInt(),
+                                            android.graphics.Color.TRANSPARENT,
+                                            CaptionStyleCompat.EDGE_TYPE_NONE,
+                                            android.graphics.Color.WHITE,
+                                            null,
+                                        ),
+                                    )
+                                    setBottomPaddingFraction(0.18f)
+                                }
                                 this.player = player
                                 showController()
                                 view = this
@@ -255,6 +273,8 @@ class DemoScreenshotTest {
     private companion object {
         const val TV = "w960dp-h540dp-land-television-xhdpi"
         const val CURIOSITY = "v-curiosity"
+        // the demo fixture's Arabic subtitle cue (matches Apple players' demo-subs-ar.vtt)
+        const val DEMO_ARABIC_SUBTITLE = "تأكّد الهبوط. كيوريوسيتي بأمان على المريخ."
 
         // text is drawn by the host's font rasteriser: a reference recorded on a Mac still matches
         // on CI's Linux within a small share of pixels
@@ -264,7 +284,8 @@ class DemoScreenshotTest {
 
 /**
  * A player paused at [positionMs] of a [durationMs] film, with a subtitle track per
- * [subtitles] (language, label, chosen): what the TV's transport reads, with no stream behind it.
+ * [subtitles] (language, label, chosen) and an active [subtitleLine] cue: what the TV's
+ * transport reads, with no stream behind it.
  */
 private class PausedPlayer(
     id: String,
@@ -272,6 +293,7 @@ private class PausedPlayer(
     durationMs: Long,
     positionMs: Long,
     subtitles: List<Triple<String, String, Boolean>>,
+    subtitleLine: String? = null,
 ) : SimpleBasePlayer(Looper.getMainLooper()) {
     private val state: State = State.Builder()
         .setAvailableCommands(
@@ -279,8 +301,14 @@ private class PausedPlayer(
                 Player.COMMAND_PLAY_PAUSE, Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM, Player.COMMAND_SEEK_BACK,
                 Player.COMMAND_SEEK_FORWARD, Player.COMMAND_GET_TIMELINE, Player.COMMAND_GET_CURRENT_MEDIA_ITEM,
                 Player.COMMAND_GET_METADATA, Player.COMMAND_GET_TRACKS, Player.COMMAND_SET_TRACK_SELECTION_PARAMETERS,
+                Player.COMMAND_GET_TEXT,
             ).build(),
         )
+        .apply {
+            if (subtitleLine != null) {
+                setCurrentCues(CueGroup(listOf(Cue.Builder().setText(subtitleLine).build()), positionMs * 1000L))
+            }
+        }
         .setPlaylist(
             listOf(
                 MediaItemData.Builder(id)

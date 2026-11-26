@@ -41,12 +41,14 @@ private struct HistoryRow: View {
     }
 
     private var detail: String {
+        let locale = AppLanguage.locale
         var parts: [String] = []
-        if let at = entry.lastWatchedAt { parts.append(at.formatted(.relative(presentation: .named))) }
+        if let at = entry.lastWatchedAt { parts.append(at.formatted(.relative(presentation: .named).locale(locale))) }
         if entry.completed {
             parts.append(String(localized: "Watched", table: "Profile", comment: "History: watched to the end"))
         } else if entry.timesWatched > 1 {
-            parts.append(String(localized: "Watched \(entry.timesWatched) times", table: "Profile", comment: "History: how many times"))
+            parts.append(String(localized: LocalizedStringResource("Watched \(entry.timesWatched) times", table: "Profile",
+                                                                   locale: locale, comment: "History: how many times")))
         }
         return parts.joined(separator: " · ")
     }
@@ -260,9 +262,11 @@ enum PlaylistWords {
     }
 
     static func countAndLength(_ p: PlaylistSummary) -> String {
-        let count = String(localized: "\(p.videos) videos", table: "Profile", comment: "A playlist's number of videos")
+        let locale = AppLanguage.locale
+        let count = String(localized: LocalizedStringResource("\(p.videos) videos", table: "Profile", locale: locale,
+                                                              comment: "A playlist's number of videos"))
         guard p.durationSec > 0 else { return count }
-        let length = Duration.seconds(p.durationSec).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+        let length = Duration.seconds(p.durationSec).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated).locale(locale))
         return "\(count) · \(length)"
     }
 }
@@ -360,7 +364,7 @@ private struct SessionRow: View {
         var parts: [String] = []
         if let ip = session.ip { parts.append(ip) }
         if let seen = session.lastSeenAt {
-            let ago = seen.formatted(.relative(presentation: .named))
+            let ago = seen.formatted(.relative(presentation: .named).locale(AppLanguage.locale))
             parts.append(String(localized: "last used \(ago)", table: "Profile", comment: "A session: when it was last used"))
         }
         if session.current {
@@ -513,7 +517,7 @@ struct DiagnosticsPage: View {
     static func when(_ url: URL) -> String {
         let parts = url.deletingPathExtension().lastPathComponent.split(separator: "-")
         guard parts.count > 1, let t = TimeInterval(parts[1]) else { return url.lastPathComponent }
-        return Date(timeIntervalSince1970: t).formatted(date: .abbreviated, time: .shortened)
+        return Date(timeIntervalSince1970: t).formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(AppLanguage.locale))
     }
 }
 

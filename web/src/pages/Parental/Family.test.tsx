@@ -139,6 +139,6 @@ describe("Family", () => {
     expect(document.documentElement).toHaveAttribute("dir", "rtl");
     expect(screen.getByRole("link", { name: /الطلبات/ })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "رمز الوالدين" })).toBeInTheDocument();
-    expect(screen.getByTestId("family-requests-count")).toHaveTextContent("٢");
+    expect(screen.getByTestId("family-requests-count")).toHaveTextContent("2");
   });
 });

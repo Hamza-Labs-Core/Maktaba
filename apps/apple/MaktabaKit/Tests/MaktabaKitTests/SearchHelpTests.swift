@@ -276,10 +276,10 @@ extension BrowseClient {
             #expect(plain(SearchWords.bucket(.duration, "20m_60m", label: nil, en)) == "20 to 60 min")
             #expect(SearchWords.bucket(.duration, "over_60m", label: nil, en) == "Over an hour")
             #expect(SearchWords.bucket(.duration, "over_60m", label: nil, ar) == "أكثر من ساعة")
-            #expect(plain(SearchWords.bucket(.duration, "under_5m", label: nil, arSA)) == "أقل من ٥ دقائق")
-            #expect(plain(SearchWords.bucket(.duration, "5m_20m", label: nil, arSA)) == "من ٥ إلى ٢٠ دقيقة")
+            #expect(plain(SearchWords.bucket(.duration, "under_5m", label: nil, arSA)) == "أقل من 5 دقائق")
+            #expect(plain(SearchWords.bucket(.duration, "5m_20m", label: nil, arSA)) == "من 5 إلى 20 دقيقة")
             #expect(SearchWords.bucket(.year, "2024", label: nil, en) == "2024")
-            #expect(SearchWords.bucket(.year, "2024", label: nil, arSA) == "٢٠٢٤")
+            #expect(SearchWords.bucket(.year, "2024", label: nil, arSA) == "2024")
             #expect(SearchWords.bucket(.language, "ar", label: nil, en) == "Arabic")
             #expect(SearchWords.bucket(.language, "ar", label: nil, ar) == "العربية")
             #expect(SearchWords.bucket(.language, "zz-unknown", label: nil, en) == "zz-unknown")
@@ -289,7 +289,7 @@ extension BrowseClient {
             #expect(SearchWords.inUse(.library, BrowseHome.lib, label: "Lectures", ar) == "المكتبة: \u{2068}Lectures\u{2069}",
                     "a Latin name isolated in an Arabic line")
             #expect(plain(SearchWords.videos(1, en)) == "1 video" && plain(SearchWords.videos(3, en)) == "3 videos")
-            #expect(plain(SearchWords.videos(3, arSA)) == "عدد المقاطع: ٣")
+            #expect(plain(SearchWords.videos(3, arSA)) == "عدد المقاطع: 3")
         }
 
         @Test func theKindsSortsAndDidYouMeanInEachLanguage() {

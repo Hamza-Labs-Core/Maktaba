@@ -20,6 +20,7 @@ import { useToast } from "@ds/components/Toast/Toast";
 import { api } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { useI18n } from "../../lib/i18n";
+import { numberFormat } from "../../lib/intl";
 import { BASE } from "../../lib/basePath";
 import { EDITION } from "../../lib/edition";
 import { copyText } from "../../lib/clipboard";
@@ -398,9 +399,7 @@ export function AboutPanel() {
       </section>
       <p className="mkt-muted mkt-about__copyright">
         {t("about.copyright", {
-          year: new Date()
-            .getFullYear()
-            .toLocaleString(locale === "ar" ? "ar-EG" : "en", { useGrouping: false }),
+          year: numberFormat(locale, { useGrouping: false }).format(new Date().getFullYear()),
         })}
       </p>
     </div>

@@ -75,7 +75,7 @@ private struct ProcessRow: View {
             if let exit = process.lastExit, exit.failed {
                 Group {
                     if let at = exit.at {
-                        Text("Last exit: \(exit.sentence), \(at.formatted(.relative(presentation: .named)))")
+                        Text("Last exit: \(exit.sentence), \(at.formatted(.relative(presentation: .named).locale(AppLanguage.locale)))")
                     } else {
                         Text("Last exit: \(exit.sentence)")
                     }
@@ -107,7 +107,7 @@ private struct ProcessRow: View {
         parts.append(String(localized: "\(process.restarts) restarts"))
         if process.pid != nil, let up = process.uptimeSec { parts.append(String(localized: "up for \(shortDuration(up))")) }
         if let next = process.nextRestartAt {
-            parts.append(String(localized: "next restart \(next.formatted(date: .omitted, time: .shortened))"))
+            parts.append(String(localized: "next restart \(next.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(AppLanguage.locale)))"))
         }
         if process.adopted { parts.append(String(localized: "kept across a restart")) }
         return parts.joined(separator: " · ")
@@ -145,7 +145,7 @@ private struct EventRow: View {
                     .foregroundStyle(event.isFailure ? .red : .primary)
             }
             if let at = event.at {
-                Text(at.formatted(date: .abbreviated, time: .standard)).font(.caption).foregroundStyle(.secondary)
+                Text(at.formatted(Date.FormatStyle(date: .abbreviated, time: .standard).locale(AppLanguage.locale))).font(.caption).foregroundStyle(.secondary)
             }
         }
     }
