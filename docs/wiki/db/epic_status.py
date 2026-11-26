@@ -169,7 +169,7 @@ def rewrite_summary(lines: list[str], epics: list[Epic], errors: list[str]) -> C
         total += e.counts()
     total_row = None
     for j in range(start, end):
-        line = lines[j]
+        line = lines[j].lstrip()
         if not is_table_row(line):
             continue
         row = cells(line)
@@ -194,7 +194,8 @@ def rewrite_summary(lines: list[str], epics: list[Epic], errors: list[str]) -> C
             counts = [f"{c[DONE]}{'*' if sampled else ''}"] + [str(c[s]) for s in STATUSES[1:]]
         if len(row) != 6:
             raise PageError(f"line {j + 1}: a Summary row has {len(row)} columns, not 6")
-        lines[j] = "| " + " | ".join([row[0], *counts, row[5]]) + " |"
+        indent = lines[j][:len(lines[j]) - len(line)]
+        lines[j] = indent + "| " + " | ".join([row[0], *counts, row[5]]) + " |"
     for e in epics:
         if e.number not in seen:
             errors.append(f"line {e.line}: Epic {e.number:02d} has no row in the Summary table")

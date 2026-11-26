@@ -195,12 +195,13 @@ def pairs_of(files: dict[str, str]) -> dict[tuple[str, str, str], set[str]]:
     return out
 
 
-def entry_names(files: dict[str, str]) -> dict[tuple[str, str, str], set[str]]:
-    """Fragments sharing an entry's text in either language within the same section."""
-    out: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+def entry_names(files: dict[str, str]) -> dict[tuple[str, str, str], dict[str, str]]:
+    """For each wording, the fragments that contain it and the English text in each."""
+    out: dict[tuple[str, str, str], dict[str, str]] = defaultdict(dict)
     for (section, en, ar), names in pairs_of(files).items():
-        out[section, "en", en].update(names)
-        out[section, "ar", ar].update(names)
+        for name in names:
+            out[section, "en", en][name] = en
+            out[section, "ar", ar][name] = en
     return out
 
 
@@ -319,9 +320,11 @@ def check_frozen(
             if correction and reason:
                 out.append(("notice", f, notice))
             else:
-                message = f"{label} is frozen: a new entry is a fragment pair in {DIR}/. {how} moves this branch's entries there"
+                message = f"{label} is frozen: a new entry is a fragment pair in {DIR}/."
                 if correction:
-                    message += "; correcting an entry that is there already needs a `Changelog-Edit: <reason>` trailer"
+                    message += " Correcting an existing entry needs a `Changelog-Edit: <reason>` trailer."
+                elif heading == UNRELEASED[lang]:
+                    message += f" {how} moves this branch's entries there."
                 out.append(("error", f, message))
     return out
 
@@ -366,17 +369,22 @@ def check_twice(was: dict[str, str], now: dict[str, str], head: str) -> list[tup
     """(level, file, message) for an entry in a fragment the branch adds and in another one."""
     out = []
     reported = set()
-    for (_, _, entry), names in sorted(entry_names(now).items()):
+    entries = entry_names(now)
+    for section, lang, entry in sorted(entries, key=lambda key: (key[0], key[1] != "en", key[2])):
+        names = entries[section, lang, entry]
         if len(names) < 2:
             continue
         mine = sorted(n for n in names if n not in was and not came(n, head))
         if not mine:
             continue
         f = mine[-1]
-        other = mine[0] if len(mine) > 1 else min(names - {f})
-        if (f, other) in reported:
+        other = mine[0] if len(mine) > 1 else min(names.keys() - {f})
+        pair = (section, f, names[f], other, names[other])
+        if pair in reported:
             continue
-        reported.add((f, other))
+        reported.add(pair)
+        if lang == "ar":
+            f, other = (name.removesuffix(".md") + ".ar.md" for name in (f, other))
         what = f"its entry {entry.splitlines()[0][:70]!r} is in"
         if len(mine) > 1:
             out.append(("error", f"{DIR}/{f}", f"{what} {DIR}/{other} too, which this branch also adds: keep one"))
@@ -402,7 +410,6 @@ def check(base: str, head: str) -> int:
     if any(level == "error" for level, _, _ in found):
         print(f"\nA changelog entry is a pair of files of its own ({README}). Add:\n")
         print(template(f"{datetime.date.today().isoformat()}-your-slug"))
-        print(f"\nOr, with the lines in CHANGELOG.md and CHANGELOG.ar.md already: {CONVERT}")
         return 1
     print(f"changelog fragments: {len(files) // 2} pair(s), in English and Arabic")
     return 0

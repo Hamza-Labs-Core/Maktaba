@@ -478,7 +478,7 @@ def simulate(
 ) -> dict[str, Run | None]:
     """Which jobs run (each assumed to pass) when the given filters are true. `repo`: a file
     other than the trail changed (by default, when a filter is true). `event`: a pull
-    request, a push to main, or a branch head (ci-branch.yml's call, a push with `base`)."""
+    request, a push to main, or a branch head (ci-branch.yml's call, a push with `base` and `base_ref`)."""
     if event not in EVENTS:
         raise ValueError(f"event {event!r} is not one of {EVENTS}")
     true_filters = set(true_filters)
@@ -497,7 +497,10 @@ def simulate(
             "ref": {"pull_request": "refs/pull/1/merge", "push": "refs/heads/main"}.get(event, "refs/heads/a-branch"),
             "event": {"pull_request": {"head": {"repo": {"fork": fork}}}} if event == "pull_request" else {},
         },
-        "inputs": {"base": _A_SHA if event == "branch" else ""},
+        "inputs": {
+            "base": _A_SHA if event == "branch" else "",
+            "base_ref": "main" if event == "branch" else "",
+        },
     }
     if not full:
         step_outputs["filter"]["outputs"] = {name: "true" for name in true_filters}

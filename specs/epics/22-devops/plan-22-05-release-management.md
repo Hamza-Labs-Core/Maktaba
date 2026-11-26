@@ -124,14 +124,11 @@ echo "$new" > VERSION
 sed -i "s/^__version__ = .*/__version__ = \"$new\"/" pipeline/src/maktaba_pipeline/__about__.py
 sed -i "s/^export const version = .*/export const version = \"$new\";/" web/src/version.ts
 sed -i "s/^version = .*/version = \"$new\"/" pipeline/pyproject.toml
-
-# Cut Unreleased into a new section header.
-today=$(date -u +%Y-%m-%d)
-sed -i "s/^## \[Unreleased\]/## [Unreleased]\n### Added\n### Changed\n### Fixed\n\n## [$new] — $today/" CHANGELOG.md
 ```
 
-The release flow runs `bump-version` on a release branch *before*
-tagging. The next-`Unreleased` section is left empty for the next round.
+The release flow runs `bump-version` on a release branch before tagging.
+The portal reads the release tag to assign fragments to a release. Both
+legacy CHANGELOG files stay frozen.
 
 ### 2.7 The release workflow
 
@@ -287,7 +284,6 @@ the labels with the matching SHA.
 | Mobile app version (EC3) | `apps/mobile/capacitor.config.ts` carries `compatibleApiVersion: ">=1.2.0 <2.0.0"`; the API rejects connections from a mobile client whose tag falls outside; UI shows a clear update prompt. | `TestMobileCompatGate` |
 | Tagging an old commit by mistake | `guard` job asserts the tag commit is on main or a `release/*` branch; tags on feature branches fail. | `TestTagMustBeOnMain` |
 | CI never ran on the tag commit | The guard runs `gh run list --commit ${sha}`; if no green CI run exists, fail. | `TestRequireCiGreen` |
-| Release notes empty | `awk` extracts the section by heading match; if empty, `gh release create` still publishes but a soft warning logs "empty release notes — did you forget to bump VERSION?". | `TestEmptyReleaseNotesWarn` |
 | Two releases the same minute | Tag uniqueness in git prevents collisions; the workflow's "tag existing" check refuses re-publish. | n/a |
 | Bump version forgot one file | `tools/check-version-consistency.sh` fails CI before the release tag is even pushed (the gate runs in lint). | `TestVersionConsistencyFailsCi` |
 | Tap PR conflict (concurrent release) | The `homebrew` job uses `git pull --rebase` before push; on conflict, fails with a manual-fix instruction in `RELEASING.md`. | n/a |
@@ -298,7 +294,7 @@ the labels with the matching SHA.
 |---|---|---|
 | `gh` CLI | bundled | Release creation; lookup of CI runs. |
 | `crane` (`go-containerregistry`) | latest | OCI label inspection in tests. |
-| `awk`, `sed` | POSIX | Changelog extraction; version bump. |
+| `sed` | POSIX | Version bump. |
 | Homebrew tap repo | n/a | External: `maktaba/homebrew-tap` with PAT. |
 
 ## 6. Acceptance checklist
@@ -309,8 +305,8 @@ the labels with the matching SHA.
 - [ ] `--version` and `/api/system/version` agree on every build.
 
 **Changelog**
-- [ ] Keep-a-Changelog format.
-- [ ] Gate fires on every non-`docs-only` PR.
+- [ ] Submitted fragment pairs use matching Keep a Changelog sections.
+- [ ] A PR can pass without a new fragment. CI guards frozen legacy entries.
 
 **Release flow**
 - [ ] Tag on a non-main commit (except `release/*`) refuses to release.

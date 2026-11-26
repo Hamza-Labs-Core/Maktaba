@@ -23,8 +23,9 @@ from a green main.
 
 - TC1. Version surface: a fresh build's `--version` matches the tag
   and the embedded git sha; mismatch fails the release workflow.
-- TC2. Changelog gate: a feature PR without a CHANGELOG line fails
-  CI; a docs-only PR is exempt.
+- TC2. Changelog gate: a PR without a fragment passes if it leaves
+  frozen entries alone. Invalid fragment pairs and new entries in a
+  frozen changelog section fail the gate.
 - TC3. Tag → artifact lineage: the published image's OCI label
   `org.opencontainers.image.revision` matches the source tag commit.
 

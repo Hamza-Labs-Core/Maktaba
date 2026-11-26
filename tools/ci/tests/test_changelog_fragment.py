@@ -344,6 +344,7 @@ def test_released_sections_refuse_new_entries_even_with_the_trailer(repo: Repo, 
     repo.commit("add to a release\n\nChangelog-Edit: correct a typo")
     code, out = check(repo)
     assert code == 1 and "[0.2.0] is frozen" in out
+    assert cf.CONVERT not in out
 
 
 @pytest.mark.parametrize("lang", ["en", "ar"])
@@ -616,6 +617,22 @@ def test_the_same_entry_in_two_fragments_the_branch_adds_is_an_error(repo: Repo)
         repo.git("commit", "-q", "--allow-empty", "-m", "feat")
 
 
+def test_two_distinct_repeats_between_the_same_fragments_are_reported_in_english(repo: Repo) -> None:
+    repo.land()
+    repo.git("checkout", "-q", "-b", "topic")
+    files = {
+        f"{cf.DIR}/{name}": body + ("\n- A second entry\n" if not name.endswith(".ar.md") else "\n- مُدخل ثانٍ\n")
+        for name, body in TWICE.items()
+    }
+    repo.write(**files)
+    code, out = check(repo)
+    assert code == 1
+    errors = [line for line in out.splitlines() if line.startswith("::error")]
+    assert len(errors) == 2
+    for entry in ("- **A.** x", "- A second entry"):
+        assert any(line.startswith("::error file=changelog.d/2026-11-26-a.md::") and repr(entry) in line for line in errors)
+
+
 @pytest.mark.parametrize(("en", "ar", "duplicates"), [
     ("### Added\n\n- **A.** x\n", "### أُضيف\n\n- **أ.** س\n", False),
     ("### Fixed\n\n- **A.** x\n", "### أُصلح\n\n- **أ.** غيره\n", True),
@@ -630,6 +647,9 @@ def test_a_matching_translation_identifies_the_same_entry(repo: Repo, en: str, a
     code, out = check(repo)
     assert code == int(duplicates)
     assert ("which this branch also adds" in out) == duplicates
+    if duplicates:
+        suffix = ".ar.md" if "**A.** y" in en else ".md"
+        assert f"::error file=changelog.d/2026-11-26-a{suffix}::" in out
 
 
 def test_an_entry_main_has_is_a_warning_with_nothing_to_do(repo: Repo) -> None:

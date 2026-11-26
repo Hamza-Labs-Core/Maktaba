@@ -30,7 +30,7 @@ APPLE = DOCS["_apple-apps.yml"]["jobs"]
 DEVICES = ("iphone", "ipad")
 
 # a runner there are few of: GitHub's macOS and Windows images, and the Xcode 27 one
-SCARCE = re.compile(r'"(?:macos|windows|xcode)(?:-[^"]+)?"', re.IGNORECASE)
+SCARCE = re.compile(r"""["'](?:macos|windows|xcode)(?:-[^"']+)?["']""", re.IGNORECASE)
 # what asks GitHub about runs, jobs, artifacts or checks, or about a release another job
 # publishes; asking in a loop, or with a sleep, is waiting (asked once, for what an earlier run
 # left, it holds nothing: nightly-perf.yml's last night's numbers)
@@ -45,7 +45,10 @@ ASKS = re.compile(
 AGAIN = re.compile(r"\b(?:while|until|for|sleep|setTimeout|Start-Sleep|do)\b|gh (?:run watch|pr checks .*--watch)")
 # what waits for a check or an artifact by itself
 WAITING_ACTION = re.compile(r"wait-(?:on|for)-(?:check|artifact|workflow|github)|wait-for-it", re.IGNORECASE)
-SCRIPT = re.compile(r"(?:tools|tests|deploy|web)/[\w./-]+\.(?:sh|ps1)")
+SCRIPT_PATH = r"[\w./-]+\.(?:sh|ps1)"
+SCRIPT = re.compile(rf"(?:tools|tests|deploy|web)/{SCRIPT_PATH}")
+SCRIPT_RELATIVE = re.compile(rf"""(?:^|[\s"'=/])(\.\.?/{SCRIPT_PATH})""")
+SCRIPT_SIBLING = re.compile(rf"(?:\$\{{?\w+\}}?|\$\(dirname\s+[^)]*\))/({SCRIPT_PATH})")
 
 
 def _scarce(job: dict[str, Any]) -> bool:
@@ -58,18 +61,22 @@ def _scarce(job: dict[str, Any]) -> bool:
 def _scripts(text: str) -> list[str]:
     """What a step runs: its own text, and each of the repository's shell and PowerShell scripts
     it names (one run only to test itself asks nothing)."""
-    found = [text]
+    root = ROOT.resolve()
+    found = [(text, root)]
     visited: set[Path] = set()
-    for source in found:
+    for source, base_dir in found:
         for line in source.splitlines():
             if "--self-test" in line or line.strip().startswith("#"):
                 continue
-            for name in SCRIPT.findall(line):
-                path = (ROOT / name).resolve()
-                if path not in visited and path.is_relative_to(ROOT) and path.is_file():
+            paths = [root / name for name in SCRIPT.findall(line)]
+            paths.extend(base_dir / name for name in SCRIPT_RELATIVE.findall(line))
+            paths.extend(base_dir / name for name in SCRIPT_SIBLING.findall(line))
+            for candidate in paths:
+                path = candidate.resolve()
+                if path not in visited and path.is_relative_to(root) and path.is_file():
                     visited.add(path)
-                    found.append(path.read_text(encoding="utf-8"))
-    return found
+                    found.append((path.read_text(encoding="utf-8"), path.parent))
+    return [source for source, _ in found]
 
 
 def _asks(text: str) -> list[str]:
@@ -138,17 +145,29 @@ def test_plain_self_hosted_labels_are_scarce(label: str) -> None:
     assert _scarce({"runs-on": ["self-hosted", label]})
 
 
-def test_nested_scripts_are_scanned_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_expression_can_select_a_scarce_label() -> None:
+    assert _scarce({"runs-on": "${{ inputs.fast && 'macos-15' || 'ubuntu-latest' }}"})
+
+
+@pytest.mark.parametrize(("wrapper_call", "inner_call"), [
+    ("bash tools/release/sub/inner.sh", "bash tools/release/tag-guard.sh"),
+    ('bash "$(dirname "$0")/sub/inner.sh"', "bash ../tag-guard.sh"),
+    ("bash ./sub/inner.sh", "bash ../tag-guard.sh"),
+    ('bash "${SCRIPT_DIR}/sub/inner.sh"', 'bash "$SCRIPT_DIR/../tag-guard.sh"'),
+    ('bash "$here/sub/inner.sh"', '. "$(dirname "${BASH_SOURCE[0]}")/../tag-guard.sh"'),
+])
+def test_nested_scripts_are_scanned_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, wrapper_call: str, inner_call: str
+) -> None:
     guard = ROOT / "tools/release/tag-guard.sh"
     release = tmp_path / "tools/release"
-    release.mkdir(parents=True)
+    (release / "sub").mkdir(parents=True)
     (release / guard.name).write_bytes(guard.read_bytes())
-    wrapper = release / "wrapper.sh"
-    wrapper.write_text("bash tools/release/inner.sh\n", encoding="utf-8")
-    (release / "inner.sh").write_text(
-        "bash tools/release/wrapper.sh\nbash tools/release/tag-guard.sh\n", encoding="utf-8"
-    )
-    monkeypatch.setattr(sys.modules[__name__], "ROOT", tmp_path)
+    (release / "wrapper.sh").write_text(f"{wrapper_call}\n", encoding="utf-8")
+    (release / "sub/inner.sh").write_text(f"bash ../wrapper.sh\n{inner_call}\n", encoding="utf-8")
+    alias = tmp_path.parent / f"{tmp_path.name}-alias"
+    alias.symlink_to(tmp_path, target_is_directory=True)
+    monkeypatch.setattr(sys.modules[__name__], "ROOT", alias)
     direct = _waits([{"run": "bash tools/release/tag-guard.sh"}])
     assert direct
     assert _waits([{"run": "bash tools/release/wrapper.sh"}]) == direct

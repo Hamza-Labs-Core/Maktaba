@@ -84,6 +84,14 @@ class Counts(unittest.TestCase):
         self.assertIn("| 02 Search | 1 | 1 | 3 | 1 | **Partial** (hand-written verdict) |", new)
         self.assertIn("| **Total** | **3** | **1** | **3** | **1** | **Not all done** |", new)
 
+    def test_indented_summary_rows_keep_their_indentation(self) -> None:
+        page = PAGE.replace("| 01 Scanner", "  | 01 Scanner").replace("| **Total**", "   | **Total**")
+        page = page.replace("|---|---:", "  |---|---:", 1)
+        new = fixed(page)
+        self.assertIn("\n  | 01 Scanner | 2* | 0 | 0 | 0 | Done |", new)
+        self.assertIn("\n   | **Total** | **3** | **1** | **3** | **1**", new)
+        self.assertEqual(fixed(new), new)
+
     def test_the_sentence_comes_from_the_rows_and_keeps_its_prose(self) -> None:
         new = fixed()
         self.assertIn("**Not every epic is done.** Of 8 stories across all 2 epics, 3 are done, "
