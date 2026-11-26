@@ -86,6 +86,66 @@ func TestUndoTakesBackADeploysMigrations(t *testing.T) {
 	}
 }
 
+// Backfill values in migration-owned columns are disposable. A sibling
+// column that was added but not backfilled still gets the ordinary value check.
+func TestUndoAdditiveBackfill(t *testing.T) {
+	ctx := context.Background()
+	const script = `-- +goose Up
+ALTER TABLE public.ua ADD COLUMN "filled column" TEXT, ADD COLUMN spare TEXT;
+UPDATE "public"."ua" AS a SET "filled column" = '(' || a.kept || ')' WHERE a.id = 1;
+-- +goose Down
+ALTER TABLE ua DROP COLUMN "filled column", DROP COLUMN spare;
+`
+	pool, m := undoWorld(t, map[string]string{"00000010_fill.sql": script})
+	if _, err := pool.DB.Exec(`UPDATE ua SET spare = 'written'`); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Undo(ctx, []int64{10}); !errors.Is(err, db.ErrUndoKeeps) {
+		t.Fatalf("unfilled addition has a new value: %v", err)
+	}
+	if _, err := pool.DB.Exec(`UPDATE ua SET spare = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if err := m.Undo(ctx, []int64{10}); err != nil {
+		t.Fatal(err)
+	}
+	if has(t, pool, `EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ua' AND column_name IN ('filled column', 'spare'))`) ||
+		!has(t, pool, `EXISTS (SELECT 1 FROM ua WHERE kept = 'x')`) {
+		t.Fatal("wrong schema or data after undo")
+	}
+}
+
+func TestUndoBackfillWithUpdateTrigger(t *testing.T) {
+	ctx := context.Background()
+	const trigger = `-- +goose Up
+-- +goose StatementBegin
+CREATE FUNCTION ua_before_update() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.kept := 'changed by trigger';
+    RETURN NEW;
+END;
+$$;
+-- +goose StatementEnd
+CREATE TRIGGER ua_before_update BEFORE UPDATE ON ua FOR EACH ROW EXECUTE FUNCTION ua_before_update();
+-- +goose Down
+DROP TRIGGER ua_before_update ON ua;
+DROP FUNCTION ua_before_update();
+`
+	const backfill = `-- +goose Up
+ALTER TABLE ua ADD COLUMN y INT;
+UPDATE ua SET y = 7;
+-- +goose Down
+ALTER TABLE ua DROP COLUMN y;
+`
+	pool, m := undoWorld(t, map[string]string{"00000005_trigger.sql": trigger, "00000010_fill.sql": backfill})
+	if !has(t, pool, `EXISTS (SELECT 1 FROM ua WHERE kept = 'changed by trigger')`) {
+		t.Fatal("the backfill did not fire the trigger")
+	}
+	if err := m.Undo(ctx, []int64{10}); !errors.Is(err, db.ErrUndoLossy) {
+		t.Fatalf("trigger-backed update must be held: %v", err)
+	}
+}
+
 // A Down script that would delete rows written since the deploy is not run, nor any other of it.
 func TestUndoKeepsWhatWasWrittenSince(t *testing.T) {
 	ctx := context.Background()
@@ -207,6 +267,9 @@ func TestUndoJudgesEveryMigration(t *testing.T) {
 		verdict, err := m.Judge(ctx, string(text))
 		if err != nil {
 			t.Errorf("%s: %v", e.Name(), err)
+		}
+		if e.Name() == "00580004_security_retention.sql" && verdict.Err != nil {
+			t.Errorf("%s: %s", e.Name(), verdict)
 		}
 		judged++
 		t.Logf("%s: %s", e.Name(), verdict)

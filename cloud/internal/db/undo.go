@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -140,12 +141,27 @@ func (v Verdict) String() string {
 
 // Judge reads a migration's text, and what its Down script would delete as the database is now.
 func (m *Migrator) Judge(ctx context.Context, text string) (Verdict, error) {
-	up, down := migrationSections(text)
+	rawUp, rawDown := migrationSections(text)
+	up, down := withoutBodies(withoutComments(rawUp)), withoutBodies(withoutComments(rawDown))
 	if strings.TrimSpace(down) == "" {
 		return Verdict{ErrUndoLossy, "has no Down script"}, nil
 	}
-	if what := upLoses(text, up); what != "" {
-		return Verdict{ErrUndoLossy, what}, nil
+	if contractMark.MatchString(text) {
+		return Verdict{ErrUndoLossy, "is a contract migration"}, nil
+	}
+	if !downRestores.MatchString(text) {
+		upSQL := undoSQL(rawUp)
+		if backfill := backfillColumns(upSQL, undoSQL(rawDown)); backfill != nil {
+			return m.judgeBackfill(ctx, backfill)
+		}
+		for _, stmt := range upSQL {
+			if startsSQL(stmt, "update") || (startsSQL(stmt, "with") && slices.Contains(stmt, "update")) {
+				return Verdict{ErrUndoLossy, "changed rows with UPDATE"}, nil
+			}
+		}
+		if what := upLoses(up); what != "" {
+			return Verdict{ErrUndoLossy, what}, nil
+		}
 	}
 	what, err := m.downLoses(ctx, down)
 	if err != nil || what == "" {
@@ -173,17 +189,19 @@ func migrationFile(dir fs.FS, version int64) (name, text string, err error) {
 	return "", "", fmt.Errorf("this release has no migration %d", version)
 }
 
-// migrationSections are a migration's Up and Down scripts, without comments, goose's directives
-// and dollar-quoted bodies (a function's body is defined, not run).
+var gooseUp = regexp.MustCompile(`(?m)^[ \t]*--[ \t]+\+goose[ \t]+Up[ \t\r]*$`)
+var gooseDown = regexp.MustCompile(`(?m)^[ \t]*--[ \t]+\+goose[ \t]+Down[ \t\r]*$`)
+
+// migrationSections separates a migration's Up and Down scripts.
 func migrationSections(text string) (up, down string) {
 	up = text
-	if i := strings.Index(up, "+goose Down"); i >= 0 {
-		up, down = up[:i], up[i+len("+goose Down"):]
+	if mark := gooseDown.FindStringIndex(up); mark != nil {
+		up, down = up[:mark[0]], up[mark[1]:]
 	}
-	if i := strings.Index(up, "+goose Up"); i >= 0 {
-		up = up[i+len("+goose Up"):]
+	if mark := gooseUp.FindStringIndex(up); mark != nil {
+		up = up[mark[1]:]
 	}
-	return withoutBodies(withoutComments(up)), withoutBodies(withoutComments(down))
+	return up, down
 }
 
 var blockComment = regexp.MustCompile(`(?s)/\*.*?\*/`)
@@ -261,13 +279,7 @@ func dropped(script string) (tables []string, columns [][2]string) {
 }
 
 // upLoses says how a migration's Up lost data no Down script gives back ("" it did not).
-func upLoses(text, up string) string {
-	if contractMark.MatchString(text) {
-		return "is a contract migration"
-	}
-	if downRestores.MatchString(text) {
-		return ""
-	}
+func upLoses(up string) string {
 	if doBlock.MatchString(up) {
 		return "runs a DO block, whose effect is not known"
 	}
@@ -314,29 +326,36 @@ func (m *Migrator) downLoses(ctx context.Context, down string) (string, error) {
 		}
 	}
 	for _, c := range columns {
-		var def sql.NullString
-		err := m.pool.DB.QueryRowContext(ctx, `
+		if why, err := m.downColumnLoses(ctx, c[0], c[1]); why != "" || err != nil {
+			return why, err
+		}
+	}
+	return "", nil
+}
+
+func (m *Migrator) downColumnLoses(ctx context.Context, table, column string) (string, error) {
+	var def sql.NullString
+	err := m.pool.DB.QueryRowContext(ctx, `
             SELECT pg_get_expr(d.adbin, d.adrelid)
               FROM pg_attribute a LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
              WHERE a.attrelid = to_regclass($1) AND a.attname = $2 AND NOT a.attisdropped`,
-			c[0], strings.Trim(c[1], `"`)).Scan(&def)
-		if errors.Is(err, sql.ErrNoRows) {
-			continue // the column is not there (DROP COLUMN IF EXISTS)
-		}
-		if err != nil {
-			return "", err
-		}
-		d := "NULL"
-		if def.Valid {
-			d = "(" + def.String + ")"
-		}
-		has, err := m.exists(ctx, c[0], `SELECT EXISTS (SELECT 1 FROM `+c[0]+` WHERE (`+c[1]+`)::text IS DISTINCT FROM (`+d+`)::text)`)
-		if err != nil {
-			return "", err
-		}
-		if has {
-			return "drops the column " + c[0] + "." + c[1] + ", which holds values", nil
-		}
+		table, strings.ReplaceAll(strings.TrimSuffix(strings.TrimPrefix(column, `"`), `"`), `""`, `"`)).Scan(&def)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil // the column is not there (DROP COLUMN IF EXISTS)
+	}
+	if err != nil {
+		return "", err
+	}
+	d := "NULL"
+	if def.Valid {
+		d = "(" + def.String + ")"
+	}
+	has, err := m.exists(ctx, table, `SELECT EXISTS (SELECT 1 FROM `+table+` WHERE (`+column+`)::text IS DISTINCT FROM (`+d+`)::text)`)
+	if err != nil {
+		return "", err
+	}
+	if has {
+		return "drops the column " + table + "." + column + ", which holds values", nil
 	}
 	return "", nil
 }

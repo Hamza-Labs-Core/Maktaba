@@ -2,6 +2,7 @@ package privacy
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -50,7 +51,7 @@ func CurrentPolicy() Policy {
 			"A home's public IP address, for direct connections, and how much it relayed, every 5 minutes and every month: until the home is removed",
 			"Sign-in sessions, with the device's name and IP address: up to 31 days after they were last used",
 			"The cloud's request log, with the IP address and a code for the account: until it is overwritten",
-			"Security and abuse records, with IP addresses and sometimes an email address: with no fixed end yet, after the account is deleted too",
+			fmt.Sprintf("Security audit records, which may include an IP address or email address, expire after %d days. Abuse signals, which can be tied to an account, home, or IP address, expire after %d days. Deleting an account removes records linked directly to it or its homes. Records linked only to an IP address expire on schedule.", AuditRetentionDays, AbuseRetentionDays),
 			"Account email: its content sealed until it is sent; then the address as a keyed hash, with the kind, time and outcome, 35 days; the network that asked for it, as a keyed hash, a day",
 			"Backups of the database: 14 days",
 		},
@@ -66,7 +67,7 @@ func CurrentPolicy() Policy {
 		Rights: []string{
 			"Access", "Erasure", "Restriction", "Objection", "Portability",
 		},
-		UpdatedAt: "2026-11-25",
+		UpdatedAt: "2026-11-26",
 	}
 }
 

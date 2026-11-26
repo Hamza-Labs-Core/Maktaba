@@ -47,6 +47,7 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 		os.Exit(2)
 	}
 	defer closeLock()
+	security := privacy.NewSecurityRetention(pool.DB)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -57,6 +58,7 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		_ = obs.WriteMetrics(w)
 		_ = writeLeaderMetric(w, leader)
+		_ = security.WriteMetrics(w)
 	})
 	// in the api pool (story 50.17) the witness's Prometheus scrapes worker_leader over the
 	// private network: MAKTABA_CLOUD_WORKER_CONTROL_ADDR puts the port on the node's private
@@ -74,7 +76,7 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go leader.Run(ctx, func(ctx context.Context) { workerJobs(ctx, logger, cfg, pool) })
+	go leader.Run(ctx, func(ctx context.Context) { workerJobs(ctx, logger, cfg, pool, security) })
 
 	// Block until SIGTERM.
 	if err := server.Run(ctx, logger, srv, cfg.Server.ShutdownGrace); err != nil {
@@ -86,7 +88,7 @@ func runWorker(logger *slog.Logger, cfg config.Config, pool *db.Pool, _ *db.Migr
 // workerJobs runs the worker's periodic jobs until ctx ends (the node stopped leading, or it
 // stops). Each is idempotent: a node that loses the lock part way leaves its job for the next
 // holder to run again.
-func workerJobs(ctx context.Context, logger *slog.Logger, cfg config.Config, pool *db.Pool) {
+func workerJobs(ctx context.Context, logger *slog.Logger, cfg config.Config, pool *db.Pool, security *privacy.SecurityRetention) {
 	var wg sync.WaitGroup
 	run := func(f func()) {
 		wg.Add(1)
@@ -94,6 +96,7 @@ func workerJobs(ctx context.Context, logger *slog.Logger, cfg config.Config, poo
 	}
 	run(func() { cleanupExpired(ctx, logger, pool) })
 	run(func() { purgeDeletedAccounts(ctx, logger, cfg, pool) })
+	run(func() { security.Run(ctx, logger) })
 	// story 50.19: relayed streams silent for 2 minutes stop counting against their plan
 	run(func() { sweepStreams(ctx, logger, &billingpkg.Streams{DB: pool.DB}, time.Minute) })
 	// story 50.19 §6: the hourly pay-as-you-go usage reports, with a payment provider that
@@ -215,10 +218,8 @@ func accountPurger(cfg config.Config, pool *db.Pool, logger *slog.Logger) *priva
 }
 
 // purgeDeletedAccounts removes users whose deletion hold has elapsed.
-// We run once an hour. Each account first goes through the GDPR erasure
-// (privacy.DataSubjectService, story 30.2) so its push logs, which have
-// no FK to users, go with it; CASCADE on the FK chains then drops
-// sessions, oauth links, servers, etc.
+// Each hourly pass removes account-linked push and security records along
+// with the users; foreign keys cascade to sessions, OAuth links, servers, etc.
 func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, cfg config.Config, pool *db.Pool) {
 	purger := accountPurger(cfg, pool, logger)
 	t := time.NewTicker(1 * time.Hour)
@@ -237,7 +238,8 @@ func purgeDeletedAccounts(ctx context.Context, logger *slog.Logger, cfg config.C
 				logger.Warn("worker: deletion purge left an account for the next pass", "user_id", id, "err", ferr)
 			}
 			if res.Purged > 0 {
-				logger.Info("worker: purged deleted accounts", "accounts", res.Purged, "push_log_rows", res.PushRows)
+				logger.Info("worker: purged deleted accounts", "accounts", res.Purged, "push_log_rows", res.PushRows,
+					"audit_rows", res.AuditRows, "abuse_rows", res.AbuseRows)
 			}
 		}
 	}

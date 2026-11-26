@@ -1,6 +1,7 @@
 package privacy
 
 import (
+	"fmt"
 	"net/http/httptest"
 	"slices"
 	"strings"
@@ -127,9 +128,23 @@ func TestPolicyAndProcessingRecords(t *testing.T) {
 	if !strings.Contains(strings.Join(p.AccountData, " "), "Email address") || !strings.Contains(strings.Join(p.AccountData, " "), "35 days") {
 		t.Errorf("account data: %v", p.AccountData)
 	}
-	for _, must := range []string{"public IP address", "how much it relayed", "request log", "sometimes an email"} {
+	for _, must := range []string{"public IP address", "how much it relayed", "request log", "email address"} {
 		if !strings.Contains(strings.Join(p.AccountData, "; "), must) {
 			t.Errorf("account data does not say %q", must)
+		}
+	}
+	security := slices.IndexFunc(p.AccountData, func(s string) bool { return strings.HasPrefix(s, "Security audit records") })
+	if security < 0 {
+		t.Fatal("account data is missing security records")
+	}
+	for _, must := range []string{
+		fmt.Sprintf("expire after %d days", AuditRetentionDays),
+		fmt.Sprintf("expire after %d days", AbuseRetentionDays),
+		"Deleting an account removes records linked directly to it or its homes",
+		"Records linked only to an IP address expire on schedule",
+	} {
+		if !strings.Contains(p.AccountData[security], must) {
+			t.Errorf("security records policy does not say %q", must)
 		}
 	}
 	for _, n := range p.NotCollected {
