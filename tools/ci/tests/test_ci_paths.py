@@ -131,9 +131,9 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     ),
     "api only": (
         ["api/internal/handlers/browse/browse.go"],
-        GO_SERVER | {"images"},
+        GO_SERVER | {"images", "cve-gate"},
         # Epic 57 (story 57.13): the parental bypass rehearsal runs for the API's code
-        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "compat_prev", "parental_bypass", "tv_clients"}},
+        {"lint": {"go"}, "unit": {"go"}, "cve-gate": {"go"}, "integration": {"integration", "compat_prev", "parental_bypass", "tv_clients"}},
     ),
     "the affected-tests gate: its Go module, the hook and the map workflow": (
         ["tools/affected-tests/analyze.go", ".githooks/pre-push", ".github/workflows/coverage-map.yml"],
@@ -143,11 +143,12 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     "server only": (
         ["cmd/maktaba-server/internal/supervisor/supervisor.go"],
         # the supervisor decides what runs on an idle Core home: the mac app's Bundle size
-        {"unit", "integration", "replica", "launcher", "node-packaging", "mac-app"},
+        {"unit", "integration", "replica", "launcher", "node-packaging", "mac-app", "cve-gate"},
         {
             "lint": {"go", "catalog"},
             # the supervisor captures the logs: its change runs the log benches (53.13)
             "unit": {"go", "log_bench"},
+            "cve-gate": {"go"},
             # Epic 57 review (finding 20): the bypass rehearsal builds the API with cmd
             "integration": {"integration", "parental_bypass", "tv_clients"},
             "node-packaging": {"release_venv"},
@@ -250,8 +251,8 @@ CASES: dict[str, tuple[list[str], set[str], dict[str, set[str]]]] = {
     # previous release's API tests do not; a pipeline change runs neither ("pipeline only")
     "streaming only: the parental bypass rehearsal": (
         ["streaming/internal/hls/serve.go"],
-        {"images", "unit", "integration", "replica", "e2e", "media-e2e", "build-artifacts", "launcher"},
-        {"lint": {"go"}, "unit": {"go"}, "integration": {"integration", "parental_bypass", "tv_clients"}},
+        {"images", "unit", "integration", "replica", "e2e", "media-e2e", "build-artifacts", "launcher", "cve-gate"},
+        {"lint": {"go"}, "unit": {"go"}, "cve-gate": {"go"}, "integration": {"integration", "parental_bypass", "tv_clients"}},
     ),
 }
 
@@ -355,15 +356,48 @@ def test_ci_yml_runs_every_gate() -> None:
     runs = run(".github/workflows/ci.yml")
     gates = set(ci_paths.load_workflow().jobs) - {"linux-app-downloads", "fork-rerun-comment"}
     assert ran(runs) == gates
-    for job in ("lint", "unit", "integration", "node-packaging", "apple-apps"):
+    for job in ("lint", "unit", "integration", "cve-gate", "node-packaging", "apple-apps"):
         assert all(v is True for v in runs[job].inputs.values()), job  # type: ignore[union-attr]
 
 
 def test_a_push_runs_everything() -> None:
     runs = run(event="push")
     assert ran(runs) == set(ci_paths.load_workflow().jobs) - {"pr-body-check", "affected-tests", "fork-rerun-comment"}
-    for job in ("lint", "unit", "integration", "node-packaging", "apple-apps"):
+    for job in ("lint", "unit", "integration", "cve-gate", "node-packaging", "apple-apps"):
         assert all(v is True for v in runs[job].inputs.values()), job  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "api/internal/handlers/browse/browse.go",
+        "streaming/main.go",
+        "cmd/maktaba-server/main.go",
+        "cloud/cmd/maktaba-cloud/main.go",
+        "cmd/maktaba-launcher/main.go",
+        "tools/healthcheck/main.go",
+        "shared/go/clientip/clientip.go",
+    ],
+)
+def test_go_source_changes_run_cve_gate_go_only(path: str) -> None:
+    assert parts(run(path), "cve-gate") == {"go"}, path
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "plugind/Cargo.lock",
+        "plugind/Cargo.toml",
+        "plugind/crates/plugind/Cargo.toml",
+        "api/go.mod",
+        "pipeline/uv.lock",
+        "web/pnpm-lock.yaml",
+        "security/suppressions/README.md",
+        ".github/workflows/cve-gate-nightly.yml",
+    ],
+)
+def test_lockfile_and_security_changes_run_full_cve_gate(path: str) -> None:
+    assert parts(run(path), "cve-gate") == {"all"}, path
 
 
 def test_a_fork_skips_e2e_and_perf_and_is_told() -> None:

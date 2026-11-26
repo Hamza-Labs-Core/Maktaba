@@ -86,17 +86,62 @@ PNPM = {
     "metadata": {"vulnerabilities": {"low": 1, "high": 1}},
 }
 
+CARGO = {
+    "vulnerabilities": {
+        "found": True,
+        "count": 3,
+        "list": [
+            {
+                "advisory": {
+                    "id": "RUSTSEC-2026-0344",
+                    "package": "ruzstd",
+                    "title": "Decompression bomb in ruzstd",
+                    "aliases": ["CVE-2026-22222"],
+                    "cvss": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H",
+                },
+                "versions": {"patched": [">=0.9.1"], "unaffected": []},
+                "package": {"name": "ruzstd", "version": "0.8.1"},
+            },
+            {
+                "advisory": {
+                    "id": "RUSTSEC-2026-0572",
+                    "package": "wasmtime",
+                    "title": "Low-severity panic",
+                    "aliases": ["GHSA-xrvr-8678-5wp8"],
+                    "cvss": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:N/A:L",
+                },
+                "versions": {"patched": [">=50.0.2"], "unaffected": []},
+                "package": {"name": "wasmtime", "version": "50.0.1"},
+            },
+            {
+                "advisory": {
+                    "id": "RUSTSEC-2026-0592",
+                    "package": "url",
+                    "title": "Unscored advisory fails closed",
+                    "aliases": ["GHSA-hrj5-67jp-wqp9"],
+                    "cvss": None,
+                },
+                "versions": {"patched": [">=2.5.9"], "unaffected": []},
+                "package": {"name": "url", "version": "2.5.8"},
+            },
+        ],
+    },
+    "warnings": {},
+}
+
 
 def write_reports(tmp: Path) -> list[str]:
     (tmp / "go.json").write_text(GOVULN_CALLED)
     (tmp / "pip.json").write_text(json.dumps(PIP))
     (tmp / "pnpm.json").write_text(json.dumps(PNPM))
+    (tmp / "cargo.json").write_text(json.dumps(CARGO))
     (tmp / "sev.json").write_text(json.dumps(SEVERITIES))
     (tmp / "sup").mkdir(exist_ok=True)
     return [
         "--govulncheck", f"streaming={tmp / 'go.json'}",
         "--pip-audit", f"pipeline={tmp / 'pip.json'}",
         "--pnpm-audit", f"web={tmp / 'pnpm.json'}",
+        "--cargo-audit", f"plugind={tmp / 'cargo.json'}",
         "--severities", str(tmp / "sev.json"),
         "--suppressions", str(tmp / "sup"),
         "--today", TODAY.isoformat(),
@@ -125,26 +170,51 @@ def test_tc2_a_called_go_vulnerability_blocks_and_an_uncalled_one_is_only_report
     assert not by_id["GO-2026-0001"].blocks
 
 
-def test_the_gate_blocks_called_go_high_python_unknown_python_and_high_npm(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_the_gate_blocks_called_go_high_python_unknown_python_high_npm_and_high_or_unknown_rust(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     rc = cve_gate.main(write_reports(tmp_path))
     assert rc == 1
-    # MODERATE Python and low npm are reported, not blocking; a Python id or an npm
-    # advisory with no severity blocks (fail closed)
-    assert blocking_ids(capsys) == {"GO-2026-6611", "GHSA-vvf4-9x63-8xvv", "PYSEC-2026-9999", "GHSA-aaaa-bbbb-cccc", "GHSA-nnnn-oooo-pppp"}
+    # MODERATE Python, low npm and CVSS-LOW Rust are reported, not blocking; unknown
+    # Python, npm or Rust advisories block (fail closed)
+    assert blocking_ids(capsys) == {
+        "GO-2026-6611",
+        "GHSA-vvf4-9x63-8xvv",
+        "PYSEC-2026-9999",
+        "GHSA-aaaa-bbbb-cccc",
+        "GHSA-nnnn-oooo-pppp",
+        "RUSTSEC-2026-0344",
+        "RUSTSEC-2026-0592",
+    }
 
 
 def test_a_recorded_unexpired_suppression_lets_its_vulnerability_through(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     args = write_reports(tmp_path)
-    # by an alias (the CVE), by the GHSA id, by the PYSEC id
+    # by an alias (the CVE/GHSA), by the GHSA id, by the PYSEC id, by the RUSTSEC id
     suppress(tmp_path, "CVE-2026-78669")
     suppress(tmp_path, "GHSA-vvf4-9x63-8xvv")
     suppress(tmp_path, "PYSEC-2026-9999")
     suppress(tmp_path, "CVE-2026-11111")
     suppress(tmp_path, "GHSA-nnnn-oooo-pppp")
+    suppress(tmp_path, "RUSTSEC-2026-0344")
+    suppress(tmp_path, "GHSA-hrj5-67jp-wqp9")
     assert cve_gate.main(args) == 0
     out = capsys.readouterr().out
     assert "Nothing blocks." in out
-    assert out.count("| suppressed |") == 5
+    assert out.count("| suppressed |") == 7
+
+
+@pytest.mark.parametrize(
+    ("vector", "want"),
+    [
+        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", "CRITICAL"),
+        ("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H", "HIGH"),
+        ("CVSS:3.1/AV:L/AC:H/PR:L/UI:N/S:U/C:N/I:N/A:H", "MEDIUM"),
+        ("CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:N/I:N/A:L", "LOW"),
+        ("CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", None),
+        (None, None),
+    ],
+)
+def test_cvss3_severity(vector: str | None, want: str | None) -> None:
+    assert cve_gate.cvss3_severity(vector) == want
 
 
 @pytest.mark.parametrize(
@@ -185,6 +255,8 @@ def test_a_report_that_cannot_be_read_is_exit_2(tmp_path: Path) -> None:
     assert cve_gate.main(["--pnpm-audit", f"web={tmp_path / 'pnpm.json'}", "--suppressions", str(tmp_path)]) == 2
     (tmp_path / "pip.json").write_text("not json")
     assert cve_gate.main(["--pip-audit", f"pipeline={tmp_path / 'pip.json'}", "--suppressions", str(tmp_path), "--severities", str(tmp_path / "pnpm.json")]) == 2
+    (tmp_path / "cargo.json").write_text(json.dumps({"error": "db fetch failed"}))
+    assert cve_gate.main(["--cargo-audit", f"plugind={tmp_path / 'cargo.json'}", "--suppressions", str(tmp_path), "--severities", str(tmp_path / "pnpm.json")]) == 2
 
 
 def test_the_repository_suppressions_are_valid_today() -> None:
@@ -203,17 +275,44 @@ def test_ci_runs_the_gate_on_every_push_to_main_and_in_ci_success() -> None:
     # the Go that builds the release (release.yml's setup-go reads api/go.mod too)
     assert setup_go and setup_go[0]["with"]["go-version-file"] == "api/go.mod"
     assert any("tools/security/cve-gate.sh" in str(s.get("run", "")) for s in steps)
+    assert any("install-rust-tool.sh cargo-audit" in str(s.get("run", "")) for s in steps)
+    assert any("--go-only" in str(s.get("run", "")) for s in steps)
 
 
-def test_the_gate_scans_every_shipped_go_module() -> None:
-    # the launcher ships in every server archive and package, the healthcheck in the api
-    # and streaming images
-    shipped = {"api", "streaming", "cmd/maktaba-server", "cloud", "cmd/maktaba-launcher", "tools/healthcheck"}
-    text = (ROOT / "tools/security/cve-gate.sh").read_text()
-    default = text.split('GO_COMPONENTS="${CVE_GATE_GO:-', 1)[1].split("}", 1)[0].split()
-    assert set(default) == shipped
-    assert text.index('OUT=$(cd "${OUT}" && pwd)') < text.index("for mod in ${GO_COMPONENTS}")
+def test_nightly_cve_gate_workflow_runs_on_schedule_and_dispatch() -> None:
+    wf = yaml.safe_load((ROOT / ".github/workflows/cve-gate-nightly.yml").read_text())
+    on = wf.get("on", wf.get(True))
+    assert on["schedule"] and "workflow_dispatch" in on
+    assert wf["jobs"]["cve-gate"]["uses"] == "./.github/workflows/_cve-gate.yml"
+
+
+def _parse_go_targets(text: str, fn: str) -> list[tuple[str, ...]]:
+    return [tuple(ln.split()[1:]) for ln in text.splitlines() if ln.startswith(f"{fn} ")]
+
+
+def test_the_gate_scans_exact_shipped_go_binaries_in_sync_with_sbom_sh() -> None:
+    gate_text = (ROOT / "tools/security/cve-gate.sh").read_text()
+    sbom_text = (ROOT / "tools/sbom.sh").read_text()
+    gate_targets = _parse_go_targets(gate_text, "scan_go")
+    sbom_targets = _parse_go_targets(sbom_text, "emit_go")
+    assert gate_targets == sbom_targets
+    # server is scanned with embed_web, streaming with tvstaging, and no ./... reaches unshipped cmds
+    assert ("server", "cmd/maktaba-server", ".", "embed_web") in gate_targets
+    assert ("streaming", "streaming", ".", "tvstaging") in gate_targets
+    assert ("cloud", "cloud", "./cmd/maktaba-cloud") in gate_targets
+    assert ("cloudlink", "cloud", "./cmd/maktaba-cloudlink") in gate_targets
+    assert "./..." not in gate_text
+    assert gate_text.index('OUT=$(cd "${OUT}" && pwd)') < gate_text.index("\nscan_go ")
+    shipped_mods = {t[1] for t in gate_targets}
     wf = yaml.safe_load((ROOT / ".github/workflows/_cve-gate.yml").read_text())
     steps = wf["jobs"]["cve-gate"]["steps"]
     mods = next(s["with"]["modules"].split() for s in steps if str(s.get("uses", "")).endswith("/go-mod-download"))
-    assert shipped <= set(mods)
+    assert shipped_mods <= set(mods)
+
+
+def test_the_gate_scopes_web_to_prod_excludes_python_dev_and_audits_plugind() -> None:
+    gate_text = (ROOT / "tools/security/cve-gate.sh").read_text()
+    assert "pnpm audit --prod --json" in gate_text
+    assert "--all-extras" not in gate_text
+    assert "sbom.py\" pipeline-extras" in gate_text
+    assert "cargo-audit audit --file \"${ROOT}/plugind/Cargo.lock\" --json" in gate_text

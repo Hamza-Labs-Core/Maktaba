@@ -4,25 +4,29 @@ vulnerability that blocks and no live suppression covers it.
 
     cve_gate.py --govulncheck api=api.json --govulncheck streaming=s.json \\
                 --pip-audit pipeline=pip.json --pnpm-audit web=web.json \\
+                --cargo-audit plugind=cargo.json \\
                 [--suppressions security/suppressions] [--today YYYY-MM-DD] \\
                 [--severities osv-severities.json] [--summary FILE]
 
 What blocks:
 
-- Go (govulncheck -json): every vulnerability whose vulnerable symbol the code calls (a
-  finding whose trace reaches a function). The Go database has no severity, and
-  govulncheck's call graph already leaves out what the code cannot reach, so each called
-  one blocks. A module or package-level match alone (imported, never called) is reported,
-  not blocking.
+- Go (govulncheck -json over each shipped main package): every vulnerability whose
+  vulnerable symbol the code calls (a finding whose trace reaches a function). The Go
+  database has no severity, and govulncheck's call graph already leaves out what the code
+  cannot reach, so each called one blocks. A module or package-level match alone
+  (imported, never called) is reported, not blocking.
 - Python (pip-audit -f json): a vulnerability whose severity is HIGH or CRITICAL. pip-audit
   gives no severity, so each id is looked up on OSV (api.osv.dev; `--severities` gives a
   file of {id: severity} instead, for tests and offline runs). An id OSV gives no
   severity for blocks: the gate fails closed.
-- web (pnpm audit --json): an advisory of severity high or critical, or of none (fails
-  closed, as Python).
+- web (pnpm audit --prod --json): a production advisory of severity high or critical, or
+  of none (fails closed, as Python).
+- Rust (cargo-audit --json over plugind/Cargo.lock): a vulnerability whose severity is HIGH
+  or CRITICAL, scored from its CVSS v3 vector or looked up on OSV (`--severities` in tests
+  and offline runs). An advisory with no determinable severity blocks (fails closed).
 
 A suppression is a file `security/suppressions/<id>.md` (the id is the advisory's, a CVE,
-GHSA, GO- or PYSEC- id; any of a vulnerability's aliases matches) with front matter:
+GHSA, GO-, PYSEC- or RUSTSEC- id; any of a vulnerability's aliases matches) with front matter:
 
     ---
     id: GHSA-xxxx-xxxx-xxxx
@@ -43,6 +47,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import re
 import sys
 import urllib.request
@@ -62,7 +67,7 @@ OSV = "https://api.osv.dev/v1/vulns/"
 @dataclass
 class Vuln:
     component: str
-    ecosystem: str  # go | python | npm
+    ecosystem: str  # go | python | npm | rust
     id: str
     aliases: set[str]
     package: str
@@ -88,6 +93,53 @@ class Suppression:
 
 class ReportError(Exception):
     pass
+
+
+# ---- CVSS v3.0 / v3.1 base score --------------------------------------------------------
+
+_CVSS3_AV = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.20}
+_CVSS3_AC = {"L": 0.77, "H": 0.44}
+_CVSS3_PR_U = {"N": 0.85, "L": 0.62, "H": 0.27}
+_CVSS3_PR_C = {"N": 0.85, "L": 0.68, "H": 0.50}
+_CVSS3_UI = {"N": 0.85, "R": 0.62}
+_CVSS3_CIA = {"N": 0.00, "L": 0.22, "H": 0.56}
+
+
+def cvss3_severity(vector: str | None) -> str | None:
+    """Qualitative severity (LOW/MEDIUM/HIGH/CRITICAL) from a CVSS:3.0 or CVSS:3.1 vector."""
+    if not vector or not vector.startswith(("CVSS:3.0/", "CVSS:3.1/")):
+        return None
+    parts = dict(p.split(":", 1) for p in vector.split("/")[1:] if ":" in p)
+    try:
+        s = parts["S"]
+        av = _CVSS3_AV[parts["AV"]]
+        ac = _CVSS3_AC[parts["AC"]]
+        pr = (_CVSS3_PR_C if s == "C" else _CVSS3_PR_U)[parts["PR"]]
+        ui = _CVSS3_UI[parts["UI"]]
+        c = _CVSS3_CIA[parts["C"]]
+        i = _CVSS3_CIA[parts["I"]]
+        a = _CVSS3_CIA[parts["A"]]
+        if s not in ("U", "C"):
+            return None
+    except KeyError:
+        return None
+    iss = 1.0 - (1.0 - c) * (1.0 - i) * (1.0 - a)
+    impact = 6.42 * iss if s == "U" else 7.52 * (iss - 0.029) - 3.25 * ((iss - 0.02) ** 15)
+    if impact <= 0.0:
+        score = 0.0
+    else:
+        exploit = 8.22 * av * ac * pr * ui
+        raw = min(impact + exploit, 10.0) if s == "U" else min(1.08 * (impact + exploit), 10.0)
+        # FIRST.org CVSS v3.1 Appendix A Roundup
+        int_input = round(raw * 100000)
+        score = int_input / 100000.0 if int_input % 10000 == 0 else (math.floor(int_input / 10000) + 1) / 10.0
+    if score >= 9.0:
+        return "CRITICAL"
+    if score >= 7.0:
+        return "HIGH"
+    if score >= 4.0:
+        return "MEDIUM"
+    return "LOW"
 
 
 # ---- the reports ------------------------------------------------------------------------
@@ -192,11 +244,43 @@ def parse_pnpm_audit(component: str, text: str) -> list[Vuln]:
     return out
 
 
-# ---- severities (Python) ---------------------------------------------------------------
+def parse_cargo_audit(component: str, text: str, severity: Callable[[str, set[str]], str]) -> list[Vuln]:
+    doc = json.loads(text)
+    if not isinstance(doc, dict) or not isinstance(doc.get("vulnerabilities"), dict):
+        raise ReportError(f"{component}: cargo audit report missing vulnerabilities object")
+    items = doc["vulnerabilities"].get("list")
+    if not isinstance(items, list):
+        raise ReportError(f"{component}: cargo audit vulnerabilities.list is not a list")
+    out = []
+    for item in items:
+        adv = item["advisory"]
+        pkg = item["package"]
+        vid = adv["id"]
+        aliases = set(adv.get("aliases") or [])
+        sev = cvss3_severity(adv.get("cvss")) or severity(vid, aliases)
+        patched = (item.get("versions") or {}).get("patched") or []
+        out.append(
+            Vuln(
+                component=component,
+                ecosystem="rust",
+                id=vid,
+                aliases=aliases,
+                package=pkg["name"],
+                version=pkg.get("version", ""),
+                fixed=", ".join(patched),
+                severity=sev,
+                summary=(adv.get("title") or "").strip()[:120],
+                blocks=sev not in NOT_BLOCKING,
+            )
+        )
+    return out
+
+
+# ---- severities (Python, Rust fallback) -------------------------------------------------
 
 
 def osv_severity(cache: dict[str, str]) -> Callable[[str, set[str]], str]:
-    """The severity OSV's GitHub-reviewed record gives the id or one of its aliases."""
+    """The severity OSV gives the id or one of its aliases (database_specific or CVSS v3)."""
 
     def lookup(vid: str, aliases: set[str]) -> str:
         for cand in [vid, *sorted(a for a in aliases if a.startswith("GHSA-")), *sorted(aliases)]:
@@ -208,6 +292,12 @@ def osv_severity(cache: dict[str, str]) -> Callable[[str, set[str]], str]:
             except Exception:  # noqa: BLE001 (an unknown id or a failed fetch: try the next alias)
                 continue
             sev = str((rec.get("database_specific") or {}).get("severity") or "").upper()
+            if not sev:
+                for entry in rec.get("severity") or []:
+                    if entry.get("type") == "CVSS_V3":
+                        sev = cvss3_severity(entry.get("score")) or ""
+                        if sev:
+                            break
             if sev:
                 cache[cand] = sev
                 return sev
@@ -332,6 +422,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--govulncheck", action="append", metavar="COMPONENT=FILE")
     ap.add_argument("--pip-audit", action="append", metavar="COMPONENT=FILE")
     ap.add_argument("--pnpm-audit", action="append", metavar="COMPONENT=FILE")
+    ap.add_argument("--cargo-audit", action="append", metavar="COMPONENT=FILE")
     ap.add_argument("--suppressions", type=Path, default=SUPPRESSIONS)
     ap.add_argument("--today", type=dt.date.fromisoformat, default=dt.date.today())
     ap.add_argument("--severities", type=Path, help="a JSON {id: severity} instead of asking OSV")
@@ -347,6 +438,8 @@ def main(argv: list[str] | None = None) -> int:
             vulns += parse_pip_audit(name, path.read_text(encoding="utf-8"), severity)
         for name, path in _pairs(a.pnpm_audit, "--pnpm-audit"):
             vulns += parse_pnpm_audit(name, path.read_text(encoding="utf-8"))
+        for name, path in _pairs(a.cargo_audit, "--cargo-audit"):
+            vulns += parse_cargo_audit(name, path.read_text(encoding="utf-8"), severity)
     except (OSError, ValueError, KeyError, ReportError) as e:
         print(f"cve-gate: cannot read a report: {e}", file=sys.stderr)
         return 2

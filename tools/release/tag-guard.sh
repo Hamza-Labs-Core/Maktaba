@@ -17,13 +17,17 @@
 #     runs after CI passes (a workflow_run, since 2026-11-07), named "Update rehearsal of
 #     <sha>": such a run's own head_sha is main's head when it started, so it is found by its
 #     name, and a workflow_run run is never counted for its head_sha.
+#   - the newest finished nightly CVE gate run on main (cve-gate-nightly.yml) for that
+#     commit — or a trail-only commit above it — did not fail (story 23.7 follow-up #1472).
+#     An advisory published after the commit's CI run went green still stops the tag.
 # A deliberate maintenance release of an older line (story 22.5 EC1) is named in the
 # repository variable MAKTABA_RELEASE_ALLOW_TAG: its commit is on main or a release/*
 # branch (ci.yml runs on those), it skips the history check, and it never becomes the
 # latest (publish: releaseorder.Latest; its images' :latest and the relay stay as they are).
 #
 # Env: TAG, SHA, GH_TOKEN, GITHUB_REPOSITORY; ALLOW_TAG (the variable); CI_WORKFLOW
-# (default ci.yml); REHEARSAL_WORKFLOW (default update-rehearsal.yml); CI_WAIT_SECONDS
+# (default ci.yml); REHEARSAL_WORKFLOW (default update-rehearsal.yml);
+# CVE_NIGHTLY_WORKFLOW (default cve-gate-nightly.yml); CI_WAIT_SECONDS
 # (default 3600, for each); CI_POLL_SECONDS (default 30). Writes maintenance=, published=,
 # latest= (true|false) and newest= to $GITHUB_OUTPUT when set.
 set -euo pipefail
@@ -157,6 +161,29 @@ passed_on() { # passed_on WORKFLOW WHAT [judge-jobs|rehearsal]
 }
 passed_on "${ci}" "CI" judge-jobs
 passed_on "${REHEARSAL_WORKFLOW:-update-rehearsal.yml}" "the update rehearsal" rehearsal
+
+# 5. The newest finished nightly CVE gate run on main for this commit (or a commit differing
+# only in trail files) did not fail: an advisory published after CI went green on an unchanged
+# main still stops the tag. Skipped for maintenance releases (release/*) and re-runs of an
+# already-published tag.
+if [ "${maintenance}" != true ] && [ "${is_published}" != true ]; then
+    cve_runs="$("${here}/gh-retry.sh" gh run list --workflow "${CVE_NIGHTLY_WORKFLOW:-cve-gate-nightly.yml}" \
+        --branch main --limit 20 --json status,conclusion,headSha,event \
+        --jq '[.[] | select(.status == "completed" and (.event == "schedule" or .event == "workflow_dispatch") and (.conclusion == "success" or .conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "action_required")) | "\(.conclusion) \(.headSha)"] | .[]')"
+    while read -r concl rsha; do
+        [ -n "${concl}" ] || continue
+        if [ "${rsha}" != "${SHA}" ]; then
+            diff_paths="$(git diff --name-only --no-renames "${SHA}" "${rsha}" 2>/dev/null || echo "__unknown__")"
+            non_trail="$(grep -Ev '^(docs/claude-trail\.md|docs/trail/)' <<<"${diff_paths}" || true)"
+            [ -z "${non_trail}" ] || continue
+        fi
+        if [ "${concl}" != success ]; then
+            err "the newest nightly CVE gate run on ${SHA} (run on ${rsha}) did not pass (${concl}): fix or suppress the advisory on main before tagging"
+        fi
+        echo "tag guard: the newest nightly CVE gate run on ${SHA} (run on ${rsha}) passed"
+        break
+    done <<<"${cve_runs}"
+fi
 
 if [ -n "${GITHUB_OUTPUT:-}" ]; then
     {

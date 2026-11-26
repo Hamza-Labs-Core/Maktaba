@@ -1479,9 +1479,10 @@ jobs:
   # which is made of them. Every other job must pass, every leg of package-packs among them
   # (tools/ci/tests/test_release_packs.py keeps it so).
   # Story 23.7 AC1 / TC1: a CycloneDX SBOM per shipped component (api, streaming, the
-  # unified server, cloud, pipeline, web), each checked to hold every transitive dependency
-  # its own tool chain resolves (tools/sbom.sh), attached to the release and signed by its
-  # checksums.txt with the rest. The images keep their BuildKit SBOM attestations too.
+  # unified server, cloud, cloudlink, launcher, healthcheck, plugind, pipeline, web), each
+  # checked to hold every transitive dependency its own tool chain resolves (tools/sbom.sh),
+  # attached to the release and signed by its checksums.txt with the rest. The images keep
+  # their BuildKit SBOM attestations too.
   sbom:
     name: SBOMs
     needs: [guard]
@@ -1506,6 +1507,13 @@ jobs:
         uses: ./.github/actions/go-mod-download
         with:
           modules: api streaming cmd/maktaba-server cloud cmd/maktaba-launcher tools/healthcheck
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-cyclonedx
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash tools/security/install-rust-tool.sh cargo-cyclonedx "${RUNNER_TEMP}/rust-tools"
 
       - uses: astral-sh/setup-uv@v8.1.0
         with:

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""The per-component SBOMs' two helpers (story 23.7 AC1, TC1), used by tools/sbom.sh.
+"""The per-component SBOMs' helpers (story 23.7 AC1, TC1), used by tools/sbom.sh and
+tools/security/cve-gate.sh.
 
     sbom.py pnpm LOCKFILE COMPONENT VERSION OUT     # web: CycloneDX 1.5 from pnpm-lock.yaml
     sbom.py check SBOM --expect FILE                # every expected name@version is in SBOM
+    sbom.py cargo-expect PACKAGE [--metadata FILE]  # transitive normal deps of PACKAGE from cargo metadata
+    sbom.py pipeline-extras PYPROJECT               # every shipped optional extra (all but dev)
 
 `pnpm`: cyclonedx-npm reads npm's tree only, so the web SBOM is written from the lockfile
 itself: every package pnpm-lock.yaml (lockfileVersion 9) resolves, the transitive ones
@@ -11,9 +14,9 @@ scope `excluded` (it builds the bundle, it is not in it).
 
 `check`: FILE lists the dependencies the SBOM must hold, one `name@version` per line, or
 `name@` for one whose version is the build's own (Go:
-`go list -deps`, the pipeline: `uv export`'s `name==version`, web: the lockfile's
-packages); a missing one fails, so a generator that drops transitive dependencies fails the
-release instead of publishing a short SBOM.
+`go list -deps`, the pipeline: `uv export`'s `name==version`, Rust: `cargo metadata`,
+web: the lockfile's packages); a missing one fails, so a generator that drops transitive
+dependencies fails the release instead of publishing a short SBOM.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ import datetime as dt
 import json
 import re
 import sys
+import tomllib
 import uuid
 from pathlib import Path
 
@@ -208,6 +212,43 @@ def check(sbom_path: Path, expect_path: Path) -> list[str]:
     return problems
 
 
+def cargo_expect(metadata: dict, package_name: str) -> list[str]:
+    """Transitive normal (runtime) dependencies of package_name from `cargo metadata --format-version 1`."""
+    pkgs = {p["id"]: p for p in metadata.get("packages") or []}
+    nodes = {n["id"]: n for n in (metadata.get("resolve") or {}).get("nodes") or []}
+    roots = [p["id"] for p in pkgs.values() if p.get("name") == package_name]
+    if not roots:
+        raise ValueError(f"package {package_name!r} not found in cargo metadata")
+    root = roots[0]
+    seen: set[str] = set()
+    todo = [root]
+    while todo:
+        nid = todo.pop()
+        if nid in seen:
+            continue
+        seen.add(nid)
+        for dep in nodes.get(nid, {}).get("deps") or []:
+            kinds = [k.get("kind") for k in dep.get("dep_kinds") or []]
+            # None is a normal (runtime) dependency; skip dev-only and build-only edges
+            if not kinds or None in kinds:
+                todo.append(dep["pkg"])
+    seen.discard(root)
+    return sorted({f"{pkgs[i]['name']}@{pkgs[i]['version']}" for i in seen if i in pkgs})
+
+
+def pipeline_extras(pyproject_path: Path) -> list[str]:
+    """Every shipped optional dependency extra of pipeline/pyproject.toml (all except dev).
+
+    Matches deploy/packaging/node/build-release.sh: pipeline/Dockerfile installs the base
+    runtime (`uv sync --frozen --no-dev`), while the release's node constraints and component
+    packs ship every optional extra except `dev`.
+    """
+    with pyproject_path.open("rb") as f:
+        project = tomllib.load(f).get("project") or {}
+    opt = project.get("optional-dependencies") or {}
+    return sorted(name for name in opt if name != "dev")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -220,6 +261,11 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("check")
     c.add_argument("sbom", type=Path)
     c.add_argument("--expect", type=Path, required=True)
+    ce = sub.add_parser("cargo-expect")
+    ce.add_argument("package")
+    ce.add_argument("--metadata", type=Path, help="cargo metadata JSON file (default stdin)")
+    pe = sub.add_parser("pipeline-extras")
+    pe.add_argument("pyproject", type=Path)
     a = ap.parse_args(argv)
     if a.cmd == "pnpm":
         text = a.lockfile.read_text(encoding="utf-8")
@@ -228,6 +274,15 @@ def main(argv: list[str] | None = None) -> int:
         if a.expect_out:
             a.expect_out.write_text("".join(f"{k}\n" for k in lock_package_keys(text)), encoding="utf-8")
         print(f"[sbom] {a.out}: {len(doc['components'])} packages")
+        return 0
+    if a.cmd == "cargo-expect":
+        raw = a.metadata.read_text(encoding="utf-8") if a.metadata else sys.stdin.read()
+        for entry in cargo_expect(json.loads(raw), a.package):
+            print(entry)
+        return 0
+    if a.cmd == "pipeline-extras":
+        for name in pipeline_extras(a.pyproject):
+            print(name)
         return 0
     problems = check(a.sbom, a.expect)
     for prob in problems[:50]:

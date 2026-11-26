@@ -19,13 +19,20 @@ run, and such a run's headSha is main's head when it started, not the commit it 
 is named "Update rehearsal of <sha>" (REHEARSAL_TITLE), and that sha is its commit. A rehearsal
 push run (main's before 2026-11-07) counts for its headSha.
 
-A green commit is tag-eligible only when the broadcast rehearsal's nightly passed on its
-broadcast code (story 50.29 §4, broadcast_verdict; the runs from `--broadcast-runs FILE`, or
-fetched with gh: fetch_broadcast_runs, no tag when that fails): among the nightly
-runs of broadcast-rehearsal.yml on a commit whose broadcast code (BROADCAST_CODE, the workflow's
-pull-request paths) is the same as this commit's, the newest one that finished passed. A commit
-with no such run is not eligible (fail closed); one whose broadcast code has not changed since a
-green nightly is.
+A green commit is tag-eligible only when:
+  - the broadcast rehearsal's nightly passed on its broadcast code (story 50.29 §4,
+    broadcast_verdict; the runs from `--broadcast-runs FILE`, or fetched with gh:
+    fetch_broadcast_runs, no tag when that fails): among the nightly runs of
+    broadcast-rehearsal.yml on a commit whose broadcast code (BROADCAST_CODE, the workflow's
+    pull-request paths) is the same as this commit's, the newest one that finished passed. A
+    commit with no such run is not eligible (fail closed); one whose broadcast code has not
+    changed since a green nightly is.
+  - the newest finished nightly CVE gate run (cve-gate-nightly.yml, story 23.7 follow-up
+    #1472; `--cve-runs FILE`, or fetched with gh: fetch_cve_runs, no tag when that fails) on
+    this commit — or on a main commit that differs from it only in trail files — did not fail.
+    A newly merged commit with no nightly CVE gate run yet stays eligible because its CI push
+    run already passed `cve-gate`; if a later nightly fails on an unchanged main, the commit is
+    held back until main fixes or suppresses the advisory.
 
 The commit is the newest green and eligible one on main (first-parent order: main's own
 commits, newest first). It is tagged only when:
@@ -218,6 +225,48 @@ def broadcast_verdict(sha: str, nightlies: Sequence[tuple[str, bool]], code: Cal
     return f"no broadcast rehearsal nightly ran on {sha}'s broadcast code"
 
 
+def cve_nightly_results(runs: Iterable[Mapping[str, Any]]) -> list[tuple[str, bool]]:
+    """The finished nightly CVE gate runs on main (schedule or workflow_dispatch), newest first,
+    as (commit, passed). A run still going, or one cancelled or skipped, is passed over."""
+    done: list[tuple[str, str, bool]] = []
+    for r in runs:
+        if r.get("headBranch", "main") != "main":
+            continue
+        if r.get("event") not in CVE_EVENTS:
+            continue
+        if r.get("status", "completed") != "completed":
+            continue
+        conclusion = str(r.get("conclusion") or "")
+        if conclusion in NO_RESULT:
+            continue
+        commit = str(r.get("headSha", ""))
+        if not commit:
+            continue
+        done.append((str(r.get("createdAt", "")), commit, conclusion == "success"))
+    done = sorted(done, key=lambda d: d[0], reverse=True)
+    return [(c, ok) for _, c, ok in done]
+
+
+def cve_verdict(
+    sha: str,
+    nightlies: Sequence[tuple[str, bool]],
+    same_non_trail: Callable[[str, str], bool],
+) -> str | None:
+    """Why sha is not tag-eligible on the nightly CVE gate, or None when it is.
+
+    Checks the newest finished nightly CVE gate run on sha or on a commit that differs from sha
+    only in trail files. If none has run yet, sha stays eligible (its CI push run already
+    passed cve-gate); if the newest one failed, sha is held back until fixed or re-run green.
+    """
+    for commit, passed in nightlies:
+        if commit != sha and not same_non_trail(sha, commit):
+            continue
+        if passed:
+            return None
+        return f"the newest nightly CVE gate run on {sha} (run on {commit}) failed"
+    return None
+
+
 def newest_eligible(main_order: Sequence[str], green: Iterable[str], verdict: Callable[[str], str | None]) -> tuple[str | None, list[str]]:
     """The first commit of main_order (newest first) that is green and whose verdict is None,
     and why each newer green commit was passed over."""
@@ -308,6 +357,16 @@ def git_broadcast_code(sha: str) -> str | None:
     return r.stdout if r.returncode == 0 else None
 
 
+def git_same_non_trail(a: str, b: str) -> bool:
+    """Whether commits a and b differ only in trail-only files (or not at all)."""
+    if a == b:
+        return True
+    r = subprocess.run(["git", "diff", "--name-only", "--no-renames", a, b], check=False, capture_output=True, text=True)
+    if r.returncode != 0:
+        return False
+    return all(trail_only(p) for p in r.stdout.splitlines() if p)
+
+
 # The broadcast rehearsal's runs the gate reads, when no --broadcast-runs file is given: only a
 # schedule's or a hand run counts (nightly_commit), so those two events are asked for, each
 # with a month and more of history (a push run on every merge would crowd a mixed list out).
@@ -315,9 +374,14 @@ BROADCAST_EVENTS = ("schedule", "workflow_dispatch")
 BROADCAST_LIMIT = 60
 BROADCAST_FIELDS = "headSha,headBranch,event,status,conclusion,displayTitle,createdAt"
 
+CVE_WORKFLOW = "cve-gate-nightly.yml"
+CVE_EVENTS = ("schedule", "workflow_dispatch")
+CVE_LIMIT = 30
+CVE_FIELDS = "headSha,headBranch,event,status,conclusion,createdAt"
+
 
 class FetchError(Exception):
-    """The broadcast rehearsal's runs could not be had: no tag (fail closed)."""
+    """A workflow's runs could not be had: no tag (fail closed)."""
 
 
 Runner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
@@ -327,14 +391,18 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=120)
 
 
-def fetch_broadcast_runs(run: Runner = _run) -> list[dict[str, Any]]:
-    """broadcast-rehearsal.yml's runs on main, every status, as `gh run list --json` gives
-    them. Raises FetchError when gh is missing, fails, or prints something that is not a list."""
+def _fetch_workflow_runs(
+    workflow: str,
+    events: Sequence[str],
+    limit: int,
+    fields: str,
+    run: Runner = _run,
+) -> list[dict[str, Any]]:
     runs: list[dict[str, Any]] = []
-    for event in BROADCAST_EVENTS:
+    for event in events:
         cmd = [
-            "gh", "run", "list", "--workflow", "broadcast-rehearsal.yml", "--branch", "main",
-            "--event", event, "--limit", str(BROADCAST_LIMIT), "--json", BROADCAST_FIELDS,
+            "gh", "run", "list", "--workflow", workflow, "--branch", "main",
+            "--event", event, "--limit", str(limit), "--json", fields,
         ]  # fmt: skip
         try:
             r = run(cmd)
@@ -351,6 +419,18 @@ def fetch_broadcast_runs(run: Runner = _run) -> list[dict[str, Any]]:
             raise FetchError("gh run list printed JSON that is not a list of runs")
         runs.extend(got)
     return runs
+
+
+def fetch_broadcast_runs(run: Runner = _run) -> list[dict[str, Any]]:
+    """broadcast-rehearsal.yml's runs on main, every status, as `gh run list --json` gives
+    them. Raises FetchError when gh is missing, fails, or prints something that is not a list."""
+    return _fetch_workflow_runs("broadcast-rehearsal.yml", BROADCAST_EVENTS, BROADCAST_LIMIT, BROADCAST_FIELDS, run)
+
+
+def fetch_cve_runs(run: Runner = _run) -> list[dict[str, Any]]:
+    """cve-gate-nightly.yml's runs on main, every status, as `gh run list --json` gives
+    them. Raises FetchError when gh is missing, fails, or prints something that is not a list."""
+    return _fetch_workflow_runs(CVE_WORKFLOW, CVE_EVENTS, CVE_LIMIT, CVE_FIELDS, run)
 
 
 def load_broadcast_runs(path: str) -> list[dict[str, Any]]:
@@ -373,6 +453,11 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         "--broadcast-runs",
         help="a file: broadcast-rehearsal.yml's runs, every status (gh run list --json); "
         "without it they are fetched with gh. A commit is eligible only on a green nightly",
+    )
+    ap.add_argument(
+        "--cve-runs",
+        help="a file: cve-gate-nightly.yml's runs, every status (gh run list --json); "
+        "without it they are fetched with gh. A failed newest nightly on the commit blocks the tag",
     )
     ap.add_argument("--main", default="origin/main", help="main's ref (default origin/main)")
     ap.add_argument("--depth", type=int, default=200, help="how many of main's commits to look through")
@@ -397,7 +482,15 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
         print("sha=")
         print(f"reason=no tag: the broadcast rehearsal's runs could not be read: {e}")
         return 0
+    try:
+        cve_runs = load_broadcast_runs(args.cve_runs) if args.cve_runs else fetch_cve_runs(run)
+    except FetchError as e:
+        print("tag=")
+        print("sha=")
+        print(f"reason=no tag: the nightly CVE gate's runs could not be read: {e}")
+        return 0
     nightlies = nightly_results(runs)
+    cve_nightlies = cve_nightly_results(cve_runs)
     codes: dict[str, str | None] = {}
 
     def code(c: str) -> str | None:
@@ -405,9 +498,12 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
             codes[c] = git_broadcast_code(c)
         return codes[c]
 
-    sha, passed_over = newest_eligible(order, green, lambda c: broadcast_verdict(c, nightlies, code))
+    def verdict(c: str) -> str | None:
+        return broadcast_verdict(c, nightlies, code) or cve_verdict(c, cve_nightlies, git_same_non_trail)
+
+    sha, passed_over = newest_eligible(order, green, verdict)
     if sha is None:
-        why = f"no commit of {args.main}'s newest {args.depth} passed CI, the update rehearsal and the broadcast rehearsal"
+        why = f"no commit of {args.main}'s newest {args.depth} passed CI, the update rehearsal, the broadcast rehearsal and the nightly CVE gate"
         d = Decision("", "", "; ".join([why, *passed_over]))
     else:
         d = decide(sha, git_tags(), git_is_ancestor, git_changed)

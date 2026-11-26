@@ -10,15 +10,18 @@
 #   cloudlink (in the desktop apps), launcher            with the build tags the release sets)
 #   (cmd/maktaba-launcher), healthcheck
 #   (tools/healthcheck, in the api and streaming images)
-#   pipeline                                             cyclonedx-py over `uv export`
+#   plugind (maktaba-plugind, Rust)                      cargo cyclonedx over plugind/Cargo.lock
+#   pipeline                                             cyclonedx-py over `uv export` (runtime +
+#                                                        every shipped optional extra; dev excluded)
 #   web                                                  tools/security/sbom.py over pnpm-lock.yaml
 #
 # Each SBOM is then checked against the dependency list its own tool chain resolves (`go
-# list -deps`, `uv export`, the lockfile's packages): a component that misses one
-# transitive dependency fails, so no short SBOM is published. Every tool is required; a
+# list -deps`, `cargo metadata`, `uv export`, the lockfile's packages): a component that misses
+# one transitive dependency fails, so no short SBOM is published. Every tool is required; a
 # missing one fails (this is the release's, not a best effort).
 #
 # Tools: cyclonedx-gomod (go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@v1.9.0),
+# cargo + cargo-cyclonedx (tools/security/install-rust-tool.sh cargo-cyclonedx DIR),
 # uv (cyclonedx-py runs through uvx at CYCLONEDX_PY_VERSION) and python3.
 #
 # Release images also carry BuildKit's own SBOM attestations (release.yml's `sbom: true`);
@@ -35,11 +38,20 @@ mkdir -p "${OUT}"
 # absolute: emit_go writes from inside each module (release.yml passes a relative one)
 OUT=$(cd "${OUT}" && pwd)
 WORK=$(mktemp -d)
-trap 'rm -rf "${WORK}"' EXIT
+RUST_TMP_STEM=""
+cleanup() {
+    rm -rf "${WORK}"
+    if [ -n "${RUST_TMP_STEM}" ]; then
+        find "${ROOT}/plugind" -maxdepth 3 -name "${RUST_TMP_STEM}.json" -delete 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "[sbom] $1 is not on PATH" >&2; exit 2; }; }
 need cyclonedx-gomod
 need go
+need cargo
+need cargo-cyclonedx
 need uv
 need python3
 
@@ -56,12 +68,14 @@ check() {
 # and the standard library
 emit_go() {
     local name=$1 mod=$2 main=$3 tags=${4:-} out
+    local -a tag_args=()
+    [ -n "${tags}" ] && tag_args=(-tags "${tags}")
     out=$(out_for "${name}")
     echo "[sbom] go ${mod} (${main}) -> ${out}"
     (cd "${ROOT}/${mod}" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 GOFLAGS="${tags:+-tags=${tags}}" \
         cyclonedx-gomod app -json -std -main "${main}" -output "${out}" >/dev/null)
     (cd "${ROOT}/${mod}" && GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
-        go list ${tags:+-tags "${tags}"} -deps \
+        go list ${tag_args[@]+"${tag_args[@]}"} -deps \
         -f '{{with .Module}}{{if not .Main}}{{.Path}}@{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}{{end}}{{end}}' "${main}") \
         | sort -u | awk 'NF' >"${WORK}/${name}.expect"
     # and the standard library at the Go that builds it (-std; the healthcheck links nothing else)
@@ -69,13 +83,44 @@ emit_go() {
     check "${out}" "${WORK}/${name}.expect"
 }
 
+# emit_rust NAME MANIFEST_REL PACKAGE: CycloneDX 1.5 SBOM for a shipped Rust binary across
+# all target cfgs (`--target all`), checked against the transitive normal dependencies
+# `cargo metadata --locked` resolves for PACKAGE.
+emit_rust() {
+    local name=$1 manifest_rel=$2 pkg=$3 out manifest_dir tmp_stem
+    out=$(out_for "${name}")
+    manifest_dir=$(dirname "${ROOT}/${manifest_rel}")
+    tmp_stem=".maktaba-sbom-${name}-$$"
+    RUST_TMP_STEM="${tmp_stem}"
+    echo "[sbom] rust ${pkg} -> ${out}"
+    # cargo cyclonedx writes <tmp_stem>.json in every workspace member directory; keep the
+    # shipped binary's SBOM and remove all workspace scratch files cleanly.
+    cargo cyclonedx --manifest-path "${ROOT}/${manifest_rel}" --format json --spec-version 1.5 \
+        --target all --override-filename "${tmp_stem}" >/dev/null
+    mv "${manifest_dir}/${tmp_stem}.json" "${out}"
+    find "${ROOT}/plugind" -maxdepth 3 -name "${tmp_stem}.json" -delete
+    RUST_TMP_STEM=""
+    cargo metadata --manifest-path "${ROOT}/plugind/Cargo.toml" --locked --format-version 1 \
+        | python3 "${ROOT}/tools/security/sbom.py" cargo-expect "${pkg}" >"${WORK}/${name}.expect"
+    check "${out}" "${WORK}/${name}.expect"
+}
+
+# emit_python: pipeline/Dockerfile syncs the base runtime (`--no-dev`), while the release's
+# node constraints (deploy/packaging/node/build-release.sh) and component packs
+# (tools/release/packs/wheelhouse.sh) ship every optional extra except `dev`. Exporting all
+# non-dev extras covers every shipped Python dependency without pulling in dev-only tools
+# (`pytest`, `mypy`, `ruff`, `grpcio-tools`).
 emit_python() {
-    local out reqs
+    local out reqs extra
+    local -a extra_args=()
     out=$(out_for pipeline)
     reqs="${WORK}/pipeline-requirements.txt"
+    while IFS= read -r extra; do
+        [ -n "${extra}" ] && extra_args+=(--extra "${extra}")
+    done < <(python3 "${ROOT}/tools/security/sbom.py" pipeline-extras "${ROOT}/pipeline/pyproject.toml")
     echo "[sbom] python pipeline -> ${out}"
-    (cd "${ROOT}/pipeline" && uv export --frozen --no-hashes --no-emit-project --no-dev --all-extras \
-        --format requirements-txt >"${reqs}")
+    (cd "${ROOT}/pipeline" && uv export --frozen --no-hashes --no-emit-project --no-dev \
+        ${extra_args[@]+"${extra_args[@]}"} --format requirements-txt >"${reqs}")
     uvx --from "cyclonedx-bom==${CYCLONEDX_PY_VERSION}" cyclonedx-py requirements "${reqs}" \
         --output-format JSON --output-file "${out}"
     # `name==version ; marker` lines, as name@version
@@ -99,6 +144,7 @@ emit_go cloud cloud ./cmd/maktaba-cloud
 emit_go cloudlink cloud ./cmd/maktaba-cloudlink
 emit_go launcher cmd/maktaba-launcher .
 emit_go healthcheck tools/healthcheck .
+emit_rust plugind plugind/crates/plugind/Cargo.toml maktaba-plugind
 emit_python
 emit_web
 

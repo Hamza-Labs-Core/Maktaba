@@ -794,7 +794,7 @@ sbom:  ## A CycloneDX SBOM per shipped component under artifacts/sbom (release.y
 	@bash tools/sbom.sh
 
 .PHONY: cve-gate
-cve-gate:  ## govulncheck + pip-audit + pnpm audit; fails on what blocks (CI's cve-gate job).
+cve-gate:  ## govulncheck + pip-audit + pnpm audit --prod + cargo-audit; fails on what blocks (CI's cve-gate job).
 	@bash tools/security/cve-gate.sh
 
 ##@ Formatting
