@@ -526,6 +526,33 @@ def test_in_a_repository_the_nightly_cve_gate_blocks_unchanged_main(
     ]
     assert choose(repo, [c], monkeypatch, capsys, cve_runs=historical_full)["tag"] == "v0.3.83"
 
+    # Revert regression: A (failed nightly, pushed out of window) -> B (different tree, 100
+    # cancelled runs filling the window) -> C (reverts B, restoring A's non-trail tree).
+    # Seeing strict ancestor B in the truncated window must NOT clear C!
+    rev_repo = tmp_path / "revert"
+    rev_repo.mkdir()
+    run(rev_repo, "init", "-q", "-b", "main")
+    r_base = commit(rev_repo, "api/main.go")
+    run(rev_repo, "tag", "-a", "v0.3.82", "-m", "v0.3.82", r_base)
+    r_a = commit(rev_repo, "web/app.ts")  # A: vulnerable tree (its failure fell off the 100-run window)
+    r_b = commit(rev_repo, "web/other.ts")  # B: different tree with 100 cancelled runs
+    (rev_repo / "web/other.ts").unlink()
+    run(rev_repo, "add", "-A")
+    run(rev_repo, "commit", "-q", "-m", "revert B")
+    r_c = run(rev_repo, "rev-parse", "HEAD")  # C: reverts B, identical non-trail tree to A
+    b_cancelled = [
+        cve_nightly(r_b, "cancelled", event="schedule", created=f"2026-11-26T05:{i // 60:02d}:{i % 60:02d}Z")
+        for i in range(nt.CVE_LIMIT)
+    ]
+    out = choose(rev_repo, [r_c], monkeypatch, capsys, cve_runs=b_cancelled)
+    assert (out["tag"], out["sha"]) == ("", "")
+    assert "truncated" in out["reason"] and "schedule" in out["reason"]
+    (rev_repo / ".cve-revert.json").write_text(json.dumps(b_cancelled))
+    monkeypatch.chdir(rev_repo)
+    assert nt.git_earliest_same_non_trail(r_c) == r_a
+    assert nt.main(["--check-cve", r_c, "--cve-runs", str(rev_repo / ".cve-revert.json")]) == 1
+    assert "truncated" in capsys.readouterr().err
+
 
 def test_the_runs_are_fetched_with_gh_when_no_file_is_given(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

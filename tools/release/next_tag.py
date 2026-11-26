@@ -263,13 +263,16 @@ def _cve_truncation_cutoffs(
     sha: str,
     same_non_trail: Callable[[str, str], bool],
     is_ancestor: Callable[[str, str], bool],
+    earliest_same_tree: Callable[[str], str | None],
     limit: int = CVE_LIMIT,
 ) -> dict[str, str]:
-    """Events whose query hit `limit` without reaching a strict non-trail ancestor of `sha`.
+    """Events whose query hit `limit` without reaching strictly before the earliest commit on
+    main sharing `sha`'s non-trail tree.
 
     Maps each such event name to the oldest `createdAt` seen in its window (or "" if any run
-    lacked a timestamp): a failed nightly older than that cutoff may have been pushed out of
-    the window, so only a conclusive pass on `sha` at or after every cutoff clears `sha`.
+    lacked a timestamp): a failed nightly older than that cutoff (including an earlier commit
+    before a revert `A -> B -> C`) may have been pushed out of the window, so only a
+    conclusive pass on `sha` (or a same-tree commit) at or after every cutoff clears `sha`.
     """
     by_event: dict[str, list[Mapping[str, Any]]] = {}
     for r in runs:
@@ -278,20 +281,34 @@ def _cve_truncation_cutoffs(
         ev = str(r.get("event") or "")
         if ev in CVE_EVENTS:
             by_event.setdefault(ev, []).append(r)
+    truncated = {ev: ev_runs for ev, ev_runs in by_event.items() if len(ev_runs) >= limit}
+    if not truncated:
+        return {}
+    earliest = earliest_same_tree(sha)
     cutoffs: dict[str, str] = {}
-    for ev, ev_runs in by_event.items():
-        if len(ev_runs) < limit:
-            continue
-        reached_older = any(
-            (rsha := str(r.get("headSha") or ""))
-            and rsha != sha
-            and not same_non_trail(sha, rsha)
-            and is_ancestor(rsha, sha)
-            for r in ev_runs
+    for ev, ev_runs in truncated.items():
+        times = [str(r.get("createdAt") or "") for r in ev_runs]
+        if all(times):
+            min_time = min(times)
+            oldest_runs = [r for r, t in zip(ev_runs, times, strict=True) if t == min_time]
+        else:
+            min_time = ""
+            oldest_runs = [ev_runs[-1]]
+        # Safe only when the oldest run(s) in the window ran on a strict ancestor of the
+        # earliest commit sharing sha's non-trail tree (so no earlier run could match sha, an
+        # earlier pre-revert commit with sha's tree, or any descendant of sha).
+        reached_before_earliest = bool(
+            earliest
+            and all(
+                (oldest_sha := str(r.get("headSha") or ""))
+                and oldest_sha != earliest
+                and not same_non_trail(earliest, oldest_sha)
+                and is_ancestor(oldest_sha, earliest)
+                for r in oldest_runs
+            )
         )
-        if not reached_older:
-            times = [str(r.get("createdAt") or "") for r in ev_runs]
-            cutoffs[ev] = min(times) if all(times) else ""
+        if not reached_before_earliest:
+            cutoffs[ev] = min_time
     return cutoffs
 
 
@@ -302,6 +319,7 @@ def cve_verdict(
     is_ancestor: Callable[[str, str], bool],
     raw_runs: Iterable[Mapping[str, Any]] = (),
     limit: int = CVE_LIMIT,
+    earliest_same_tree: Callable[[str], str | None] | None = None,
 ) -> str | None:
     """Why sha is not tag-eligible on the nightly CVE gate, or None when it is.
 
@@ -312,10 +330,12 @@ def cve_verdict(
       no newer passing nightly exists on sha itself, do not fall back to the older commit sha
       (it may carry the same newly-disclosed vulnerability); wait for a fix commit or a newer
       passing nightly/dispatch.
-    - If an event query hit `limit` without reaching a strict earlier commit than sha and no
+    - If an event query hit `limit` without reaching strictly before the earliest commit on
+      main sharing sha's non-trail tree (e.g., across a revert `A -> B -> C`) and no
       conclusive pass at or after the truncation cutoff exists, fail closed.
     """
-    cutoffs = _cve_truncation_cutoffs(raw_runs, sha, same_non_trail, is_ancestor, limit)
+    earliest_fn = earliest_same_tree or (lambda _s: None)
+    cutoffs = _cve_truncation_cutoffs(raw_runs, sha, same_non_trail, is_ancestor, earliest_fn, limit)
     for item in nightlies:
         commit, passed = item[0], item[1]
         created_at = item[2] if len(item) > 2 else ""
@@ -433,6 +453,73 @@ def git_same_non_trail(a: str, b: str) -> bool:
     return all(trail_only(p) for p in r.stdout.splitlines() if p)
 
 
+_TRAIL_ROOTS = frozenset(p.split("/", 1)[0].encode("utf-8") for p in TRAIL_ONLY)
+
+
+def _strip_trail_roots_from_tree(raw: bytes) -> bytes:
+    """Top-level git tree entries excluding any root directory/file containing TRAIL_ONLY paths."""
+    out = bytearray()
+    i, n = 0, len(raw)
+    while i < n:
+        sp = raw.index(b" ", i)
+        nul = raw.index(b"\x00", sp + 1)
+        end = nul + 21
+        name = raw[sp + 1 : nul]
+        if name not in _TRAIL_ROOTS:
+            out.extend(raw[i:end])
+        i = end
+    return bytes(out)
+
+
+def git_earliest_same_non_trail(sha: str) -> str | None:
+    """The earliest first-parent commit in sha's history sharing sha's non-trail tree.
+
+    Handles reverts (`A -> B -> C` where `C` reverts `B` back to `A`'s tree): returns `A`
+    rather than `C`. Returns None if git cannot read the history (caller fails closed).
+    """
+    r = subprocess.run(
+        ["git", "log", "--first-parent", "--format=%H %T", sha],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    commits = [tuple(ln.split(" ", 1)) for ln in r.stdout.splitlines() if " " in ln]
+    if not commits:
+        return None
+    unique_trees = list(dict.fromkeys(t for _, t in commits))
+    batch = subprocess.run(
+        ["git", "cat-file", "--batch"],
+        input=("\n".join(unique_trees) + "\n").encode("ascii"),
+        check=False,
+        capture_output=True,
+    )
+    if batch.returncode != 0:
+        return None
+    buf = batch.stdout
+    pos = 0
+    tree_keys: dict[str, bytes] = {}
+    for tree_sha in unique_trees:
+        nl = buf.index(b"\n", pos)
+        header = buf[pos:nl].decode("ascii").split()
+        pos = nl + 1
+        if len(header) != 3 or header[1] != "tree":
+            return None
+        size = int(header[2])
+        body = buf[pos : pos + size]
+        pos += size + 1  # trailing LF
+        tree_keys[tree_sha] = _strip_trail_roots_from_tree(body)
+    target_key = tree_keys.get(commits[0][1])
+    if target_key is None:
+        return None
+    # Walk from oldest to newest: the first commit matching sha's non-trail tree is the earliest.
+    for commit_sha, tree_sha in reversed(commits):
+        if tree_keys.get(tree_sha) == target_key and git_same_non_trail(sha, commit_sha):
+            return commit_sha
+    return sha
+
+
 # The broadcast rehearsal's runs the gate reads, when no --broadcast-runs file is given: only a
 # schedule's or a hand run counts (nightly_commit), so those two events are asked for, each
 # with a month and more of history (a push run on every merge would crowd a mixed list out).
@@ -547,6 +634,7 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
             git_same_non_trail,
             git_is_ancestor,
             raw_runs=cve_runs,
+            earliest_same_tree=git_earliest_same_non_trail,
         )
         if why is not None:
             print(why, file=sys.stderr)
@@ -590,7 +678,12 @@ def main(argv: Sequence[str] | None = None, run: Runner = _run) -> int:
 
     def verdict(c: str) -> str | None:
         return broadcast_verdict(c, nightlies, code) or cve_verdict(
-            c, cve_nightlies, git_same_non_trail, git_is_ancestor, raw_runs=cve_runs
+            c,
+            cve_nightlies,
+            git_same_non_trail,
+            git_is_ancestor,
+            raw_runs=cve_runs,
+            earliest_same_tree=git_earliest_same_non_trail,
         )
 
     sha, passed_over = newest_eligible(order, green, verdict)
