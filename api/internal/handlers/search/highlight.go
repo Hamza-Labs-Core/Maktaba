@@ -14,11 +14,7 @@ import (
 // words, not the phrase); a one-letter word of a longer query is not marked on
 // its own (an Arabic "و" would mark every other word).
 //
-// Everything works on runes, folded one rune to one rune (unicode.ToLower), so
-// the folded text has exactly the original's runes: a match found in the folded
-// text wraps exactly the original-case runes, whatever the fold does to the byte
-// length (Turkish İ, uppercase ẞ), and the window never cuts a multi-byte rune
-// (Arabic; Story 5.4 "Arabic grapheme-aware" highlighting).
+// Folded matches are translated back to original rune boundaries before slicing.
 func highlightSnippet(s, q string, maxLen int) string {
 	return highlightSnippetWith(s, q, nil, maxLen)
 }
@@ -32,23 +28,30 @@ func highlightSnippetWith(s, q string, words []string, maxLen int) string {
 		return s
 	}
 	runes := []rune(s)
-	folded := foldRunes(runes)
+	folded, offsets := foldHighlightRunes(runes)
 	terms := highlightTerms(q)
 	for _, w := range words {
 		w = strings.TrimFunc(w, func(r rune) bool { return unicode.IsPunct(r) || unicode.IsSpace(r) })
-		if utf8.RuneCountInString(w) < 2 {
+		if w == "" {
 			continue
 		}
-		terms = append(terms, foldRunes([]rune(w)))
+		term, _ := foldHighlightRunes([]rune(w))
+		if len(term) >= 2 {
+			terms = append(terms, term)
+		}
 	}
 
 	// The matches, leftmost and then longest first, never overlapping.
 	type span struct{ start, end int }
 	var spans []span
 	for i := 0; i < len(folded); {
+		if offsets[i] < 0 {
+			i++
+			continue
+		}
 		best := 0
 		for _, t := range terms {
-			if len(t) > best && hasPrefixRunes(folded[i:], t) {
+			if len(t) > best && hasPrefixRunes(folded[i:], t) && offsets[i+len(t)] >= 0 {
 				best = len(t)
 			}
 		}
@@ -56,7 +59,7 @@ func highlightSnippetWith(s, q string, words []string, maxLen int) string {
 			i++
 			continue
 		}
-		spans = append(spans, span{i, i + best})
+		spans = append(spans, span{offsets[i], offsets[i+best]})
 		i += best
 	}
 	if len(spans) == 0 {
@@ -114,7 +117,7 @@ func highlightTerms(q string) [][]rune {
 		if len(words) > 1 && utf8.RuneCountInString(w) < 2 {
 			continue
 		}
-		f := foldRunes([]rune(w))
+		f, _ := foldHighlightRunes([]rune(w))
 		if k := string(f); !seen[k] {
 			seen[k] = true
 			out = append(out, f)
@@ -123,12 +126,33 @@ func highlightTerms(q string) [][]rune {
 	return out
 }
 
-func foldRunes(rs []rune) []rune {
-	out := make([]rune, len(rs))
-	for i, r := range rs {
-		out[i] = unicode.ToLower(r)
+// offsets maps folded rune boundaries to original rune boundaries. A boundary
+// inside a replacement such as æ → ae cannot start or end a match.
+func foldHighlightRunes(rs []rune) (folded []rune, offsets []int) {
+	folded = make([]rune, 0, len(rs))
+	offsets = make([]int, 0, len(rs)+1)
+	for start := 0; start < len(rs); {
+		end := start + 1
+		offsets = append(offsets, start)
+		r := rs[start]
+		if unicode.Is(unicode.Latin, r) {
+			for end < len(rs) && unicode.Is(unicode.Mn, rs[end]) {
+				end++
+			}
+			if r >= utf8.RuneSelf || end > start+1 {
+				replacement := []rune(foldAccents(string(rs[start:end])))
+				folded = append(folded, replacement...)
+				for range replacement[1:] {
+					offsets = append(offsets, -1)
+				}
+				start = end
+				continue
+			}
+		}
+		folded = append(folded, unicode.ToLower(r))
+		start = end
 	}
-	return out
+	return folded, append(offsets, len(rs))
 }
 
 func hasPrefixRunes(s, prefix []rune) bool {
