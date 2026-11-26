@@ -335,8 +335,13 @@ async def enqueue_follow_up(db: Any, job: Job, row: Any) -> EnqueueResult | None
         subject_kind=job.subject_kind,
         subject_id=job.subject.id,
         stage=job.stage,
-        # an Epic 47 stage keeps its place (the back catalogue's next batch stays at 300)
-        priority=job.priority if job.stage in EPIC47_PRIORITIES else None,
+        # an Epic 47 stage keeps its place (the back catalogue's next batch stays at 300),
+        # but a normal trigger reaching a healed job mid-run never inherits HEAL_PRIORITY
+        priority=(
+            min(job.priority, EPIC47_PRIORITIES[job.stage])
+            if job.stage in EPIC47_PRIORITIES
+            else None
+        ),
         force=bool(row["rerun_force"]),
         force_cascade=bool(row["rerun_force_cascade"]),
         reason={

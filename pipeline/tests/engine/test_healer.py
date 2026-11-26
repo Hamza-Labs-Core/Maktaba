@@ -622,3 +622,298 @@ async def test_a_look_no_thread_was_free_for_does_not_stop_the_next(
         m.setattr(asyncio, "to_thread", none_free)
         assert await heal_once(db, UP) == 0
     assert await heal_once(db, UP, now() + timedelta(hours=2)) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_hung_listing_does_not_mark_a_non_ascii_path_as_gone(
+    db: Database, tmp_path: Path
+) -> None:
+    import unicodedata
+
+    from maktaba_pipeline.engine import paths
+
+    await setup(db, Recorder())
+    lib = await _library(db, tmp_path)
+    folder = tmp_path / "share"
+    folder.mkdir()
+    name_nfd = unicodedata.normalize("NFD", "أبو.mp4")
+    name_nfc = unicodedata.normalize("NFC", "أبو.mp4")
+    # store a mixed path so NFC/NFD full-path stat both miss and _walk consults _listing
+    sub_nfc = unicodedata.normalize("NFC", "قناة أ")
+    sub_nfd = unicodedata.normalize("NFD", "قناة أ")
+    (folder / sub_nfc).mkdir()
+    stored = f"{folder.as_posix()}/{sub_nfd}/{name_nfd}"
+    job = await _fail(db, await make_video(db, lib, path=stored), ago=timedelta(days=30))
+
+    paths.forget_listings()
+    with paths._listings_lock:  # noqa: SLF001
+        paths._listing_now.add(folder.as_posix())  # noqa: SLF001
+        paths._listing_now.add(f"{folder.as_posix()}/{sub_nfc}")  # noqa: SLF001
+        paths._listing_now.add(f"{folder.as_posix()}/{sub_nfd}")  # noqa: SLF001
+    try:
+        assert await heal_once(db, UP) == 0
+        # hung listing is inconclusive: put off an hour, never up to 7 days
+        assert _about(await _next_look(db, job), healer.AGAIN)
+    finally:
+        with paths._listings_lock:  # noqa: SLF001
+            paths._listing_now.discard(folder.as_posix())  # noqa: SLF001
+            paths._listing_now.discard(f"{folder.as_posix()}/{sub_nfc}")  # noqa: SLF001
+            paths._listing_now.discard(f"{folder.as_posix()}/{sub_nfd}")  # noqa: SLF001
+        paths.forget_listings()
+
+    (folder / sub_nfc / name_nfc).write_bytes(b"x")
+    assert await heal_once(db, UP, now() + timedelta(hours=2)) == 1
+
+
+@pytest.mark.asyncio
+async def test_seven_or_more_slow_folders_do_not_starve_other_shares(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(healer, "_look_after", [])
+    await setup(db, Recorder())
+    lib = await _library(db, tmp_path)
+    for i in range(8):
+        path = f"{tmp_path.as_posix()}/s{i}/1.mp4"
+        await _fail(db, await make_video(db, lib, path=path))
+    good_path = f"{tmp_path.as_posix()}/z_good/1.mp4"
+    good = await make_video(db, lib, path=good_path)
+    await _fail(db, good)
+
+    release = threading.Event()
+
+    def look(path: str) -> bool:
+        if "/z_good/" in path:
+            return True
+        release.wait(10)
+        return False
+
+    monkeypatch.setattr(healer, "_exists", look)
+    monkeypatch.setattr(healer, "LOOK_S", 0.03)
+    t = now()
+    healed_good = False
+    for step in range(10):
+        release.clear()
+        n = await heal_once(db, UP, t + timedelta(minutes=10 * step))
+        release.set()
+        for _ in range(100):
+            if not healer._looking.is_set():  # noqa: SLF001
+                break
+            await asyncio.sleep(0.01)
+        if n > 0:
+            healed_good = True
+            break
+    assert healed_good
+    assert [str(r["subject_id"]) for r in await _pending(db)] == [str(good)]
+
+
+@pytest.mark.asyncio
+async def test_a_down_root_with_non_ascii_capitals_is_excluded_in_sql(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(healer, "BATCH", 2)
+    await setup(db, Recorder())
+    away = tmp_path / "Été"
+    lost = await _library(db, away)
+    for i in range(5):
+        await _fail(db, await make_video(db, lost, path=f"{away.as_posix()}/{i}.mp4"))
+    here = tmp_path / "Other"
+    here.mkdir()
+    (here / "a.mp4").write_bytes(b"x")
+    v = await make_video(db, await _library(db, here), path=(here / "a.mp4").as_posix())
+    await _fail(db, v)
+    down = {f"dependency:share:{away.as_posix()}": (False, "offline")}
+    assert await heal_once(db, down) == 1
+    assert [str(r["subject_id"]) for r in await _pending(db)] == [str(v)]
+
+
+@pytest.mark.asyncio
+async def test_python_down_root_guard_catches_case_mismatch_sql_cannot_fold(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guard test (:180): root stored lowercase 'été' while video path has capital 'Été'.
+    SQLite and bundled PostgreSQL (--locale=C) lower() fold ASCII only, so the Python
+    down-root check must catch it without calling _exists."""
+    await setup(db, Recorder())
+    low_root = tmp_path / "été"
+    low_lib = await _library(db, low_root)
+    vid = await make_video(db, low_lib, path=f"{(tmp_path / 'Été').as_posix()}/only.mp4")
+    job = await _fail(db, vid)
+    asked: list[str] = []
+
+    def would_heal(path: str) -> bool:
+        asked.append(path)
+        return True
+
+    monkeypatch.setattr(healer, "_exists", would_heal)
+    down = {f"dependency:share:{low_root.as_posix()}": (False, "offline")}
+    assert await heal_once(db, down) == 0
+    assert asked == []
+    if await db.fetchval("SELECT lower('É') = 'É'"):
+        assert _about(await _next_look(db, job), healer.AGAIN)
+
+
+@pytest.mark.asyncio
+async def test_an_exception_from_exists_does_not_stop_the_other_files(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    await setup(db, Recorder())
+    lib = await _library(db, tmp_path)
+    jobs: dict[str, int] = {}
+    for name in ("a", "b", "c"):
+        v = await make_video(db, lib, path=f"{tmp_path.as_posix()}/{name}.mp4")
+        jobs[name] = await _fail(db, v)
+
+    def flaky_exists(path: str) -> bool:
+        if path.endswith("/b.mp4"):
+            raise OSError("stale NFS handle")
+        return True
+
+    monkeypatch.setattr(healer, "_exists", flaky_exists)
+    assert await heal_once(db, UP) == 2
+    assert _about(await _next_look(db, jobs["b"]), healer.AGAIN)
+
+
+@pytest.mark.asyncio
+async def test_mid_run_trigger_on_healed_dedup_scan_does_not_inherit_heal_priority(
+    db: Database, tmp_path: Path
+) -> None:
+    from maktaba_pipeline.engine.graph import EPIC47_PRIORITIES
+
+    graph = (
+        StageDef("dedup_scan", "Dedup scan", ("video",), "cpu", "episodes", 1, 1),
+        *toy_graph(),
+    )
+    rec = Recorder()
+    triggered = False
+
+    async def trigger_mid_run(db_: Any, job: Job, _ctx: Any) -> StageResult:
+        nonlocal triggered
+        if not triggered:
+            triggered = True
+            await enqueue_job(
+                db_,
+                subject_kind="video",
+                subject_id=job.subject.id,
+                stage="dedup_scan",
+                priority=EPIC47_PRIORITIES["dedup_scan"],
+            )
+        return StageResult(output_hash=f"out-{job.id}")
+
+    rec.hooks["dedup_scan"] = trigger_mid_run
+    rt = await setup(db, rec, graph)
+    v = await make_video(db, await _library(db, tmp_path), path=(tmp_path / "a.mp4").as_posix())
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    await _fail(db, v, stage="dedup_scan")
+    assert await heal_once(db, UP) == 1
+    await drain(db, rt)
+    seen = await rows(db, "dedup_scan")
+    # failed original (100), healed run (950), and mid-run follow-up (150, NOT 950)
+    assert [(r["state"], r["priority"]) for r in seen] == [
+        ("failed", 100),
+        ("done", HEAL_PRIORITY),
+        ("done", EPIC47_PRIORITIES["dedup_scan"]),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_healed_relisten_job_is_counted_in_relisten_attempts(
+    db: Database, tmp_path: Path
+) -> None:
+    graph = (
+        StageDef("second_listen", "Second listen", ("video",), "cpu", "speech", 2, 1),
+        *toy_graph(),
+    )
+    await setup(db, Recorder(), graph)
+    lib = await _library(db, tmp_path)
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    v = await make_video(db, lib, path=(tmp_path / "a.mp4").as_posix())
+    res = await enqueue_job(
+        db,
+        subject_kind="video",
+        subject_id=v,
+        stage="second_listen",
+        payload={"relisten": True},
+    )
+    assert res.job_id is not None
+    await _end(db, res.job_id)
+    past = to_ts(db, now() - timedelta(hours=2))
+    await db.execute(
+        "INSERT INTO relisten_attempts (video_id, attempts, last_job_id, last_at, next_at,"
+        " ended_at) VALUES ($1, 2, $2, $3, $3, $3)",
+        str(v),
+        res.job_id,
+        past,
+    )
+    assert await heal_once(db, UP) == 1
+    (job,) = await _pending(db, "second_listen")
+    tries = await db.fetchrow(
+        "SELECT attempts, last_job_id, ended_at, stopped_at FROM relisten_attempts"
+        " WHERE video_id = $1",
+        str(v),
+    )
+    assert tries is not None
+    assert tries["attempts"] == 3
+    assert tries["last_job_id"] == job["id"]
+    assert tries["ended_at"] is None and tries["stopped_at"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("forced", [False, True])
+async def test_healed_job_keeps_force_flag(db: Database, tmp_path: Path, forced: bool) -> None:
+    await setup(db, Recorder())
+    lib = await _library(db, tmp_path)
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    v = await make_video(db, lib, path=(tmp_path / "a.mp4").as_posix())
+    res = await enqueue_job(db, subject_kind="video", subject_id=v, stage="t_a", force=forced)
+    assert res.job_id is not None
+    await _end(db, res.job_id)
+    assert await heal_once(db, UP) == 1
+    (job,) = await _pending(db)
+    assert bool(job["force"]) is forced
+
+
+@pytest.mark.asyncio
+async def test_access_check_and_deleted_library_are_not_healed(
+    db: Database, tmp_path: Path
+) -> None:
+    graph = (
+        StageDef("access_check", "Access check", ("video",), "cpu", "media", 0, 1),
+        *toy_graph(),
+    )
+    await setup(db, Recorder(), graph)
+    lib = await _library(db, tmp_path)
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    v_ac = await make_video(db, lib, path=(tmp_path / "a.mp4").as_posix())
+    await _fail(db, v_ac, stage="access_check", max_attempts=3)
+
+    del_lib = await _library(db, tmp_path)
+    (tmp_path / "b.mp4").write_bytes(b"x")
+    v_del = await make_video(db, del_lib, path=(tmp_path / "b.mp4").as_posix())
+    await _fail(db, v_del, stage="t_a")
+    await db.execute(
+        "UPDATE libraries SET deleted_at = $2 WHERE id = $1", str(del_lib), to_ts(db, now())
+    )
+
+    assert await heal_once(db, UP) == 0
+    assert await _pending(db, "access_check") == []
+    assert await _pending(db, "t_a") == []
+
+
+@pytest.mark.asyncio
+async def test_unqueueable_stage_result_leaves_row_for_left(
+    db: Database, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from maktaba_pipeline.engine.enqueue import EnqueueResult
+
+    await setup(db, Recorder())
+    lib = await _library(db, tmp_path)
+    (tmp_path / "a.mp4").write_bytes(b"x")
+    v = await make_video(db, lib, path=(tmp_path / "a.mp4").as_posix())
+    job = await _fail(db, v)
+
+    async def none_enqueued(*_a: Any, **_kw: Any) -> EnqueueResult:
+        return EnqueueResult(None, "disabled")
+
+    monkeypatch.setattr(healer, "requeue_stage", none_enqueued)
+    assert await heal_once(db, UP) == 0
+    assert _about(await _next_look(db, job), healer.LEFT)

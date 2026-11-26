@@ -323,6 +323,87 @@ async def test_dispatch_resumes_once_the_database_is_back(db: Database) -> None:
         await asyncio.wait_for(task, timeout=10)
 
 
+@pytest.mark.asyncio
+async def test_unrecorded_failure_is_recorded_as_soon_as_the_database_returns(
+    db: Database,  # noqa: F811
+) -> None:
+    """Issue #1751 (item 2): when recording a job's failure fails because the database is
+    temporarily away, ClaimLoop queues it and records it as soon as the database answers
+    again instead of waiting for the claim lease to expire."""
+    await sync_graph(db, GRAPH)
+    lib = await make_library(db)
+    flaky = _Flaky(db)
+    v1 = await make_video(db, lib)
+    v2 = await make_video(db, lib)
+    r1 = await enqueue_job(db, subject_kind="video", subject_id=v1, stage="probe")
+    r2 = await enqueue_job(db, subject_kind="video", subject_id=v2, stage="probe")
+    assert r1.job_id is not None and r2.job_id is not None
+
+    entered = asyncio.Event()
+    proceed = asyncio.Event()
+    calls: dict[int, int] = {}
+
+    async def dispatch(job: Job) -> None:
+        calls[job.id] = calls.get(job.id, 0) + 1
+        if calls[job.id] == 1:
+            if len(calls) == 2:
+                entered.set()
+            await proceed.wait()
+            # simulate recording the failure failing while the database is away
+            raise ConnectionDoesNotExistError("connection was closed in the middle of operation")
+        await mark_done(flaky, job_id=job.id)
+
+    cfg = WorkerConfig(
+        supported_stages=("probe",),
+        claim_poll_sec=0.01,
+        claim_poll_max_sec=0.02,
+        worker_id="w1",
+        pool_mode=True,
+        stage_pools={s.name: s.pool for s in GRAPH},
+        dynamic_stages=lambda: ("probe",),
+    )
+    stop = asyncio.Event()
+    loop = ClaimLoop(
+        flaky,
+        cfg,
+        dispatch,
+        shutdown_event=stop,
+        wakeup=PollOnlyWakeup(poll_sec=0.01),
+    )
+    task = asyncio.ensure_future(loop.run())
+    try:
+        await asyncio.wait_for(entered.wait(), timeout=5.0)
+        # database goes away while both jobs are claimed
+        flaky.down = True
+        proceed.set()
+        await _until(lambda: len(loop._pending_failures) == 2, "both failures queued")  # noqa: SLF001
+        # simulate another worker taking over job r2 while the database was away (claim_owner guard)
+        await db.execute(
+            "UPDATE processing_jobs SET claimed_by = 'w2' WHERE id = $1",
+            r2.job_id,
+        )
+        # database answers again: r1 is recorded immediately as pending (retry), r2 is a safe noop
+        flaky.down = False
+        await _until(lambda: not loop._pending_failures, "pending failures flushed on recovery")  # noqa: SLF001
+        row1 = await db.fetchrow(
+            "SELECT state, claimed_by, error_cause, failure_class FROM processing_jobs"
+            " WHERE id = $1",
+            r1.job_id,
+        )
+        assert row1["state"] == "pending"
+        assert row1["claimed_by"] is None
+        assert str(row1["error_cause"]).startswith("DatabaseUnavailable:")
+        assert row1["failure_class"] == "transient"
+        row2 = await db.fetchrow(
+            "SELECT state, claimed_by FROM processing_jobs WHERE id = $1",
+            r2.job_id,
+        )
+        assert row2["state"] == "claimed" and row2["claimed_by"] == "w2"
+    finally:
+        stop.set()
+        await asyncio.wait_for(task, timeout=10)
+
+
 # -- health: "ok" means jobs can be dispatched -----------------------------------------
 
 

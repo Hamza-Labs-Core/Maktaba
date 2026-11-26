@@ -623,3 +623,55 @@ async def test_the_drain_never_cuts_a_search_index_write() -> None:
     await asyncio.wait_for(task, timeout=3.0)
     assert written.is_set(), "the loop ended before the write it cancelled"
     assert gate.wait_idle(0)
+
+
+@pytest.mark.asyncio
+async def test_loop_records_unrecorded_failure_when_db_recovers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Issue #1751 (item 2): when dispatch raises a DatabaseUnavailable error (failure could
+    not be recorded), ClaimLoop queues it and records it as soon as the DB answers again."""
+    from maktaba_pipeline.db.jobs_state import FailureOutcome
+    from maktaba_pipeline.pipeline import runner as runner_mod
+
+    class DatabaseUnavailable(Exception):
+        pass
+
+    db = FakeDB()
+    db.add(Stage.PROBE)
+    cfg = _make_cfg()
+    db_down = True
+    recorded: list[tuple[int, str, bool]] = []
+
+    async def fake_mark_failed(_db: Any, *, job_id: int, error: Any, **_kw: Any) -> FailureOutcome:
+        if db_down:
+            raise DatabaseUnavailable("the database did not answer: eof")
+        recorded.append((job_id, error.kind, error.retryable))
+        return FailureOutcome(state="pending")
+
+    monkeypatch.setattr(runner_mod, "mark_failed_or_retry", fake_mark_failed)
+
+    async def dispatch(_job: Job) -> None:
+        raise DatabaseUnavailable("the database did not answer: eof")
+
+    wakeup = _ManualWakeup()
+    loop = ClaimLoop(db, cfg, dispatch, wakeup=wakeup)
+    task = asyncio.create_task(loop.run())
+    try:
+        wakeup.fire()
+        await asyncio.sleep(0.05)
+        assert 1 in loop._pending_failures  # noqa: SLF001
+        # while DB is still down, flushing keeps it queued
+        wakeup.fire()
+        await asyncio.sleep(0.05)
+        assert recorded == [] and 1 in loop._pending_failures  # noqa: SLF001
+        # DB returns: next tick records the failure immediately
+        db_down = False
+        wakeup.fire()
+        await asyncio.sleep(0.05)
+        assert recorded == [(1, "DatabaseUnavailable", True)]
+        assert not loop._pending_failures  # noqa: SLF001
+    finally:
+        loop.shutdown_event.set()
+        wakeup.fire()
+        await asyncio.wait_for(task, timeout=2.0)

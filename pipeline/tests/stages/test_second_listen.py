@@ -256,7 +256,10 @@ async def _left_out(
     await enqueue_job(db, subject_kind="video", subject_id=vid, stage="transcribe")
     await drain_core(db, rt, only={"transcribe"})
     row = await _active(db, vid)
-    meta = {**_meta(row), "refine": {"model": "m", "source": "skipped", "skipped": why}}
+    meta = {
+        **{k: v for k, v in _meta(row).items() if k != "words_by_sentence"},
+        "refine": {"model": "m", "source": "skipped", "skipped": why},
+    }
     assert meta["words"] is True
     await db.execute(
         "UPDATE transcripts SET metadata = $2 WHERE id = $1", row["id"], json.dumps(meta)
@@ -278,7 +281,8 @@ async def _left_out(
     )
     for kind, key in (("model", str(tr.refine_model())), ("capability", "this machine")):
         await db.execute(
-            "INSERT INTO relisten_seen (kind, key, detail, first_seen) VALUES ($1, $2, '{}', $3)",
+            "INSERT INTO relisten_seen (kind, key, detail, first_seen) VALUES ($1, $2, '{}', $3)"
+            " ON CONFLICT (kind, key) DO NOTHING",
             kind,
             key,
             at,
@@ -419,6 +423,53 @@ async def test_the_sweep_waits_for_a_worker_from_before_the_fix(
     assert await _sweep(db, monkeypatch) == 0 and await _fixed(db) == 0
     await deregister_worker(db, "old")
     assert await _sweep(db, monkeypatch) == 1 and await _fixed(db) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_rollback_and_reupdate_does_not_strand_videos(
+    db: Database, tmp_path: Path, fake: FakeTranscriber, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Issue #1765 (item 1): after the once-per-home key is already recorded, a rollback
+    that re-transcribes with the old placement (no ``words_by_sentence`` mark) and spends
+    tries with ``NO_WORDS_BEFORE`` must still be recovered on the next update, without
+    endlessly resetting a video whose ``words`` mark was already stripped."""
+    heard = _hears(monkeypatch)
+    rt = await core_runtime(db)
+    # 1. First update spends the once-per-home key
+    assert await _sweep(db, monkeypatch) == 0 and await _fixed(db) == 1
+
+    # 2. Rollback: previous release produces a transcript without words_by_sentence,
+    #    records NO_WORDS_BEFORE with words: true, and uses up all tries
+    vid = await _left_out(db, rt, tmp_path, monkeypatch, tr.NO_WORDS_BEFORE)
+    assert await _fixed(db) == 1
+
+    # 3. Re-update: sweep still recovers the stranded video via transcribe
+    assert await _sweep(db, monkeypatch) == 1
+    job = await db.fetchrow(
+        "SELECT stage, priority FROM processing_jobs WHERE subject_id = $1 AND state = 'pending'",
+        str(vid),
+    )
+    assert (job["stage"], job["priority"]) == ("transcribe", tr.RELISTEN_PRIORITY)
+    ran = await drain_core(db, rt, only={"transcribe", "second_listen"})
+    assert ran == ["transcribe", "second_listen"] and fake.calls == 2 and len(heard) == 1
+    row = await _active(db, vid)
+    assert _meta(row)["refine"]["source"] == "hf"
+    assert _meta(row)["words_by_sentence"] is True
+
+    # 4. A transcript whose words mark is already gone is NOT reset again once stopped
+    v2_dir = tmp_path / "v2"
+    v2_dir.mkdir()
+    vid2 = await _left_out(db, rt, v2_dir, monkeypatch, tr.NO_WORDS_BEFORE)
+    row2 = await _active(db, vid2)
+    meta2 = {k: v for k, v in _meta(row2).items() if k != "words"}
+    await db.execute(
+        "UPDATE transcripts SET metadata = $2 WHERE id = $1", row2["id"], json.dumps(meta2)
+    )
+    assert await _sweep(db, monkeypatch) == 0
+    tries2 = await db.fetchrow(
+        "SELECT attempts, stopped_at FROM relisten_attempts WHERE video_id = $1", str(vid2)
+    )
+    assert tries2["attempts"] == 6 and tries2["stopped_at"] is not None
 
 
 @pytest.mark.asyncio

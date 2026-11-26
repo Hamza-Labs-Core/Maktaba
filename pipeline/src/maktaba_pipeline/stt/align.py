@@ -150,8 +150,9 @@ def _by_sentence(
 ) -> list[list[Any]]:
     """The window's words, each with the sentence whose text it is in. A word over two
     sentences (one begins without a space, or is a "؟" alone: the tokenizer joins it to the
-    word before) is split between them, its time by their letters; one too short to split
-    stays with the first. Where the words and the texts differ, by tokens."""
+    word before) is split between them, its time by their letters (a word shorter than
+    0.02 s splits proportionally within its bounds so neither sentence loses its words).
+    Where the words and the texts differ, by tokens."""
     texts = [_letters(str(s.get("text") or "")) for s in segments]
     by_text = "".join(texts) == "".join(_letters(t.word) for t in alignment)
     ends = list(itertools.accumulate(map(len, texts if by_text else per_seg)))
@@ -163,12 +164,16 @@ def _by_sentence(
             while k + 1 < len(ends) and pos >= ends[k]:
                 k += 1
             room = ends[k] - pos
-            if not by_text or size <= room or k + 1 == len(ends) or t.end - t.start < 0.02:
+            if not by_text or size <= room or k + 1 == len(ends):
                 break
             seen = list(itertools.accumulate(int(not c.isspace()) for c in t.word))
             cut = seen.index(room) + 1
-            at = t.start + (t.end - t.start) * room / size
-            at = min(max(at, t.start + 0.01), t.end - 0.01)
+            dur = max(0.0, t.end - t.start)
+            at = t.start + dur * room / size
+            if dur >= 0.02:
+                at = min(max(at, t.start + 0.01), t.end - 0.01)
+            else:
+                at = min(max(at, t.start), max(t.start, t.end))
             out[k].append(replace(t, word=t.word[:cut], end=at))
             t = replace(t, word=t.word[cut:], tokens=[], start=at)
             pos, size = pos + room, size - room

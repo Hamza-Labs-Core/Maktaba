@@ -33,3 +33,39 @@ def test_punctuation_joins_the_words_of_its_sentence() -> None:
 def test_a_word_across_two_sentences_is_the_first_one_s() -> None:
     words = [(" a", [1]), (" bc", [2, 3]), (" d", [4])]
     assert _placed(words, [[1, 2], [3, 4]]) == [[" a", " bc"], [" d"]]
+
+
+@pytest.mark.parametrize("dur", [0.0, 0.01])
+def test_a_short_word_across_sentences_is_split_so_neither_loses_its_words(dur: float) -> None:
+    """Issue #1765 (item 2): a word shorter than 0.02 s crossing a sentence boundary must
+    still split proportionally so neither sentence fails covers()."""
+    from maktaba_pipeline.stt.settings import Word
+    from maktaba_pipeline.stt.word_data import covers
+
+    timings = [
+        WordTiming(" a", [1], 0.0, 1.0, 0.9),
+        WordTiming(" bc", [2, 3], 1.0, 1.0 + dur, 0.9),
+        WordTiming(" d", [4], 1.0 + dur, 2.0, 0.9),
+    ]
+    segments: list[dict[str, Any]] = [
+        {"seek": 0, "start": 0.0, "end": 1.0, "text": " a b"},
+        {"seek": 0, "start": 1.0, "end": 2.0, "text": "c d"},
+    ]
+    place(AlignItem(segments, 3000, 0.0, 0), [[1, 2], [3, 4]], timings, merge_punctuations)
+    assert [[w["word"] for w in s["words"]] for s in segments] == [[" a", " b"], ["c", " d"]]
+    for seg in segments:
+        ws = [Word(w["start"], w["end"], w["word"], w["probability"]) for w in seg["words"]]
+        assert covers(seg["text"], ws)
+        assert all(w.start <= w.end for w in ws)
+    assert segments[0]["words"][-1]["end"] <= segments[1]["words"][0]["start"]
+
+
+def test_a_zero_duration_word_across_three_sentences_splits_into_all_three() -> None:
+    timings = [WordTiming(" a.b", [1, 2, 3], 1.0, 1.0, 0.9)]
+    segments: list[dict[str, Any]] = [
+        {"seek": 0, "start": 1.0, "end": 1.0, "text": " a"},
+        {"seek": 0, "start": 1.0, "end": 1.0, "text": "."},
+        {"seek": 0, "start": 1.0, "end": 1.0, "text": "b"},
+    ]
+    place(AlignItem(segments, 3000, 0.0, 0), [[1], [2], [3]], timings, merge_punctuations)
+    assert [[w["word"] for w in s["words"]] for s in segments] == [[" a"], ["."], ["b"]]

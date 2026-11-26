@@ -55,6 +55,7 @@ ends it); the database's causes go on.
 from __future__ import annotations
 
 import asyncio
+import bisect
 import threading
 import time
 from collections.abc import Iterable, Mapping
@@ -66,9 +67,10 @@ from ..log import get_logger
 from .failure_classes import SHARE
 from .failure_policy import _norm, _roots, root_of
 from .missing_files import _exists, file_found
+from .paths import track_unavailable
 from .requeue import HEAL_PRIORITY, requeue_stage
 from .retired import RETIRED_STAGES
-from .sql import is_pg, now, parse_ts, to_ts
+from .sql import is_pg, loads, now, parse_ts, to_ts, uid
 
 __all__ = ["HEAL_WHY", "heal_due", "heal_once"]
 
@@ -141,9 +143,18 @@ SELECT stage FROM processing_jobs
  GROUP BY stage HAVING count(*) >= $2
 """
 
-#: when this process last looked (monotonic), and whether its last look is still hanging
+#: when this process last looked (monotonic), whether its last look is still hanging,
+#: and where the next look starts (rotates past slow folders so other shares are not starved)
 _last: list[float] = []
 _looking = threading.Event()
+_look_after: list[str] = []
+
+_ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")
+
+
+def _ascii_lower(text: str) -> str:
+    """Fold ASCII capitals only, matching SQLite and PostgreSQL ``--locale=C`` ``lower()``."""
+    return text.translate(_ASCII_LOWER)
 
 
 async def heal_due(db: Any, health: Mapping[str, tuple[bool, str]], t: datetime) -> int:
@@ -178,21 +189,25 @@ async def heal_once(
             await _requeue(db, r, t, healed)
         elif (root := root_of(str(r["path"]), _roots(r["roots"]))) is not None and (
             health.get(f"{SHARE}:{root}", (True, ""))[0] is False
-        ):  # SQLite's lower() folds ASCII only: a root the query did not see is down
+        ):  # SQLite and bundled PostgreSQL (--locale=C) lower() fold ASCII only
             await _leave(db, r, t + AGAIN)
         else:
             look.append((r, failed))
     there, slow = await _look({str(r["path"]) for r, _ in look})
     for r, failed in look:
         path = str(r["path"])
-        found = there.get(path)
-        if found:
-            await _requeue(db, r, t, healed)
-        elif found is not None:
-            # with no root that holds it (a root stored in another form than the path), an
-            # unmounted share looks like a missing file: nothing is said, so not that long
-            gone = GONE_MAX if root_of(path, _roots(r["roots"])) else UNSAID_MAX
-            await _leave(db, r, t + min(max(t - failed, AGAIN), gone))
+        if path in there:
+            found = there[path]
+            if found:
+                await _requeue(db, r, t, healed)
+            elif found is False:
+                # with no root that holds it (a root stored in another form than the path), an
+                # unmounted share looks like a missing file: nothing is said, so not that long
+                gone = GONE_MAX if root_of(path, _roots(r["roots"])) else UNSAID_MAX
+                await _leave(db, r, t + min(max(t - failed, AGAIN), gone))
+            else:
+                # listing unavailable (hung share) or stat error: not confirmed gone
+                await _leave(db, r, t + AGAIN)
         elif slow is not None and _folder(path) == _folder(slow):
             await _leave(db, r, t + AGAIN)
         # else: not asked about; it is due still
@@ -216,11 +231,17 @@ async def _candidates(db: Any, health: Mapping[str, tuple[bool, str]], t: dateti
     if _looking.is_set():
         cause = _DATABASE
     else:
-        down = [
-            _norm(name[len(SHARE) + 1 :]) + "/"
-            for name, probe in sorted(health.items())
-            if name.startswith(SHARE + ":") and not probe[0]
-        ]
+        down: list[str] = []
+        for name, probe in sorted(health.items()):
+            if not (name.startswith(SHARE + ":") and not probe[0]):
+                continue
+            raw = name[len(SHARE) + 1 :].replace("\\", "/").rstrip("/")
+            if not raw:
+                continue
+            # both full-folded (UTF-8 Postgres) and ASCII-folded (SQLite, bundled Postgres
+            # --locale=C) so a down root with non-ASCII capitals is excluded in SQL too
+            for prefix in dict.fromkeys((_norm(raw) + "/", _ascii_lower(raw) + "/")):
+                down.append(prefix)
         under = "".join(
             f" AND substr(lower(replace(v.path, '\\', '/')), 1, {len(d)}) <> {arg(d)}" for d in down
         )
@@ -239,14 +260,19 @@ def _folder(path: str) -> str:
     return path.replace("\\", "/").rpartition("/")[0]
 
 
-async def _look(paths: Iterable[str]) -> tuple[dict[str, bool], str | None]:
+async def _look(paths: Iterable[str]) -> tuple[dict[str, bool | None], str | None]:
     """Which of these files are there, as far as :data:`LOOK_S` reached (a file not in the
-    answer was not asked about), and the one it was asking about when the time was up. One
-    thread; a ``stat`` that hangs keeps it, and no further look starts until it returns."""
+    answer was not asked about; None means an unavailable listing or stat error, not gone),
+    and the one it was asking about when the time was up. One thread; a ``stat`` that hangs
+    keeps it, and no further look starts until it returns."""
     todo = sorted(paths)
     if not todo:
         return {}, None
-    found: dict[str, bool] = {}
+    if _look_after:
+        idx = bisect.bisect_right(todo, _look_after[0])
+        if idx < len(todo):
+            todo = todo[idx:] + todo[:idx]
+    found: dict[str, bool | None] = {}
     asking: list[str] = []
     stop = threading.Event()
 
@@ -256,7 +282,14 @@ async def _look(paths: Iterable[str]) -> tuple[dict[str, bool], str | None]:
                 asking[:] = [p]
                 if stop.is_set():
                     return
-                found[p] = _exists(p)
+                try:
+                    with track_unavailable() as unavailable:
+                        ok = _exists(p)
+                except Exception:  # noqa: BLE001 - one path's error must not stop the round
+                    _log.warning("failures_heal_stat_failed", path=p, exc_info=True)
+                    found[p] = None
+                else:
+                    found[p] = True if ok else (None if unavailable[0] else False)
         finally:
             _looking.clear()
 
@@ -271,6 +304,10 @@ async def _look(paths: Iterable[str]) -> tuple[dict[str, bool], str | None]:
         stop.set()
         if not asking:  # no thread was free in time: the look was cancelled
             _looking.clear()
+    if slow is not None:
+        _look_after[:] = [slow]
+    elif found:
+        _look_after[:] = [todo[-1]]
     return dict(found), slow
 
 
@@ -292,7 +329,38 @@ async def _requeue(db: Any, r: Any, t: datetime, healed: dict[str, int]) -> None
     if res.job_id is None:
         await _leave(db, r, t + LEFT)
     else:
+        payload = loads(r["payload"])
+        if (
+            res.outcome == "inserted"
+            and stage in ("transcribe", "second_listen")
+            and isinstance(payload, dict)
+            and payload.get("relisten")
+        ):
+            await _count_relisten(db, vid, res.job_id, t)
         healed[stage] = healed.get(stage, 0) + 1
+
+
+async def _count_relisten(db: Any, video_id: UUID, job_id: int, t: datetime) -> None:
+    """Count a healed relisten job in ``relisten_attempts`` so its try and wait are tracked."""
+    ts = to_ts(db, t)
+    nxt = to_ts(db, t + AGAIN)
+    await db.execute(
+        "INSERT INTO relisten_attempts"
+        " (video_id, attempts, last_job_id, last_at, next_at, ended_at, wait_s, stopped_at)"
+        " VALUES ($1, 1, $2, $3, $4, NULL, NULL, NULL)"
+        " ON CONFLICT (video_id) DO UPDATE SET"
+        " attempts = relisten_attempts.attempts + 1,"
+        " last_job_id = EXCLUDED.last_job_id,"
+        " last_at = EXCLUDED.last_at,"
+        " next_at = EXCLUDED.next_at,"
+        " ended_at = NULL,"
+        " wait_s = NULL,"
+        " stopped_at = NULL",
+        uid(video_id),
+        job_id,
+        ts,
+        nxt,
+    )
 
 
 async def _leave(db: Any, r: Any, until: datetime) -> None:

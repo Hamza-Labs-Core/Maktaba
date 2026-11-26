@@ -18,9 +18,17 @@ from typing import Any
 __all__ = ["connection_lost", "fallback", "older_schema"]
 
 #: asyncpg's errors for a connection that failed, closed or is refused for now (by name:
-#: no asyncpg import here, SQLite installs do not have it): class 08 and 57P03
+#: no asyncpg import here, SQLite installs do not have it): class 08, 57P01/02/03, and the
+#: plugin API's 503 DatabaseUnavailable
 _CONNECTION_ERRORS = frozenset(
-    {"PostgresConnectionError", "CannotConnectNowError", "ConnectionDoesNotExistError"}
+    {
+        "AdminShutdownError",
+        "CannotConnectNowError",
+        "ConnectionDoesNotExistError",
+        "CrashShutdownError",
+        "DatabaseUnavailable",
+        "PostgresConnectionError",
+    }
 )
 
 

@@ -37,9 +37,11 @@ the same DB connection.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import signal
 import socket
+import traceback
 from collections.abc import Awaitable, Callable, Collection, Iterator, Mapping, Sequence
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
@@ -51,6 +53,8 @@ import structlog
 from ..db import claim_owner
 from ..db.jobs import Job, Stage
 from ..db.jobs_claim import claim_one
+from ..db.jobs_state import StageError, mark_failed_or_retry
+from ..db.schema_compat import connection_lost
 from ..engine.claim import PoolConfig, claim_for_pool, load_pools
 from ..log import bind_component, bind_job_id, bind_video_id, get_logger
 from .signals import install_shutdown_handlers
@@ -224,6 +228,9 @@ class ClaimLoop:
         self.in_flight: set[asyncio.Task[None]] = set()
         #: each one's stage (a component's drain cancels only its stages' jobs)
         self._task_stage: dict[asyncio.Task[None], str] = {}
+        #: job failures that could not be recorded while the database was away: retried as
+        #: soon as the database answers again instead of waiting for the claim lease to lapse
+        self._pending_failures: dict[int, tuple[Job, StageError]] = {}
         self._drain_failed_logged = False
 
     def _default_wakeup(self) -> WakeupSource:
@@ -257,6 +264,7 @@ class ClaimLoop:
                 if self.shutdown_event.is_set():
                     break
                 try:
+                    flushed = await self._flush_pending_failures()
                     claimed = await self._drain(in_flight)
                 except Exception as exc:  # noqa: BLE001 - the database went away: next tick
                     # a node's beat notices the home gone and closes the gate; until it
@@ -268,13 +276,17 @@ class ClaimLoop:
                             error=f"{type(exc).__name__}: {exc}",
                             exc_info=True,
                         )
-                    claimed = 0
+                    flushed = claimed = 0
                 else:
                     if self._drain_failed_logged:
                         self._drain_failed_logged = False
                         _log.info("claim_loop_drain_recovered")
-                if claimed:
+                if claimed or flushed:
                     backoff = self.cfg.claim_poll_sec
+                elif self._pending_failures:
+                    backoff = min(
+                        backoff * 2.0, self.cfg.claim_poll_sec * 4.0, self.cfg.claim_poll_max_sec
+                    )
                 else:
                     backoff = min(backoff * 2.0, self.cfg.claim_poll_max_sec)
                 self._wakeup.poll_sec = backoff
@@ -297,6 +309,9 @@ class ClaimLoop:
                         after_sec=self.cfg.shutdown_drain_sec,
                     )
                 await asyncio.gather(*in_flight, return_exceptions=True)
+            if self._pending_failures:
+                with contextlib.suppress(Exception):
+                    await self._flush_pending_failures()
             _log.info("claim_loop_stopped", worker_id=self.cfg.worker_id)
 
     def _passed(self) -> None:
@@ -435,6 +450,29 @@ class ClaimLoop:
             if sem is not None:
                 sem.release()
 
+    async def _flush_pending_failures(self) -> int:
+        """Record failures that could not be written while the database was away."""
+        recorded = 0
+        for job_id, (job, error) in list(self._pending_failures.items()):
+            try:
+                with _job_log_context(job), claim_owner.running_for(self.cfg.worker_id):
+                    outcome = await mark_failed_or_retry(self.db, job_id=job.id, error=error)
+            except Exception as exc:
+                if connection_lost(exc):
+                    raise
+                _log.exception("job_failure_record_failed", job_id=job.id, stage=str(job.stage))
+                self._pending_failures.pop(job_id, None)
+                continue
+            self._pending_failures.pop(job_id, None)
+            recorded += 1
+            _log.info(
+                "job_failure_recorded_on_recovery",
+                job_id=job.id,
+                stage=str(job.stage),
+                state=outcome.state,
+            )
+        return recorded
+
     async def _dispatch_job(self, job: Job) -> None:
         try:
             # the job's writes apply while this worker holds its claim (db/claim_owner.py)
@@ -447,8 +485,19 @@ class ClaimLoop:
                     worker_id=self.cfg.worker_id,
                 )
                 await self.dispatch(job)
-        except Exception:
+        except Exception as exc:
             _log.exception("job_dispatch_raised", job_id=job.id, stage=str(job.stage))
+            if connection_lost(exc):
+                self._pending_failures[job.id] = (
+                    job,
+                    StageError(
+                        kind="DatabaseUnavailable",
+                        message=f"{type(exc).__name__}: {exc}",
+                        traceback=traceback.format_exc(),
+                        retryable=True,
+                    ),
+                )
+                self._wakeup.poll_sec = self.cfg.claim_poll_sec
             raise
 
     async def _drain(self, in_flight: set[asyncio.Task[None]]) -> int:
@@ -506,26 +555,7 @@ class ClaimLoop:
 
     async def _run_job(self, job: Job, sem: asyncio.Semaphore) -> None:
         try:
-            with _job_log_context(job), claim_owner.running_for(self.cfg.worker_id):
-                _log.info(
-                    "job_dispatched",
-                    job_id=job.id,
-                    stage=str(job.stage),
-                    attempts=job.attempts,
-                    worker_id=self.cfg.worker_id,
-                )
-                await self.dispatch(job)
-        except Exception:
-            # Story 6.5 owns the failure → backoff transition. Here
-            # we only log and re-raise so the dispatch contract is
-            # preserved; the gather() in run() suppresses the
-            # exception so one bad job doesn't kill the loop.
-            _log.exception(
-                "job_dispatch_raised",
-                job_id=job.id,
-                stage=str(job.stage),
-            )
-            raise
+            await self._dispatch_job(job)
         finally:
             sem.release()
 
