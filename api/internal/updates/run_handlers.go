@@ -424,7 +424,7 @@ func (h *Handler) Cancel(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		common.WriteJSON(w, r, http.StatusOK, map[string]any{"cancelled": true})
 	case errors.Is(err, ErrNoSuchRun):
-		httperror.Write(w, r, httperror.NotFound("update run"))
+		httperror.Write(w, r, httperror.NotFound("update run").With("code", "no_such_run"))
 	case errors.Is(err, ErrPastSwitch):
 		httperror.Write(w, r, httperror.Conflict("about:blank#past_switch", err.Error()).With("code", "past_switch"))
 	case errors.Is(err, ErrCancelFailed):
@@ -457,7 +457,7 @@ func (h *Handler) retryAnswer(w http.ResponseWriter, r *http.Request, run Run, e
 	case err == nil:
 		common.WriteJSON(w, r, http.StatusAccepted, map[string]any{"run_id": run.ID, "version": run.Version})
 	case errors.Is(err, ErrNoSuchRun), errors.Is(err, ErrNoMachine):
-		httperror.Write(w, r, httperror.NotFound("update run"))
+		httperror.Write(w, r, httperror.NotFound("update run").With("code", "no_such_run"))
 	case errors.Is(err, ErrRunActive):
 		httperror.Write(w, r, httperror.Conflict("about:blank#run_active", "an update is running").With("code", BlockActiveRun))
 	case errors.Is(err, ErrNotHeld):

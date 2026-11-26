@@ -79,6 +79,7 @@ func DefaultFeed(repo string, getenv func(string) string) string {
 var (
 	errFeedUnreachable = errors.New("the update feed could not be reached")
 	errFeedStale       = errors.New("the update feed is older than the one read before")
+	errFeedOld         = errors.New("the update feed is older than a week")
 )
 
 // errFeedRefused wraps a feed that was read and failed its checks (CheckFailFeedRefused).
@@ -139,16 +140,17 @@ func (d *Discoverer) feedFile(ctx context.Context, path string) (data, bundle []
 }
 
 // feedList reads the channel's feed of the home's platform and of every platform its
-// machines run. The home's own feed says which releases there are; the others add their
-// platforms' files to those releases. withdrawn names the releases the feed pulled (tag →
-// reason). A file signed before the one this home read last (st.FeedSignedAt), or more
-// than releaseverify.FeedMaxAge ago, is errFeedStale: it would hide the releases and pulls
-// made since, so GitHub's list is read instead (a release pulled since stays withdrawn in
-// the catalog). A machine's platform whose feed cannot be read is passed over (logged):
-// its files then come from beside checksums.txt (the catalog keeps every signed file).
-func (d *Discoverer) feedList(ctx context.Context, channel string, st *State) (rels []ghRelease, withdrawn map[string]string, err error) {
+// machines run. The home's own feed says which releases there are and returns its signing
+// time (signedAt); the others add their platforms' files to those releases. withdrawn names
+// the releases the feed pulled (tag → reason). A file signed before the one this home read
+// last (st.FeedSignedAt), or more than releaseverify.FeedMaxAge ago, is errFeedStale: it
+// would hide the releases and pulls made since, so GitHub's list is read instead (a release
+// pulled since stays withdrawn in the catalog). A machine's platform whose feed cannot be
+// read is passed over (logged): its files then come from beside checksums.txt (the catalog
+// keeps every signed file).
+func (d *Discoverer) feedList(ctx context.Context, channel string, st *State) (rels []ghRelease, withdrawn map[string]string, signedAt time.Time, err error) {
 	if d.Feed.Verifier == nil {
-		return nil, nil, errors.New("the update feed has no verifier")
+		return nil, nil, time.Time{}, errors.New("the update feed has no verifier")
 	}
 	ch := feedChannel(channel)
 	byTag := map[string]*ghRelease{}
@@ -165,20 +167,23 @@ func (d *Discoverer) feedList(ctx context.Context, channel string, st *State) (r
 					"platform", fp, "err", err.Error())
 				continue
 			}
-			return nil, nil, err
+			return nil, nil, time.Time{}, err
 		}
 		f, at, err := d.Feed.Verifier.VerifyFeed(ctx, releaseverify.FeedInput{Data: data, Bundle: bundle,
 			Channel: ch, Platform: fp, DownloadBase: d.Feed.DownloadBase})
 		if err != nil {
-			return nil, nil, fmt.Errorf("%s: %w", path, err)
+			return nil, nil, time.Time{}, fmt.Errorf("%s: %w", path, err)
 		}
 		if last, ok := st.FeedSignedAt[path]; ok && at.Before(last) {
-			return nil, nil, fmt.Errorf("%w: %s signed %s, the one read before %s", errFeedStale, path,
+			return nil, nil, time.Time{}, fmt.Errorf("%w: %s signed %s, the one read before %s", errFeedStale, path,
 				at.Format(time.RFC3339), last.Format(time.RFC3339))
 		}
 		if age := d.now().Sub(at); age > releaseverify.FeedMaxAge {
-			return nil, nil, fmt.Errorf("%w: %s signed %s, more than %s ago", errFeedStale, path,
+			return nil, nil, time.Time{}, fmt.Errorf("%w: %s signed %s, more than %s ago", errFeedStale, path,
 				at.Format(time.RFC3339), releaseverify.FeedMaxAge)
+		}
+		if own {
+			signedAt = at.UTC()
 		}
 		signed[path] = at
 		for _, r := range f.Releases {
@@ -218,7 +223,7 @@ func (d *Discoverer) feedList(ctx context.Context, channel string, st *State) (r
 	for k, v := range signed {
 		st.FeedSignedAt[k] = v
 	}
-	return rels, withdrawn, nil
+	return rels, withdrawn, signedAt, nil
 }
 
 // signedAssets are r's files from the feed and, for every other file its signed
@@ -268,27 +273,53 @@ func keepSignedAssets(fresh Release, held []Asset) []Asset {
 }
 
 // listing is the releases to look at: the feed's when it has one, else GitHub's list
-// (also when the feed cannot be reached or is older than the last). A feed refused is the
-// check's error.
-func (d *Discoverer) listing(ctx context.Context, channel string, st *State) (rels []ghRelease, withdrawn map[string]string, decodeErr, err error) {
+// (also when the feed cannot be reached or is older than the last). A feed signed more
+// than releaseverify.FeedFreshAge ago (up to FeedMaxAge) is still read, but also checks
+// GitHub's list: if GitHub answers, its releases are used (with the feed's withdrawals);
+// otherwise the old feed's releases are returned along with its signing time (oldAt) and
+// errFeedOld so the check records feed_old without advancing LastCheckOK to now. A feed
+// refused is the check's error.
+func (d *Discoverer) listing(ctx context.Context, channel string, st *State) (rels []ghRelease, withdrawn map[string]string, oldAt time.Time, decodeErr, err error) {
 	st.LastCheckSource = SourceGitHub
 	st.FeedError = ""
 	if d.Feed != nil && d.Feed.URL != "" {
-		rels, withdrawn, err = d.feedList(ctx, channel, st)
+		var signedAt time.Time
+		rels, withdrawn, signedAt, err = d.feedList(ctx, channel, st)
 		switch {
 		case err == nil:
+			if !signedAt.IsZero() && d.now().Sub(signedAt) > releaseverify.FeedFreshAge {
+				ageMsg := fmt.Sprintf("feed signed %s, more than %s ago", signedAt.Format(time.RFC3339), releaseverify.FeedFreshAge)
+				ghRels, ghDecodeErr, ghErr := d.list(ctx)
+				if ghErr == nil && ghDecodeErr == nil {
+					st.LastCheckSource = SourceGitHub
+					st.FeedError = ageMsg
+					d.log().Warn("update feed is older than a week: reading GitHub's release list",
+						"event", "update_feed_fallback", "signed_at", signedAt.Format(time.RFC3339))
+					return ghRels, withdrawn, time.Time{}, nil, nil
+				}
+				cause := ghErr
+				if cause == nil {
+					cause = ghDecodeErr
+				}
+				oldErr := fmt.Errorf("%w: %s (GitHub: %v)", errFeedOld, ageMsg, cause)
+				st.LastCheckSource = SourceFeed
+				st.FeedError = oldErr.Error()
+				d.log().Warn("update feed is older than a week and GitHub could not be read",
+					"event", "update_feed_old", "signed_at", signedAt.Format(time.RFC3339), "err", cause.Error())
+				return rels, withdrawn, signedAt, nil, oldErr
+			}
 			st.LastCheckSource = SourceFeed
-			return rels, withdrawn, nil, nil
+			return rels, withdrawn, time.Time{}, nil, nil
 		case !feedFallsBack(err):
 			d.log().Error("update feed refused", "event", "update_feed_refused", "err", err.Error())
 			st.LastCheckSource = SourceFeed
-			return nil, nil, nil, fmt.Errorf("%w: %w", errFeedRefused, err)
+			return nil, nil, time.Time{}, nil, fmt.Errorf("%w: %w", errFeedRefused, err)
 		}
 		st.FeedError = err.Error()
 		d.log().Warn("update feed not read: reading GitHub's release list", "event", "update_feed_fallback", "err", err.Error())
 	}
 	rels, decodeErr, err = d.list(ctx)
-	return rels, nil, decodeErr, err
+	return rels, nil, time.Time{}, decodeErr, err
 }
 
 // Where a check found its releases (State.LastCheckSource).
@@ -320,7 +351,7 @@ func (d *Discoverer) feedWithdrawn(ctx context.Context, r Release, channel strin
 		return "", false, nil
 	}
 	st := d.Store.LoadState(ctx)
-	_, withdrawn, err := d.feedList(ctx, channel, &st)
+	_, withdrawn, signedAt, err := d.feedList(ctx, channel, &st)
 	switch {
 	case feedFallsBack(err):
 		return "", false, nil
@@ -328,5 +359,12 @@ func (d *Discoverer) feedWithdrawn(ctx context.Context, r Release, channel strin
 		return "", false, fmt.Errorf("%w: %w", errFeedRefused, err)
 	}
 	d.Store.SaveState(ctx, st)
-	return withdrawn[r.Tag], true, nil
+	if why := withdrawn[r.Tag]; why != "" {
+		return why, true, nil
+	}
+	// an old feed (past FeedFreshAge) may not know a recent withdrawal: ask GitHub too
+	if !signedAt.IsZero() && d.now().Sub(signedAt) > releaseverify.FeedFreshAge {
+		return "", false, nil
+	}
+	return "", true, nil
 }

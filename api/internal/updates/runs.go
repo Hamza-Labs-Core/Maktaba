@@ -114,8 +114,11 @@ type RunDetail struct {
 	// (Driver.tvSwapWait: at most TVSwapWait).
 	TVSwapSince *time.Time `json:"tv_swap_since,omitempty"`
 	// CopySince is when the restart first saw a machine's copy (Driver.copyWait: CopyWait
-	// from then at most).
-	CopySince *time.Time `json:"copy_since,omitempty"`
+	// from then at most). CopyWaitMS and CopyTickAt track time spent actually waiting for
+	// copies (excluding viewer or switchover waits).
+	CopySince  *time.Time `json:"copy_since,omitempty"`
+	CopyWaitMS int64      `json:"copy_wait_ms,omitempty"`
+	CopyTickAt *time.Time `json:"copy_tick_at,omitempty"`
 	// CopyPast: the run went past a copy that still ran after that (audited once).
 	CopyPast bool `json:"copy_past,omitempty"`
 	// Home is the home supervisor's last report.

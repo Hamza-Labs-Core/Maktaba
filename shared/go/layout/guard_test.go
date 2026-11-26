@@ -270,6 +270,21 @@ func TestMarkRecordDown(t *testing.T) {
 	if rec["kept_for"] != "0.3.82" || rec["kept_reason"] == nil || rec["dump_kept_for"] != nil || rec["schema_before"] != nil {
 		t.Fatalf("record: %s", b)
 	}
+	// #1666: A (0.3.82) -> B (0.3.86, kept) -> C (0.3.90, Down back to B's schema): preserves
+	// both kept_for and schema_release so an intermediate release M (0.3.84) is still allowed
+	write(`{"version":"v0.3.90","state":"migrated","from":"v0.3.82","dump_kept_for":"0.3.82","dump_schema_release":"v0.3.86","schema_before":183}`)
+	if ok, err := MarkRecordDown(path, "0.3.90", "0.3.82", "watch_timeout"); !ok || err != nil {
+		t.Fatalf("ok %v, err %v", ok, err)
+	}
+	b, _ = os.ReadFile(path)
+	rec = nil
+	if err := json.Unmarshal(b, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec["version"] != "v0.3.82" || rec["kept_for"] != "0.3.82" || rec["schema_release"] != "v0.3.86" ||
+		rec["dump_kept_for"] != nil || rec["dump_schema_release"] != nil || rec["schema_before"] != nil {
+		t.Fatalf("record with schema_release: %s", b)
+	}
 	if _, _, err := RecordSchemaBefore(filepath.Join(t.TempDir(), "none.json"), "0.3.90"); err != nil {
 		t.Fatalf("no record: %v", err)
 	}

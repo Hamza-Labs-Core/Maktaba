@@ -222,6 +222,76 @@ func TestACopyThatEndedEndsItsHold(t *testing.T) {
 	}
 }
 
+// #1753 item 2: a copy that held day 1's window and ended outside the window clears the
+// hold so day 2's separate copy gets its own CopyHoldMax budget.
+func TestHoldClearsOutsideWindowSoNextDayGetsFreshHold(t *testing.T) {
+	t.Parallel()
+	enableAutoInstall(t)
+	ctx := context.Background()
+	f := newFixture(t, sqliteDB(t))
+	seed(t, f.store, rel("1.5.0"))
+	copying := BlockMachineCopying
+	f.svc.Blockers = []Blocker{BlockerFunc(func(context.Context) (string, error) { return copying, nil })}
+	// Day 1 inside the quiet window (03:00-05:00): held by copy
+	if d, err := f.svc.Tick(ctx); err != nil || d.Action != "blocked" || d.Reason != BlockMachineCopying {
+		t.Fatalf("day 1 window: %+v %v", d, err)
+	}
+	// Window ends (06:00) and the copy finishes outside the window
+	f.now = f.now.Add(3 * time.Hour)
+	copying = ""
+	if d, err := f.svc.Tick(ctx); err != nil || d.Action != "none" {
+		t.Fatalf("outside window: %+v %v", d, err)
+	}
+	if !f.svc.copySince.IsZero() {
+		t.Fatalf("copySince was not cleared outside the window: %s", f.svc.copySince)
+	}
+	// Day 2 inside the quiet window (24h after day 1's start): a new machine starts copying;
+	// it must get a fresh hold instead of sharing day 1's expired 20h budget.
+	f.now = f.now.Add(21 * time.Hour)
+	copying = BlockMachineCopying
+	if d, err := f.svc.Tick(ctx); err != nil || d.Action != "blocked" || d.Reason != BlockMachineCopying {
+		t.Fatalf("day 2 new copy should be held anew: %+v %v", d, err)
+	}
+}
+
+// #1753 Major 1: outside the quiet window, an unrelated blocker (e.g. role_not_running)
+// or a HomeHealth check must not stop copySince from clearing, and HomeHealth is not polled.
+func TestHoldClearsOutsideWindowWithUnrelatedBlockerAndNoHealthPoll(t *testing.T) {
+	t.Parallel()
+	enableAutoInstall(t)
+	ctx := context.Background()
+	f := newFixture(t, sqliteDB(t))
+	seed(t, f.store, rel("1.5.0"))
+	copying, other := BlockMachineCopying, ""
+	healthHits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		healthHits++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	f.svc.Blockers = []Blocker{
+		BlockerFunc(func(context.Context) (string, error) { return copying, nil }),
+		BlockerFunc(func(context.Context) (string, error) { return other, nil }),
+		&HomeHealth{BaseURL: srv.URL, HTTP: srv.Client()},
+	}
+	if d, err := f.svc.Tick(ctx); err != nil || d.Action != "blocked" || d.Reason != BlockMachineCopying {
+		t.Fatalf("day 1 window: %+v %v", d, err)
+	}
+	// Outside the window: copy ends while an unrelated blocker is active
+	f.now = f.now.Add(3 * time.Hour)
+	copying, other = "", BlockRoleNotRunning
+	healthHits = 0
+	if d, err := f.svc.Tick(ctx); err != nil || d.Action != "none" {
+		t.Fatalf("outside window: %+v %v", d, err)
+	}
+	if !f.svc.copySince.IsZero() {
+		t.Fatalf("copySince was not cleared with unrelated blocker active: %s", f.svc.copySince)
+	}
+	if healthHits != 0 {
+		t.Fatalf("HomeHealth was polled %d times outside the window", healthHits)
+	}
+}
+
 // A blocker that fails after one was gone past: no run starts, and nothing is audited.
 func TestUpdateNowStopsAtABlockersErrorPastACopy(t *testing.T) {
 	t.Parallel()
@@ -384,9 +454,61 @@ func TestDriverSaysItWentPastACopyAfterAnotherWait(t *testing.T) {
 	r.viewers = 0
 	r.stepTo(t, 5, 10*time.Second, "the restart", func() bool { return r.home.applies == 1 })
 	var n int
-	if err := r.f.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'copy_wait_over'`).Scan(&n); err != nil || n != 1 {
+	var raw string
+	if err := r.f.db.QueryRow(`SELECT count(*), COALESCE(max(payload), '') FROM audit_log WHERE action = 'copy_wait_over'`).Scan(&n, &raw); err != nil || n != 1 {
 		t.Fatalf("audited %d times (%v)", n, err)
 	}
+	// #1753 item 5: waited_sec excludes the CopyWait (10 min) spent waiting for TV viewers
+	var details struct {
+		WaitedSec int `json:"waited_sec"`
+		Copies    int `json:"copies"`
+	}
+	if err := json.Unmarshal([]byte(raw), &details); err != nil {
+		t.Fatalf("audit details %q: %v", raw, err)
+	}
+	if details.Copies != 1 || details.WaitedSec >= int(CopyWait.Seconds()) {
+		t.Fatalf("copy_wait_over details = %+v, want copies=1 and waited_sec excluding viewer wait (< %d)",
+			details, int(CopyWait.Seconds()))
+	}
+}
+
+// #1753 item 5: copy_wait_over is written only when the restart actually proceeds (apply
+// succeeds), never if apply is refused (e.g. tv_busy) or fails first.
+func TestCopyWaitOverWrittenOnlyWhenRestartProceeds(t *testing.T) {
+	t.Parallel()
+	r := newDriverRig(t)
+	r.d.Copying = func(context.Context) int { return 1 }
+	_, _ = r.f.svc.Tick(context.Background())
+	r.stepTo(t, 40, 10*time.Second, "the copy's wait", func() bool {
+		return r.runDetail(t).Waiting == WaitMachineCopying
+	})
+	// Advance past CopyWait, but make apply fail with tv_busy
+	origHome := r.d.Home
+	r.d.Home = applyRefusing{origHome, errors.New("tv_busy: viewers watching")}
+	r.f.now = r.f.now.Add(CopyWait + time.Minute)
+	r.stepN(3)
+	var n int
+	if err := r.f.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'copy_wait_over'`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("copy_wait_over audited %d times before apply succeeded (%v)", n, err)
+	}
+	// Now apply succeeds: copy_wait_over is audited once
+	r.d.Home = origHome
+	r.stepTo(t, 5, 10*time.Second, "the restart", func() bool { return r.home.applies == 1 })
+	if err := r.f.db.QueryRow(`SELECT count(*) FROM audit_log WHERE action = 'copy_wait_over'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("copy_wait_over audited %d times after apply succeeded (%v)", n, err)
+	}
+}
+
+type applyRefusing struct {
+	HomeSupervisor
+	err error
+}
+
+func (h applyRefusing) Do(ctx context.Context, op string, body any) (*MachineStatus, error) {
+	if op == "apply" {
+		return nil, h.err
+	}
+	return h.HomeSupervisor.Do(ctx, op, body)
 }
 
 // What refuses a machine's action is its own code: only Update now has nothing to install.
@@ -422,6 +544,15 @@ func TestRefusedMachineActionsHaveTheirOwnCodes(t *testing.T) {
 	_, err = r.d.Retry(ctx, run.ID, []string{"n1"}, "admin")
 	if code, _ := answer(err); code != "release_withdrawn" {
 		t.Fatalf("a withdrawn release: %q (%v)", code, err)
+	}
+	// #1753 item 4: 404 gone run carries code no_such_run
+	{
+		w := httptest.NewRecorder()
+		(&Handler{}).retryAnswer(w, httptest.NewRequest(http.MethodPost, "/", nil), Run{}, ErrNoSuchRun)
+		var body struct{ Code string }
+		if w.Code != http.StatusNotFound || json.Unmarshal(w.Body.Bytes(), &body) != nil || body.Code != "no_such_run" {
+			t.Fatalf("404 retryAnswer: %d %s", w.Code, w.Body)
+		}
 	}
 	if err := r.f.store.InsertTarget(ctx, Target{RunID: run.ID, NodeID: "n1", ToVersion: "1.5.0"}); err != nil {
 		t.Fatal(err)

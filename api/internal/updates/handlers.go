@@ -480,10 +480,10 @@ func (h *Handler) Check(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, ErrRateLimited) {
 			w.Header().Set("Retry-After", "60")
-			httperror.Write(w, r, httperror.Unavailable(60))
+			httperror.Write(w, r, httperror.Unavailable(60).With("code", CheckFailRateLimited))
 			return
 		}
-		httperror.Write(w, r, httperror.BadGateway("check GitHub").Wrap(err))
+		httperror.Write(w, r, httperror.BadGateway("check GitHub").With("code", CheckErrorCode(err)).Wrap(err))
 		return
 	}
 	common.WriteJSON(w, r, http.StatusOK, res)

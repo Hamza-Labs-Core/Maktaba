@@ -386,3 +386,17 @@ func sha256Of(b []byte) string {
 	s := sha256.Sum256(b)
 	return hex.EncodeToString(s[:])
 }
+
+// #1668: the fresh-read window (8 days) is strictly below the hard expiry (21 days).
+func TestFeedFreshAgeWithinMaxAge(t *testing.T) {
+	if releaseverify.FeedFreshAge != 8*24*time.Hour {
+		t.Fatalf("FeedFreshAge = %s, want 8d", releaseverify.FeedFreshAge)
+	}
+	if releaseverify.FeedMaxAge != 21*24*time.Hour {
+		t.Fatalf("FeedMaxAge = %s, want 21d", releaseverify.FeedMaxAge)
+	}
+	if releaseverify.FeedFreshAge >= releaseverify.FeedMaxAge {
+		t.Fatalf("FeedFreshAge (%s) must be less than FeedMaxAge (%s)",
+			releaseverify.FeedFreshAge, releaseverify.FeedMaxAge)
+	}
+}

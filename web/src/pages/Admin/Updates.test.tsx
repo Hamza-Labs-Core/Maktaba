@@ -2044,4 +2044,49 @@ describe("Admin Updates: a TV held at an update", () => {
       "بقي التلفاز على 1.4.0"
     );
   });
+
+  it("localizes Check now 502/503 and tv_not_held refusals without showing raw server English", async () => {
+    routes(
+      overview({
+        current_version: "1.5.0",
+        machines: [home],
+        last_run: { ...liveRun, id: "run-9", state: "done", finished_at: finishedAt },
+        tv_held: { run_id: "run-9", version: "1.5.0", ...heldTV },
+      }),
+      done,
+      [done]
+    );
+    const user = userEvent.setup();
+    renderPage("ar");
+
+    // Check now codeless 502 -> Arabic GitHub unreachable wording
+    post.mockRejectedValueOnce(
+      new ApiError({
+        type: "about:blank",
+        title: "bad gateway",
+        status: 502,
+        detail: "check GitHub",
+      })
+    );
+    await user.click(await screen.findByRole("button", { name: "تحقّق الآن" }));
+    expect(await screen.findByText("تعذّر الوصول إلى GitHub")).toBeInTheDocument();
+
+    // TV Drop tv_not_held -> Arabic refusal wording
+    post.mockRejectedValueOnce(
+      new ApiError({
+        type: "about:blank#tv_not_held",
+        title: "conflict",
+        status: 409,
+        code: "tv_not_held",
+        detail: "the run's TV change is not held",
+      })
+    );
+    const box = await screen.findByTestId("updates-run-tv");
+    await user.click(within(box).getByRole("button", { name: "إسقاط" }));
+    expect(
+      await screen.findByText(
+        "لم يعد تغيير التلفاز لهذا التحديث معلّقًا (أُعيدت محاولته أو أُسقط أو استُبدل)."
+      )
+    ).toBeInTheDocument();
+  });
 });

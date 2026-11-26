@@ -51,6 +51,7 @@ final class StatusUITests: XCTestCase {
         updates.tap()
         XCTAssertTrue(element("updates.blocked.0.3.45").waitForExistence(timeout: 10), "the blocked release still to come")
         XCTAssertFalse(element("updates.blocked.0.3.42").exists, "one a newer release passed by is history")
+        XCTAssertFalse(app.staticTexts["The last update check did not work."].exists, "no check-failure callout when the last check succeeded")
         XCTAssertTrue(home.seen.contains("GET /api/cluster/updates/runs/r10"))
         shot("updates")
         app.swipeUp()

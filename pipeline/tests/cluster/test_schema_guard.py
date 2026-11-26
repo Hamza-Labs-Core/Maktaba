@@ -71,8 +71,9 @@ def test_schema_rev_is_the_highest_migration_this_code_ships() -> None:
 
 
 def test_schema_rev_is_the_same_in_every_service() -> None:
-    """The API's and the streaming node's SchemaRev are raised with this one (slot 0234:
-    keyword search's normalised text as columns)."""
+    """The API's and the streaming node's SchemaRev are raised with this one (slot 0239:
+    copies_paused signalling and replication role TCP keepalives)."""
+    assert SCHEMA_REV >= 239
     root = MIGRATIONS_DIR.parents[2]
     for go in ("api/internal/cluster/schemaguard/guard.go", "streaming/internal/cluster/schema.go"):
         m = re.search(r"const SchemaRev = (\d+)", (root / go).read_text(encoding="utf-8"))

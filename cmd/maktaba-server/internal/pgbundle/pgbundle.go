@@ -274,7 +274,10 @@ func (b Bundle) serverArgs(lan bool) []string {
 		"-c", "max_connections=" + strconv.Itoa(MaxConnections),
 		"-c", "max_replication_slots=40", "-c", "max_wal_senders=40", "-c", "max_worker_processes=24",
 		"-c", "max_logical_replication_workers=12", "-c", "max_sync_workers_per_subscription=8",
-		"-c", "log_timezone=UTC"}
+		"-c", "log_timezone=UTC",
+		// #1667: detect a sleeping laptop whose COPY stopped reading within ~60 s instead of
+		// waiting for the OS default (~2 h) while holding a snapshot and blocking updates.
+		"-c", "tcp_keepalives_idle=30", "-c", "tcp_keepalives_interval=10", "-c", "tcp_keepalives_count=3"}
 	// Epic 59 story 59.02: the tier's memory and the disk's values, the household's last
 	// (as -c arguments, so postgresql.auto.conf cannot override them). Epic 49 story 49.1:
 	// pg_textsearch (BM25) loads only at the server's start, so an install that has it

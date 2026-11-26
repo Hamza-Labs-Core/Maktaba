@@ -222,7 +222,14 @@
     <string name="w_updates_blocker_recent_crash">تعطّل جزء من خادم المنزل خلال الدقائق العشر الأخيرة</string>
     <string name="w_updates_blocker_supervisor_unreachable">مشرف المنزل لا يجيب</string>
     <string name="w_updates_blocker_switchover_open">يجري نقل المنزل إلى جهاز آخر</string>
-    <string name="w_updates_blocker_machine_copying">جهاز ينسخ قاعدة بيانات الجهاز الرئيسي: ينتظر التحديث انتهاء نسخته، يومًا على الأكثر. أما «حدّث الآن» فينتظر عشر دقائق على الأكثر، ثم يعيد ذلك الجهاز نسخ الجدول الذي كان ينسخه</string>
+    <string name="w_updates_blocker_machine_copying">جهاز ينسخ قاعدة بيانات الجهاز الرئيسي: ينتظر التحديث انتهاء نسخ الجدول الذي ينسخه، يومًا على الأكثر. أما «حدّث الآن» فينتظر عشر دقائق على الأكثر، ثم يعيد ذلك الجهاز نسخ ذلك الجدول</string>
+    <string name="w_updates_checkFailed_too_large">قائمة الإصدارات على GitHub أكبر مما يقرؤه هذا الإصدار من مكتبة</string>
+    <string name="w_updates_checkFailed_rate_limited">طلب GitHub من مكتبة أن تنتظر (طلبات كثيرة من هذه الشبكة)</string>
+    <string name="w_updates_checkFailed_http_error">أجاب GitHub بخطأ</string>
+    <string name="w_updates_checkFailed_decode">تعذّرت قراءة جواب GitHub</string>
+    <string name="w_updates_checkFailed_unreachable">تعذّر الوصول إلى GitHub</string>
+    <string name="w_updates_checkFailed_feed_refused">لم يجتز موجز إصدارات مكتبة فحص توقيعه أو محتواه، فلم يُستعمل</string>
+    <string name="w_updates_checkFailed_feed_old">موجز إصدارات مكتبة أقدم من أسبوع وتعذّر الوصول إلى GitHub</string>
     <string name="w_queue_waiting_paused">متوقف مؤقتًا</string>
     <string name="w_queue_waiting_paused_all">كل شيء متوقف مؤقتًا</string>
     <string name="w_queue_waiting_pool_full">بانتظار عامل متاح</string>

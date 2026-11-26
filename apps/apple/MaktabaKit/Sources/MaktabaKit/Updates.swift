@@ -24,6 +24,7 @@ public struct UpdatesOverview: Decodable, Sendable {
     public let catalog: [CatalogRelease]
     public let lastCheckOK: Date?
     public let lastCheckError: String?
+    public let lastCheckCode: String?
     public let checkStale: Bool
     public let machines: [UpdateMachine]
     public let stuck: UpdatesStuck?
@@ -35,6 +36,7 @@ public struct UpdatesOverview: Decodable, Sendable {
         case lastRun = "last_run"
         case lastCheckOK = "last_check_ok"
         case lastCheckError = "last_check_error"
+        case lastCheckCode = "last_check_code"
         case checkStale = "check_stale"
         case tvHeld = "tv_held"
     }
@@ -63,6 +65,7 @@ public struct UpdatesOverview: Decodable, Sendable {
         catalog = c.lenientList(.catalog)
         lastCheckOK = c.lenient(.lastCheckOK)
         lastCheckError = c.lenient(.lastCheckError)
+        lastCheckCode = c.lenient(.lastCheckCode)
         checkStale = c.lenient(.checkStale) ?? false
         machines = c.lenientList(.machines)
         stuck = c.lenient(.stuck)

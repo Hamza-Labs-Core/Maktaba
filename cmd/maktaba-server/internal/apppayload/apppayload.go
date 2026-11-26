@@ -170,13 +170,22 @@ type Database struct {
 	// KeptFor is the older release a rollback left this database for with nothing put
 	// back (layout.MarkRecordKept): Version's migrations were all rollback-safe, so KeptFor
 	// starts on the newer schema (its api told it may: MAKTABA_SCHEMA_AHEAD_OK), and
-	// KeptReason is why the newer release rolled back. Version stays the schema's release.
+	// KeptReason is why the newer release rolled back. Version stays the schema's release
+	// unless a Down rollback or restore reset it (in which case SchemaRelease names the
+	// schema's own release).
 	KeptFor    string `json:"kept_for,omitempty"`
 	KeptReason string `json:"kept_reason,omitempty"`
+	// SchemaRelease is the release whose migrations the database actually holds when
+	// Version was reset to an older release on a kept schema (a Down rollback or a restore
+	// of a dump taken from a kept schema): keptFor accepts releases between KeptFor and
+	// SchemaRelease. Empty on older records, where Version is the schema's release.
+	SchemaRelease string `json:"schema_release,omitempty"`
 	// DumpKeptFor is KeptFor of the database Dump was taken of (an update from a release
 	// running on a kept, newer schema): a restore of Dump is again that schema, kept for
-	// that release, and says so (KeptFor of the restored record).
-	DumpKeptFor string `json:"dump_kept_for,omitempty"`
+	// that release, and says so (KeptFor of the restored record). DumpSchemaRelease is the
+	// schema's own release for that dump (SchemaRelease or Version).
+	DumpKeptFor       string `json:"dump_kept_for,omitempty"`
+	DumpSchemaRelease string `json:"dump_schema_release,omitempty"`
 	// DownFrom is the release whose Down scripts brought the database back to Version's
 	// schema (layout.MarkRecordDown; the database step, when that release's migrations
 	// failed part way: updater.FailedBack), DownReason why.
@@ -198,6 +207,15 @@ type Database struct {
 func (d Database) Ran() string {
 	if d.Release != "" {
 		return d.Release
+	}
+	return d.Version
+}
+
+// SchemaOwner is the release whose migrations the database holds: SchemaRelease when set,
+// else Version.
+func (d Database) SchemaOwner() string {
+	if d.SchemaRelease != "" {
+		return d.SchemaRelease
 	}
 	return d.Version
 }

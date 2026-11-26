@@ -274,7 +274,7 @@ class SayTest {
     fun webWordsHaveTheirStringsInBothLanguages() {
         val maps = listOf(
             WebWords.updateState, WebWords.updateStep, WebWords.updateCode, WebWords.updateWaiting, WebWords.blockedReason,
-            WebWords.blocker, WebWords.processState, WebWords.processRole, WebWords.queueState, WebWords.jobState, WebWords.machineStatus,
+            WebWords.blocker, WebWords.checkFailed, WebWords.processState, WebWords.processRole, WebWords.queueState, WebWords.jobState, WebWords.machineStatus,
             WebWords.tvCheck, WebWords.tvResult, WebWords.trigger, WebWords.componentTitle,
         )
         for (lookup in listOf(XmlLookup.english, XmlLookup.arabic)) {
@@ -343,11 +343,21 @@ class SayTest {
     fun aMachineCopyingIsSaid() {
         val id = WebWords.blocker.getValue("machine_copying")
         assertTrue(XmlLookup.english.text(id).contains("copying the home's database"))
+        assertTrue(XmlLookup.english.text(id).contains("waits for the table it is copying"))
         assertTrue(XmlLookup.arabic.text(id).contains("ينسخ قاعدة بيانات"))
+        assertTrue(XmlLookup.arabic.text(id).contains("الجدول الذي ينسخه"))
         // a run whose restart waits for one
         val waits = WebWords.updateWaiting.getValue("machine_copying")
         assertTrue(XmlLookup.english.text(waits).contains("ten minutes at most"))
         assertTrue(XmlLookup.arabic.text(waits).contains("عشر دقائق على الأكثر"))
+    }
+
+    // #1668: an update feed older than a week when GitHub cannot be reached
+    @Test
+    fun anOldFeedIsSaid() {
+        assertEquals("Maktaba's release feed is older than a week and GitHub could not be reached", en.checkFailed("feed_old"))
+        assertEquals("موجز إصدارات مكتبة أقدم من أسبوع وتعذّر الوصول إلى GitHub", ar.checkFailed("feed_old"))
+        assertEquals("GitHub could not be reached", en.checkFailed("something_new"))
     }
 
     // #1605: an update that stopped and asks says why (nothing put back by itself)

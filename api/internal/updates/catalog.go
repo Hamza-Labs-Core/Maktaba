@@ -437,13 +437,14 @@ func (d *Discoverer) check(ctx context.Context, counted bool) (CheckResult, erro
 		}
 	}
 	st := d.Store.LoadState(ctx)
+	prevSource := st.LastCheckSource
 	now := d.now().UTC()
 	st.LastCheckAt = &now
 	if st.Since == nil {
 		st.Since = &now
 	}
-	rels, withdrawn, decodeErr, err := d.listing(ctx, pol.Channel, &st)
-	if err != nil {
+	rels, withdrawn, oldAt, decodeErr, err := d.listing(ctx, pol.Channel, &st)
+	if err != nil && !errors.Is(err, errFeedOld) {
 		d.checkFailed(ctx, st, now, CheckErrorCode(err), err.Error(), counted)
 		return res, err
 	}
@@ -451,6 +452,7 @@ func (d *Discoverer) check(ctx context.Context, counted bool) (CheckResult, erro
 		d.checkFailed(ctx, st, now, CheckFailDecode, "decode releases: "+decodeErr.Error(), counted)
 		return res, fmt.Errorf("decode releases: %w", decodeErr)
 	}
+	feedOldErr := err
 	wm, err := d.Store.Watermark(ctx)
 	if err != nil {
 		return res, err
@@ -509,6 +511,18 @@ func (d *Discoverer) check(ctx context.Context, counted bool) (CheckResult, erro
 			res.Failed = append(res.Failed, r.Version)
 		}
 	}
+	if feedOldErr != nil {
+		// The feed is past FeedFreshAge (up to FeedMaxAge) and GitHub's list could not be
+		// read: the feed's releases and withdrawals were still read, but LastCheckOK does
+		// not advance to now (it stays at the feed's signing time unless a fresher GitHub
+		// read already succeeded) and the check reports feed_old.
+		if st.LastCheckOK == nil || st.LastCheckOK.Before(oldAt) || (prevSource == SourceFeed && st.LastCheckOK.After(oldAt)) {
+			t := oldAt.UTC()
+			st.LastCheckOK = &t
+		}
+		d.checkFailed(ctx, st, now, CheckFailFeedOld, feedOldErr.Error(), counted)
+		return res, feedOldErr
+	}
 	st.LastCheckOK = &now
 	st.LastCheckErr, st.LastCheckCode = "", ""
 	st.Failures, st.FailingSince = 0, nil
@@ -527,6 +541,10 @@ const (
 	// CheckFailFeedRefused: the release feed was read and failed its checks (its signature,
 	// its content, its size): nothing of it is used, and GitHub's list is not read instead
 	CheckFailFeedRefused = "feed_refused"
+	// CheckFailFeedOld: the release feed is older than releaseverify.FeedFreshAge (a week)
+	// and GitHub's list could not be read: the feed was still read, but does not count as a
+	// fresh check so automatic installs wait.
+	CheckFailFeedOld = "feed_old"
 )
 
 // FailingAfter is how many checks in a row must fail before the home raises it (a
@@ -540,6 +558,8 @@ func CheckErrorCode(err error) string {
 	switch {
 	case errors.Is(err, errFeedRefused):
 		return CheckFailFeedRefused
+	case errors.Is(err, errFeedOld):
+		return CheckFailFeedOld
 	case errors.Is(err, errTooLarge):
 		return CheckFailTooLarge
 	case errors.Is(err, ErrRateLimited):

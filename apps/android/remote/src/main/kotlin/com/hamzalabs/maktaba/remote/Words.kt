@@ -129,6 +129,10 @@ internal class Say(private val w: Lookup, private val zone: ZoneId = ZoneId.syst
     /** Who or what started an update run (its trigger: auto, manual, catch_up, retry). */
     fun trigger(t: String): String = word(WebWords.trigger, t)
 
+    /** Why an update check failed (`last_check_code`), in this language (GitHub unreachable when unknown). */
+    fun checkFailed(code: String?): String =
+        w.text(WebWords.checkFailed[code] ?: WebWords.checkFailed.getValue("unreachable"))
+
     /** A JSON object's text values by name (a value that is not text is left out). */
     private fun strings(o: JsonObject?): Map<String, String> =
         o.orEmpty().mapNotNull { (k, v) -> (v as? JsonPrimitive)?.takeUnless { it is JsonNull }?.let { k to it.content } }.toMap()

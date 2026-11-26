@@ -184,3 +184,33 @@ func TestDatabaseWithholdsAnUnconfirmedDump(t *testing.T) {
 		}
 	}
 }
+
+// #1666: SchemaOwner prefers SchemaRelease over Version, and both schema_release and
+// dump_schema_release round-trip through database.json.
+func TestDatabaseSchemaOwnerAndRoundTrip(t *testing.T) {
+	if got := (Database{Version: "v0.2.5"}).SchemaOwner(); got != "v0.2.5" {
+		t.Fatalf("SchemaOwner without SchemaRelease = %q, want v0.2.5", got)
+	}
+	if got := (Database{Version: "v0.2.0", SchemaRelease: "v0.2.5"}).SchemaOwner(); got != "v0.2.5" {
+		t.Fatalf("SchemaOwner with SchemaRelease = %q, want v0.2.5", got)
+	}
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "state"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	in := Database{
+		Version:           "v0.2.0",
+		State:             DatabaseMigrated,
+		KeptFor:           "0.2.0",
+		SchemaRelease:     "v0.2.5",
+		DumpKeptFor:       "0.2.0",
+		DumpSchemaRelease: "v0.2.5",
+	}
+	if err := WriteDatabase(dir, in); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := ReadDatabase(dir)
+	if err != nil || !ok || got.SchemaRelease != "v0.2.5" || got.DumpSchemaRelease != "v0.2.5" || got.SchemaOwner() != "v0.2.5" {
+		t.Fatalf("round-trip got %+v ok=%v err=%v", got, ok, err)
+	}
+}

@@ -106,6 +106,8 @@ import Testing
         // a value with no words shows as the home sent it, in Arabic too
         #expect(UpdateWords.state("quantum_superposition", locale: ar) == "quantum superposition")
         #expect(UpdateWords.state("rolling_out", locale: Locale(identifier: "en")) == "updating the machines")
+        #expect(UpdateWords.checkFailed("feed_old", locale: Locale(identifier: "en")) == "Maktaba's release feed is older than a week and GitHub could not be reached")
+        #expect(UpdateWords.checkFailed("feed_old", locale: ar) == "موجز إصدارات مكتبة أقدم من أسبوع وتعذّر الوصول إلى GitHub")
     }
 
     /// Every word of the home's values has its Arabic in the catalog (the web's ar.json).

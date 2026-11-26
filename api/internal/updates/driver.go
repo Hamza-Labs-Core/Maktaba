@@ -894,39 +894,76 @@ const CopyWait = 10 * time.Minute
 // WaitMachineCopying is the restart's wait for a machine's copy.
 const WaitMachineCopying = BlockMachineCopying
 
+// pauseCopyWait folds any running copy-wait interval into det.CopyWaitMS when the
+// restart stops waiting for copies (another gate took over, or copies ended / timed out).
+func (d *Driver) pauseCopyWait(det *RunDetail, now time.Time) bool {
+	if det.CopyTickAt == nil {
+		return false
+	}
+	if delta := now.Sub(*det.CopyTickAt); delta > 0 {
+		det.CopyWaitMS += delta.Milliseconds()
+	}
+	det.CopyTickAt = nil
+	return true
+}
+
+// noteCopyWaitOver records that the restart actually proceeded past machines' copies
+// (called only once apply succeeds), with the time spent actually waiting for copies.
+func (d *Driver) noteCopyWaitOver(ctx context.Context, run Run, det *RunDetail, copies int) {
+	if copies <= 0 || det.CopyPast {
+		return
+	}
+	det.CopyPast = true
+	waited := time.Duration(det.CopyWaitMS) * time.Millisecond
+	d.log().Warn("update goes on: a machine still copies the home's database and starts that table again",
+		"event", "update_copy_wait_over", "run_id", run.ID, "copies", copies, "waited", waited.String())
+	d.audit(ctx, run, "copy_wait_over", map[string]any{"copies": copies, "waited_sec": int(waited.Seconds())})
+}
+
 // copyWait reports whether the restart waits (true: the next tick asks again) for a
-// machine's copy, CopyWait in all for the run whatever begins meanwhile.
-func (d *Driver) copyWait(ctx context.Context, run Run, det *RunDetail) bool {
+// machine's copy, CopyWait in all for the run whatever begins meanwhile. When not
+// waiting, pastCopies is how many copies still run so the caller audits copy_wait_over
+// only once the restart actually proceeds (apply succeeds).
+func (d *Driver) copyWait(ctx context.Context, run Run, det *RunDetail) (waiting bool, pastCopies int) {
 	n, now := 0, d.now()
 	if d.Copying != nil {
 		n = d.Copying(ctx)
 	} else {
 		n = machinesCopying(ctx, d.Store.DB)
 	}
+	changed := false
 	if n > 0 && det.CopySince == nil {
 		det.CopySince = &now
+		changed = true
 		d.log().Info("update restart waits for a machine's copy of the home's database", "event", "update_machine_copying",
 			"run_id", run.ID, "copies", n, "max_wait", CopyWait.String())
 	}
 	wait := n > 0 && now.Sub(*det.CopySince) < CopyWait
-	past := n > 0 && !wait && !det.CopyPast // said once, whatever waited meanwhile (a watched TV)
-	if wait == (det.Waiting == WaitMachineCopying) && !past {
-		return wait
+	if wait {
+		if det.CopyTickAt == nil {
+			det.CopyTickAt = &now
+			changed = true
+		}
+		if det.Waiting != WaitMachineCopying {
+			det.Waiting = WaitMachineCopying
+			changed = true
+		}
+	} else {
+		if d.pauseCopyWait(det, now) {
+			changed = true
+		}
+		if det.Waiting == WaitMachineCopying {
+			det.Waiting = ""
+			changed = true
+		}
+	}
+	if changed {
+		noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
 	}
 	if wait {
-		det.Waiting = WaitMachineCopying
-	} else if det.Waiting == WaitMachineCopying {
-		det.Waiting = ""
+		return true, 0
 	}
-	det.CopyPast = det.CopyPast || past
-	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", *det), "run_id", run.ID)
-	if past {
-		waited := now.Sub(*det.CopySince)
-		d.log().Warn("update goes on: a machine still copies the home's database and starts that table again",
-			"event", "update_copy_wait_over", "run_id", run.ID, "copies", n, "waited", waited.String())
-		d.audit(ctx, run, "copy_wait_over", map[string]any{"copies": n, "waited_sec": int(waited.Seconds())})
-	}
-	return wait
+	return false, n
 }
 
 // homeGates waits for the window and the TV (an automatic run restarts the home only
@@ -1034,11 +1071,15 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 		waited = d.now().Sub(*det.DrainSince)
 	}
 	if n := d.runningJobs(ctx); n > 0 && waited < time.Duration(pol.DrainTimeoutMinutes)*time.Minute {
+		if d.pauseCopyWait(&det, d.now()) {
+			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
+		}
 		return nil // jobs finish (or checkpoint at the restart once the timeout passes)
 	}
 	// the gates again, right before the restart: viewers may have come during the drain
 	if run.Trigger != TriggerManual && !homeHandsOver(det) {
 		if busy, n := d.tvBusy(ctx); busy {
+			d.pauseCopyWait(&det, d.now())
 			if deadline := d.windowDeadline(run, pol); !deadline.IsZero() && d.now().After(deadline) {
 				return d.gateFailed(ctx, run, det, "tv_busy")
 			}
@@ -1051,7 +1092,7 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 		}
 	}
 	if d.switchoverOpen(ctx) {
-		if det.Waiting != "switchover_open" {
+		if d.pauseCopyWait(&det, d.now()) || det.Waiting != "switchover_open" {
 			det.Waiting = "switchover_open"
 			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 		}
@@ -1060,7 +1101,8 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 	if d.withdrawn(ctx, run.Version, true) {
 		return nil // the next step ends the run (stopWithdrawn)
 	}
-	if d.copyWait(ctx, run, &det) {
+	copyWaiting, pastCopies := d.copyWait(ctx, run, &det)
+	if copyWaiting {
 		return nil // a machine copies a table: the restart would end it
 	}
 	if d.tvSwapWait(ctx, run, &det) {
@@ -1088,6 +1130,7 @@ func (d *Driver) draining(ctx context.Context, run Run, det RunDetail) error {
 		}
 		return err
 	}
+	d.noteCopyWaitOver(ctx, run, &det, pastCopies)
 	now := d.now()
 	det.Waiting, det.ApplySince = "", &now
 	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
@@ -1152,7 +1195,8 @@ func (d *Driver) homeStaged(ctx context.Context, run Run, det RunDetail) error {
 	}
 	if run.Trigger != TriggerManual && !homeHandsOver(det) {
 		if busy, n := d.tvBusy(ctx); busy {
-			if det.Waiting != "tv_busy" {
+			paused := d.pauseCopyWait(&det, d.now())
+			if paused || det.Waiting != "tv_busy" {
 				det.Waiting = "tv_busy"
 				noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
 				d.log().Info("update waits for the TV to be quiet", "event", "update_tv_busy", "viewers", n, "run_id", run.ID)
@@ -1179,15 +1223,22 @@ func (d *Driver) homeStaged(ctx context.Context, run Run, det RunDetail) error {
 		waited = d.now().Sub(*det.DrainSince)
 	}
 	if n := d.runningJobs(ctx); n > 0 && waited < time.Duration(pol.DrainTimeoutMinutes)*time.Minute {
+		if d.pauseCopyWait(&det, d.now()) {
+			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
+		}
 		return nil
 	}
 	if d.switchoverOpen(ctx) {
+		if d.pauseCopyWait(&det, d.now()) {
+			noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
+		}
 		return nil // the home switches release once the switch of the home is over
 	}
 	if d.withdrawn(ctx, run.Version, true) {
 		return nil // the next step ends the run and takes the order back (stopWithdrawn)
 	}
-	if d.copyWait(ctx, run, &det) || d.tvSwapWait(ctx, run, &det) {
+	copyWaiting, pastCopies := d.copyWait(ctx, run, &det)
+	if copyWaiting || d.tvSwapWait(ctx, run, &det) {
 		return nil // as for any home (draining)
 	}
 	apply := map[string]any{"run_id": run.ID}
@@ -1197,6 +1248,7 @@ func (d *Driver) homeStaged(ctx context.Context, run Run, det RunDetail) error {
 	if _, err := d.Home.Do(ctx, "apply", apply); err != nil {
 		return err // the next tick asks again
 	}
+	d.noteCopyWaitOver(ctx, run, &det, pastCopies)
 	now := d.now()
 	det.ApplySince = &now
 	noteStore(d.log(), "SetRunDetail", d.Store.SetRunDetail(ctx, run.ID, "", det), "run_id", run.ID)
