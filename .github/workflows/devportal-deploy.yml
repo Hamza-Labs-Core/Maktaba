@@ -157,7 +157,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: web/packages/devportal
-          wranglerVersion: '4.151.0'
+          wranglerVersion: '4.154.0'
           command: deploy
 
       # The live site answers from the Worker: the home page, security.txt and the headers.

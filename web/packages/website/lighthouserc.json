@@ -67,14 +67,7 @@
           "$comment": "the pages with product screenshots (story 60.09 T05): the home page, in both languages; 60.11 adds the download page",
           "matchingUrlPattern": "^https?://[^/]+/(ar/)?$",
           "assertions": {
-            "uses-responsive-images": [
-              "error",
-              {
-                "maxLength": 0,
-                "aggregationMethod": "median-run"
-              }
-            ],
-            "modern-image-formats": [
+            "image-delivery-insight": [
               "error",
               {
                 "maxLength": 0,
