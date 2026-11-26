@@ -12,6 +12,10 @@ func TestBackfillColumns(t *testing.T) {
 		safe bool
 	}{
 		{"add then backfill", add + "UPDATE x SET y = 7;", drop, true},
+		{"type modifiers", `ALTER TABLE x ADD COLUMN y VARCHAR(64), ADD COLUMN n NUMERIC(10, 2),
+			ADD COLUMN ts TIMESTAMPTZ(6), ADD COLUMN c CHAR(2), ADD COLUMN v CHARACTER VARYING(32);
+			UPDATE x SET y = 'filled', n = 1.25, c = 'ok', v = 'filled';`,
+			"ALTER TABLE x DROP COLUMN y, DROP COLUMN n, DROP COLUMN ts, DROP COLUMN c, DROP COLUMN v;", true},
 		{"existing column", add + "UPDATE x SET existing = 7;", drop, false},
 		{"mixed columns", add + "UPDATE x SET y = 7, existing = 8;", drop, false},
 		{"other table", add + "UPDATE other SET y = 7;", drop, false},
@@ -24,6 +28,9 @@ func TestBackfillColumns(t *testing.T) {
 		{"side effect", add + "UPDATE x SET y = nextval('s');", drop, false},
 		{"side effect from unquoted function", add + "UPDATE x SET y = s.id FROM emit_rows() s;", drop, false},
 		{"side effect in default", "ALTER TABLE x ADD COLUMN y INT DEFAULT nextval('s'); UPDATE x SET y = DEFAULT;", drop, false},
+		{"side effect after type modifier", "ALTER TABLE x ADD COLUMN y NUMERIC(10, 2) DEFAULT nextval('s'); UPDATE x SET y = DEFAULT;", drop, false},
+		{"expression within type modifier", "ALTER TABLE x ADD COLUMN y VARCHAR(nextval('s')); UPDATE x SET y = 'filled';", drop, false},
+		{"type modifier allowance is limited to column definitions", "ALTER TABLE x ADD COLUMN y INT; UPDATE x SET y = public.numeric(10, 2);", drop, false},
 		{"trigger DDL", add + "ALTER TABLE x DISABLE TRIGGER t; UPDATE x SET y = 7;", drop, false},
 		{"missing drop", add + "UPDATE x SET y = 7;", "SELECT 1;", false},
 		{"destructive Down", add + "UPDATE x SET y = 7;", drop + "DELETE FROM other;", false},

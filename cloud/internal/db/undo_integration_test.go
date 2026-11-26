@@ -115,6 +115,39 @@ ALTER TABLE ua DROP COLUMN "filled column", DROP COLUMN spare;
 	}
 }
 
+func TestUndoBackfillWithForeignKeys(t *testing.T) {
+	ctx := context.Background()
+	const child = `-- +goose Up
+CREATE TABLE ua_child (id INT PRIMARY KEY, parent_id INT NOT NULL REFERENCES ua (id));
+INSERT INTO ua_child VALUES (2, 1);
+-- +goose Down
+DROP TABLE ua_child;
+`
+	const backfill = `-- +goose Up
+ALTER TABLE ua ADD COLUMN label VARCHAR(64);
+ALTER TABLE ua_child ADD COLUMN label VARCHAR(64);
+UPDATE ua SET label = kept;
+UPDATE ua_child SET label = 'filled';
+-- +goose Down
+ALTER TABLE ua_child DROP COLUMN label;
+ALTER TABLE ua DROP COLUMN label;
+`
+	pool, m := undoWorld(t, map[string]string{"00000005_child.sql": child, "00000010_fill.sql": backfill})
+	if !has(t, pool, `EXISTS (SELECT 1 FROM ua JOIN ua_child ON ua.id = ua_child.parent_id
+		WHERE ua.label = 'x' AND ua_child.label = 'filled')`) {
+		t.Fatal("both sides of the foreign key should be backfilled")
+	}
+	if err := m.Undo(ctx, []int64{10}); err != nil {
+		t.Fatal(err)
+	}
+	if has(t, pool, `EXISTS (SELECT 1 FROM information_schema.columns
+		WHERE table_name IN ('ua', 'ua_child') AND column_name = 'label')`) ||
+		!has(t, pool, `EXISTS (SELECT 1 FROM ua JOIN ua_child ON ua.id = ua_child.parent_id
+		WHERE ua.kept = 'x' AND ua_child.id = 2)`) {
+		t.Fatal("undo should drop both added columns and preserve the rows and their relationship")
+	}
+}
+
 func TestUndoBackfillWithUpdateTrigger(t *testing.T) {
 	ctx := context.Background()
 	const trigger = `-- +goose Up

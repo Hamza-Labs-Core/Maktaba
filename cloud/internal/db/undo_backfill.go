@@ -37,7 +37,7 @@ func backfillColumns(up, down [][]string) map[string]*backfillTable {
 			for _, action := range splitSQLList(rest, ",") {
 				// IF NOT EXISTS cannot prove the column belongs to this migration.
 				if !startsSQL(action, "add", "column") || len(action) < 4 || action[2] == "if" ||
-					sqlIdentifier(action[2]) == "" || !backfillExpressions(action[3:]) {
+					sqlIdentifier(action[2]) == "" || !backfillColumnDefinition(action[3:]) {
 					return nil
 				}
 				t.added[sqlIdentifier(action[2])] = true
@@ -189,6 +189,32 @@ func backfillSources(tokens []string, tables map[string]*backfillTable) bool {
 	return len(tokens) > 0
 }
 
+var typeModifiers = regexp.MustCompile(`^[0-9]+(,-?[0-9]+)?$`)
+
+// Recognize literal type modifiers only at the start of an ADD COLUMN
+// definition. Check any trailing constraints and defaults as expressions.
+func backfillColumnDefinition(tokens []string) bool {
+	typeWords := 1
+	if len(tokens) > 1 && tokens[1] == "varying" {
+		switch tokens[0] {
+		case "bit", "char", "character":
+			typeWords++
+		}
+	}
+	if len(tokens) <= typeWords || tokens[typeWords] != "(" {
+		return backfillExpressions(tokens)
+	}
+	switch tokens[0] {
+	case "bit", "char", "character", "varchar", "decimal", "numeric", "time", "timetz", "timestamp", "timestamptz":
+		close := slices.Index(tokens, ")")
+		return close > typeWords+1 &&
+			typeModifiers.MatchString(strings.Join(tokens[typeWords+1:close], "")) &&
+			backfillExpressions(tokens[close+1:])
+	default:
+		return false
+	}
+}
+
 // Only simple SQL expressions are eligible. A function, sequence, explicit
 // operator, or data-modifying subquery can write outside the new columns.
 func backfillExpressions(tokens []string) bool {
@@ -215,7 +241,8 @@ func backfillExpressions(tokens []string) bool {
 }
 
 // Read sources and targets must be ordinary tables without children or RLS.
-// An update target also cannot have update triggers, rules, or generated columns.
+// An update target cannot have UPDATE rules, generated columns, or UPDATE
+// triggers other than internal FK triggers. Backfills leave existing keys intact.
 func (m *Migrator) judgeBackfill(ctx context.Context, tables map[string]*backfillTable) (Verdict, error) {
 	for _, name := range slices.Sorted(maps.Keys(tables)) {
 		t := tables[name]
@@ -227,7 +254,11 @@ func (m *Migrator) judgeBackfill(ctx context.Context, tables map[string]*backfil
 				AND ($2 = '' OR c.oid = to_regclass(NULLIF($2, '')))
 				AND NOT EXISTS (SELECT 1 FROM pg_inherits WHERE inhparent = c.oid)
 				AND (NOT $3::boolean OR (
-					NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = c.oid AND tgtype & 16 = 16)
+					NOT EXISTS (
+						SELECT 1 FROM pg_trigger
+						WHERE tgrelid = c.oid AND tgtype & 16 = 16
+						AND NOT (tgisinternal AND tgparentid = 0 AND tgconstrrelid <> 0)
+					)
 					AND NOT EXISTS (SELECT 1 FROM pg_rewrite WHERE ev_class = c.oid AND ev_type = '2')
 					AND NOT EXISTS (SELECT 1 FROM pg_attribute
 						WHERE attrelid = c.oid AND NOT attisdropped AND attgenerated <> '')
