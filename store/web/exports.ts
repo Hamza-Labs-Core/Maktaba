@@ -9,11 +9,10 @@
 import { b64url, fromB64url } from "./crypto";
 import { type Env, now } from "./env";
 
+// Export store-catalog before store-accounts so an audit event moved from catalog_audit_outbox
+// into DB_ACCOUNTS.audit between the two snapshots is present in at least one backup (idempotent
+// event_id prevents duplicates if present in both).
 const TABLES: Record<string, { binding: "DB_ACCOUNTS" | "DB_CATALOG" | "DB_INSTALLS"; tables: string[] }> = {
-  "store-accounts": {
-    binding: "DB_ACCOUNTS",
-    tables: ["accounts", "account_mfa", "recovery_codes", "email_tokens", "roles", "mfa_resets", "bootstrap_used", "audit"],
-  },
   "store-catalog": {
     binding: "DB_CATALOG",
     tables: [
@@ -26,7 +25,12 @@ const TABLES: Record<string, { binding: "DB_ACCOUNTS" | "DB_CATALOG" | "DB_INSTA
       "revocations",
       "lists",
       "flagged_words",
+      "catalog_audit_outbox",
     ],
+  },
+  "store-accounts": {
+    binding: "DB_ACCOUNTS",
+    tables: ["accounts", "account_mfa", "recovery_codes", "email_tokens", "roles", "mfa_resets", "bootstrap_used", "audit"],
   },
   "store-installs": { binding: "DB_INSTALLS", tables: ["homes", "installs", "install_counts"] },
 };

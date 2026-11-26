@@ -109,12 +109,10 @@ async function countersignPackage(
   const sha = await sha256Hex(out);
   // a paid plugin's package is never public (story 54.19 §6): the private bucket, served by
   // signed URL only (paid.ts)
-  let writtenArtifact: { bucket: R2Bucket; key: string } | null = null;
   if (await isPaidPlugin(env, m.id)) {
     const keyName = paidKey(sha);
     if (!(await env.PRIVATE.head(keyName))) {
       await env.PRIVATE.put(keyName, out, { httpMetadata: { contentType: "application/vnd.maktaba.plugin" } });
-      writtenArtifact = { bucket: env.PRIVATE, key: keyName };
     }
   } else {
     const keyName = `${sha}.mkplugin`;
@@ -122,7 +120,6 @@ async function countersignPackage(
       await env.BUCKET.put(keyName, out, {
         httpMetadata: { contentType: "application/vnd.maktaba.plugin", cacheControl: PACKAGE_CACHE },
       });
-      writtenArtifact = { bucket: env.BUCKET, key: keyName };
     }
   }
   // the listing's words come from the package's own strings (54.16 C6 made sure both
@@ -184,7 +181,9 @@ async function countersignPackage(
     }
     const [verUpd] = await env.DB_CATALOG.batch(stmts);
     if (verUpd!.meta.changes !== 1) {
-      if (writtenArtifact) await writtenArtifact.bucket.delete(writtenArtifact.key);
+      // Never delete the content-addressed R2 object on guard loss: a concurrent approval in
+      // the same second can reuse the identical SHA and commit before the move, so deleting it
+      // would break a live approved version. Unreferenced R2 blobs are inert and never listed.
       throw new PublishError("publisher_changed", `${m.id} was submitted by ${account}, not the current tv.maktaba publisher`);
     }
     return { sha256: sha, size: out.length };

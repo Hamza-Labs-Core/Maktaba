@@ -552,7 +552,7 @@ describe("the Maktaba publisher", () => {
     }
   });
 
-  it("rejects approval with 409 and cleans up R2 artifact when tv.maktaba moves mid-countersign (#1458)", async () => {
+  it("rejects approval with 409 without deleting shared content-addressed R2 objects when tv.maktaba moves mid-countersign (#1458)", async () => {
     const owner = await publisher();
     const replacement = await developer();
     const admin = await storeAdmin();
@@ -566,6 +566,7 @@ describe("the Maktaba publisher", () => {
 
     let movedMidFlight = false;
     const writtenKeys: string[] = [];
+    const deletedKeys: string[] = [];
     const racePrivate = new Proxy(E.PRIVATE, {
       get(target, prop, receiver) {
         if (prop === "get") {
@@ -592,6 +593,12 @@ describe("the Maktaba publisher", () => {
           return async (...args: Parameters<R2Bucket["put"]>) => {
             if (typeof args[0] === "string" && args[0].endsWith(".mkplugin")) writtenKeys.push(args[0]);
             return target.put(...args);
+          };
+        }
+        if (prop === "delete") {
+          return async (...args: Parameters<R2Bucket["delete"]>) => {
+            deletedKeys.push(...(Array.isArray(args[0]) ? args[0] : [args[0]]));
+            return target.delete(...args);
           };
         }
         const val = Reflect.get(target, prop, receiver);
@@ -621,8 +628,11 @@ describe("the Maktaba publisher", () => {
       const sub = await E.DB_CATALOG.prepare("SELECT status FROM submissions WHERE id = ?").bind(midSid).first<{ status: string }>();
       expect(sub?.status).toBe("in_review");
 
+      // Shared content-addressed R2 objects are never deleted on guard loss (unreferenced blobs
+      // stay inert and cannot be served while versions remains unapproved).
       expect(writtenKeys.length).toBe(1);
-      expect(await E.BUCKET.head(writtenKeys[0]!)).toBeNull();
+      expect(deletedKeys).toEqual([]);
+      expect(await E.BUCKET.head(writtenKeys[0]!)).not.toBeNull();
 
       const auditRow = await E.DB_ACCOUNTS.prepare(
         "SELECT action, target, result FROM audit WHERE action = 'review.approve' AND target = ? ORDER BY id DESC LIMIT 1",
