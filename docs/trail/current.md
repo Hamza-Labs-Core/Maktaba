@@ -1,15 +1,17 @@
 ---
 schema: 1
-tag: v0.3.166
-up_to_commit: 319d2b087
-built_from: v0.3.165
+tag: v0.3.167
+up_to_commit: 73884609e
+built_from: v0.3.166
 ---
 
-# Trail snapshot: v0.3.166
+# Trail snapshot: v0.3.167
 
 ## Keep doing
 
 **Working**
+- Write completion metadata from the stored rows, not from the work requested; a sweep that trusts the request mark can keep retrying a stage that cannot change the outcome, and a change to stage selection must account for jobs already queued. (#1759)
+- Check that stored words cover their sentence's text before rebuilding the text, split words shared by two sentences between them, and gate upgraded work on a reported worker capability rather than a package version stamped only into the node wheel. (#1759)
 - Reproduce an intermittent Docker state in isolation before fixing it, and find the line that differs before calling a rehearsal flaky; a power cut can leave a container that Docker lists but cannot inspect, start or remove. (#1708)
 - Deploy each QA release from the version QA currently serves, and test migration readiness and rollback from the previous release's migrated database, not only a fresh one. (#1737)
 - Give every selected row in a bounded healing sweep an outcome, preserve a replacement job's payload and cascade flag, and remove each guard once to prove a test fails without it. (#1761)
@@ -1022,7 +1024,7 @@ built_from: v0.3.165
 | #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
 | #1748 | 2026-11-25 | fix(cloud): the newest migration is recorded last, so an older release is ready on a kept schema |
 | #1752 | 2026-11-25 | test(cloud-relay): the single node's rehearsal starts from the last release too |
-| #1759 | 2026-11-25 | fix(second_listen): a sentence without words no longer leaves a whole transcript out |
+| #1767 | 2026-11-26 | fix(api): preserve retry job payloads and align API problem statuses |
 
 ## Index
 
@@ -1903,6 +1905,7 @@ built_from: v0.3.165
 | 1745-rehearsal-previous | 2026-11-25 | pr | Update now goes on past a machine's copy; the update rehearsal's old-release scenarios are pinned to v0.3.162 |
 | 1749-updates-see-the-copy | 2026-11-25 | pr | An update sees a machine's running copy, and waits for it before its restart |
 | 1754-updates-copy-words | 2026-11-25 | pr | A refused machine action says its own reason; going past a copy is audited when it happens |
+| 1759-second-listen-missing-words | 2026-11-25 | pr | One sentence without words left a whole transcript out of its second listen (#1756) |
 | 1761-failures-come-back | 2026-11-25 | pr | Failures whose cause has passed come back by themselves |
 | d20261125-cloud-first-deploy-stays-down | 2026-11-25 | incident | A failed first deploy started again at the next boot, and only a machine that really reboots shows what a boot does |
 
