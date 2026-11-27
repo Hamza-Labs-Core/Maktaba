@@ -36,8 +36,8 @@ func newBackupsCmd() *cobra.Command {
 		},
 	})
 	var (
-		dir, nightly, preUpdate, moveDumps                        string
-		every, hour, keep, updateKeep, reserve, reserveMin, share int
+		dir, nightly, preUpdate, moveDumps                                                                    string
+		every, hour, keep, keepMonthly, keepYearly, compressAfterDays, updateKeep, reserve, reserveMin, share int
 	)
 	set := &cobra.Command{
 		Use:   "set",
@@ -49,7 +49,10 @@ its next start (Settings → Storage restarts it).
   --nightly on|off          the scheduled dump
   --every-days N            a dump every N days (1: daily, 7: weekly)
   --hour H                  from H o'clock local time
-  --keep N                  scheduled dumps kept
+  --keep N                  newest scheduled dumps kept
+  --keep-monthly N          keep the newest dump per month for N months (0: off)
+  --keep-yearly N           keep the newest dump per year for N years (0: off)
+  --compress-after-days N   archive scheduled directory dumps older than N days (0: off)
   --update-keep N           dumps taken before an update kept (0: as the update settings say)
   --pre-update on|off       the dump before an update's migrations (off: no way back when they fail)
   --reserve-percent P       the share of the disk a dump leaves free
@@ -91,9 +94,10 @@ its next start (Settings → Storage restarts it).
 				}
 			}
 			ints := map[string]**int{"every-days": &ch.EveryDays, "hour": &ch.Hour, "keep": &ch.Keep,
+				"keep-monthly": &ch.KeepMonthly, "keep-yearly": &ch.KeepYearly, "compress-after-days": &ch.CompressAfterDays,
 				"update-keep": &ch.UpdateKeep, "reserve-percent": &ch.ReservePercent, "reserve-min-gb": &ch.ReserveMinGB,
 				"max-share-percent": &ch.MaxSharePercent}
-			vals := map[string]*int{"every-days": &every, "hour": &hour, "keep": &keep, "update-keep": &updateKeep,
+			vals := map[string]*int{"every-days": &every, "hour": &hour, "keep": &keep, "keep-monthly": &keepMonthly, "keep-yearly": &keepYearly, "compress-after-days": &compressAfterDays, "update-keep": &updateKeep,
 				"reserve-percent": &reserve, "reserve-min-gb": &reserveMin, "max-share-percent": &share}
 			for name, dst := range ints {
 				if f.Changed(name) {
@@ -113,9 +117,12 @@ its next start (Settings → Storage restarts it).
 	sf.StringVar(&nightly, "nightly", "", "on|off")
 	sf.StringVar(&preUpdate, "pre-update", "", "on|off")
 	sf.StringVar(&moveDumps, "move-dumps", "", "yes|no (with --dir)")
-	sf.IntVar(&every, "every-days", 1, "a dump every N days")
+	sf.IntVar(&every, "every-days", config.DefaultBackupsEveryDays, "a dump every N days")
 	sf.IntVar(&hour, "hour", config.DefaultBackupHour, "the local hour")
 	sf.IntVar(&keep, "keep", config.DefaultBackupKeep, "scheduled dumps kept")
+	sf.IntVar(&keepMonthly, "keep-monthly", config.DefaultBackupKeepMonthly, "distinct months kept (0: off)")
+	sf.IntVar(&keepYearly, "keep-yearly", config.DefaultBackupKeepYearly, "distinct years kept (0: off)")
+	sf.IntVar(&compressAfterDays, "compress-after-days", config.DefaultBackupCompressAfterDays, "archive dumps older than N days (0: off)")
 	sf.IntVar(&updateKeep, "update-keep", 0, "pre-update dumps kept")
 	sf.IntVar(&reserve, "reserve-percent", config.DefaultReservePercent, "share of the disk left free")
 	sf.IntVar(&reserveMin, "reserve-min-gb", config.DefaultReserveMinGB, "the least left free, GB")
@@ -195,6 +202,8 @@ func printBackupsDoc(out io.Writer, d backupsDoc) {
 		every = "every week"
 	}
 	fmt.Fprintf(out, "Scheduled dump:      %s, %s from %02d:00, the newest %d kept\n", onOff[s.Nightly], every, s.Hour, s.Keep)
+	fmt.Fprintf(out, "Retention tiers:     %d months, %d years (0: off)\n", s.KeepMonthly, s.KeepYearly)
+	fmt.Fprintf(out, "Compression:         after %d days (0: off)\n", s.CompressAfterDays)
 	fmt.Fprintf(out, "Before an update:    %s, the newest %d kept\n", onOff[s.PreUpdate], d.UpdateKeep)
 	fmt.Fprintf(out, "Room on the disk:    %d%% left free (at least %d GB), the dumps within %d%% of it\n",
 		s.ReservePercent, s.ReserveMinGB, s.MaxSharePercent)
@@ -206,6 +215,10 @@ func printBackupsDoc(out io.Writer, d backupsDoc) {
 	}
 	fmt.Fprintf(out, "\n%d dumps, %s:\n", len(d.Dumps), sizeOf(d.DumpsBytes))
 	for _, x := range d.Dumps {
-		fmt.Fprintf(out, "  %s  %-8s %10s  %s\n", x.At.Local().Format("2006-01-02 15:04"), x.Kind, sizeOf(x.Bytes), x.Name)
+		name := x.Name
+		if x.Compressed {
+			name += " (compressed)"
+		}
+		fmt.Fprintf(out, "  %s  %-8s %10s  %s\n", x.At.Local().Format("2006-01-02 15:04"), x.Kind, sizeOf(x.Bytes), name)
 	}
 }

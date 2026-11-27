@@ -33,8 +33,8 @@ func TestDueEveryFollowsTheHourAndTheDays(t *testing.T) {
 			t.Errorf("%s: due = %v", c.name, got)
 		}
 	}
-	// the default is the behaviour from before the settings
-	if !due(at(10, 4), at(9, 3)) || due(at(10, 4), at(10, 3)) {
+	// The default is weekly from 03:00 local time.
+	if !due(at(10, 4), at(3, 3)) || due(at(10, 4), at(4, 3)) {
 		t.Error("the default schedule changed")
 	}
 }

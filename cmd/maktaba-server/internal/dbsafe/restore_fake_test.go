@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/klauspost/compress/zstd"
 )
 
 // fastRaceSubprocess disables TSan's default 1-second atexit sleep on exit code 0 in
@@ -491,7 +492,37 @@ func TestVerifyAsideRejectsCorruptOrMissingTableDataMember(t *testing.T) {
 	if err := tg.VerifyAside(ctx, legacyNoCounts); err == nil || !strings.Contains(err.Error(), "dump_incomplete") {
 		t.Fatalf("legacy chunked dump without counts.json accepted: %v", err)
 	}
-	completeChunked := makeChunked(t, &counts2, map[string]string{"000": sig + row + end, "001": sig + row + end})
+	completeChunked := makeChunked(t, &counts2, map[string]string{"000": sig + row + end})
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := filepath.Join(completeChunked, "chunk.public.segment_embeddings.001.bin.zst")
+	raw := sig + row + end
+	encoded := encoder.EncodeAll([]byte(raw), nil)
+	if err := encoder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(compressed, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	chunks, cleanup, err := prepareCopyChunks(ctx, completeChunked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	files := chunks["public.segment_embeddings"]
+	if len(files) != 2 || files[1] == compressed {
+		t.Fatalf("COPY files %v", files)
+	}
+	decoded, err := os.ReadFile(files[1])
+	if err != nil || string(decoded) != raw || strings.Contains(pgbundle.CopyScript(chunks), ".bin.zst") {
+		t.Fatalf("COPY file: %q, %v", decoded, err)
+	}
+	cleanup()
+	if _, err := os.Stat(files[1]); !os.IsNotExist(err) {
+		t.Fatalf("temporary COPY file: %v", err)
+	}
 	if err := tg.VerifyAside(ctx, completeChunked); err != nil {
 		t.Fatalf("complete chunked dump rejected: %v", err)
 	}

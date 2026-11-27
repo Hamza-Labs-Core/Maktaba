@@ -13,7 +13,8 @@ import (
 
 // Dump is one finished dump in a backups folder (the Backups page lists them).
 type Dump struct {
-	Name string `json:"name"`
+	Compressed bool   `json:"compressed,omitempty"`
+	Name       string `json:"name"`
 	// Kind: nightly | update | failed | replaced | other.
 	Kind  string    `json:"kind"`
 	Bytes int64     `json:"bytes"`
@@ -55,7 +56,11 @@ func ListDumps(dir string) ([]Dump, error) {
 			continue
 		}
 		p := filepath.Join(dir, e.Name())
-		out = append(out, Dump{Name: e.Name(), Kind: kindOf(e.Name()), Bytes: DumpBytes(p), At: info.ModTime().UTC()})
+		kind, at := kindOf(e.Name()), info.ModTime()
+		if kind == "nightly" {
+			at = scheduledAt(e.Name(), at)
+		}
+		out = append(out, Dump{Name: e.Name(), Kind: kind, Bytes: DumpBytes(p), At: at.UTC(), Compressed: info.IsDir() && dumpCompressed(p)})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
 	return out, nil
@@ -204,4 +209,15 @@ func copySame(src, dst string) error {
 	}
 	_ = os.Chtimes(part, info.ModTime(), info.ModTime())
 	return os.Rename(part, dst)
+}
+
+func dumpCompressed(path string) bool {
+	entries, _ := os.ReadDir(path)
+	for _, e := range entries {
+		name := e.Name()
+		if e.Type().IsRegular() && (name == archiveMarker || strings.HasPrefix(name, chunkPrefix) && strings.HasSuffix(name, chunkExt+".zst")) {
+			return true
+		}
+	}
+	return false
 }

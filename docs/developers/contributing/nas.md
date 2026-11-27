@@ -86,6 +86,14 @@ joined machine's walsender) is ended (`pgbundle.EndBlockersSQL`), so a `CREATE I
 CONCURRENTLY` no longer meets its lock timeout behind a copy's long snapshot. The guides'
 Troubleshooting page (`#update-failed`, `#update-disk`) says what each looks like.
 
+## Scheduled database backups
+
+For bundled PostgreSQL, scheduled dumps default to once a week from 03:00 local time. The supervisor retains the newest four dumps, the newest dump in each of the 12 most recent distinct months, and the newest in each of the five most recent distinct years. These tiers are combined. The configured disk limits still apply.
+
+After 60 days, the supervisor archives retained directory dumps in place. It compresses binary COPY chunks as `.bin.zst` and replaces existing `.dat.zst` files when they can be made smaller. Its restore tools read archived dumps directly. External PostgreSQL in-place restores expand the COPY chunks into a temporary directory for the transaction.
+
+Use **Settings → Storage → Backups** or `maktaba-server backups set` to change the schedule, `--keep`, `--keep-monthly`, `--keep-yearly`, or `--compress-after-days`. Set the monthly or yearly tier or compression age to zero to disable it.
+
 ## A NAS in a cluster (story 59.13)
 
 - **Home**, the default on any tier: the guides set it up. Setup's share step works out each

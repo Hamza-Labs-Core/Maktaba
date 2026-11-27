@@ -1069,7 +1069,12 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, after, onl
 		switch part {
 		case chunkPart:
 			// the chunks, then every table's rows counted, before the indexes are built
-			if err := write(pgbundle.CopyScript(pgbundle.Chunks(dump)) + counts); err != nil {
+			chunks, cleanup, err := prepareCopyChunks(pctx, dump)
+			if err != nil {
+				return stopped(err)
+			}
+			defer cleanup()
+			if err := write(pgbundle.CopyScript(chunks) + counts); err != nil {
 				return stopped(err)
 			}
 			continue
@@ -1360,3 +1365,42 @@ func randHex(n int) string {
 
 // ErrNoDump: nothing to put back.
 var ErrNoDump = errors.New("no dump")
+
+func prepareCopyChunks(ctx context.Context, dump string) (map[string][]string, func(), error) {
+	chunks := pgbundle.Chunks(dump)
+	var dir string
+	cleanup := func() {
+		if dir != "" {
+			_ = os.RemoveAll(dir)
+		}
+	}
+	for _, files := range chunks {
+		for i, path := range files {
+			if !strings.HasSuffix(path, ".zst") {
+				continue
+			}
+			if dir == "" {
+				var err error
+				dir, err = os.MkdirTemp("", "maktaba-restore-chunks-")
+				if err != nil {
+					return nil, nil, err
+				}
+			}
+			plain := filepath.Join(dir, strings.TrimSuffix(filepath.Base(path), ".zst"))
+			if err := expandCopyChunk(ctx, path, plain); err != nil {
+				cleanup()
+				return nil, nil, err
+			}
+			files[i] = plain
+		}
+	}
+	return chunks, cleanup, nil
+}
+
+func expandCopyChunk(ctx context.Context, src, dst string) error {
+	f, err := os.OpenFile(dst, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // inside a private temporary directory
+	if err != nil {
+		return err
+	}
+	return errors.Join(pgbundle.ExpandChunk(ctx, f, src), f.Close())
+}

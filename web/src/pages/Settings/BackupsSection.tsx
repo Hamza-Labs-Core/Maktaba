@@ -32,7 +32,15 @@ import { HelpLink } from "../../help/HelpLink";
 import { LinesPlaceholder, Loading } from "../../components/Placeholders";
 
 type Ready = Extract<BackupsDoc, { available: true }>;
-type NumKey = "keep" | "update_keep" | "reserve_percent" | "reserve_min_gb" | "max_share_percent";
+type NumKey =
+  | "keep"
+  | "keep_monthly"
+  | "keep_yearly"
+  | "compress_after_days"
+  | "update_keep"
+  | "reserve_percent"
+  | "reserve_min_gb"
+  | "max_share_percent";
 type Freq = "1" | "7" | "n";
 
 /** The form: numbers as typed (checked on save), the frequency as a choice. */
@@ -44,6 +52,9 @@ interface Form {
   every_days: string;
   hour: number;
   keep: string;
+  keep_monthly: string;
+  keep_yearly: string;
+  compress_after_days: string;
   update_keep: string;
   reserve_percent: string;
   reserve_min_gb: string;
@@ -53,6 +64,9 @@ interface Form {
 /** The number fields, with whether they take whole numbers only. */
 const NUMBERS: { key: NumKey; whole: boolean }[] = [
   { key: "keep", whole: true },
+  { key: "keep_monthly", whole: true },
+  { key: "keep_yearly", whole: true },
+  { key: "compress_after_days", whole: true },
   { key: "update_keep", whole: true },
   { key: "reserve_percent", whole: true },
   { key: "reserve_min_gb", whole: true },
@@ -69,6 +83,9 @@ function toForm(s: BackupSettings): Form {
     every_days: String(freq === "n" ? s.every_days : 2),
     hour: s.hour,
     keep: String(s.keep),
+    keep_monthly: String(s.keep_monthly ?? 12),
+    keep_yearly: String(s.keep_yearly ?? 5),
+    compress_after_days: String(s.compress_after_days ?? 60),
     update_keep: String(s.update_keep),
     reserve_percent: String(s.reserve_percent),
     reserve_min_gb: String(s.reserve_min_gb),
@@ -96,10 +113,11 @@ function changes(form: Form, saved: BackupSettings) {
   const every = form.freq === "n" ? num(form.every_days, true) : Number(form.freq);
   if (every === null) bad.push("every_days");
   else if (every !== saved.every_days) body.every_days = every;
+  const savedForm = toForm(saved);
   for (const { key, whole } of NUMBERS) {
     const n = num(form[key], whole);
     if (n === null) bad.push(key);
-    else if (n !== saved[key]) body[key] = n;
+    else if (n !== Number(savedForm[key])) body[key] = n;
   }
   return { body, bad };
 }
@@ -352,6 +370,21 @@ export function BackupsSection({
             options={HOURS.map((h) => ({ value: String(h), label: hourLabel(h) }))}
           />
           {numberInput("keep", t("storage.backups.keep"), t("storage.backups.keepHelp"))}
+          {numberInput(
+            "keep_monthly",
+            t("storage.backups.keepMonthly"),
+            t("storage.backups.keepMonthlyHelp")
+          )}
+          {numberInput(
+            "keep_yearly",
+            t("storage.backups.keepYearly"),
+            t("storage.backups.keepYearlyHelp")
+          )}
+          {numberInput(
+            "compress_after_days",
+            t("storage.backups.compressAfterDays"),
+            t("storage.backups.compressAfterDaysHelp")
+          )}
         </fieldset>
 
         <fieldset>
@@ -441,6 +474,9 @@ export function BackupsSection({
                       <bdi dir="ltr" className="mkt-libadmin__path">
                         {d.name}
                       </bdi>
+                      {d.compressed && (
+                        <Badge tone="neutral">{t("storage.backups.compressed")}</Badge>
+                      )}
                     </td>
                     <td>
                       <Badge tone={d.kind === "failed" ? "error" : "neutral"}>

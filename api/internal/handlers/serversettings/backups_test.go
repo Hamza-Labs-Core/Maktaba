@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -28,7 +29,7 @@ func backupsFixture(t *testing.T) (http.Handler, *atomic.Int32, *Handler) {
 		calls.Add(1)
 		b, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		doc := `{"saved":{"dir":"/b","keep":14,"update_keep":4},"dumps":[]}`
+		doc := `{"saved":{"dir":"/b","keep":14,"keep_monthly":6,"keep_yearly":0,"compress_after_days":90,"update_keep":4},"dumps":[{"name":"maktaba-1.dump","compressed":true}]}`
 		switch r.Method + " " + r.URL.Path {
 		case "GET /config/backups":
 			_, _ = io.WriteString(w, doc)
@@ -38,6 +39,10 @@ func backupsFixture(t *testing.T) (http.Handler, *atomic.Int32, *Handler) {
 			if in["hour"] != nil {
 				w.WriteHeader(http.StatusUnprocessableEntity)
 				_, _ = io.WriteString(w, `{"errors":[{"field":"backups.hour","message":"0 to 23"}]}`)
+				return
+			}
+			if in["keep_monthly"] != float64(6) || in["keep_yearly"] != float64(0) || in["compress_after_days"] != float64(90) {
+				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 			_, _ = io.WriteString(w, doc)
@@ -88,13 +93,13 @@ func TestBackupsForAnAdmin(t *testing.T) {
 	r, _, h := backupsFixture(t)
 	rec := call(r, admin, "GET", "/api/server/backups", "")
 	var doc map[string]any
-	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &doc) != nil || doc["available"] != true {
+	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &doc) != nil || doc["available"] != true || !strings.Contains(rec.Body.String(), `"compressed":true`) {
 		t.Fatalf("GET %d %s", rec.Code, rec.Body)
 	}
 	if rec := call(r, admin, "PUT", "/api/server/backups", `{"hour":30}`); rec.Code != http.StatusUnprocessableEntity {
 		t.Errorf("refused %d", rec.Code)
 	}
-	if rec := call(r, admin, "PUT", "/api/server/backups", `{"keep":14,"update_keep":4,"move_dumps":true}`); rec.Code != 200 {
+	if rec := call(r, admin, "PUT", "/api/server/backups", `{"keep":14,"keep_monthly":6,"keep_yearly":0,"compress_after_days":90,"update_keep":4,"move_dumps":true}`); rec.Code != 200 {
 		t.Fatalf("PUT %d %s", rec.Code, rec.Body)
 	}
 	// kept in app_settings like the other rules
@@ -107,7 +112,7 @@ func TestBackupsForAnAdmin(t *testing.T) {
 	}
 	var u map[string]any
 	_ = json.Unmarshal([]byte(updates), &u)
-	if kept != `{"dir":"/b","keep":14,"update_keep":4}` || u["backups_keep"] != float64(4) {
+	if kept != `{"compress_after_days":90,"dir":"/b","keep":14,"keep_monthly":6,"keep_yearly":0,"update_keep":4}` || u["backups_keep"] != float64(4) {
 		t.Errorf("app_settings %s / %s", kept, updates)
 	}
 	if rec := call(r, admin, "DELETE", "/api/server/backups/dumps/maktaba-1.dump", ""); rec.Code != 200 {
