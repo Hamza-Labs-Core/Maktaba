@@ -162,7 +162,7 @@ func (b Bundle) backups() ([]scheduledDump, error) {
 		if isDump(e) && strings.HasPrefix(e.Name(), backupPrefix) {
 			info, err := e.Info()
 			if err != nil {
-				return nil, err
+				continue // gone meanwhile
 			}
 			out = append(out, scheduledDump{e.Name(), scheduledAt(e.Name(), info.ModTime()), info.IsDir()})
 		}
@@ -333,4 +333,12 @@ func selectScheduledToKeep(dumps []scheduledDump, p NightlyPolicy) map[string]bo
 		}
 	}
 	return keep
+}
+
+// dumpAt uses the timestamp of a scheduled dump even if writing its directory bumped its mtime.
+func dumpAt(name string, mod time.Time) time.Time {
+	if dumpKind(name) == backupPrefix {
+		return scheduledAt(name, mod)
+	}
+	return mod
 }

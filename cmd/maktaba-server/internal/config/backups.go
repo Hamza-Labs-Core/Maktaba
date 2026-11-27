@@ -16,9 +16,9 @@ import (
 
 // BackupsSection is [backups].
 type BackupsSection struct {
-	CompressAfterDays int `toml:"compress_after_days,omitzero"`
-	KeepYearly        int `toml:"keep_yearly,omitzero"`
-	KeepMonthly       int `toml:"keep_monthly,omitzero"`
+	CompressAfterDays *int `toml:"compress_after_days,omitempty"`
+	KeepYearly        *int `toml:"keep_yearly,omitempty"`
+	KeepMonthly       *int `toml:"keep_monthly,omitempty"`
 	// Dir is the backups folder ("": <state>/backups, beside the database).
 	Dir string `toml:"dir,omitempty"`
 	// Nightly is "off" to take no scheduled dump ("" or "on": taken).
@@ -163,6 +163,12 @@ func (b BackupsSection) Settings() BackupSettings {
 		}
 		return v
 	}
+	archiveSetting := func(v *int, def int) int {
+		if v == nil || *v < -1 {
+			return def
+		}
+		return max(0, *v)
+	}
 	share := b.MaxSharePercent
 	if share < 1 {
 		share = DefaultMaxSharePercent
@@ -170,7 +176,7 @@ func (b BackupsSection) Settings() BackupSettings {
 	return BackupSettings{Dir: strings.TrimSpace(b.Dir), Nightly: b.NightlyOn(), EveryDays: b.EveryDaysOr(),
 		Hour: b.HourOr(), Keep: b.KeepOr(), UpdateKeep: b.UpdateKeep, PreUpdate: b.PreUpdateOn(),
 		ReservePercent: pct(b.ReservePercent, DefaultReservePercent), ReserveMinGB: pct(b.ReserveMinGB, DefaultReserveMinGB),
-		KeepMonthly: pct(b.KeepMonthly, DefaultBackupKeepMonthly), KeepYearly: pct(b.KeepYearly, DefaultBackupKeepYearly), CompressAfterDays: pct(b.CompressAfterDays, DefaultBackupCompressAfterDays), MaxSharePercent: share}
+		KeepMonthly: archiveSetting(b.KeepMonthly, DefaultBackupKeepMonthly), KeepYearly: archiveSetting(b.KeepYearly, DefaultBackupKeepYearly), CompressAfterDays: archiveSetting(b.CompressAfterDays, DefaultBackupCompressAfterDays), MaxSharePercent: share}
 }
 
 // Section is s as [backups] writes it: a default left unset.
@@ -201,9 +207,15 @@ func (s BackupSettings) Section() BackupsSection {
 		}
 		return v
 	}
-	b.KeepMonthly = pct(s.KeepMonthly, DefaultBackupKeepMonthly)
-	b.KeepYearly = pct(s.KeepYearly, DefaultBackupKeepYearly)
-	b.CompressAfterDays = pct(s.CompressAfterDays, DefaultBackupCompressAfterDays)
+	omitDefault := func(v, def int) *int {
+		if v == def {
+			return nil
+		}
+		return &v
+	}
+	b.KeepMonthly = omitDefault(s.KeepMonthly, DefaultBackupKeepMonthly)
+	b.KeepYearly = omitDefault(s.KeepYearly, DefaultBackupKeepYearly)
+	b.CompressAfterDays = omitDefault(s.CompressAfterDays, DefaultBackupCompressAfterDays)
 	b.ReservePercent = pct(s.ReservePercent, DefaultReservePercent)
 	b.ReserveMinGB = pct(s.ReserveMinGB, DefaultReserveMinGB)
 	if s.MaxSharePercent != DefaultMaxSharePercent {

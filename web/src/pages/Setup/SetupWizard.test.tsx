@@ -402,7 +402,7 @@ describe("SetupWizard", () => {
       renderWizard(fakeApi({ storage }), "storage");
       const backupsDir = await screen.findByRole("textbox", { name: /^Backups folder/ });
       expect(backupsDir).toHaveValue("");
-      const nightly = screen.getByRole("switch", { name: /every night/ });
+      const nightly = screen.getByRole("switch", { name: /every week/ });
       expect(nightly).toBeChecked();
       const hour = screen.getByRole("combobox", { name: /^At/ });
       expect(hour).toHaveValue("3");
@@ -425,7 +425,7 @@ describe("SetupWizard", () => {
     it("turns the nightly backup off; empty keeps the backups beside the data", async () => {
       const storage = storageStep(WITH_BACKUPS);
       renderWizard(fakeApi({ storage }), "storage");
-      await userEvent.click(await screen.findByRole("switch", { name: /every night/ }));
+      await userEvent.click(await screen.findByRole("switch", { name: /every week/ }));
       expect(screen.getByRole("combobox", { name: /^At/ })).toBeDisabled();
       await userEvent.click(screen.getByRole("button", { name: "Next" }));
       await waitFor(() =>

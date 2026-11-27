@@ -362,8 +362,10 @@ func countCopyRows(r io.Reader) (int64, error) {
 		nfields := int16(binary.BigEndian.Uint16(b2[:]))
 		if nfields == -1 {
 			// Must be at exact EOF after the -1 trailer.
-			if _, err := br.ReadByte(); err != io.EOF {
+			if _, err := br.ReadByte(); err == nil {
 				return 0, fmt.Errorf("trailing bytes after binary COPY trailer")
+			} else if err != io.EOF {
+				return 0, fmt.Errorf("read after binary COPY trailer: %w", err)
 			}
 			return rows, nil
 		}

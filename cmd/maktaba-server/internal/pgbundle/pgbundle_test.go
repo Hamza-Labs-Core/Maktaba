@@ -438,9 +438,9 @@ func TestDue(t *testing.T) {
 	}{
 		{at(20, 14), time.Time{}, true},
 		{at(20, 4), at(20, 3), false},  // today's is done
-		{at(20, 4), at(13, 3), true},   // yesterday's only
+		{at(20, 4), at(13, 3), true},   // last week's backup
 		{at(20, 2), at(13, 3), false},  // before 03:00: yesterday's counts
-		{at(20, 2), at(12, 23), true},  // a Mac asleep last night catches up
+		{at(20, 2), at(12, 23), true},  // a missed weekly slot is due
 		{at(20, 23), at(20, 9), false}, // a catch-up after 03:00 counts for today
 	} {
 		if got := due(c.now, c.last); got != c.want {

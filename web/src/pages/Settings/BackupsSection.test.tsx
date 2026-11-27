@@ -103,6 +103,9 @@ describe("BackupsSection", () => {
     open();
     const row = await screen.findByRole("row", { name: /maktaba-20261025/ });
     expect(within(row).getByText(badge)).toBeInTheDocument();
+    expect(within(row).getAllByRole("cell")[0]).toHaveTextContent(
+      `maktaba-20261025-030000.dump ${badge}`
+    );
   });
 
   it("saves the monthly and yearly retention and archive age", async () => {

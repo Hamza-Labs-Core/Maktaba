@@ -86,6 +86,12 @@ func TestMakeRoomRemovesTheOldestUntilTheDumpFits(t *testing.T) {
 	// 40 free: two old 20 GiB dumps go (40 + 40 = 80), the oldest first
 	dir := roomDir(t, "pre-a-to-b.dump", "maktaba-20261023-030000.dump", "maktaba-20261024-030000.dump",
 		"pre-b-to-c.dump", "maktaba-20261025-030000.dump")
+	for name, day := range map[string]int{"pre-a-to-b.dump": 22, "pre-b-to-c.dump": 24} {
+		at := time.Date(2026, 10, day, 12, 0, 0, 0, time.Local)
+		if err := os.Chtimes(filepath.Join(dir, name), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
 	sized(t, dir, 20*gib)
 	fakeDisk(t, 40*gib, 1000*gib)
 	if err := MakeRoom(dir); err != nil {

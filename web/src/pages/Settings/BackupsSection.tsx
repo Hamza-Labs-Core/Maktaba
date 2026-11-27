@@ -475,7 +475,10 @@ export function BackupsSection({
                         {d.name}
                       </bdi>
                       {d.compressed && (
-                        <Badge tone="neutral">{t("storage.backups.compressed")}</Badge>
+                        <>
+                          {" "}
+                          <Badge tone="neutral">{t("storage.backups.compressed")}</Badge>
+                        </>
                       )}
                     </td>
                     <td>

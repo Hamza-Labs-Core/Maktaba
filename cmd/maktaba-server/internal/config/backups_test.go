@@ -23,7 +23,7 @@ func TestBackupSettingsRoundTrip(t *testing.T) {
 	s := BackupSettings{Dir: "/Volumes/Big/backups", Nightly: false, EveryDays: 7, Hour: 0, Keep: 14, UpdateKeep: 2,
 		PreUpdate: false, ReservePercent: 0, ReserveMinGB: 0, MaxSharePercent: 40}
 	sec := s.Section()
-	if sec.KeepMonthly != -1 || sec.KeepYearly != -1 || sec.CompressAfterDays != -1 || sec.ReservePercent != -1 || sec.ReserveMinGB != -1 || sec.Hour == nil || *sec.Hour != 0 {
+	if sec.KeepMonthly == nil || *sec.KeepMonthly != 0 || sec.KeepYearly == nil || *sec.KeepYearly != 0 || sec.CompressAfterDays == nil || *sec.CompressAfterDays != 0 || sec.ReservePercent != -1 || sec.ReserveMinGB != -1 || sec.Hour == nil || *sec.Hour != 0 {
 		t.Errorf("section %+v", sec)
 	}
 	if got := sec.Settings(); got != s {
@@ -90,5 +90,38 @@ func TestArchivePolicyBounds(t *testing.T) {
 	s.KeepMonthly, s.KeepYearly, s.CompressAfterDays = 121, -1, 3651
 	if errs := ValidateBackups(s); len(errs) != 3 {
 		t.Fatal(errs)
+	}
+}
+
+func TestArchivePolicyTOMLZeroAndLegacyOff(t *testing.T) {
+	for _, value := range []string{"0", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "server.toml")
+			raw := "[backups]\nkeep_monthly = " + value + "\nkeep_yearly = " + value + "\ncompress_after_days = " + value + "\n"
+			if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, _, err := LoadFrom(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings := cfg.Backups.Settings()
+			if settings.KeepMonthly != 0 || settings.KeepYearly != 0 || settings.CompressAfterDays != 0 {
+				t.Fatal(settings)
+			}
+			cfg.Backups = settings.Section()
+			if err := cfg.SaveTo(path); err != nil {
+				t.Fatal(err)
+			}
+			saved, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, key := range []string{"keep_monthly", "keep_yearly", "compress_after_days"} {
+				if !strings.Contains(string(saved), key+" = 0") {
+					t.Errorf("%s missing explicit zero in %s", key, saved)
+				}
+			}
+		})
 	}
 }

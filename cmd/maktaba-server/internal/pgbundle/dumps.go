@@ -56,10 +56,7 @@ func ListDumps(dir string) ([]Dump, error) {
 			continue
 		}
 		p := filepath.Join(dir, e.Name())
-		kind, at := kindOf(e.Name()), info.ModTime()
-		if kind == "nightly" {
-			at = scheduledAt(e.Name(), at)
-		}
+		kind, at := kindOf(e.Name()), dumpAt(e.Name(), info.ModTime())
 		out = append(out, Dump{Name: e.Name(), Kind: kind, Bytes: DumpBytes(p), At: at.UTC(), Compressed: info.IsDir() && dumpCompressed(p)})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].At.After(out[j].At) })
@@ -161,7 +158,7 @@ func copyDump(src, dst string) error {
 	ents, err := os.ReadDir(src)
 	if err == nil {
 		for _, e := range ents {
-			if !e.Type().IsRegular() {
+			if !e.Type().IsRegular() || strings.HasSuffix(e.Name(), ".partial") {
 				continue // a directory-format dump is flat: toc.dat and one file per table
 			}
 			if err = copySame(filepath.Join(src, e.Name()), filepath.Join(part, e.Name())); err != nil {

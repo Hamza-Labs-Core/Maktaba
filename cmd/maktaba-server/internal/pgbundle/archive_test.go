@@ -98,7 +98,7 @@ func TestArchiveMaintenanceResumesAndVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(dir)
-	if err != nil || !info.ModTime().Equal(now) {
+	if err != nil || !info.ModTime().Equal(scheduledAt(filepath.Base(dir), now)) {
 		t.Fatalf("archive mtime: %v, %v", info, err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, archiveMarker)); err != nil {
@@ -166,5 +166,98 @@ func TestLoadCompressedChunk(t *testing.T) {
 	got, err := os.ReadFile(out)
 	if err != nil || string(got) != archiveTestCopy {
 		t.Fatalf("COPY received %q, %v", got, err)
+	}
+}
+
+func TestCrashBumpedArchiveCannotDisplaceNewestDump(t *testing.T) {
+	root := t.TempDir()
+	bumped := time.Now().Truncate(time.Second)
+	old := dirDump(t, root, "maktaba-20260101-030000.dump", 80, bumped)
+	newest := dirDump(t, root, "maktaba-20260201-030000.dump", 80, bumped.Add(-time.Hour))
+	if NewestOfKind(root, filepath.Base(old)) || !NewestOfKind(root, filepath.Base(newest)) {
+		t.Fatal("crash mtime changed which scheduled backup is newest")
+	}
+	fakeDisk(t, 10_000, 10_000)
+	if err := MakeRoomWith(root, RoomPolicy{MaxShare: 0.02}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("old dump after making room: %v", err)
+	}
+	if _, err := os.Stat(newest); err != nil {
+		t.Fatal(err)
+	}
+
+	old = dirDump(t, root, filepath.Base(old), 80, bumped)
+	if err := os.WriteFile(filepath.Join(old, "chunk.public.books.0.bin.zst.partial"), []byte("interrupted"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := archiveDump(context.Background(), old, bumped); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := scheduledAt(filepath.Base(old), bumped); !info.ModTime().Equal(want) {
+		t.Fatalf("archive mtime %v, want %v", info.ModTime(), want)
+	}
+}
+
+func TestPruneAbandonedRestoreChunks(t *testing.T) {
+	root := t.TempDir()
+	stale := filepath.Join(root, RestoreChunksPrefix+"stale")
+	active := filepath.Join(root, RestoreChunksPrefix+"active")
+	for _, dir := range []string{stale, active} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(active, "chunk.bin"), []byte("writing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	past := time.Now().Add(-2 * staleRehearsal)
+	for _, dir := range []string{stale, active} {
+		if err := os.Chtimes(dir, past, past); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := PruneBackups(root, "", 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale scratch: %v", err)
+	}
+	if _, err := os.Stat(active); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestArchivePartialsStayOutOfDumpCopies(t *testing.T) {
+	root := t.TempDir()
+	dump := dirDump(t, root, "maktaba-20260101-030000.dump", 80, time.Now())
+	partial := "chunk.public.books.000.bin.zst.partial"
+	if err := os.WriteFile(filepath.Join(dump, partial), []byte("still writing"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range []struct {
+		name  string
+		apply func(string, string) error
+	}{
+		{"copy", copyDump},
+		{"link", linkFiles},
+	} {
+		t.Run(operation.name, func(t *testing.T) {
+			dst := filepath.Join(root, operation.name)
+			if err := operation.apply(dump, dst); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(dst, "toc.dat")); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(filepath.Join(dst, partial)); !os.IsNotExist(err) {
+				t.Fatalf("archive partial was transferred: %v", err)
+			}
+		})
 	}
 }

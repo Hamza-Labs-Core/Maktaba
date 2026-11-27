@@ -787,6 +787,11 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 	if only != "" {
 		defer func() { _ = os.Remove(only) }()
 	}
+	chunks, cleanup, err := prepareCopyChunks(ctx, dump, t.Backups)
+	if err != nil {
+		return fmt.Errorf("restore %s (nothing changed): %w", dump, err)
+	}
+	defer cleanup()
 	if _, err := d.ExecContext(ctx, pgbundle.DropSlotsSQL("")); err != nil {
 		// a database user without REPLICATION made no copies; one whose sessions it may
 		// not end keeps the copies streaming what is about to go
@@ -798,7 +803,7 @@ func (t Target) RestoreWith(ctx context.Context, dump string, before func(step s
 		// one it may not end (a superuser's) stops that at once: those it may, then
 		_, _ = d.ExecContext(ctx, pgbundle.EndSessionsSQL(""))
 	}
-	if err := t.restoreAtomic(ctx, dump, list, how.empty, how.after, only, tell, log); err != nil {
+	if err := t.restoreAtomic(ctx, dump, list, how.empty, how.after, only, chunks, tell, log); err != nil {
 		return err
 	}
 	_, _ = d.ExecContext(ctx, `ANALYZE`)
@@ -994,7 +999,7 @@ var pipeSetReadDeadline = func(f *os.File, t time.Time) error {
 	return f.SetReadDeadline(t)
 }
 
-func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, after, only string, tell func(step string) error, log io.Writer) error {
+func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, after, only string, chunks map[string][]string, tell func(step string) error, log io.Writer) error {
 	pctx, kill := context.WithCancel(ctx)
 	defer kill()
 	counts, err := pgbundle.CountsScript(dump, list)
@@ -1069,11 +1074,6 @@ func (t Target) restoreAtomic(ctx context.Context, dump, list, empty, after, onl
 		switch part {
 		case chunkPart:
 			// the chunks, then every table's rows counted, before the indexes are built
-			chunks, cleanup, err := prepareCopyChunks(pctx, dump)
-			if err != nil {
-				return stopped(err)
-			}
-			defer cleanup()
 			if err := write(pgbundle.CopyScript(chunks) + counts); err != nil {
 				return stopped(err)
 			}
@@ -1366,7 +1366,7 @@ func randHex(n int) string {
 // ErrNoDump: nothing to put back.
 var ErrNoDump = errors.New("no dump")
 
-func prepareCopyChunks(ctx context.Context, dump string) (map[string][]string, func(), error) {
+func prepareCopyChunks(ctx context.Context, dump, backups string) (map[string][]string, func(), error) {
 	chunks := pgbundle.Chunks(dump)
 	var dir string
 	cleanup := func() {
@@ -1381,7 +1381,12 @@ func prepareCopyChunks(ctx context.Context, dump string) (map[string][]string, f
 			}
 			if dir == "" {
 				var err error
-				dir, err = os.MkdirTemp("", "maktaba-restore-chunks-")
+				if backups != "" {
+					dir, err = os.MkdirTemp(backups, pgbundle.RestoreChunksPrefix)
+				}
+				if dir == "" {
+					dir, err = os.MkdirTemp("", pgbundle.RestoreChunksPrefix)
+				}
 				if err != nil {
 					return nil, nil, err
 				}

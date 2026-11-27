@@ -1,7 +1,9 @@
 package pgbundle
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
@@ -94,7 +96,8 @@ func archiveDump(ctx context.Context, dir string, now time.Time) (err error) {
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, os.Chtimes(dir, info.ModTime(), info.ModTime())) }()
+	at := scheduledAt(filepath.Base(dir), info.ModTime())
+	defer func() { err = errors.Join(err, os.Chtimes(dir, at, at)) }()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
@@ -142,8 +145,16 @@ func archiveDump(ctx context.Context, dir string, now time.Time) (err error) {
 	}
 	partial := marker + ".partial"
 	defer func() { _ = os.Remove(partial) }()
-	if err := os.WriteFile(partial, data, 0o600); err != nil {
+	f, err := os.OpenFile(partial, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600) //nolint:gosec // the dump's marker
+	if err != nil {
 		return err
+	}
+	_, writeErr := f.Write(data)
+	if err := errors.Join(writeErr, f.Sync(), f.Close()); err != nil {
+		return err
+	}
+	if BackupsHeld(filepath.Dir(dir)) {
+		return nil
 	}
 	return os.Rename(partial, marker)
 }
@@ -175,16 +186,20 @@ func archiveFile(ctx context.Context, src, dst string, compressed bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	backups := filepath.Dir(filepath.Dir(src))
+	if BackupsHeld(backups) {
+		return nil
+	}
 	if err := os.Rename(partial, dst); err != nil {
 		return err
 	}
-	if !compressed {
+	if !compressed && !BackupsHeld(backups) {
 		return os.Remove(src)
 	}
 	return nil
 }
 
-func encodeArchive(ctx context.Context, src, partial string, compressed bool) (err error) {
+func encodeArchive(ctx context.Context, src, partial string, compressed bool) error {
 	r, closeInput, err := openArchiveInput(src, compressed)
 	if err != nil {
 		return err
@@ -194,13 +209,16 @@ func encodeArchive(ctx context.Context, src, partial string, compressed bool) (e
 	if err != nil {
 		return err
 	}
-	defer func() { err = errors.Join(err, f.Close()) }()
+	inputHash := sha256.New()
+	if compressed {
+		r = io.TeeReader(r, inputHash)
+	}
 	enc, err := zstd.NewWriter(f, zstd.WithEncoderLevel(zstd.SpeedBetterCompression), zstd.WithEncoderConcurrency(1), zstd.WithZeroFrames(true))
 	if err != nil {
-		return err
+		return errors.Join(err, f.Close())
 	}
-	_, err = io.Copy(enc, contextReader{ctx, r})
-	if err = errors.Join(err, enc.Close()); err != nil {
+	_, copyErr := io.Copy(enc, contextReader{ctx, r})
+	if err := errors.Join(copyErr, enc.Close(), f.Sync(), f.Close()); err != nil {
 		return err
 	}
 
@@ -210,13 +228,16 @@ func encodeArchive(ctx context.Context, src, partial string, compressed bool) (e
 	}
 	defer closeDecoded()
 	reader := contextReader{ctx, decoded}
-	if compressed {
-		_, err = io.Copy(io.Discard, reader)
-	} else {
-		_, err = countCopyRows(reader)
-	}
-	if err != nil {
+	if !compressed {
+		_, err := countCopyRows(reader)
 		return err
 	}
-	return f.Sync()
+	outputHash := sha256.New()
+	if _, err := io.Copy(outputHash, reader); err != nil {
+		return err
+	}
+	if !bytes.Equal(inputHash.Sum(nil), outputHash.Sum(nil)) {
+		return errors.New("recompressed table data differs from the original")
+	}
+	return nil
 }
