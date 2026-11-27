@@ -1,20 +1,24 @@
 ---
 schema: 1
-tag: v0.3.167
-up_to_commit: 73884609e
-built_from: v0.3.166
+tag: v0.3.168
+up_to_commit: bd3b4d6f2
+built_from: v0.3.167
 ---
 
-# Trail snapshot: v0.3.167
+# Trail snapshot: v0.3.168
 
 ## Keep doing
 
 **Working**
+- Verify JWTs strictly before reporting expiry, wire authentication signals through both home and full-node middleware, and validate exported plugin problems before translating them into HTTP errors. Test retry payloads with both populated and `NULL` values in real PostgreSQL. (#1767)
+- Guard queue flushes against same-worker lease reclaim races, exclude filesystem errors from database-loss handling, and mutation-test queue and healer guards. (#1768)
+- Recheck publisher ownership at countersigning, preserve shared blobs on refusal, reject duplicate JSON keys at every depth, and deliver catalog audit events through an outbox. (#1773)
+- Apply Western digits structurally with the BCP 47 `-u-nu-latn` numbering system, preserving Android's display and format locale categories and safe fallbacks for malformed locales. (#1785)
 - Write completion metadata from the stored rows, not from the work requested; a sweep that trusts the request mark can keep retrying a stage that cannot change the outcome, and a change to stage selection must account for jobs already queued. (#1759)
 - Check that stored words cover their sentence's text before rebuilding the text, split words shared by two sentences between them, and gate upgraded work on a reported worker capability rather than a package version stamped only into the node wheel. (#1759)
 - Reproduce an intermittent Docker state in isolation before fixing it, and find the line that differs before calling a rehearsal flaky; a power cut can leave a container that Docker lists but cannot inspect, start or remove. (#1708)
 - Deploy each QA release from the version QA currently serves, and test migration readiness and rollback from the previous release's migrated database, not only a fresh one. (#1737)
-- Give every selected row in a bounded healing sweep an outcome, preserve a replacement job's payload and cascade flag, and remove each guard once to prove a test fails without it. (#1761)
+- Give every selected row in a bounded healing sweep an outcome, preserve a replacement job's payload and cascade flag, and remove each guard once to prove a test fails without it. (#1761, #1767)
 - Search specs as well as code when retiring a target or bundle ID; a wording-only specs change runs the wiki jobs, not platform jobs. (#1721)
 - Check authorization at every entry point and re-check existing connections when access changes; copying another row's value during insertion requires the same lock as its writers, with reads in a statement after the lock. (d20261124-cloud-claim-races)
 - File product decisions through the shared decisions inbox with one recommendation and the full context; do not ask for a decision in chat or a pull request. (#1610)
@@ -97,6 +101,12 @@ built_from: v0.3.166
 - Keep a read-only account's personal state open as one prefix (`/api/me/`) rather than route by route. (#1454)
 
 **Releases and live**
+- Put Docker-version-dependent recovery cases in the real-boot VM rehearsal, bound every Docker probe and shutdown during rollback, and keep production boot healing isolated from the recovery path under test. (#1769)
+- Restore an older SQL function in a Down migration byte-for-byte, clear copy holds using only the relevant blocker, and test copy-pause concurrency under the race detector. (#1770)
+- Record a safety dump path before creating it so interrupted restores can resume, distinguish live from stale shared memory, and preflight external restores before destructive work. (#1775)
+- An additive migration's backfill can roll back by dropping the columns introduced by that same migration. (#1776)
+- Resume vector copies from the newest eligible transcript and verify both row counts and approximate-index results against exact source results before dropping the source index. (#1778)
+- Take a fresh safety copy for each PostgreSQL upgrade retry, write upgrade markers atomically, identify recycled PIDs before sweeping, and protect live staging and set-aside clusters. (#1784)
 - Prove deploy rollback by comparing the whole node before and after every injected failure, and remove each guarantee to show that its rehearsal case fails. Run remote apply and rollback as node-owned units, rank all migration refusals, and rehearse boot on a real VM for the few decisive cases. (d20261124-cloud-deploy-goes-back, d20261124-cloud-deploy-without-its-runner, d20261125-cloud-first-deploy-stays-down)
 - Exercise cloud deployment end to end with a real released home, and test restores on the real prior database and extensions; simulated homes and incomplete rigs miss licensing, linking, schema and extension failures. Number cloud migrations above the newest until applied-set readiness ships everywhere. (d20261124-cloud-single-node-qa, #1716, #1727)
 - Homes read Maktaba's small signed, platform-filtered release feed first and fall back to GitHub when it is unreachable, older, or too old; a refused feed stops the check. Measure external responses with the product's exact request and exercise the same code path in CI. (#1597, #1599)
@@ -127,6 +137,10 @@ built_from: v0.3.166
 - Prove a new Postgres major's tree on each built payload — the version, the preload, the extensions, a query through its index, the schema migrating — with a `pg_upgrade` of the payload's own cluster. (#1441)
 
 **Tests and CI**
+- Pin clock-sensitive fixtures to one home day and exact instants, pass the target ref through branch-head CI, and reject an epic-status document with no parsed story rows before rewriting its summary. (#1772)
+- Opt Cast UI scenarios into their required context, and require real-SDK tests to verify the configured receiver and post-prompt discovery; surface simulator log-collection failures in CI. (#1779)
+- Align SBOM and CVE scanning with shipped binaries and optional dependency groups, normalize local Python versions for advisory lookup, and anchor nightly history at the earliest matching non-trail tree. (#1780)
+- Strip CSS comments before checking generated token declarations and fail browser rendering on `pageerror`, so stale generated content cannot pass silently. (#1786)
 - After a distributed-timing fix, remove each side in turn and require a test failure; keep metric mutation in one function so shutdown and close cannot count the same cut twice. (#1717)
 - Measure setup commands before bounding them, and read warnings as well as green shards: a timeout that cuts service setup can silently undo it. Use recordings and model-versus-screen state to locate UI races instead of extending waits. (#1713, #1729, #1738)
 - Pass another job's build through `needs:` and an artifact: a queued job holds no runner, while a step polling for another job can starve its own build. (#1653, #1655)
@@ -441,6 +455,8 @@ built_from: v0.3.166
 - Assuming a home's release catalog is current because GitHub has published a newer release. (d20261124-stale-catalog-step-down)
 
 ## What we learned
+
+- Exercise passage-budget fallbacks at query, scan, and partial-iteration boundaries, asserting passage IDs, counts, and marks when database and fallback hits combine. (#1781)
 
 - Goose's current version is the migration applied last, not the highest slot: a lower-slot migration applied late can make readiness report both a fully migrated database as behind and a database with a missing lower slot as current. Record the newest version last and preserve the failed release's logs before rollback removes them. (#1737)
 - Error-code wording must cover every place that returns the code, and test fakes must reproduce the real error body. Audit an action only after it happens, with durable state for a one-time event; a shallow clone can also make `trail check` compute the wrong missing-event list. (#1754)
@@ -892,6 +908,9 @@ built_from: v0.3.166
 
 ## Open
 
+- The upstream PostgreSQL `EINTR` on `open()` report remains under investigation (issue #1751). (#1768)
+- Evaluate whether a second Rehearsal 17 run from `v0.3.162` justifies its additional CI time (issue #1753). (#1770)
+
 - Cloud QA still needs a full pass with broadcasting, licensing and applied-set readiness (issue #1707, issue #1715); update-hold wording and the interrupted WAL-open failure remain on issue #1753 and issue #1751. (#1708, #1737, #1754)
 - Failure healing currently covers only video stages; scan-based healing still has no retry cap, older failures without `error_cause` are not matched, and some web retry paths drop job payloads. Re-review minors are on issue #1764. (#1761)
 - Cloud: finish production deployment and off-node backups; mail webhooks (issue #1714), applied-set readiness (issue #1715), privacy retention (issue #1731), and the intermittent apply power-cut rehearsal (issue #1722) remain. Production mail still needs Turnstile keys and delivered-mail DKIM/DMARC verification. (d20261124-cloud-deploy-goes-back, d20261124-cloud-single-node-qa, #1716)
@@ -1024,7 +1043,7 @@ built_from: v0.3.166
 | #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
 | #1748 | 2026-11-25 | fix(cloud): the newest migration is recorded last, so an older release is ready on a kept schema |
 | #1752 | 2026-11-25 | test(cloud-relay): the single node's rehearsal starts from the last release too |
-| #1767 | 2026-11-26 | fix(api): preserve retry job payloads and align API problem statuses |
+| #1788 | 2026-11-26 | Fix development dependency alerts and validate TV login redirects |
 
 ## Index
 
@@ -1908,4 +1927,19 @@ built_from: v0.3.166
 | 1759-second-listen-missing-words | 2026-11-25 | pr | One sentence without words left a whole transcript out of its second listen (#1756) |
 | 1761-failures-come-back | 2026-11-25 | pr | Failures whose cause has passed come back by themselves |
 | d20261125-cloud-first-deploy-stays-down | 2026-11-25 | incident | A failed first deploy started again at the next boot, and only a machine that really reboots shows what a boot does |
+| 1767-api-retry-payload-and-problems | 2026-11-26 | pr | Preserve retry job payloads and align API problem statuses |
+| 1768-pipeline-reliability-followups | 2026-11-26 | pr | Pipeline reliability follow-ups for failure healing, word timings, and database restarts |
+| 1769-cloud-readiness-hardening | 2026-11-26 | pr | Cloud readiness hardening — Resend webhooks, daily node watch, broadcast-off, and single-node rollout minors |
+| 1770-updates-reliability-followups | 2026-11-26 | pr | Updates reliability follow-ups — feed freshness, schema_release, copies_paused keepalives, and copy-wait fixes |
+| 1772-ci-clock-and-maintenance-tooling | 2026-11-26 | pr | CI clock fixtures and maintenance tooling follow-ups |
+| 1773-plugin-lifecycle-and-store-hardening | 2026-11-26 | pr | First-party plugin lifecycle and Store package hardening |
+| 1775-external-restore-and-postgres-recovery | 2026-11-26 | pr | External restore preflight and PostgreSQL recovery |
+| 1776-cloud-security-retention-and-backfill-rollback | 2026-11-26 | pr | Cloud security retention and additive backfill rollback |
+| 1778-chroma-copy-followups | 2026-11-26 | pr | Resuming and verifying the Chroma copy |
+| 1779-apple-ci-and-test-followups | 2026-11-26 | pr | Xcode 27 CI and Apple UI test follow-ups |
+| 1780-sbom-and-nightly-cve-gate | 2026-11-26 | pr | Shipped SBOMs and nightly CVE gating |
+| 1781-search-accent-folding-and-fallbacks | 2026-11-26 | pr | Latin accent folding and search passage fallbacks |
+| 1784-postgres-upgrade-retry-and-storage | 2026-11-26 | pr | PostgreSQL upgrade retries and set-aside storage |
+| 1785-western-digits-in-arabic | 2026-11-26 | pr | Western digits in Arabic across clients |
+| 1786-web-font-tokens-and-help-mockups | 2026-11-26 | pr | Shared web font tokens and help mockup counts |
 
