@@ -166,7 +166,7 @@ func roomIn(dir string, p RoomPolicy, minNext uint64, keep func(name string) boo
 			continue // gone meanwhile
 		}
 		p := filepath.Join(dir, e.Name())
-		d := dump{p, uint64(DumpBytes(p)), info.ModTime()}
+		d := dump{p, uint64(DumpBytes(p)), dumpAt(e.Name(), info.ModTime())}
 		all = append(all, d)
 		used += d.size
 		k := dumpKind(e.Name())

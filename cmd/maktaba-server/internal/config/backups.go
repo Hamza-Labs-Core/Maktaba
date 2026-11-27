@@ -4,10 +4,9 @@ package config
 // (Epic 36 story 36.16). The server reads it before its database step (the nightly
 // dumps, the dump before an update's migrations, the room they leave on their disk);
 // an admin changes it from Settings → Storage (the supervisor's /config/backups),
-// setup's storage step or `maktaba-server backups set`. Every key unset keeps the
-// behaviour from before it: <state>/backups, a nightly dump from 03:00 local time,
-// the newest 7 kept, the pre-update dump taken, 5% of the disk (at least 2 GiB)
-// left free and the dumps within a fifth of it.
+// setup's storage step or `maktaba-server backups set`. Scheduled dumps default to
+// weekly at 03:00 local time with weekly, monthly, and yearly retention and archival
+// compression after 60 days.
 
 import (
 	"fmt"
@@ -17,15 +16,18 @@ import (
 
 // BackupsSection is [backups].
 type BackupsSection struct {
+	CompressAfterDays *int `toml:"compress_after_days,omitempty"`
+	KeepYearly        *int `toml:"keep_yearly,omitempty"`
+	KeepMonthly       *int `toml:"keep_monthly,omitempty"`
 	// Dir is the backups folder ("": <state>/backups, beside the database).
 	Dir string `toml:"dir,omitempty"`
 	// Nightly is "off" to take no scheduled dump ("" or "on": taken).
 	Nightly string `toml:"nightly,omitempty"`
-	// EveryDays is how many days apart the scheduled dumps are (0: 1, daily; 7: weekly).
+	// EveryDays is how many days apart the scheduled dumps are (0: 7, weekly).
 	EveryDays int `toml:"every_days,omitzero"`
 	// Hour is the local hour from which a scheduled dump is due (nil: 3).
 	Hour *int `toml:"hour,omitempty"`
-	// Keep is how many scheduled dumps stay (0: 7).
+	// Keep is how many scheduled dumps stay (0: 4).
 	Keep int `toml:"keep,omitzero"`
 	// UpdateKeep is how many pre-update dumps stay (0: rules.updates.backups_keep as the
 	// last update recorded it, else [postgres] update_dumps).
@@ -43,12 +45,15 @@ type BackupsSection struct {
 
 // The defaults of [backups].
 const (
-	DefaultBackupHour       = 3
-	DefaultBackupKeep       = 7
-	DefaultReservePercent   = 5
-	DefaultReserveMinGB     = 2
-	DefaultMaxSharePercent  = 20
-	DefaultBackupsEveryDays = 1
+	DefaultBackupCompressAfterDays = 60
+	DefaultBackupKeepYearly        = 5
+	DefaultBackupKeepMonthly       = 12
+	DefaultBackupHour              = 3
+	DefaultBackupKeep              = 4
+	DefaultReservePercent          = 5
+	DefaultReserveMinGB            = 2
+	DefaultMaxSharePercent         = 20
+	DefaultBackupsEveryDays        = 7
 )
 
 // NightlyOn: the scheduled dump is taken.
@@ -61,7 +66,7 @@ func (b BackupsSection) PreUpdateOn() bool {
 	return !strings.EqualFold(strings.TrimSpace(b.PreUpdate), "off")
 }
 
-// EveryDaysOr is EveryDays, 1 when unset.
+// EveryDaysOr is EveryDays, 7 when unset.
 func (b BackupsSection) EveryDaysOr() int {
 	if b.EveryDays < 1 {
 		return DefaultBackupsEveryDays
@@ -130,6 +135,9 @@ func (c Config) DefaultBackupsDir() string { return filepath.Join(c.StateDir(), 
 // BackupSettings are [backups] as the page and the command show them: every value
 // as it applies (the defaults filled in).
 type BackupSettings struct {
+	CompressAfterDays int `json:"compress_after_days"`
+	KeepYearly        int `json:"keep_yearly"`
+	KeepMonthly       int `json:"keep_monthly"`
 	// Dir is the backups folder ("": beside the database, DefaultBackupsDir).
 	Dir       string `json:"dir"`
 	Nightly   bool   `json:"nightly"`
@@ -155,6 +163,12 @@ func (b BackupsSection) Settings() BackupSettings {
 		}
 		return v
 	}
+	archiveSetting := func(v *int, def int) int {
+		if v == nil || *v < -1 {
+			return def
+		}
+		return max(0, *v)
+	}
 	share := b.MaxSharePercent
 	if share < 1 {
 		share = DefaultMaxSharePercent
@@ -162,7 +176,7 @@ func (b BackupsSection) Settings() BackupSettings {
 	return BackupSettings{Dir: strings.TrimSpace(b.Dir), Nightly: b.NightlyOn(), EveryDays: b.EveryDaysOr(),
 		Hour: b.HourOr(), Keep: b.KeepOr(), UpdateKeep: b.UpdateKeep, PreUpdate: b.PreUpdateOn(),
 		ReservePercent: pct(b.ReservePercent, DefaultReservePercent), ReserveMinGB: pct(b.ReserveMinGB, DefaultReserveMinGB),
-		MaxSharePercent: share}
+		KeepMonthly: archiveSetting(b.KeepMonthly, DefaultBackupKeepMonthly), KeepYearly: archiveSetting(b.KeepYearly, DefaultBackupKeepYearly), CompressAfterDays: archiveSetting(b.CompressAfterDays, DefaultBackupCompressAfterDays), MaxSharePercent: share}
 }
 
 // Section is s as [backups] writes it: a default left unset.
@@ -193,6 +207,15 @@ func (s BackupSettings) Section() BackupsSection {
 		}
 		return v
 	}
+	omitDefault := func(v, def int) *int {
+		if v == def {
+			return nil
+		}
+		return &v
+	}
+	b.KeepMonthly = omitDefault(s.KeepMonthly, DefaultBackupKeepMonthly)
+	b.KeepYearly = omitDefault(s.KeepYearly, DefaultBackupKeepYearly)
+	b.CompressAfterDays = omitDefault(s.CompressAfterDays, DefaultBackupCompressAfterDays)
 	b.ReservePercent = pct(s.ReservePercent, DefaultReservePercent)
 	b.ReserveMinGB = pct(s.ReserveMinGB, DefaultReserveMinGB)
 	if s.MaxSharePercent != DefaultMaxSharePercent {
@@ -203,16 +226,19 @@ func (s BackupSettings) Section() BackupsSection {
 
 // BackupPatch is a change to some of the settings (a key left out stays).
 type BackupPatch struct {
-	Dir             *string `json:"dir"`
-	Nightly         *bool   `json:"nightly"`
-	EveryDays       *int    `json:"every_days"`
-	Hour            *int    `json:"hour"`
-	Keep            *int    `json:"keep"`
-	UpdateKeep      *int    `json:"update_keep"`
-	PreUpdate       *bool   `json:"pre_update"`
-	ReservePercent  *int    `json:"reserve_percent"`
-	ReserveMinGB    *int    `json:"reserve_min_gb"`
-	MaxSharePercent *int    `json:"max_share_percent"`
+	CompressAfterDays *int    `json:"compress_after_days"`
+	KeepYearly        *int    `json:"keep_yearly"`
+	KeepMonthly       *int    `json:"keep_monthly"`
+	Dir               *string `json:"dir"`
+	Nightly           *bool   `json:"nightly"`
+	EveryDays         *int    `json:"every_days"`
+	Hour              *int    `json:"hour"`
+	Keep              *int    `json:"keep"`
+	UpdateKeep        *int    `json:"update_keep"`
+	PreUpdate         *bool   `json:"pre_update"`
+	ReservePercent    *int    `json:"reserve_percent"`
+	ReserveMinGB      *int    `json:"reserve_min_gb"`
+	MaxSharePercent   *int    `json:"max_share_percent"`
 }
 
 // Apply changes s by p and lists the keys it changed.
@@ -240,6 +266,9 @@ func (p BackupPatch) Apply(s *BackupSettings) []string {
 	boolean("nightly", p.Nightly, &s.Nightly)
 	integer("every_days", p.EveryDays, &s.EveryDays)
 	integer("hour", p.Hour, &s.Hour)
+	integer("keep_monthly", p.KeepMonthly, &s.KeepMonthly)
+	integer("keep_yearly", p.KeepYearly, &s.KeepYearly)
+	integer("compress_after_days", p.CompressAfterDays, &s.CompressAfterDays)
 	integer("keep", p.Keep, &s.Keep)
 	integer("update_keep", p.UpdateKeep, &s.UpdateKeep)
 	boolean("pre_update", p.PreUpdate, &s.PreUpdate)
@@ -267,6 +296,15 @@ func ValidateBackups(s BackupSettings) []FieldError {
 	}
 	if s.Keep < 1 || s.Keep > 365 {
 		bad("keep", "keep 1 to 365 scheduled dumps")
+	}
+	if s.KeepMonthly < 0 || s.KeepMonthly > 120 {
+		bad("keep_monthly", "must be between 0 and 120")
+	}
+	if s.KeepYearly < 0 || s.KeepYearly > 50 {
+		bad("keep_yearly", "must be between 0 and 50")
+	}
+	if s.CompressAfterDays < 0 || s.CompressAfterDays > 3650 {
+		bad("compress_after_days", "must be between 0 and 3650")
 	}
 	if s.UpdateKeep < 0 || s.UpdateKeep > 50 {
 		bad("update_keep", "keep 1 to 50 pre-update dumps (0: as the update settings say)")

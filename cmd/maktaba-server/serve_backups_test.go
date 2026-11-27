@@ -137,17 +137,18 @@ func TestBackupsCommandOffline(t *testing.T) {
 	cmd := newBackupsCmd()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"set", "--nightly", "off", "--every-days", "7", "--hour", "0", "--pre-update", "off"})
+	cmd.SetArgs([]string{"set", "--nightly", "off", "--every-days", "7", "--hour", "0", "--pre-update", "off",
+		"--keep-monthly", "6", "--keep-yearly", "0", "--compress-after-days", "90"})
 	if err := cmd.ExecuteContext(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	cfg, _, _ := config.LoadFrom(cfgPath)
 	s := cfg.Backups.Settings()
-	if s.Nightly || s.EveryDays != 7 || s.Hour != 0 || s.PreUpdate {
+	if s.Nightly || s.EveryDays != 7 || s.Hour != 0 || s.PreUpdate || s.KeepMonthly != 6 || s.KeepYearly != 0 || s.CompressAfterDays != 90 {
 		t.Errorf("saved %+v", s)
 	}
 	for _, w := range []string{"Scheduled dump:      off, every week from 00:00", "Warning: with no dump before an update",
-		"2 dumps"} {
+		"6 months, 0 years", "after 90 days", "2 dumps"} {
 		if !strings.Contains(out.String(), w) {
 			t.Errorf("output lacks %q:\n%s", w, out.String())
 		}

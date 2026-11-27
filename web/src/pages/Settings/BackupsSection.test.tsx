@@ -25,6 +25,9 @@ const SETTINGS = {
   every_days: 1,
   hour: 3,
   keep: 7,
+  keep_monthly: 12,
+  keep_yearly: 5,
+  compress_after_days: 60,
   update_keep: 0,
   pre_update: true,
   reserve_percent: 5,
@@ -35,6 +38,7 @@ const DUMPS = [
   {
     name: "maktaba-20261025-030000.dump",
     kind: "nightly",
+    compressed: true,
     bytes: 2 * GB,
     at: "2026-10-25T03:00:00Z",
   },
@@ -86,7 +90,42 @@ describe("BackupsSection", () => {
   beforeEach(() => {
     for (const f of [get, put, del]) f.mockReset();
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    localStorage.removeItem("mkt:locale");
+    vi.restoreAllMocks();
+  });
+
+  it.each([
+    ["en", "Compressed"],
+    ["ar", "مضغوط"],
+  ])("marks archived dumps in %s", async (locale, badge) => {
+    localStorage.setItem("mkt:locale", locale);
+    open();
+    const row = await screen.findByRole("row", { name: /maktaba-20261025/ });
+    expect(within(row).getByText(badge)).toBeInTheDocument();
+    expect(within(row).getAllByRole("cell")[0]).toHaveTextContent(
+      `maktaba-20261025-030000.dump ${badge}`
+    );
+  });
+
+  it("saves the monthly and yearly retention and archive age", async () => {
+    open();
+    const user = userEvent.setup();
+    for (const [label, initial, value] of [
+      ["Monthly backups to keep", 12, "6"],
+      ["Yearly backups to keep", 5, "0"],
+      ["Compress backups after (days)", 60, "90"],
+    ] as const) {
+      const field = await screen.findByRole("spinbutton", { name: label });
+      expect(field).toHaveValue(initial);
+      await user.clear(field);
+      await user.type(field, value);
+    }
+    const change = { keep_monthly: 6, keep_yearly: 0, compress_after_days: 90 };
+    put.mockResolvedValue({ ...DOC, saved: { ...SETTINGS, ...change } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(put).toHaveBeenCalledWith("/api/server/backups", change));
+  });
 
   it("shows the saved settings and the dumps there are, with their disk", async () => {
     open();

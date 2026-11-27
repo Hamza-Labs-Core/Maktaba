@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/pgbundle"
+	"github.com/klauspost/compress/zstd"
 )
 
 // fastRaceSubprocess disables TSan's default 1-second atexit sleep on exit code 0 in
@@ -228,7 +229,7 @@ func TestRestoreAtomicPsqlStopsFirst(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	began := time.Now()
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(step string) error {
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", nil, func(step string) error {
 		t.Errorf("told %q of a script that never ended", step)
 		return nil
 	}, io.Discard)
@@ -264,7 +265,7 @@ func TestRestoreAtomicAKilledPsqlAfterCommitIsNotKnownCommitted(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	told := make(chan string, 4)
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(step string) error {
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", nil, func(step string) error {
 		told <- step
 		return nil
 	}, io.Discard)
@@ -294,7 +295,7 @@ func TestRestoreAtomicCommitWriteFailureSaysNothingChanged(t *testing.T) {
 	tg := Target{URL: "postgres://u:p@127.0.0.1:1/db?sslmode=disable", Bin: func(string) string { return self }}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(string) error {
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", nil, func(string) error {
 		// Give pre-commit-exit a moment to exit before COMMIT is written.
 		time.Sleep(20 * time.Millisecond)
 		return nil
@@ -337,7 +338,7 @@ func TestRestoreAtomicFullOutputUnderHeavyPsqlBackpressure(t *testing.T) {
 			tg := Target{URL: "postgres://u:p@127.0.0.1:1/db?sslmode=disable", Bin: func(string) string { return self }}
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
-			if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(string) error { return nil }, io.Discard); err != nil {
+			if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", nil, func(string) error { return nil }, io.Discard); err != nil {
 				t.Fatalf("restoreAtomic failed under backpressure: %v", err)
 			}
 			got, err := os.ReadFile(outFile)
@@ -376,7 +377,7 @@ func TestRestoreAtomicReadStartedBeforeExitAndReturningAfterExitSucceeds(t *test
 	tg := Target{URL: "postgres://u:p@127.0.0.1:1/db?sslmode=disable", Bin: func(string) string { return self }}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(string) error { return nil }, io.Discard); err != nil {
+	if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", nil, func(string) error { return nil }, io.Discard); err != nil {
 		t.Fatalf("restoreAtomic aborted on pre-exit read duration: %v", err)
 	}
 }
@@ -398,7 +399,7 @@ func TestRestoreAtomicPublicAfreshGrantRunsAfterDumpRevoke(t *testing.T) {
 	tg := Target{URL: "postgres://u:p@127.0.0.1:1/db?sslmode=disable", Bin: func(string) string { return self }}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, publicUsageGrant, "", func(string) error { return nil }, io.Discard); err != nil {
+	if err := tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, publicUsageGrant, "", nil, func(string) error { return nil }, io.Discard); err != nil {
 		t.Fatalf("restoreAtomic failed: %v", err)
 	}
 	got, err := os.ReadFile(outFile)
@@ -491,7 +492,38 @@ func TestVerifyAsideRejectsCorruptOrMissingTableDataMember(t *testing.T) {
 	if err := tg.VerifyAside(ctx, legacyNoCounts); err == nil || !strings.Contains(err.Error(), "dump_incomplete") {
 		t.Fatalf("legacy chunked dump without counts.json accepted: %v", err)
 	}
-	completeChunked := makeChunked(t, &counts2, map[string]string{"000": sig + row + end, "001": sig + row + end})
+	completeChunked := makeChunked(t, &counts2, map[string]string{"000": sig + row + end})
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	compressed := filepath.Join(completeChunked, "chunk.public.segment_embeddings.001.bin.zst")
+	raw := sig + row + end
+	encoded := encoder.EncodeAll([]byte(raw), nil)
+	if err := encoder.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(compressed, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	backups := t.TempDir()
+	chunks, cleanup, err := prepareCopyChunks(ctx, completeChunked, backups)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	files := chunks["public.segment_embeddings"]
+	if len(files) != 2 || filepath.Dir(filepath.Dir(files[1])) != backups {
+		t.Fatalf("COPY files %v", files)
+	}
+	decoded, err := os.ReadFile(files[1])
+	if err != nil || string(decoded) != raw || strings.Contains(pgbundle.CopyScript(chunks), ".bin.zst") {
+		t.Fatalf("COPY file: %q, %v", decoded, err)
+	}
+	cleanup()
+	if _, err := os.Stat(files[1]); !os.IsNotExist(err) {
+		t.Fatalf("temporary COPY file: %v", err)
+	}
 	if err := tg.VerifyAside(ctx, completeChunked); err != nil {
 		t.Fatalf("complete chunked dump rejected: %v", err)
 	}
@@ -516,7 +548,7 @@ func TestRestoreAtomicDoesNotWaitForAPgRestoreChildHoldingStdout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	began := time.Now()
-	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", func(step string) error {
+	err = tg.restoreAtomic(ctx, "pre-0.3.1-to-0.3.2.dump", "", publicAfresh, "", "", nil, func(step string) error {
 		t.Errorf("told %q of a script that never ended", step)
 		return nil
 	}, io.Discard)

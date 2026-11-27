@@ -103,6 +103,7 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 	}
 	root := cfg.StateDir()
 	bk := cfg.Backups
+	settings := bk.Settings()
 	// Epic 49 story 49.2: a newer major's cluster has a directory of its own (DataDirFor);
 	// while its upgrade is held (no room, a failed pg_upgrade: MajorHold) the payload's
 	// previous major runs on the cluster it has
@@ -115,7 +116,7 @@ func Resolve(cfg config.Config, exe string) (Bundle, bool, error) {
 		Data:    DataDirFor(root, major),
 		Keys:    config.KeysDir(),
 		Backups: cfg.BackupsDir(filepath.Join(root, "backups")),
-		Nightly: &NightlyPolicy{Off: !bk.NightlyOn(), EveryDays: bk.EveryDaysOr(), Hour: bk.HourOr(), Keep: bk.KeepOr()},
+		Nightly: &NightlyPolicy{Off: !bk.NightlyOn(), EveryDays: bk.EveryDaysOr(), Hour: bk.HourOr(), Keep: bk.KeepOr(), KeepMonthly: settings.KeepMonthly, KeepYearly: settings.KeepYearly, CompressAfterDays: settings.CompressAfterDays},
 		Room: &RoomPolicy{ReserveShare: bk.ReserveShare(), ReserveMin: bk.ReserveMinBytes(),
 			MaxShare: bk.MaxShare()},
 		LastNightly: filepath.Join(root, "state", "last-nightly-backup"),

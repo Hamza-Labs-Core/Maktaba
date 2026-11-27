@@ -218,8 +218,9 @@ func Chunks(dump string) map[string][]string {
 		return nil
 	}
 	out := map[string][]string{}
+	seen := make(map[string]bool)
 	for _, e := range ents {
-		n := e.Name()
+		n := strings.TrimSuffix(e.Name(), ".zst")
 		if !e.Type().IsRegular() || !strings.HasPrefix(n, chunkPrefix) || !strings.HasSuffix(n, chunkExt) {
 			continue
 		}
@@ -231,7 +232,11 @@ func Chunks(dump string) map[string][]string {
 		if _, err := strconv.Atoi(mid[dot+1:]); err != nil {
 			continue
 		}
-		out[mid[:dot]] = append(out[mid[:dot]], filepath.Join(dump, n))
+		// ReadDir sorts the raw file before its compressed counterpart.
+		if !seen[n] {
+			out[mid[:dot]] = append(out[mid[:dot]], filepath.Join(dump, e.Name()))
+			seen[n] = true
+		}
 	}
 	for _, fs := range out {
 		sort.Strings(fs)
@@ -264,7 +269,7 @@ func checkChunks(dump, list string, requireCounts bool) (map[string]int64, error
 	for table, files := range chunks {
 		var total int64
 		for i, f := range files {
-			if want := fmt.Sprintf("%s%s.%03d%s", chunkPrefix, table, i, chunkExt); filepath.Base(f) != want {
+			if want := fmt.Sprintf("%s%s.%03d%s", chunkPrefix, table, i, chunkExt); strings.TrimSuffix(filepath.Base(f), ".zst") != want {
 				return nil, fmt.Errorf("the dump is damaged: %s is not there", want)
 			}
 			n, err := countChunkRows(f)
@@ -314,12 +319,16 @@ func checkChunks(dump, list string, requireCounts bool) (map[string]int64, error
 // extension area, every tuple's field count/lengths, and the exact -1 trailer at EOF) and
 // returns the number of rows it contains.
 func countChunkRows(path string) (int64, error) {
-	f, err := os.Open(path) //nolint:gosec // a dump's own chunk
+	f, closeInput, err := openChunk(path)
 	if err != nil {
 		return 0, err
 	}
-	defer func() { _ = f.Close() }()
-	br := bufio.NewReaderSize(f, 64<<10)
+	defer closeInput()
+	return countCopyRows(f)
+}
+
+func countCopyRows(r io.Reader) (int64, error) {
+	br := bufio.NewReaderSize(r, 64<<10)
 	const signature = "PGCOPY\n\xff\r\n\x00"
 	var hdr [19]byte
 	if _, err := io.ReadFull(br, hdr[:]); err != nil {
@@ -353,8 +362,10 @@ func countChunkRows(path string) (int64, error) {
 		nfields := int16(binary.BigEndian.Uint16(b2[:]))
 		if nfields == -1 {
 			// Must be at exact EOF after the -1 trailer.
-			if _, err := br.ReadByte(); err != io.EOF {
+			if _, err := br.ReadByte(); err == nil {
 				return 0, fmt.Errorf("trailing bytes after binary COPY trailer")
+			} else if err != io.EOF {
+				return 0, fmt.Errorf("read after binary COPY trailer: %w", err)
 			}
 			return rows, nil
 		}
@@ -436,11 +447,11 @@ func LoadChunks(ctx context.Context, psql string, conn, env []string, chunks map
 }
 
 func copyIn(ctx context.Context, psql string, conn, env []string, table, file string) error {
-	f, err := os.Open(file) //nolint:gosec // a dump's own chunk
+	f, closeInput, err := openChunk(file)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	defer closeInput()
 	cmd := exec.CommandContext(ctx, psql, append(append([]string{}, conn...), "-X", "-q", "-v", "ON_ERROR_STOP=1",
 		"-c", "COPY "+table+" FROM STDIN (FORMAT binary)")...)
 	cmd.Env = env
@@ -463,7 +474,7 @@ func CopyScript(chunks map[string][]string) string {
 	var sb strings.Builder
 	for _, t := range tables {
 		for _, f := range chunks[t] {
-			sb.WriteString(`\copy ` + t + ` FROM '` + strings.ReplaceAll(f, `'`, `''`) + "' WITH (FORMAT binary)\n")
+			sb.WriteString(`\copy ` + t + ` FROM '` + strings.ReplaceAll(filepath.ToSlash(f), `'`, `''`) + "' WITH (FORMAT binary)\n")
 		}
 	}
 	return sb.String()

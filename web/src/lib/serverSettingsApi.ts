@@ -164,6 +164,9 @@ export interface BackupSettings {
   hour: number;
   /** scheduled dumps kept, 1..365 */
   keep: number;
+  keep_monthly?: number;
+  keep_yearly?: number;
+  compress_after_days?: number;
   /** pre-update dumps kept; 0 = as the Updates settings say */
   update_keep: number;
   /** a dump before each update, so a failed migration can be undone */
@@ -180,6 +183,7 @@ export type BackupKind = "nightly" | "update" | "failed" | "replaced" | "other";
 export interface BackupDump {
   name: string;
   kind: BackupKind;
+  compressed?: boolean;
   bytes: number;
   /** RFC 3339 */
   at: string;

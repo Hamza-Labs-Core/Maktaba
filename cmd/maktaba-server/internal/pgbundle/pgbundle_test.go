@@ -365,7 +365,7 @@ func TestPrepareFailsWhenPostgresExits(t *testing.T) {
 	}
 }
 
-func TestBackupKeepsSeven(t *testing.T) {
+func TestBackupKeepsFour(t *testing.T) {
 	b, logDir := fakeBundle(t)
 	if err := b.Prepare(context.Background(), io.Discard); err != nil {
 		t.Fatal(err)
@@ -383,7 +383,7 @@ func TestBackupKeepsSeven(t *testing.T) {
 	if err != nil || len(names) != KeepBackups {
 		t.Fatalf("backups = %v, %v; want %d", names, err, KeepBackups)
 	}
-	if names[0] != "maktaba-20261003-033000.dump" || filepath.Join(b.Backups, names[6]) != last {
+	if names[3].name != "maktaba-20261006-033000.dump" || filepath.Join(b.Backups, names[0].name) != last {
 		t.Fatalf("kept the wrong dumps: %v", names)
 	}
 	calls := read(t, filepath.Join(logDir, "pg_dump.calls"))
@@ -438,9 +438,9 @@ func TestDue(t *testing.T) {
 	}{
 		{at(20, 14), time.Time{}, true},
 		{at(20, 4), at(20, 3), false},  // today's is done
-		{at(20, 4), at(19, 3), true},   // yesterday's only
-		{at(20, 2), at(19, 3), false},  // before 03:00: yesterday's counts
-		{at(20, 2), at(18, 23), true},  // a Mac asleep last night catches up
+		{at(20, 4), at(13, 3), true},   // last week's backup
+		{at(20, 2), at(13, 3), false},  // before 03:00: yesterday's counts
+		{at(20, 2), at(12, 23), true},  // a missed weekly slot is due
 		{at(20, 23), at(20, 9), false}, // a catch-up after 03:00 counts for today
 	} {
 		if got := due(c.now, c.last); got != c.want {

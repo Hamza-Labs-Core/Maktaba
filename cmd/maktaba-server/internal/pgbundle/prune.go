@@ -19,6 +19,9 @@ const keepFile = "backups-keep"
 // left (a rehearsal runs minutes, and never while the server starts).
 const staleRehearsal = time.Hour
 
+// RestoreChunksPrefix names scratch folders used to expand archived COPY chunks.
+const RestoreChunksPrefix = ".restore-chunks-"
+
 // expireAfter is how long a dump of a failed update or of a database a restore replaced
 // stays (the newest pre-update dump never expires: it is the way back from the last update).
 const expireAfter = 30 * 24 * time.Hour
@@ -54,7 +57,7 @@ const ReplacedDumpPrefix = "replaced-"
 // PruneBackups keeps, in a backups folder, the newest keep pre-update dumps (pre-*.dump,
 // keepPath always), the newest keep dumps of failed updates (failed-*.dump) and as many of
 // databases a restore replaced (replaced-*.dump), and removes the folders of rehearsals a
-// crash left (.rehearse-*) and the dumps one cut short (*.partial), older than an hour:
+// crash left (.rehearse-*, .restore-chunks-*) and the dumps one cut short (*.partial), older than an hour:
 // each holds up to a whole database. Dumps of failed updates and replaced databases also
 // go once older than expireAfter: they explain one event, and a lone one stayed for good.
 func PruneBackups(dir, keepPath string, keep int) error {
@@ -76,7 +79,8 @@ func PruneBackups(dir, keepPath string, keep int) error {
 			continue // gone meanwhile
 		}
 		stale := strings.HasPrefix(name, ".rehearse-") && e.IsDir() && time.Since(info.ModTime()) > staleRehearsal ||
-			strings.Contains(name, backupSuffix+".partial") && time.Since(lastWrite(filepath.Join(dir, name), info)) > staleRehearsal
+			(strings.Contains(name, backupSuffix+".partial") || e.IsDir() && strings.HasPrefix(name, RestoreChunksPrefix)) &&
+				time.Since(lastWrite(filepath.Join(dir, name), info)) > staleRehearsal
 		if stale {
 			if err := os.RemoveAll(filepath.Join(dir, name)); err != nil && firstErr == nil {
 				firstErr = err

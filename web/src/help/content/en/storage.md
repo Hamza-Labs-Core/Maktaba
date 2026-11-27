@@ -55,7 +55,7 @@ You can also move the data from a terminal, with Maktaba stopped: `maktaba-serve
 
 ### Backups of the library database {#backups}
 
-Maktaba copies the library database to a dump file on a schedule (every night by default) and before each update, so an update whose migrations fail can put the database back. It keeps the latest dumps and deletes older ones by itself.
+Maktaba copies the library database to a dump file on a schedule (weekly from 03:00 local time by default) and before each update, so an update whose migrations fail can put the database back. By default it keeps the four newest scheduled dumps, the newest in each of the 12 most recent months with a dump, and the newest in each of the five most recent years with a dump. It compresses retained scheduled directory dumps older than 60 days. Compressed dumps are marked in the table and can be restored as usual.
 
 The table **Database dumps** lists each dump with its **Kind** (**Scheduled**, **Before an update**, **Unfinished**, **Replaced by a restore**), its size, when it was made and its disk, with the disk's free space and the size of all of them together. **Delete** removes one dump after you confirm. A dump an update under way may still need cannot be deleted until it ends.
 
@@ -63,7 +63,7 @@ The table **Database dumps** lists each dump with its **Kind** (**Scheduled**, *
 
 1. **Backups folder**: leave it empty to keep the dumps beside the database, or type another folder (for example on a larger disk).
 2. **Back up the database on a schedule**, **How often** (every day, every week, or every few days) and **At** (the hour, on this computer's clock).
-3. **Scheduled dumps to keep**: the oldest is deleted when there are more.
+3. **Scheduled dumps to keep**: keep this many of the newest scheduled dumps. **Monthly backups to keep** and **Yearly backups to keep** retain one dump per month or year. **Compress backups after (days)** controls how old a dump must be to be compressed. Use 0 to turn off a monthly or yearly tier or archival compression.
 4. **Back up the database before each update**, and **Pre-update dumps to keep** (0 keeps as many as the Updates settings say). Without the dump before an update, an update whose migrations fail cannot put the database back.
 5. **Advanced: room on the disk**: how much of the disk to keep free (a percent, and at least some GB; 5% and 2 GB by default) and the most of the disk the dumps may take (20% by default).
 6. Click **Save**, then restart the server: the new settings are used from the restart.
@@ -75,7 +75,8 @@ You can do the same from a terminal:
 ```
 maktaba-server backups show
 maktaba-server backups set --dir <folder> --move-dumps yes|no --nightly on|off \
-  --every-days N --hour H --keep N --update-keep N --pre-update on|off \
+  --every-days N --hour H --keep N --keep-monthly N --keep-yearly N \
+  --compress-after-days N --update-keep N --pre-update on|off \
   --reserve-percent P --reserve-min-gb G --max-share-percent P
 maktaba-server backups delete <name>
 ```

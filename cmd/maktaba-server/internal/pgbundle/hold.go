@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // holdFile in a backups folder says a restore a person asked for is not done: every dump
@@ -183,6 +184,12 @@ func linkFiles(from, to string) error {
 		if err != nil {
 			return err
 		}
+		if p != from && strings.HasSuffix(d.Name(), ".partial") {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		rel, err := filepath.Rel(from, p)
 		if err != nil {
 			return err
@@ -245,7 +252,7 @@ func NewestOfKind(dir, name string) bool {
 		if e.Name() == name || !isDump(e) || dumpKind(e.Name()) != dumpKind(name) {
 			continue
 		}
-		if i, err := e.Info(); err == nil && !i.ModTime().Before(info.ModTime()) {
+		if i, err := e.Info(); err == nil && !dumpAt(e.Name(), i.ModTime()).Before(dumpAt(name, info.ModTime())) {
 			return false
 		}
 	}

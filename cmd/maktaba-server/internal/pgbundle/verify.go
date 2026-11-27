@@ -390,6 +390,17 @@ func verifyRows(ctx context.Context, dump string, dataTables []string, query Que
 		}
 		var size int64
 		for _, f := range files {
+			if strings.HasSuffix(f, ".zst") {
+				rows, err := countChunkRows(f)
+				if err != nil {
+					return fmt.Errorf("verify %s: %w", filepath.Base(f), err)
+				}
+				if rows > 0 {
+					nonEmpty[table] = true
+					break
+				}
+				continue
+			}
 			if st, err := os.Stat(f); err == nil {
 				size += st.Size() - chunkHeader
 			}

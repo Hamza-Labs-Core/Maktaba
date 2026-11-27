@@ -12,25 +12,29 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hamza-Labs-Core/Maktaba/cmd/maktaba-server/internal/config"
+
 	_ "github.com/lib/pq" // the dump's snapshot session
 )
 
 // KeepBackups is how many nightly dumps stay in backups/ when [backups] keep is not
 // set (the pre-update dumps are kept apart: upgrade.go).
-const KeepBackups = 7
+const KeepBackups = config.DefaultBackupKeep
 
 // NightlyPolicy is when the scheduled dump is taken and how many stay ([backups]
 // nightly, every_days, hour, keep: Epic 36 story 36.16).
 type NightlyPolicy struct {
-	Off       bool
-	EveryDays int
-	Hour      int
-	Keep      int
+	Off                                        bool
+	EveryDays                                  int
+	Hour                                       int
+	Keep                                       int
+	KeepMonthly, KeepYearly, CompressAfterDays int
 }
 
-// DefaultNightly is a dump every night from 03:00, the newest 7 kept.
+// DefaultNightly is the default weekly schedule and archive policy.
 func DefaultNightly() NightlyPolicy {
-	return NightlyPolicy{EveryDays: 1, Hour: backupHour, Keep: KeepBackups}
+	return NightlyPolicy{EveryDays: config.DefaultBackupsEveryDays, Hour: backupHour, Keep: KeepBackups,
+		KeepMonthly: config.DefaultBackupKeepMonthly, KeepYearly: config.DefaultBackupKeepYearly, CompressAfterDays: config.DefaultBackupCompressAfterDays}
 }
 
 func (b Bundle) nightly() NightlyPolicy {
@@ -39,7 +43,7 @@ func (b Bundle) nightly() NightlyPolicy {
 	}
 	p := *b.Nightly
 	if p.EveryDays < 1 {
-		p.EveryDays = 1
+		p.EveryDays = DefaultNightly().EveryDays
 	}
 	if p.Hour < 0 || p.Hour > 23 {
 		p.Hour = backupHour
@@ -65,17 +69,17 @@ const (
 
 // Backup writes a dump of the whole app database (dumpfmt.go) into backups/
 // (maktaba-<local time>.dump, written beside and moved into place) and keeps the
-// newest KeepBackups, after making room for it (MakeRoom). It returns the dump's path.
+// scheduled retention tiers, after making room for it (MakeRoom). It returns the dump's path.
 func (b Bundle) Backup(ctx context.Context, now time.Time) (string, error) {
 	if err := MakeRoomWith(b.Backups, b.room()); err != nil {
 		return "", err
 	}
-	path := filepath.Join(b.Backups, backupPrefix+now.Format(backupStamp)+backupSuffix)
+	path := filepath.Join(b.Backups, backupPrefix+now.Local().Format(backupStamp)+backupSuffix)
 	if err := b.dumpTo(ctx, path, DumpOptions{}); err != nil {
 		return "", err
 	}
 	b.recordNightly(now)
-	return path, b.Tidy()
+	return path, b.tidyRetained()
 }
 
 // Tidy keeps the backups folder to its rules: the newest nightly dumps ([backups] keep),
@@ -83,7 +87,19 @@ func (b Bundle) Backup(ctx context.Context, now time.Time) (string, error) {
 // failed updates and replaced databases by count and age, and no leftovers of a dump or
 // rehearsal cut short (PruneBackups). The backups loop runs it at every check, scheduled
 // dumps on or off.
-func (b Bundle) Tidy() error {
+func (b Bundle) Tidy() error { return b.TidyContext(context.Background(), time.Now()) }
+
+func (b Bundle) TidyContext(ctx context.Context, now time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := b.tidyRetained(); err != nil {
+		return err
+	}
+	return b.compressBackups(ctx, now)
+}
+
+func (b Bundle) tidyRetained() error {
 	err := b.prune()
 	if perr := PruneBackups(b.Backups, "", BackupsKeep(b.Backups, b.UpdateKeep)); perr != nil && !os.IsNotExist(perr) && err == nil {
 		err = perr
@@ -132,8 +148,8 @@ func (b Bundle) dumpTo(ctx context.Context, path string, opts DumpOptions) error
 		"--dbname=" + AppDatabase}, append(os.Environ(), "PGPASSWORD="+superPW), path, opts)
 }
 
-// backups lists the finished nightly dumps, oldest first.
-func (b Bundle) backups() ([]string, error) {
+// backups lists the finished scheduled dumps, newest first.
+func (b Bundle) backups() ([]scheduledDump, error) {
 	entries, err := os.ReadDir(b.Backups)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -141,13 +157,22 @@ func (b Bundle) backups() ([]string, error) {
 		}
 		return nil, err
 	}
-	var out []string
+	var out []scheduledDump
 	for _, e := range entries {
 		if isDump(e) && strings.HasPrefix(e.Name(), backupPrefix) {
-			out = append(out, e.Name())
+			info, err := e.Info()
+			if err != nil {
+				continue // gone meanwhile
+			}
+			out = append(out, scheduledDump{e.Name(), scheduledAt(e.Name(), info.ModTime()), info.IsDir()})
 		}
 	}
-	sort.Strings(out) // the stamp sorts by time
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].at.Equal(out[j].at) {
+			return out[i].name > out[j].name
+		}
+		return out[i].at.After(out[j].at)
+	})
 	return out, nil
 }
 
@@ -159,11 +184,13 @@ func (b Bundle) prune() error {
 	if err != nil {
 		return err
 	}
-	for keep := b.nightly().Keep; len(names) > keep; {
-		if err := RemoveDump(filepath.Join(b.Backups, names[0])); err != nil {
-			return err
+	keep := selectScheduledToKeep(names, b.nightly())
+	for _, dump := range names {
+		if !keep[dump.name] {
+			if err := RemoveDump(filepath.Join(b.Backups, dump.name)); err != nil {
+				return err
+			}
 		}
-		names = names[1:]
 	}
 	return nil
 }
@@ -181,16 +208,14 @@ func (b Bundle) lastBackup() time.Time {
 	if len(names) == 0 {
 		return last
 	}
-	n := names[len(names)-1]
-	t, err := time.ParseInLocation(backupStamp, strings.TrimSuffix(strings.TrimPrefix(n, backupPrefix), backupSuffix), time.Local)
-	if err == nil && t.After(last) {
-		last = t
+	if names[0].at.After(last) {
+		last = names[0].at
 	}
 	return last
 }
 
 // backupHour is the local hour from which the nightly dump is due.
-const backupHour = 3
+const backupHour = config.DefaultBackupHour
 
 // due reports whether the nightly dump should run now: none yet, or the last
 // one is from before today's backupHour (a Mac asleep at that hour catches up
@@ -236,7 +261,7 @@ func (b Bundle) RunBackupsLoop(loop, work context.Context, interval time.Duratio
 			"unless asked; the old ones are still pruned")
 		due = func() bool { return false }
 	}
-	runBackups(loop, work, interval, log, due, b.Backup, b.Tidy)
+	runBackups(loop, work, interval, log, due, b.Backup, func() error { return b.TidyContext(loop, time.Now()) })
 }
 
 // runBackups is RunBackupsLoop's loop: at every tick of interval, dump when due says so
@@ -256,8 +281,8 @@ func runBackups(loop, work context.Context, interval time.Duration, log io.Write
 		}
 		if !due() {
 			// the dumps a rule no longer keeps go without waiting for the next dump or update
-			if err := tidy(); err != nil {
-				fmt.Fprintf(log, "[postgres] pruning old backups failed (trying again later): %v\n", err)
+			if err := tidy(); err != nil && loop.Err() == nil {
+				fmt.Fprintf(log, "[postgres] backup maintenance failed (trying again later): %v\n", err)
 			}
 			continue
 		}
@@ -267,6 +292,53 @@ func runBackups(loop, work context.Context, interval time.Duration, log io.Write
 			}
 		} else {
 			fmt.Fprintf(log, "[postgres] backup written to %s\n", path)
+			if loop.Err() == nil {
+				if err := tidy(); err != nil && loop.Err() == nil {
+					fmt.Fprintf(log, "[postgres] backup maintenance failed: %v\n", err)
+				}
+			}
 		}
 	}
+}
+
+type scheduledDump struct {
+	name      string
+	at        time.Time
+	directory bool
+}
+
+func scheduledAt(name string, fallback time.Time) time.Time {
+	if t, err := time.ParseInLocation(backupStamp, strings.TrimSuffix(strings.TrimPrefix(name, backupPrefix), backupSuffix), time.Local); err == nil {
+		return t
+	}
+	return fallback.In(time.Local)
+}
+
+// selectScheduledToKeep takes dumps ordered newest first.
+func selectScheduledToKeep(dumps []scheduledDump, p NightlyPolicy) map[string]bool {
+	keep := make(map[string]bool)
+	months, years := make(map[string]bool), make(map[string]bool)
+	for i, dump := range dumps {
+		month, year := dump.at.Format("2006-01"), dump.at.Format("2006")
+		monthly := len(months) < p.KeepMonthly && !months[month]
+		yearly := len(years) < p.KeepYearly && !years[year]
+		if monthly {
+			months[month] = true
+		}
+		if yearly {
+			years[year] = true
+		}
+		if i < p.Keep || monthly || yearly {
+			keep[dump.name] = true
+		}
+	}
+	return keep
+}
+
+// dumpAt uses the timestamp of a scheduled dump even if writing its directory bumped its mtime.
+func dumpAt(name string, mod time.Time) time.Time {
+	if dumpKind(name) == backupPrefix {
+		return scheduledAt(name, mod)
+	}
+	return mod
 }
