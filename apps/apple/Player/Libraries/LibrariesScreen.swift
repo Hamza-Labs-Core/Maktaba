@@ -22,6 +22,20 @@ struct LibrariesScreen: View {
 
     @State private var tab = LibrariesTab.libraries
 
+    #if os(macOS)
+    /// The Mac builds the section's screen when it is chosen (story 13.16): its tab follows the
+    /// page kept beside it.
+    init(context: PlayerContext, model: LibrariesModel, choice: Binding<LibrariesChoice?>? = nil) {
+        self.context = context
+        self.model = model
+        self.choice = choice
+        _tab = State(initialValue: Self.tab(beside: choice?.wrappedValue))
+    }
+    #endif
+
+    /// The tab whose page shows `choice`.
+    static func tab(beside choice: LibrariesChoice?) -> LibrariesTab { choice == .series ? .series : .libraries }
+
     private var client: APIClient { context.client }
 
     var body: some View {
@@ -58,8 +72,29 @@ struct LibrariesScreen: View {
                 choice.wrappedValue = model.libraries.first.map { .library($0.id) }
             }
         }
-        .navigationTitle(Text("Libraries", tableName: "Libraries", comment: "The Libraries section's title"))
+        .modifier(ListTitle(shown: titled))
         .accessibilityIdentifier("screen.libraries")
+    }
+
+    /// The Mac's window has one title, the page's beside the list.
+    private var titled: Bool {
+        #if os(macOS)
+        choice == nil
+        #else
+        true
+        #endif
+    }
+
+    private struct ListTitle: ViewModifier {
+        let shown: Bool
+
+        func body(content: Content) -> some View {
+            if shown {
+                content.navigationTitle(Text("Libraries", tableName: "Libraries", comment: "The Libraries section's title"))
+            } else {
+                content
+            }
+        }
     }
 
     private var columns: [GridItem] {

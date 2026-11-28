@@ -1,0 +1,26 @@
+StaticText: UI Tester, 127.0.0.1
+Heading: Your library
+Button: Watch history
+Button: Favorites
+Button: Playlists
+Heading: Account
+Button: Sessions
+Button: Approve a TV or device
+Button: Switch home
+Button: Sign out
+Heading: Settings on this device
+StaticText: Theme
+RadioButton: Dark | 1
+RadioButton: Light | 0
+RadioButton: System | 0
+StaticText: Language
+RadioButton: English | 0
+RadioButton: العربية | 0
+RadioButton: System | 1
+Button: Playback
+Heading: Help and about
+Button: Help
+StaticText: Maktaba Player 0.1.0 (build 1), The home: 0.0.0
+Button: Diagnostics
+Button: Report a problem
+Button: My reports

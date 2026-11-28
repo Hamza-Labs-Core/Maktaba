@@ -1,3 +1,4 @@
+import MaktabaKit
 import SwiftUI
 
 /// What the View menu acts on in the focused window (Epic 48, FR-42): the sections that
@@ -8,8 +9,24 @@ struct PlayerMenuTarget {
     let sections: [PlayerSection]
     let chosen: PlayerSection
     let choose: (PlayerSection) -> Void
-    /// ⌘F: the Search section if it shows, and its search field focused (`playerFindFocus()`).
+    /// ⌘F: the Search section if the window has it (hidden from the Mac's sidebar too), and its
+    /// search field focused (`playerFindFocus()`).
     let find: () -> Void
+
+    /// `offered`: every section of the window, those hidden from its sidebar too.
+    @MainActor init(sections: [PlayerSection], offered: [PlayerSection], selection: Binding<PlayerSection>, finds: FindRequests) {
+        self.sections = sections
+        chosen = selection.wrappedValue
+        choose = { section in
+            guard sections.contains(section) else { return }
+            selection.wrappedValue = section
+        }
+        find = {
+            let opening = offered.contains(.search) && selection.wrappedValue != .search
+            if opening { selection.wrappedValue = .search }
+            finds.ask(opening: opening)
+        }
+    }
 }
 
 /// What the Playback menu does beyond `Playback`'s own play / pause, skip and stop: the
@@ -30,15 +47,16 @@ extension FocusedValues {
 }
 
 extension EnvironmentValues {
-    /// Goes up by one at every ⌘F; a screen with a search field focuses it (`playerFindFocus()`).
-    @Entry var playerFindRequest = 0
+    /// The window's ⌘F presses; a screen with a search field takes each one (`playerFindFocus()`).
+    @Entry var playerFind: FindRequests?
 }
 
 extension View {
     /// The shell's side of the View menu: publishes `sections` and `selection` to the menu bar
-    /// for the window this view is in, and passes ⌘F down to the screens.
-    func playerMenuTarget(sections: [PlayerSection], selection: Binding<PlayerSection>) -> some View {
-        modifier(PlayerMenuTargetModifier(sections: sections, selection: selection))
+    /// for the window this view is in, and passes ⌘F down to the screens. `offered`: every
+    /// section of the window, those hidden from its sidebar too (⌘F opens Search among them).
+    func playerMenuTarget(sections: [PlayerSection], offered: [PlayerSection], selection: Binding<PlayerSection>) -> some View {
+        modifier(PlayerMenuTargetModifier(sections: sections, offered: offered, selection: selection))
     }
 
     /// A screen's search field takes the focus at ⌘F (View ▸ Search). Put it after `searchable`.
@@ -49,37 +67,28 @@ extension View {
 
 private struct PlayerMenuTargetModifier: ViewModifier {
     let sections: [PlayerSection]
+    let offered: [PlayerSection]
     @Binding var selection: PlayerSection
-    @State private var findRequest = 0
+    @State private var find = FindRequests()
 
     func body(content: Content) -> some View {
         content
-            .environment(\.playerFindRequest, findRequest)
-            .focusedSceneValue(\.playerMenu, target)
-    }
-
-    private var target: PlayerMenuTarget {
-        let selection = $selection
-        let request = $findRequest
-        let sections = sections
-        return PlayerMenuTarget(sections: sections, chosen: selection.wrappedValue) { section in
-            guard sections.contains(section) else { return }
-            selection.wrappedValue = section
-        } find: {
-            if sections.contains(.search), selection.wrappedValue != .search { selection.wrappedValue = .search }
-            request.wrappedValue += 1
-        }
+            .environment(\.playerFind, find)
+            .focusedSceneValue(\.playerMenu, PlayerMenuTarget(sections: sections, offered: offered, selection: $selection, finds: find))
+            .onChange(of: selection) { _, now in if now != .search { find.drop() } }
     }
 }
 
 private struct PlayerFindFocus: ViewModifier {
-    @Environment(\.playerFindRequest) private var request
+    @Environment(\.playerFind) private var find
     @FocusState private var focused: Bool
 
     func body(content: Content) -> some View {
         content
             .searchFocused($focused)
-            // at each ⌘F, and when ⌘F is what brought this screen up (the request already raised)
-            .task(id: request) { if request > 0 { focused = true } }
+            .onAppear { find?.fieldAppeared() }
+            .onDisappear { find?.fieldDisappeared() }
+            // at each ⌘F, and when ⌘F is what brought this screen up (asked, not yet taken)
+            .task(id: find?.asked ?? 0) { if find?.take() == true { focused = true } }
     }
 }

@@ -635,14 +635,26 @@ jobs:
                 -only-testing "Maktaba Player Mac Tests/PageSnapshots"
                 -only-testing "Maktaba Player Mac Tests/PlaybackUnderALimit"
                 -only-testing "Maktaba Player Mac Tests/HomeCardActions"
+                -only-testing "Maktaba Player Mac Tests/MacSidebarLogic"
+                -only-testing "Maktaba Player Mac Tests/MacLanguagePromptTests"
+                -only-testing "Maktaba Player Mac Tests/PlayerShellMac"
+                -only-testing "Maktaba Player Mac Tests/ProfileSnapshots"
                 -only-testing "Maktaba Player Mac UITests")
           if [ "$SHOTS_ONLY" = true ]; then only=(-only-testing "Maktaba Player Mac UITests/PlayerMacDemoShotsUITests"); fi
           printf '%s\n' "${only[@]}" > "$RESULTS/mac.selection"
-          TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test -project Maktaba.xcodeproj -scheme "Maktaba Player Mac" \
-            -destination platform=macOS -derivedDataPath "$DERIVED-mac" ${cover[@]+"${cover[@]}"} \
-            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER= \
-            CODE_SIGN_ENTITLEMENTS="$PWD/PlayerMacTests/UI/PlayerMacUITests.entitlements" \
+          mac=(-project Maktaba.xcodeproj -scheme "Maktaba Player Mac" -destination platform=macOS -derivedDataPath "$DERIVED-mac"
+               CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= PROVISIONING_PROFILE_SPECIFIER=
+               CODE_SIGN_ENTITLEMENTS="$PWD/PlayerMacTests/UI/PlayerMacUITests.entitlements")
+          TEST_RUNNER_MAKTABA_SHOTS="$SHOTS" xcodebuild test "${mac[@]}" ${cover[@]+"${cover[@]}"} \
             -resultBundlePath "$RESULTS/mac.xcresult" "${only[@]}" || status=1
+          # Profile again with the test host started in Arabic (story 13.16): its words are then
+          # the app's own Arabic, MaktabaKit's too, and AppKit lays it out right to left
+          if [ "$SHOTS_ONLY" != true ]; then
+            ar=(-only-testing "Maktaba Player Mac Tests/ProfileSnapshots")
+            printf '%s\n' "${ar[@]}" > "$RESULTS/mac-ar.selection"
+            xcodebuild test-without-building "${mac[@]}" -testLanguage ar -testRegion JO \
+              -resultBundlePath "$RESULTS/mac-ar.xcresult" "${ar[@]}" || status=1
+          fi
           log show --start "$start" --style compact --info --debug \
             --predicate 'subsystem BEGINSWITH "com.hamzalabs.maktaba"' > "$RESULTS/mac-app.log" || true
           # and the Mac app's crash reports from this run, as the simulators' jobs keep theirs
@@ -658,7 +670,11 @@ jobs:
 
       # the result bundle ran every selected test (as the Player's shards check theirs)
       - name: Check every selected test ran
-        run: python3 tools/ci/xcresult_ran.py "mac" "$RESULTS/mac.xcresult" "$RESULTS/mac.selection"
+        run: |
+          python3 tools/ci/xcresult_ran.py "mac" "$RESULTS/mac.xcresult" "$RESULTS/mac.selection"
+          if [ -f "$RESULTS/mac-ar.selection" ]; then
+            python3 tools/ci/xcresult_ran.py "mac in Arabic" "$RESULTS/mac-ar.xcresult" "$RESULTS/mac-ar.selection"
+          fi
 
       # tools/affected-tests: which source files the Mac Player's tests execute. The iPhone and
       # iPad runs are not measured (they take most of an hour as it is): their tests are

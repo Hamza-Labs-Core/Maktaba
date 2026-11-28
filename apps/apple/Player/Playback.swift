@@ -166,6 +166,19 @@ final class Playback {
         self.client = client
         self.center = center
         sceneNotes = scene
+        Self.live.add(self)
+    }
+
+    /// Every player made and not yet gone (`stopAll`).
+    @ObservationIgnored private static let live = NSHashTable<Playback>.weakObjects()
+
+    /// Stops every player and waits, `limit` at most (a home that does not answer does not hold
+    /// it longer), until each has sent its last position to the home and closed its stream: the
+    /// Mac Player starting again in another language (story 13.16) loses no one's place.
+    static func stopAll(limit: Duration = .seconds(3)) async {
+        let sent = live.allObjects.compactMap { $0.stop() }
+        guard !sent.isEmpty else { return }
+        await TimeLimit.wait(limit) { for task in sent { await task.value } }
     }
 
     /// Plays `v` from `start` seconds; nil: where the person left off (a finished video
@@ -413,7 +426,10 @@ final class Playback {
         }
     }
 
-    func stop() {
+    /// Stops playing; the returned task sends the last position and closes the stream (nil when
+    /// no stream was open).
+    @discardableResult
+    func stop() -> Task<Void, Never>? {
         running?.cancel()
         running = nil
         endInterruptions()
@@ -424,11 +440,12 @@ final class Playback {
         if let timeObserver, let player { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
         player?.pause()
+        var sent: Task<Void, Never>?
         if let session {
             let at = player?.currentTime().seconds ?? 0
             // while cast, the receiver's position is the one the home keeps
             let reports = CastProgress.phoneReports(casting: castActive)
-            Task { [client] in
+            sent = Task { [client] in
                 if reports, at.isFinite, at > 0 { await client.reportProgress(session: session, positionSec: Int(at)) }
                 await client.closeStream(session)
             }
@@ -468,6 +485,7 @@ final class Playback {
         reportedCompleted = false
         legible = nil
         audible = nil
+        return sent
     }
 
     /// The state the UI tests read (the video's accessibility value in a Debug build).

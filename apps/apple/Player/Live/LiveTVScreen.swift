@@ -11,7 +11,7 @@ struct LiveTVScreen: View {
 
     enum Mode: String, Hashable { case now, guide }
 
-    @State private var model = LiveModel()
+    @State private var model: LiveModel
     /// A channel opened from a programme's sheet (Watch).
     @State private var watching: String?
     /// Now or Guide; a UI test may open on the guide (`ShellLaunch.liveMode`).
@@ -22,8 +22,10 @@ struct LiveTVScreen: View {
     /// answers 409 `component_off` and says so.
     @State private var openedOff: Bool
 
-    init(context: PlayerContext) {
+    /// `model`: the one the Mac's shell keeps while another section is in view (story 13.16).
+    init(context: PlayerContext, model: LiveModel? = nil) {
         self.context = context
+        _model = State(initialValue: model ?? LiveModel())
         _openedOff = State(initialValue: !context.session.capabilities.current.isOn(.liveTV))
     }
     /// The launch's `-maktaba-live` was applied (once a process: the person's own taps then

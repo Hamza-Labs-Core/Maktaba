@@ -15,7 +15,8 @@ struct PlayerContext {
 
 /// The signed-in Player (Epic 48, FR-5 to FR-7): its sections in a `TabView` that adapts,
 /// a bottom tab bar on an iPhone (a folded iPhone Duo too), top tabs that become a sidebar
-/// on an iPad and an open Duo, a sidebar on the Mac. Each section keeps its own stack of
+/// on an iPad and an open Duo; on the Mac a split view with the Player's own sidebar
+/// (`MacSidebar`, story 13.16). Each section keeps its own stack of
 /// `PlayerRoute`s; choosing the section already chosen takes it back to its first screen.
 ///
 /// Only `PlayerSection.enabled` shows. With one section (Libraries, until the other screens
@@ -36,11 +37,20 @@ struct PlayerShell: View {
     /// A linked page over a section with no route stack (Libraries' split view), in a sheet.
     @State private var linked: PlayerRoute?
     @State private var paths: [PlayerSection: [PlayerRoute]]
-    /// The tabs' order and the sidebar's sections as the person arranged them (iPad, Mac).
+    /// The tabs' order and the sidebar's sections as the person arranged them (iPad).
     @AppStorage("player.tabs") private var customization = TabViewCustomization()
     #if os(macOS)
     /// The player over the whole window, sidebar and all (`WindowPlayer`).
     @State private var windowPlayer = WindowPlayer()
+    /// What each section kept while another was in view (story 13.16): the Mac builds the
+    /// chosen section's screen, and the screen takes its models and stack from here.
+    @State private var keeper = SectionKeeper<PlayerSection>(lasting: Self.lasting)
+    /// The sections whose state outlasts a change of the parental limit: Libraries, whose lists
+    /// are read again under the new one (`LibrariesState`). The others' is dropped (Profile's
+    /// history and favorites name videos too).
+    static let lasting: Set<PlayerSection> = [.libraries]
+    /// The sidebar as the person arranged it: its order and hidden sections (`SidebarArrangement`).
+    @AppStorage(SidebarArrangement.key) private var arranged = ""
     #endif
 
     /// A link into Live TV while it is off for this viewer (story 51.11): Home, and a short
@@ -87,7 +97,11 @@ struct PlayerShell: View {
                 // its stack (and the routes) without a tab bar; Libraries stays its split view
                 stack(only)
             } else {
+                #if os(macOS)
+                sidebar
+                #else
                 tabs
+                #endif
             }
         }
         .onChange(of: context.session.capabilities.answered) { settleLaunch() }
@@ -129,7 +143,7 @@ struct PlayerShell: View {
         .crashReports(session: context.session)
         .reportsProblems(session: context.session)
         // the View menu (⌘1–⌘5, ⌘F) acts on this window's sections (Player/Mac)
-        .playerMenuTarget(sections: shown, selection: chosen)
+        .playerMenuTarget(sections: menuSections, offered: shown, selection: chosen)
         // the components' posters and logos: the image cache, with this home's Bearer token
         .environment(\.imageSource, .home(context.client))
         // a cast goes on with the watch screen closed: its mini controller over the sections
@@ -173,8 +187,52 @@ struct PlayerShell: View {
         .accessibilityIdentifier("player.shell")
     }
 
-    /// Search's tab is the system's search tab on an iPhone and the Mac, and an ordinary tab
-    /// on an iPad. There, on iPadOS 27.2, the search role's tab is set again each time its
+    #if os(macOS)
+    /// The Mac's sections (story 13.16): the window's split view with the Player's own sidebar
+    /// (`MacSidebar`: brass selection, Profile at the bottom) beside the chosen section's stack.
+    /// The split view is AppKit's, so it is at the right in an app started in Arabic, with the
+    /// traffic lights (`LanguageChoice`). Only the chosen section's screen is built; what it
+    /// holds is not lost with it: its stack of routes stays in `paths` (Libraries' in its
+    /// `LibrariesState`) and its models in `keeper`, so coming back finds it as it was.
+    private var sidebar: some View {
+        MacShellSplit(rows: macRows, selection: chosen, arrangement: arrangement) {
+            stack(selection).id(selection)
+        }
+        .accessibilityIdentifier("player.shell")
+    }
+
+    /// The sidebar's rows: the sections in the person's order, Profile at the bottom.
+    private var macRows: MacSidebarRows {
+        MacSidebarRows(shown, arrangement: SidebarArrangement(stored: arranged), keep: selection)
+    }
+
+    private var arrangement: Binding<SidebarArrangement> {
+        Binding { SidebarArrangement(stored: arranged) } set: { arranged = $0.stored }
+    }
+    #endif
+
+    /// The sections the View menu numbers ⌘1, ⌘2 …: the Mac's sidebar from top to bottom, as
+    /// the person arranged it; the tabs elsewhere.
+    private var menuSections: [PlayerSection] {
+        #if os(macOS)
+        macRows.all
+        #else
+        shown
+        #endif
+    }
+
+    /// `section`'s kept state on the Mac (made by `make` the first time, and again after a
+    /// change of the parental limit); nil elsewhere, where the tabs keep their screens alive.
+    private func kept<Kept: AnyObject>(_ section: PlayerSection, _ make: () -> Kept) -> Kept? {
+        #if os(macOS)
+        keeper.state(section, epoch: context.session.parental.epoch, make: make)
+        #else
+        nil
+        #endif
+    }
+
+    /// Search's tab is the system's search tab on an iPhone, and an ordinary tab
+    /// on an iPad (the Mac has no tabs: `sidebar`). There, on iPadOS 27.2, the search role's tab is set again each time its
     /// field takes the keyboard: the tab's screen goes off and on, the field lets the
     /// keyboard go, and a field that already holds a search never takes it back (CI: the
     /// field tapped after a submitted search had no keyboard; the field's end of editing came
@@ -256,20 +314,42 @@ struct PlayerShell: View {
         let epoch = context.session.parental.epoch
         switch section {
         case .home:
-            HomeScreen(context: context).id(epoch)
+            HomeScreen(context: context, model: kept(.home) { HomeScreen.model(context) }).id(epoch)
                 // the time left today, or that it is over (57.15)
                 .parentalTime(context.session.parental)
         case .libraries:
             // not built again as a whole: it holds what plays and its own stack, and a video
             // that is playing must not close because an unrelated rule changed. Its lists
             // and pages are built again inside it
-            LibraryBrowser(session: context.session, user: context.user, client: context.client, playing: $playing)
-        case .liveTV: LiveTVScreen(context: context).id(epoch)
-        case .search: SearchScreen(context: context).id(epoch)
-        case .profile: ProfileScreen(context: context)
+            LibraryBrowser(session: context.session, user: context.user, client: context.client, playing: $playing,
+                           state: kept(.libraries) { LibrariesState(session: context.session, client: context.client) })
+        case .liveTV: LiveTVScreen(context: context, model: kept(.liveTV) { LiveModel() }).id(epoch)
+        case .search: SearchScreen(context: context, kept: kept(.search) { SearchKept(context) }).id(epoch)
+        case .profile: ProfileScreen(context: context, model: kept(.profile) { ProfileScreen.model(context) })
         }
     }
 }
+
+#if os(macOS)
+/// The Mac shell's split view (story 13.16): `MacSidebar` as the sidebar column, 232 points
+/// wide as the design draws it, beside `detail`. AppKit lays the split out in the app's
+/// direction: the sidebar at the start, the right in an app started in Arabic.
+struct MacShellSplit<Detail: View>: View {
+    let rows: MacSidebarRows
+    @Binding var selection: PlayerSection
+    @Binding var arrangement: SidebarArrangement
+    @ViewBuilder let detail: Detail
+
+    var body: some View {
+        NavigationSplitView {
+            MacSidebar(rows: rows, selection: $selection, arrangement: $arrangement)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 232, max: 320)
+        } detail: {
+            detail
+        }
+    }
+}
+#endif
 
 extension View {
     /// Where each `PlayerRoute` goes: one place, so every section's stack opens a route the

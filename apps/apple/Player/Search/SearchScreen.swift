@@ -49,17 +49,18 @@ struct SearchScreen: View {
     /// A query sent as the screen opens (a plugin panel's chip, `PlayerRoute.search`).
     private let initial: String?
 
-    init(context: PlayerContext, query: String? = nil) {
+    /// `kept`: the models the Mac's shell keeps while another section is in view (story 13.16),
+    /// so the query, its results and AI mode's conversation are there on coming back.
+    init(context: PlayerContext, query: String? = nil, kept: SearchKept? = nil) {
         self.context = context
         self.initial = query
         #if os(iOS)
         // watching from here on: the field takes the keyboard only once Search is up
         KeyboardWatch.shared.start()
         #endif
-        let session = context.session
-        _model = State(initialValue: SearchModel(client: context.client,
-                                                 byMeaning: { session.capabilities.current.isOn(.semanticSearch) }) { session.signedOut() })
-        _ai = State(initialValue: AIModeModel(client: context.client) { session.signedOut() })
+        let kept = kept ?? SearchKept(context)
+        _model = State(initialValue: kept.model)
+        _ai = State(initialValue: kept.ai)
     }
 
     private var caps: Capabilities { context.session.capabilities.current }
@@ -376,6 +377,20 @@ enum SearchChange: Equatable {
 /// Search's two tabs (49.14): the results, and AI mode.
 enum SearchTab: Hashable {
     case results, ai
+}
+
+/// Search's models (the query and its results, AI mode's conversation), made for a sign-in;
+/// the Mac's shell keeps one while another section is in view (story 13.16).
+@MainActor final class SearchKept {
+    let model: SearchModel
+    let ai: AIModeModel
+
+    init(_ context: PlayerContext) {
+        let session = context.session
+        model = SearchModel(client: context.client,
+                            byMeaning: { session.capabilities.current.isOn(.semanticSearch) }) { session.signedOut() }
+        ai = AIModeModel(client: context.client) { session.signedOut() }
+    }
 }
 
 /// A group's heading: brass, a heading for VoiceOver.

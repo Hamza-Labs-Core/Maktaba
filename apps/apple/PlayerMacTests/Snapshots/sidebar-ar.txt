@@ -1,0 +1,6 @@
+Outline: الأقسام
+Button: الرئيسية
+Button: المكتبات
+Button: البث المباشر
+Button: البحث
+Button: الملف الشخصي
