@@ -32,6 +32,9 @@ export type AppState = AppTarget & {
   platform?: Platform;
   /** the user asked to change servers: do not adopt this Mac's configured server */
   reset?: boolean;
+  /** Epic 13 story 13.13: the setup screens run in their own window, not this one (this
+   * window shows nothing until the setup opens a server); absent from an older shell */
+  setup_window?: boolean;
 };
 
 /** The server's status, with what it reports it waits on while it starts (the
@@ -230,6 +233,42 @@ export const tauriSetupApi: SetupApi = {
   useRemoteServer: (url) => invoke<void>("use_remote_server", { url }),
   openExternal: (url) => invoke<void>("open_external", { url }),
 };
+
+/**
+ * A stand-in for the shell, for the setup window's visual references (web/e2e/desktop,
+ * Epic 13 story 13.13): `window.__MAKTABA_SETUP_PREVIEW__ = { state, steps }` before the app
+ * loads. Each step answers what `steps` holds for it, and one it has no answer for never
+ * answers (its screen keeps waiting); nothing is ever run or saved.
+ */
+export interface SetupPreview {
+  state: AppState;
+  steps?: Partial<Record<StepName, unknown>>;
+}
+
+let previewed: { p: SetupPreview; api: SetupApi } | null = null;
+
+export function previewSetupApi(): SetupApi | null {
+  if (typeof window === "undefined") return null;
+  const p = (window as unknown as { __MAKTABA_SETUP_PREVIEW__?: SetupPreview })
+    .__MAKTABA_SETUP_PREVIEW__;
+  if (!p || typeof p !== "object" || !p.state) return null;
+  // one api per preview: the screens' effects depend on it
+  if (previewed?.p === p) return previewed.api;
+  const never = <T>() => new Promise<T>(() => {});
+  const api: SetupApi = {
+    appState: async () => p.state,
+    runStep: <T>(step: StepName) =>
+      p.steps && step in p.steps ? Promise.resolve(p.steps[step] as T) : never<T>(),
+    finishSetup: () => never<LoginItem>(),
+    openLoginItems: async () => {},
+    serverStatus: async () => ({ kind: "starting" }),
+    openLocalServer: () => never<void>(),
+    useRemoteServer: () => never<void>(),
+    openExternal: async () => {},
+  };
+  previewed = { p, api };
+  return api;
+}
 
 /** "3.2 GB" — sizes for the disk/RAM check and download progress. */
 export function formatBytes(n: number): string {

@@ -40,7 +40,7 @@ const REASON_MAX: usize = 100;
 
 /// The part of supervisor.Snapshot the app reads. Unknown fields are
 /// ignored, so the supervisor can grow without breaking the app.
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct Snapshot {
     #[serde(default)]
     pub processes: Vec<Child>,
@@ -48,6 +48,12 @@ pub struct Snapshot {
     /// machine has none.
     #[serde(default)]
     pub llm: Option<Llm>,
+    /// The machine's name, as the supervisor reports it (the status window's, story 13.13).
+    #[serde(default)]
+    pub host: String,
+    /// When the supervisor started (RFC 3339): the status window's "since".
+    #[serde(default)]
+    pub started_at: Option<String>,
 }
 
 /// The model server's state (llmserver.Status in cmd/maktaba-server).
@@ -137,7 +143,7 @@ impl Child {
     /// Failing rather than only on its way: failed (its Prepare failed, or
     /// it gave up), unhealthy, in a crash loop, in a state the app does not
     /// know, or in backoff after an exit.
-    fn failing(&self) -> bool {
+    pub(crate) fn failing(&self) -> bool {
         match self.state.as_str() {
             _ if self.crash_loop => true,
             "backoff" => self.last_exit.is_some(),
@@ -148,7 +154,7 @@ impl Child {
     }
 
     /// What it says it waits on, or why it cannot start.
-    fn detail(&self) -> Option<Detail> {
+    pub(crate) fn detail(&self) -> Option<Detail> {
         let text = self.detail.trim();
         let code = self.detail_code.trim();
         if text.is_empty() && code.is_empty() {
@@ -640,6 +646,7 @@ mod tests {
         Probe::Snapshot(Snapshot {
             processes: children,
             llm: None,
+            ..Snapshot::default()
         })
     }
 
@@ -1134,6 +1141,7 @@ mod tests {
         let old = Snapshot {
             processes: s.processes[1..].to_vec(),
             llm: None,
+            ..Snapshot::default()
         };
         assert_eq!(waiting_on(&Probe::Snapshot(old)), Some(text("old server")));
         // a code with no English is still a detail

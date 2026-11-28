@@ -100,6 +100,23 @@ export function parity(css, { light, dark }) {
     }
   }
 
+  // The desktop group (dark only, story 13.9): whatever tokens.css declares matches the
+  // JSON's dark values, in either theme (the desktop windows are dark; story 13.13).
+  for (const [theme, vars] of Object.entries(web)) {
+    for (const [name, cssValue] of Object.entries(vars)) {
+      const m = /^--color-desktop-(.+)$/.exec(name);
+      if (!m) continue;
+      const jsonValue = dark.color.desktop?.[m[1]];
+      if (jsonValue === undefined) {
+        problems.push(`tokens.css has ${name} but the JSON has no color.desktop.${m[1]}`);
+      } else if (!sameColor(cssValue, jsonValue)) {
+        problems.push(
+          `${theme}: ${name} is ${cssValue} in tokens.css but ${jsonValue} in the JSON (color.desktop.${m[1]})`
+        );
+      }
+    }
+  }
+
   // Palettes and scales: whatever tokens.css declares must match the JSON.
   const scales = [
     [/^--color-brand-(.+)$/, light.color.brand, "color.brand", "colour"],

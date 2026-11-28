@@ -20,11 +20,14 @@
       m = null;
     }
     if (m !== "light" && m !== "dark" && m !== "system") m = "system";
+    // the desktop app's setup and status windows are dark (story 13.13; the shell marks them)
+    var own = window.__MAKTABA_PANEL__ === "setup" || window.__MAKTABA_PANEL__ === "status";
     var light =
-      m === "light" ||
-      (m === "system" &&
-        !!window.matchMedia &&
-        window.matchMedia("(prefers-color-scheme: light)").matches);
+      !own &&
+      (m === "light" ||
+        (m === "system" &&
+          !!window.matchMedia &&
+          window.matchMedia("(prefers-color-scheme: light)").matches));
     d.setAttribute("data-theme", light ? "light" : "dark");
   } catch (e) {
     d.setAttribute("data-theme", "dark");

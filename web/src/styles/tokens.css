@@ -69,6 +69,19 @@
   --color-semantic-warn: var(--color-warn);
   --color-semantic-error: var(--color-error);
 
+  /* the desktop group (tokens.json color.desktop, story 13.9; dark only, so the same in both
+     themes): the desktop app's own windows, setup and status (story 13.13) */
+  --color-desktop-window: #0b111c;
+  --color-desktop-chrome: #0e1624;
+  --color-desktop-pane: #0f1725;
+  --color-desktop-subtle: #131d2e;
+  --color-desktop-raised: #18243a;
+  --color-desktop-hover: #1c2940;
+  --color-desktop-line: #22304a;
+  --color-desktop-control: #6b7a94;
+  --color-desktop-chosen: #3a3020;
+  --color-desktop-close-hover: #c42b1c;
+
   /* type: IBM Plex Sans Arabic for text, Amiri for headings (both bundled,
      SIL OFL; main.tsx imports them) */
   --font-family: "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", sans-serif;

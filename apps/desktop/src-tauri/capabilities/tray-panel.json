@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "tray-panel",
+  "description": "Epic 13 story 13.12: the tray's panel (traypanel.rs), a window of the app's own bundled pages. It reads the tray's entries, chooses one of them through the tray's handler (only an enabled item of the menu as it is now), and hides; it listens for the entries' changes and for being shown again, and may not emit events of its own. Nothing else.",
+  "windows": [
+    "tray-panel"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-tray-panel-state",
+    "allow-tray-panel-choose",
+    "allow-tray-panel-hide"
+  ]
+}

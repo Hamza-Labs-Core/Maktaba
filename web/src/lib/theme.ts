@@ -15,6 +15,8 @@
 // Only an OS that explicitly prefers light resolves "system" to light; no
 // preference (or no matchMedia) resolves to dark.
 // EC (11.8): a corrupted/unknown stored value falls back to "system".
+import { ownWindow } from "./ownWindow";
+
 const STORAGE_KEY = "mkt:theme";
 
 export type ThemeMode = "light" | "dark" | "system";
@@ -41,6 +43,8 @@ function systemPrefersLight(): boolean {
 }
 
 export function resolveTheme(mode: ThemeMode = readMode()): ResolvedTheme {
+  // the desktop app's setup and status windows are dark (story 13.13; public/theme-boot.js)
+  if (ownWindow() !== null) return "dark";
   if (mode === "light" || mode === "dark") return mode;
   return systemPrefersLight() ? "light" : "dark";
 }

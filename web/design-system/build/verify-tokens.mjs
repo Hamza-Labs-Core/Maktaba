@@ -205,6 +205,9 @@ for (const [from, to, what] of [
     "an unknown alias",
   ],
   ["--space-4: 16px;", "--space-4: 17px;", "--space-4"],
+  // the desktop group the desktop windows read (story 13.13)
+  ["--color-desktop-chrome: #0e1624;", "--color-desktop-chrome: #0e1625;", "desktop.chrome"],
+  ["--color-desktop-pane: #0f1725;", "--color-desktop-glass: #0f1725;", "an unknown desktop key"],
 ]) {
   if (!webCss.includes(from)) fail(`self-test: tokens.css no longer has "${from}"`);
   if (parity(webCss.replace(from, to), themes).length === 0) {

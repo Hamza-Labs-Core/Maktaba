@@ -150,6 +150,11 @@ pub struct Words {
     pub open_components: &'static str,
     /// Report a problem to the home's admin (Epic 53 story 53.15): the web app's form.
     pub report_problem: &'static str,
+    /// Story 13.13: the status window, its tray item (a machine that runs the server) and
+    /// the two windows' titles (the taskbar's, the window switcher's).
+    pub show_status: &'static str,
+    pub status_title: &'static str,
+    pub setup_title: &'static str,
     /// The recovery console (Epic 53 story 53.04), and the launcher's can't-start
     /// cut-off with its choices (story 53.05; `{count}`, `{version}`).
     pub open_recovery: &'static str,
@@ -268,6 +273,9 @@ pub static EN: Words = Words {
     open_logs: "Open logs",
     open_components: "Open Components",
     report_problem: "Report a problem…",
+    show_status: "Server status",
+    status_title: "Maktaba status",
+    setup_title: "Set up Maktaba",
     open_recovery: "Open recovery page",
     cant_start: "Maktaba can't start: it stopped {count} times in a row",
     cant_start_retry: "Try again",
@@ -344,6 +352,9 @@ pub static AR: Words = Words {
     open_logs: "فتح السجلات",
     open_components: "فتح المكوّنات",
     report_problem: "الإبلاغ عن مشكلة…",
+    show_status: "حالة الخادم",
+    status_title: "حالة مكتبة",
+    setup_title: "إعداد مكتبة",
     open_recovery: "افتح صفحة الاستعادة",
     cant_start: "تعذّر تشغيل مكتبة: توقف {count} مرات متتالية",
     cant_start_retry: "حاول مجددًا",
@@ -531,6 +542,32 @@ impl Lang {
     }
 }
 
+/// The words of Maktaba's own dialog (story 13.11, shelldialog.rs).
+pub struct DialogWords {
+    pub close: &'static str,
+    pub see_logs: &'static str,
+}
+
+pub static DIALOG_EN: DialogWords = DialogWords {
+    close: "Close",
+    see_logs: "See the logs",
+};
+
+pub static DIALOG_AR: DialogWords = DialogWords {
+    close: "إغلاق",
+    see_logs: "عرض السجلات",
+};
+
+impl Lang {
+    /// The dialog's words (DialogWords).
+    pub fn dialog(self) -> &'static DialogWords {
+        match self {
+            Lang::En => &DIALOG_EN,
+            Lang::Ar => &DIALOG_AR,
+        }
+    }
+}
+
 /// Why an update failed, in `lang`: the reason of each code of attempts.rs (update-
 /// attempts.md), plain words for the menu, the notification and the dialog.
 pub fn update_reason(lang: Lang, code: &str) -> &'static str {
@@ -699,6 +736,16 @@ mod tests {
     }
 
     #[test]
+    fn the_dialog_s_words_are_in_both_languages() {
+        for (en, ar) in [
+            (DIALOG_EN.close, DIALOG_AR.close),
+            (DIALOG_EN.see_logs, DIALOG_AR.see_logs),
+        ] {
+            assert!(!en.is_empty() && !ar.is_empty() && en != ar);
+        }
+    }
+
+    #[test]
     fn digits_follow_the_language() {
         assert_eq!(Lang::En.digits(7), "7");
         assert_eq!(Lang::Ar.digits(7), "٧");
@@ -728,6 +775,9 @@ mod tests {
             ("open_logs", Some(w.open_logs)),
             ("open_components", Some(w.open_components)),
             ("report_problem", Some(w.report_problem)),
+            ("show_status", Some(w.show_status)),
+            ("status_title", Some(w.status_title)),
+            ("setup_title", Some(w.setup_title)),
             ("play", Some(w.play)),
             ("pause_playback", Some(w.pause_playback)),
             ("settings", Some(w.settings)),

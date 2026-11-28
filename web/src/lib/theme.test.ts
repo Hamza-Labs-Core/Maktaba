@@ -144,6 +144,26 @@ describe("no-flash boot (public/theme-boot.js)", () => {
     expect(resolveTheme()).toBe(want);
   });
 
+  it("the desktop app's setup and status windows are dark whatever is chosen (story 13.13)", () => {
+    const w = window as unknown as { __MAKTABA_PANEL__?: string };
+    try {
+      for (const panel of ["setup", "status"]) {
+        w.__MAKTABA_PANEL__ = panel;
+        localStorage.setItem("mkt:theme", "light");
+        mockMatchMedia("light");
+        expect(runBoot()).toBe("dark");
+        expect(resolveTheme()).toBe("dark");
+      }
+      // any other mark (the tray's panel, the shell's dialog) follows the choice
+      w.__MAKTABA_PANEL__ = "tray";
+      expect(runBoot()).toBe("light");
+      expect(resolveTheme()).toBe("light");
+    } finally {
+      delete w.__MAKTABA_PANEL__;
+      localStorage.removeItem("mkt:theme");
+    }
+  });
+
   it("resolves dark when matchMedia is missing", () => {
     vi.stubGlobal("matchMedia", undefined);
     expect(runBoot()).toBe("dark");

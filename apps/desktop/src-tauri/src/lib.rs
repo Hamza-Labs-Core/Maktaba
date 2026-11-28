@@ -39,14 +39,18 @@ mod flavour;
 mod frame;
 mod lang;
 mod mode;
+mod ownwindows;
 mod permissions;
 mod recovery;
 mod redact;
 mod run_entry;
 mod setup;
 mod shell;
+mod shelldialog;
 mod status;
+mod statusview;
 mod tray;
+mod traypanel;
 mod webcache;
 
 use shell::focus_main;
@@ -105,6 +109,17 @@ async fn discover_servers(timeout_ms: Option<u64>) -> Result<Vec<DiscoveredServe
     Ok(found)
 }
 
+/// The windows whose state is not kept (the window-state plugin leaves them alone): each has a
+/// size and a place of its own. The plugin restores a window inside its build, whatever the
+/// builder says: one with no state kept yet is shown with the focus, and one with a state gets
+/// its size in physical pixels back, the wrong size on a screen of another scale.
+const UNSAVED_WINDOWS: [&str; 4] = [
+    traypanel::LABEL,
+    shelldialog::LABEL,
+    ownwindows::SETUP,
+    ownwindows::STATUS,
+];
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // every panic, in any mode and any thread, is a line in app.log (applog.rs): a Windows
@@ -148,7 +163,8 @@ pub fn run() {
     // `--hidden`): the window is made hidden, and only the tray shows; the
     // saved window state keeps its size and place but does not show it.
     let hidden = keep_in_tray && std::env::args().any(|a| a == agent::HIDDEN_FLAG);
-    let mut window_state = tauri_plugin_window_state::Builder::default();
+    let mut window_state =
+        tauri_plugin_window_state::Builder::default().with_denylist(&UNSAVED_WINDOWS);
     if hidden {
         use tauri_plugin_window_state::StateFlags;
         window_state = window_state.with_state_flags(StateFlags::all() - StateFlags::VISIBLE);
@@ -221,6 +237,10 @@ pub fn run() {
             app.manage(bigscreen::BigScreen::new(&shell::state_dir(handle)));
             // story 13.10: the page's claim on the window's frame (frame.rs)
             app.manage(frame::Frame::default());
+            // story 13.13: the setup and status windows (ownwindows.rs)
+            app.manage(ownwindows::SetupApart::default());
+            app.manage(ownwindows::Pending::default());
+            app.manage(ownwindows::KeepInTray(keep_in_tray));
             let menu = build_menu(handle, !keep_in_tray)?;
             app.set_menu(menu)?;
 
@@ -237,7 +257,12 @@ pub fn run() {
             shell::open_window(handle, hidden)?;
             // Epic 46: Start in Big Screen opens it full screen (the server's
             // page loads at /big: bigscreen::entry_url)
-            if !hidden && app.state::<bigscreen::BigScreen>().start() {
+            // (story 13.13: not while the setup runs; its end applies it)
+            if bigscreen::full_screen_at_start(
+                app.state::<bigscreen::BigScreen>().start(),
+                hidden,
+                shell::launch_setup(handle),
+            ) {
                 if let Err(e) = bigscreen::set_full_screen(handle, true) {
                     applog::warn("Start in Big Screen could not go full screen", e);
                 }
@@ -248,18 +273,25 @@ pub fn run() {
             // Open logs, the player's Play / Pause, Settings, Quit (the
             // window only) and Stop server and quit. See shell.rs/tray.rs.
             shell::init(handle)?;
+            // story 13.13: a machine not set up shows its setup window, the main one hidden
+            shell::setup_at_start(handle, hidden);
 
             // Close-to-tray (Story 13.4 AC-5): closing the window hides
             // it instead of terminating the app; Quit (tray/menu) still
             // exits. In server mode the server keeps running either way.
-            // Linux without a tray: closing it quits.
+            // Linux without a tray: closing it quits, with any other window of the app's open
+            // (the status window, a dialog) too.
             if let Some(main) = app.get_webview_window(webcache::MAIN) {
                 let win = main.clone();
                 main.on_window_event(move |event| match event {
                     WindowEvent::CloseRequested { api, .. } => {
-                        if keep_in_tray {
-                            api.prevent_close();
-                            let _ = win.hide();
+                        match ownwindows::on_close(webcache::MAIN, keep_in_tray) {
+                            ownwindows::Closing::Hide => {
+                                api.prevent_close();
+                                let _ = win.hide();
+                            }
+                            ownwindows::Closing::Quit => win.app_handle().exit(0),
+                            ownwindows::Closing::Close => {}
                         }
                     }
                     // story 13.10: the title bar's maximize button follows the window
@@ -293,6 +325,13 @@ pub fn run() {
             frame::frame_action,
             frame::frame_menu_items,
             frame::frame_menu,
+            ownwindows::status_window_state,
+            ownwindows::status_window_action,
+            traypanel::tray_panel_state,
+            traypanel::tray_panel_choose,
+            traypanel::tray_panel_hide,
+            shelldialog::shell_dialog_content,
+            shelldialog::shell_dialog_choose,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|e| {
@@ -311,6 +350,10 @@ pub(crate) fn menu_event(app: &tauri::AppHandle, id: &str) {
     #[cfg(target_os = "linux")]
     if let Some(tray_id) = id.strip_prefix(tray::WINDOW_PREFIX) {
         shell::on_window_menu(app, tray_id);
+        return;
+    }
+    // story 13.13: during setup the main window is hidden and blank: no big screen for it
+    if bigscreen::ignored_in_setup(&id, shell::setup_running(app)) {
         return;
     }
     // Epic 46: Start in Big Screen is the shell's own setting; Big

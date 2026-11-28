@@ -1,0 +1,172 @@
+/* Maktaba's own dialog for the desktop shell's errors (Epic 13 story 13.11;
+   docs/design/desktop/mockups/dialog.html): a 560 × 300 window, dark, logical properties. */
+
+.mkt-dlg {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  block-size: 100vh;
+  overflow: hidden;
+  background: #18243a;
+  color: #e8ecf3;
+  font-family: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 22px;
+}
+:root[dir="rtl"] .mkt-dlg {
+  font-size: 15px;
+  line-height: 26px;
+}
+.mkt-dlg * {
+  box-sizing: border-box;
+}
+.mkt-dlg__bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  block-size: 36px;
+  padding-inline-start: 14px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.mkt-dlg__bar img {
+  border-radius: 4px;
+  pointer-events: none;
+}
+.mkt-dlg__brand {
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+}
+.mkt-dlg__grow {
+  flex: 1;
+  align-self: stretch;
+  pointer-events: none;
+}
+.mkt-dlg__foot .mkt-dlg__grow {
+  pointer-events: auto;
+}
+.mkt-dlg__x {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  inline-size: 42px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+.mkt-dlg__x svg {
+  inline-size: 10px;
+  block-size: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+.mkt-dlg__x:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+.mkt-dlg__body {
+  flex: 1;
+  display: flex;
+  gap: 16px;
+  min-block-size: 0;
+  overflow-y: auto;
+  padding: 10px 24px 0;
+}
+.mkt-dlg__icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  inline-size: 44px;
+  block-size: 44px;
+  border-radius: 12px;
+  background: rgba(240, 112, 127, 0.14);
+  color: #f0707f;
+}
+.mkt-dlg__icon svg {
+  inline-size: 24px;
+  block-size: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mkt-dlg__text {
+  min-inline-size: 0;
+  flex: 1;
+}
+.mkt-dlg__text h1 {
+  margin: 0 0 6px;
+  font-family: inherit;
+  /* two sentences on two lines, and a long address wraps */
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
+}
+:root[dir="rtl"] .mkt-dlg__text h1 {
+  font-size: 19px;
+  line-height: 30px;
+}
+.mkt-dlg__errors {
+  margin: 12px 0 0;
+  max-block-size: 120px;
+  overflow: auto;
+  padding: 8px 12px;
+  border: 1px solid #22304a;
+  border-radius: 8px;
+  background: #0b111c;
+  color: #a9b3c4;
+  font-family: ui-monospace, Consolas, "SF Mono", monospace;
+  font-size: 12.5px;
+  line-height: 19px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: start;
+  unicode-bidi: isolate;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.mkt-dlg__foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 24px;
+  background: #0f1725;
+  border-block-start: 1px solid #22304a;
+}
+.mkt-dlg__btn {
+  min-block-size: 36px;
+  padding-inline: 16px;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+}
+.mkt-dlg__btn--ghost {
+  border: 1px solid transparent;
+  background: transparent;
+  color: #e8ecf3;
+}
+.mkt-dlg__btn--ghost:hover {
+  background: #1c2940;
+}
+.mkt-dlg__btn--primary {
+  border: 1px solid #e3b252;
+  background: #e3b252;
+  color: #1a1408;
+}
+.mkt-dlg__btn--primary:hover {
+  background: #efcb7c;
+}
+.mkt-dlg__btn:focus-visible,
+.mkt-dlg__x:focus-visible,
+.mkt-dlg__errors:focus-visible {
+  outline: 2px solid #e9be63;
+  outline-offset: 2px;
+}

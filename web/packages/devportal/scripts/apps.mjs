@@ -1242,6 +1242,14 @@ export const APPS = [
                 "يشغّل الخادم كله على هذا الحاسوب: قاعدة البيانات وخط المعالجة والبث. ويبدأ حين تسجّل الدخول إلى حاسوبك، ويستمر في العمل بعد إغلاق النافذة، ويعرض عنصر في شريط القوائم أو في منطقة الإشعارات حالته."
               ),
               t(
+                "**Its own dialog for errors**: when the app reports a problem (the server could not start, an update failed, a page could not open) it says so in its own window: what happened, the programs' own error as it is, a way to the logs when this computer runs the server, and Close. The system's message box is left only for a computer that cannot show it.",
+                "**نافذة خاصة للأخطاء**: حين يُبلغ التطبيق عن مشكلة (تعذّر تشغيل الخادم، أو فشل تحديث، أو تعذّر فتح صفحة) يقولها في نافذته الخاصة: ما حدث، وخطأ البرامج كما هو، وطريقًا إلى السجلات حين يشغّل هذا الحاسوب الخادم، وزر «إغلاق». ولا يبقى مربع رسائل النظام إلا لحاسوب لا يستطيع عرضها."
+              ),
+              t(
+                "**The tray's panel**: on Windows and the Mac a click on the tray or menu-bar icon opens a small panel beside it: how the server is doing, with its colour, what it waits on (the language model's download, a release the home ordered), the update when one waits for a restart, the tray's actions, and the two ways to quit. It says what the tray menu says, in the system's language; a right click still opens the menu itself, and the arrow keys and Escape work in the panel. On Linux the desktop draws the tray menu.",
+                "**لوحة منطقة الإشعارات**: على ويندوز والماك يفتح النقر على أيقونة منطقة الإشعارات أو شريط القوائم لوحة صغيرة بجانبها: حال الخادم ولونها، وما ينتظره (تنزيل النموذج اللغوي، أو إصدار طلبه الجهاز الرئيسي)، والتحديث حين ينتظر إعادة التشغيل، وإجراءات منطقة الإشعارات، وطريقتا الخروج. وتقول اللوحة ما تقوله القائمة، بلغة النظام؛ ويبقى النقر بالزر الأيمن يفتح القائمة نفسها، وتعمل الأسهم وزر Escape داخل اللوحة. أما على لينكس فيرسم سطح المكتب القائمة."
+              ),
+              t(
                 "**Its own window frame**: on Windows and Linux the window's top bar is Maktaba's, with the system's minimize, maximize and close buttons where each system puts them (Windows 11's Snap Layouts open when the pointer rests on maximize; on GNOME the buttons follow the desktop's layout), and a menu button that lists the menu bar's items. On the Mac the traffic lights stay and the bar is drawn under them; the Mac's menu bar is in English or Arabic, as the system is. In Arabic the bar mirrors. Connected to another Maktaba, the window keeps the system's own frame.",
                 "**إطار نافذة خاص به**: على ويندوز ولينكس يكون الشريط العلوي للنافذة شريط «مكتبة»، وفيه أزرار التصغير والتكبير والإغلاق حيث يضعها كل نظام (تُفتح تخطيطات الالتقاط في ويندوز 11 حين يستقر المؤشر على زر التكبير، وفي GNOME تتبع الأزرار ترتيب سطح المكتب)، وزر قائمة يعرض عناصر شريط القوائم. وعلى الماك تبقى أزرار النافذة الثلاثة ويُرسم الشريط تحتها، ويكون شريط قوائم الماك بالعربية أو الإنجليزية بحسب لغة النظام. وفي العربية ينعكس الشريط. وحين يتصل التطبيق بـ«مكتبة» أخرى تحتفظ النافذة بإطار النظام نفسه."
               ),
@@ -1250,8 +1258,12 @@ export const APPS = [
                 "أو يتصل بـ«مكتبة» أخرى: فتعرض النافذة حينئذ جهازًا رئيسيًا يعمل في مكان آخر، ولا يعمل شيء على هذا الحاسوب."
               ),
               t(
-                "First-run setup: the admin, the libraries, the models and the optional links to other services.",
-                "إعداد التشغيل الأول: المدير والمكتبات والنماذج والروابط الاختيارية بخدمات أخرى."
+                "**First-run setup in its own window**: the admin, the libraries, the models and the optional links to other services. A pane at the start lists the five steps (welcome, what will run, your admin account, your library folders, getting Maktaba ready) under the arch from the app's icon; the welcome offers this computer or another Maktaba as two cards, with the language switch beside them, and what will run shows each part with the memory and disk it needs and the data folder. Once the setup opens a server, the main window shows it.",
+                "**إعداد التشغيل الأول في نافذة خاصة به**: المدير والمكتبات والنماذج والروابط الاختيارية بخدمات أخرى. تسرد لوحة في البداية الخطوات الخمس (الترحيب، وما الذي سيعمل، وحساب المدير، ومجلدات مكتبتك، وتجهيز مكتبة) تحت القوس المأخوذ من أيقونة التطبيق؛ ويعرض الترحيب هذا الحاسوب أو «مكتبة» أخرى في بطاقتين، ومفتاح اللغة بجانبهما، وتعرض شاشة ما الذي سيعمل كل جزء مع الذاكرة والمساحة اللتين يحتاجهما ومجلد البيانات. وحين يفتح الإعداد خادمًا تعرضه النافذة الرئيسية."
+              ),
+              t(
+                "**Server status in its own window**: **Server status** in the tray or the menu-bar item (and in the **Server** menu on Linux without a tray) opens a window with the server's state, this computer's name, the release and since when it runs, a release on its way, and a tile for each part (the library database, the server, playback and Live TV, indexing, the language model with its download, plugins) with what it waits on. Its buttons pause or resume the server, open Maktaba, the logs, **Report a problem…**, and the libraries, devices and settings pages in the main window. Closing it keeps the server running.",
+                "**حالة الخادم في نافذة خاصة بها**: يفتح **حالة الخادم** في منطقة الإشعارات أو في عنصر شريط القوائم (وفي قائمة **الخادم** على لينكس بلا منطقة إشعارات) نافذةً فيها حالة الخادم، واسم هذا الحاسوب، والإصدار ومنذ متى يعمل، وإصدارًا في الطريق، وبطاقة لكل جزء (قاعدة بيانات المكتبة، والخادم، والتشغيل والبث المباشر، والفهرسة، والنموذج اللغوي وتنزيله، والإضافات) مع ما ينتظره. وتوقف أزرارها الخادم مؤقتًا أو تستأنفه، وتفتح «مكتبة» والسجلات و**الإبلاغ عن مشكلة…** وصفحات المكتبات والأجهزة والإعدادات في النافذة الرئيسية. وإغلاقها يُبقي الخادم عاملًا."
               ),
               t(
                 "Updates itself through signed updates; **View → Big Screen** turns the window into the big-screen view.",
