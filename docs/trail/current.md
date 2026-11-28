@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.168
-up_to_commit: bd3b4d6f2
-built_from: v0.3.167
+tag: v0.3.169
+up_to_commit: abc06e8be
+built_from: v0.3.168
 ---
 
-# Trail snapshot: v0.3.168
+# Trail snapshot: v0.3.169
 
 ## Keep doing
 
@@ -336,6 +336,7 @@ built_from: v0.3.167
 - Measure where a slow tool spends its time (`python3 -m cProfile -s tottime`) before changing it, and prove a speed-up gives the same output: run old and new on a good real checkout and on one with planted problems, and diff. (d20261122-trail-check-git-reads)
 
 - Newly published dependency advisories can turn main's CVE gate red without a code change: fix them by upgrading every affected module together and run govulncheck in each gated module, without suppressions. Move all OpenTelemetry modules to one version, including the shared tracing module inherited through a replace. (#1554)
+- Check dependency upgrades for module-format and generated-configuration changes: Roku's CommonJS wrapper must import the ESM decoder's default export, and the Lighthouse 13 upgrade changes the assertion to `image-delivery-insight`. (#1788)
 - Once a documentation site is live, search the whole repository for Markdown links into its HTML source tree; link the live page or a readable document instead. A link checker can validate a manifest entry without proving that the page responds. (#1558)
 - Reproduce calendar-boundary failures by moving the clock, and assert requested waits rather than gaps between process starts on shared runners. (#1560)
 - Inspect every demo picture and stand-in at full size, names and film frames included, before shipping it. Check a content set whole, choose media by content before format or licence, derive artwork from the film's own frames, and fix content at its fixture before re-recording references. (#1565, #1566, #1577, #1580)
@@ -1043,7 +1044,7 @@ built_from: v0.3.167
 | #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
 | #1748 | 2026-11-25 | fix(cloud): the newest migration is recorded last, so an older release is ready on a kept schema |
 | #1752 | 2026-11-25 | test(cloud-relay): the single node's rehearsal starts from the last release too |
-| #1788 | 2026-11-26 | Fix development dependency alerts and validate TV login redirects |
+| #1791 | 2026-11-27 | Add weekly backups with tiered retention and archival compression |
 
 ## Index
 
@@ -1942,4 +1943,4 @@ built_from: v0.3.167
 | 1784-postgres-upgrade-retry-and-storage | 2026-11-26 | pr | PostgreSQL upgrade retries and set-aside storage |
 | 1785-western-digits-in-arabic | 2026-11-26 | pr | Western digits in Arabic across clients |
 | 1786-web-font-tokens-and-help-mockups | 2026-11-26 | pr | Shared web font tokens and help mockup counts |
-
+| 1788-security-alerts | 2026-11-26 | pr | Development dependency alerts and TV login redirect validation |
