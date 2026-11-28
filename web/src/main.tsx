@@ -12,6 +12,10 @@ import { installErrorLog } from "./lib/errorLog";
 import { installCrashReports } from "./lib/crashReports";
 import { registerServiceWorker, reloadOnStaleChunks } from "./lib/pwa";
 import { App } from "./App";
+import { isTrayPanel } from "./lib/trayPanel";
+import { TrayPanel } from "./tray/TrayPanel";
+import { isShellDialog } from "./lib/shellDialog";
+import { ShellDialog } from "./dialog/ShellDialog";
 // the theme's fonts, bundled (SIL OFL): Plex for text, Amiri for headings
 import "@fontsource/ibm-plex-sans-arabic/400.css";
 import "@fontsource/ibm-plex-sans-arabic/500.css";
@@ -23,6 +27,10 @@ import "./styles/tokens.css";
 import "./styles/app.css";
 // story 13.10: the desktop app's own window frame
 import "./styles/frame.css";
+// story 13.12: the tray's panel
+import "./styles/trayPanel.css";
+// story 13.11: the shell's own dialog
+import "./styles/shellDialog.css";
 import "./styles/library.css";
 import "./styles/browse.css";
 import "./styles/connect.css";
@@ -46,10 +54,15 @@ if (!rootEl) {
 
 ReactDOM.createRoot(rootEl).render(
   <React.StrictMode>
-    <App />
+    {/* story 13.12: the desktop app's tray panel is a window of these pages that draws the
+        panel instead of the app (traypanel.rs marks it before the page loads) */}
+    {/* story 13.11: and the shell's own dialog for its errors (shelldialog.rs) */}
+    {isTrayPanel() ? <TrayPanel /> : isShellDialog() ? <ShellDialog /> : <App />}
   </React.StrictMode>
 );
 
-registerServiceWorker();
-// a page an older release left open: its chunks are gone after an update
-reloadOnStaleChunks();
+if (!isTrayPanel() && !isShellDialog()) {
+  registerServiceWorker();
+  // a page an older release left open: its chunks are gone after an update
+  reloadOnStaleChunks();
+}

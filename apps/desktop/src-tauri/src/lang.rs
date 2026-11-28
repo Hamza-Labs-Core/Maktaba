@@ -531,6 +531,32 @@ impl Lang {
     }
 }
 
+/// The words of Maktaba's own dialog (story 13.11, shelldialog.rs).
+pub struct DialogWords {
+    pub close: &'static str,
+    pub see_logs: &'static str,
+}
+
+pub static DIALOG_EN: DialogWords = DialogWords {
+    close: "Close",
+    see_logs: "See the logs",
+};
+
+pub static DIALOG_AR: DialogWords = DialogWords {
+    close: "إغلاق",
+    see_logs: "عرض السجلات",
+};
+
+impl Lang {
+    /// The dialog's words (DialogWords).
+    pub fn dialog(self) -> &'static DialogWords {
+        match self {
+            Lang::En => &DIALOG_EN,
+            Lang::Ar => &DIALOG_AR,
+        }
+    }
+}
+
 /// Why an update failed, in `lang`: the reason of each code of attempts.rs (update-
 /// attempts.md), plain words for the menu, the notification and the dialog.
 pub fn update_reason(lang: Lang, code: &str) -> &'static str {
@@ -695,6 +721,16 @@ mod tests {
             assert!(!ar.trim().is_empty(), "{name}: no Arabic");
             assert_ne!(en, ar, "{name}: the Arabic is the English");
             assert_eq!(en.contains("{n}"), ar.contains("{n}"), "{name}: the slot");
+        }
+    }
+
+    #[test]
+    fn the_dialog_s_words_are_in_both_languages() {
+        for (en, ar) in [
+            (DIALOG_EN.close, DIALOG_AR.close),
+            (DIALOG_EN.see_logs, DIALOG_AR.see_logs),
+        ] {
+            assert!(!en.is_empty() && !ar.is_empty() && en != ar);
         }
     }
 

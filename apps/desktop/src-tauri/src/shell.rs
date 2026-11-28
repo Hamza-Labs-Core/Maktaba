@@ -298,6 +298,57 @@ fn shell(app: &AppHandle) -> tauri::State<'_, Shell> {
     app.state::<Shell>()
 }
 
+/// The tray menu's entries as they are now (story 13.12's panel shows the same), or the first
+/// ones before the first status refresh.
+pub(crate) fn tray_entries(app: &AppHandle) -> Vec<Entry> {
+    let sh = shell(app);
+    let now = sh.menu.locked().clone();
+    if now.is_empty() {
+        tray::entries(sh.lang, sh.server_side(), &ServerStatus::Starting, false)
+    } else {
+        now
+    }
+}
+
+/// What the tray's panel draws (traypanel.rs): the tray's entries, its language, and the
+/// status line's colour.
+pub(crate) fn tray_panel_state(app: &AppHandle) -> crate::traypanel::PanelState {
+    let sh = shell(app);
+    let tone = panel_tone(sh.server_side(), &sh.status.locked().status);
+    crate::traypanel::PanelState {
+        lang: match sh.lang {
+            Lang::En => "en",
+            Lang::Ar => "ar",
+        },
+        tone,
+        entries: crate::traypanel::panel_entries(&tray_entries(app)),
+    }
+}
+
+/// The panel's status colour: none for an app that runs no server here.
+fn panel_tone(server: bool, status: &ServerStatus) -> &'static str {
+    if !server {
+        return "none";
+    }
+    match status {
+        ServerStatus::Running => "ok",
+        ServerStatus::Starting => "busy",
+        ServerStatus::SetupNeeded | ServerStatus::Paused | ServerStatus::Stopped => "idle",
+        ServerStatus::Problem { .. } | ServerStatus::NotAnswering { .. } => "error",
+    }
+}
+
+/// A tray item chosen in the panel: as a click on the tray menu.
+pub(crate) fn choose_tray_item(app: &AppHandle, id: &str) {
+    on_tray_event(app, id);
+}
+
+/// The app's name in the tray's language (the panel's; Linux has none).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub(crate) fn brand(app: &AppHandle) -> &'static str {
+    shell(app).lang.words().brand
+}
+
 /// The app's own repository: the one its updater endpoints (tauri.conf.json, as built)
 /// point at, else autoinstall::OWN_REPO.
 fn own_repo(app: &AppHandle) -> String {
@@ -375,7 +426,7 @@ fn bundled_url(app: &AppHandle) -> String {
 }
 
 /// An error dialog in the tray's language: `sentence`, then the programs' own
-/// errors as they are (lang::error_message).
+/// errors as they are (lang::error_message), in Maktaba's own dialog (shelldialog.rs).
 fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
     // the dialog goes once it is closed: app.log keeps what it said
     applog::error(
@@ -383,11 +434,32 @@ fn show_error(app: &AppHandle, sentence: &str, errors: &[&str]) {
         lang::error_message(sentence, errors).replace("\n\n", ": "),
     );
     let lang = shell(app).lang;
+    // story 13.11: Maktaba's own dialog; the system's message box only when it cannot open
+    let content = error_content(lang, sentence, errors, &tray_entries(app));
+    let message = lang::error_message(sentence, errors);
+    crate::shelldialog::show(app, content, message, system_box);
+}
+
+/// The system's message box: Maktaba's own dialog could not be made, or its page never showed.
+fn system_box(app: &AppHandle, message: String) {
+    let lang = shell(app).lang;
     app.dialog()
-        .message(lang::error_message(sentence, errors))
+        .message(message)
         .title(lang.words().brand)
         .kind(MessageDialogKind::Error)
         .show(|_| {});
+}
+
+/// The error dialog's words: the way to the logs only when the tray offers Open logs (a
+/// machine that runs the server).
+fn error_content(
+    lang: Lang,
+    sentence: &str,
+    errors: &[&str],
+    entries: &[Entry],
+) -> crate::shelldialog::DialogContent {
+    let logs = crate::traypanel::choosable(entries, "open-logs");
+    crate::shelldialog::DialogContent::new(lang, sentence, errors, logs)
 }
 
 /// The record of this app's update attempts (attempts.rs: app-attempts.json beside the
@@ -1112,6 +1184,8 @@ fn refresh(app: &AppHandle) {
     *last = entries.clone();
     *last_badge = badge;
     drop((last, last_badge));
+    // story 13.12: an open tray panel says what the menu says
+    crate::traypanel::emit_state(app);
     // the icon with this badge (the plain icon without one)
     let icon = if new_badge {
         let plain = sh.plain_icon.locked();
@@ -1802,6 +1876,8 @@ fn start_after_failed_update(app: &AppHandle) -> (&'static str, Option<String>) 
 /// update check. Called from lib.rs setup().
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(Shell::new(app));
+    // story 13.11: Maktaba's own dialog for the shell's errors
+    app.manage(crate::shelldialog::Dialog::default());
 
     let sh = shell(app);
     // the failed update's notification: its button and a click on it see the logs (the
@@ -1837,9 +1913,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         *sh.plain_icon.locked() = Some((icon.rgba().to_vec(), icon.width(), icon.height()));
         tray = tray.icon(icon.clone());
     }
-    // Windows: a left click opens the window (the menu is on the right
-    // button), as Windows tray icons do
-    #[cfg(windows)]
+    // Windows and the Mac (story 13.12, D2): a left click opens the tray's panel; the menu is
+    // on the right button. Linux keeps its panel's own menu (StatusNotifier).
+    #[cfg(any(windows, target_os = "macos"))]
     {
         use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
         tray = tray
@@ -1848,14 +1924,18 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
                 if let TrayIconEvent::Click {
                     button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
+                    rect,
                     ..
                 } = event
                 {
-                    focus_main(tray.app_handle());
+                    crate::traypanel::toggle(tray.app_handle(), rect);
                 }
             });
     }
     tray.build(app)?;
+    // story 13.12: the tray's panel, made hidden now so a click only shows it
+    #[cfg(any(windows, target_os = "macos"))]
+    crate::traypanel::prepare(app);
 
     // macOS: after an update or a reinstall the server's login item is still the old
     // build's, which launchd refuses to start (agent::register_for_this_build); this
@@ -2337,6 +2417,36 @@ pub fn open_external(url: String) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_error_dialog_offers_the_logs_only_where_the_server_runs() {
+        let sentence = "The Maktaba server could not start.";
+        let server = tray::entries(Lang::En, true, &ServerStatus::Running, false);
+        let c = error_content(Lang::En, sentence, &["bind: in use"], &server);
+        assert!(c.logs);
+        assert_eq!(c.errors, vec!["bind: in use"]);
+        // an app connected to another Maktaba has no logs of a server here
+        let client = tray::entries(Lang::En, false, &ServerStatus::Running, false);
+        assert!(!error_content(Lang::En, sentence, &[], &client).logs);
+    }
+
+    #[test]
+    fn the_tray_panel_s_colour_follows_the_server() {
+        assert_eq!(panel_tone(true, &ServerStatus::Running), "ok");
+        assert_eq!(panel_tone(true, &ServerStatus::Starting), "busy");
+        assert_eq!(panel_tone(true, &ServerStatus::Paused), "idle");
+        assert_eq!(
+            panel_tone(
+                true,
+                &ServerStatus::NotAnswering {
+                    reason: "port".into()
+                }
+            ),
+            "error"
+        );
+        // an app connected to another Maktaba runs no server here: no colour
+        assert_eq!(panel_tone(false, &ServerStatus::Running), "none");
+    }
     use super::*;
 
     #[test]
