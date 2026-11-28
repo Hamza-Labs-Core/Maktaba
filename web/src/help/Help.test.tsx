@@ -87,6 +87,28 @@ describe("help area", () => {
     expect(screen.getByRole("navigation", { name: "في هذه الصفحة" })).toBeInTheDocument();
   });
 
+  // story 13.21 T07: the desktop Player's Learn more opens the video engine's section in the
+  // Player's language, whatever the browser had
+  it.each([
+    ["ar", "en", "محرّك الفيديو", "rtl"],
+    ["en", "ar", "The video engine", "ltr"],
+  ] as const)(
+    "opens the video engine's section in the language the app asks for (%s)",
+    async (lang, before, heading, dir) => {
+      renderAt(`/help/desktop-player?lang=${lang}#video-engine`, before);
+      const h = await waitFor(() => {
+        const el = document.getElementById("video-engine");
+        expect(el).not.toBeNull();
+        return el!;
+      });
+      expect(h).toHaveTextContent(heading);
+      expect(h).toHaveClass("mkt-help__h--target");
+      expect(document.documentElement.dir).toBe(dir);
+      // this visit only: the web app's kept language is the one it had
+      expect(localStorage.getItem("mkt:locale")).toBe(before);
+    }
+  );
+
   it.each(["nope", "__proto__", "constructor", "toString", "hasOwnProperty"])(
     "says so for a topic that does not exist: %s",
     async (topic) => {
@@ -95,6 +117,17 @@ describe("help area", () => {
       expect(await loadTopic("en", topic as HelpTopicId)).toBeNull();
     }
   );
+});
+
+describe("the Windows and Linux Player's page", () => {
+  // story 13.20 T08: which subtitles show and the two subtitle settings, in both languages
+  it.each([
+    ["en", ["In the file", "Picture", "Subtitle size", "Subtitle colour"]],
+    ["ar", ["في الملف", "صورة", "حجم الترجمة", "لون الترجمة"]],
+  ] as const)("names the subtitles and their settings (%s)", (locale, words) => {
+    const md = FILES[`./content/${locale}/desktop-player.md`]!;
+    for (const w of words) expect(md, w).toContain(w);
+  });
 });
 
 describe("help links", () => {

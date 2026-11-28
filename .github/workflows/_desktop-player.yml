@@ -228,11 +228,11 @@ jobs:
           mkdir -p "resources/${{ matrix.mpv }}"
           cp -R build/libmpv/. "resources/${{ matrix.mpv }}/"
           ls -l "resources/${{ matrix.mpv }}"
-      # T01 and T02's files (MpvRealTest reads them)
-      - name: Test media (story 13.18, Linux)
+      # the files MpvRealTest (13.18 T01, T02) and ChannelMpvRealTest (13.22 T02-T04) play
+      - name: Test media (stories 13.18 and 13.22, Linux)
         if: runner.os == 'Linux'
         run: libmpv/test-media.sh build/test-media
-      - name: Test media (story 13.18, Windows)
+      - name: Test media (stories 13.18 and 13.22, Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         run: libmpv/test-media.sh build/test-media
@@ -246,13 +246,18 @@ jobs:
           set -euo pipefail
           chmod +x ./gradlew
           ./gradlew --no-daemon --stacktrace :client:test test ${{ matrix.tasks }} -Pmaktaba.version=0.0.1 "-Pmaktaba.jbr=${JBR}"
-          # the real libmpv's tests ran, not skipped (story 13.18), and what they measured (13.19's
-          # T04 and T05: the decoder probe's time and results, the audio device's channels)
-          report=(build/test-results/test/TEST-*MpvRealTest.xml)
-          counts=$(grep -m 1 -oE 'tests="[0-9]+" skipped="[0-9]+"' "${report[0]}" || true)
-          echo "MpvRealTest: ${counts}"
-          grep -oE '(T0[0-9][^<]*|mpv-configuration[^<]*)' "${report[0]}" || true
-          grep -q 'skipped="0"' <<<"${counts}" || { echo "::error::MpvRealTest was skipped: no libmpv or no test media"; exit 1; }
+          # the real libmpv's tests ran, not skipped, and what they measured: videos (story
+          # 13.18, MpvRealTest; 13.19's T04 and T05: the decoder probe's time and results, the
+          # audio device's channels; 13.20's) and channels (story 13.22, ChannelMpvRealTest)
+          shopt -s nullglob
+          reports=(build/test-results/test/TEST-*MpvRealTest.xml)
+          [ "${#reports[@]}" -ge 2 ] || { echo "::error::expected MpvRealTest and ChannelMpvRealTest reports, found ${#reports[@]}"; exit 1; }
+          for report in "${reports[@]}"; do
+            counts=$(grep -m 1 -oE 'tests="[0-9]+" skipped="[0-9]+"' "${report}" || true)
+            echo "${report##*/}: ${counts}"
+            grep -oE '(T0[0-9][^<]*|13\.2[02] [^<]*|mpv-configuration[^<]*)' "${report}" || true
+            grep -q 'skipped="0"' <<<"${counts}" || { echo "::error::${report##*/} was skipped: no libmpv or no test media"; exit 1; }
+          done
 
       # Story 13.15: the Player as packaged, on the JetBrains Runtime, started on a virtual
       # display: it must come up with its own title bar and still be running 25 s later

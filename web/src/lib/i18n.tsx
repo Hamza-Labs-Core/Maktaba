@@ -58,7 +58,11 @@ export interface I18nState {
   n: (value: number, opts?: Intl.NumberFormatOptions) => string;
   /** A date and time; opts replace that (a publish date: browse.ts's `PUBLISH_DATE`). */
   formatDate: (value: string | number | Date, opts?: Intl.DateTimeFormatOptions) => string;
-  setLocale: (l: Locale) => void;
+  /**
+   * Switches the language. It is kept for the next visit, unless `keep` is false: a language
+   * a link asks for (the help page's `?lang=`) is this visit's only.
+   */
+  setLocale: (l: Locale, opts?: { keep?: boolean }) => void;
 }
 
 const I18nContext = createContext<I18nState | undefined>(undefined);
@@ -136,8 +140,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       t,
       n,
       formatDate,
-      setLocale: (l: Locale) => {
+      setLocale: (l: Locale, opts?: { keep?: boolean }) => {
         setLocaleState(l);
+        if (opts?.keep === false) return;
         try {
           localStorage.setItem(STORAGE_KEY, l);
         } catch {

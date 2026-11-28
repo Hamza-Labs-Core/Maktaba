@@ -17,10 +17,14 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Story 55.07 T03 and T04: the clock is the test's virtual time. */
+/**
+ * Story 55.07 T03 and T04, and story 13.22 T01 with recording players (the channel's stream in
+ * the engine's player): the clock is the test's virtual time.
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ChannelPlaybackTest {
     private fun cf(token: String) = "https://customer-abc.cloudflarestream.com/$token/manifest/video.m3u8"
@@ -35,7 +39,11 @@ class ChannelPlaybackTest {
             if (starting-- > 0) return RemoteTuned("s1", "starting", retryAfter = 2)
             return RemoteTuned("s1", "live", hlsUrl = "https://customer-abc.cloudflarestream.com/T1/manifest/video.m3u8")
         }
-        override suspend fun heartbeat(sessionId: String) = RemoteBeat("live", token = beatToken)
+        var beats = 0
+        override suspend fun heartbeat(sessionId: String): RemoteBeat {
+            beats++
+            return RemoteBeat("live", token = beatToken)
+        }
         override suspend fun end(sessionId: String) {
             calls += "end $sessionId"
         }
@@ -120,5 +128,166 @@ class ChannelPlaybackTest {
         runCurrent()
         assertEquals(2, cp.opened)
         assertFalse(cp.paused)
+    }
+
+    @Test
+    fun story1322_t01_oneOpenThenTheSameHandleLoadsTheNextChannelAndTheLiveEdgeAgain() = runTest {
+        val players = RecordingPlayers()
+        val (cp, video) = channelOnFakes(players)
+        cp.open("c1")
+        runCurrent()
+        val first = video.video
+        cp.next(twoChannels)
+        runCurrent()
+        assertEquals("c2", cp.channelId)
+        assertSame("the same handle", first, video.video)
+        cp.pause()
+        cp.backToLive()
+        runCurrent()
+        cp.close()
+        assertEquals(listOf("open ${channelUrl("c1")}", "loadfile ${channelUrl("c2")} replace", "pause", "loadfile ${channelUrl("c2")} replace", "dispose 1"), players.calls)
+        assertEquals(3, cp.opened)
+    }
+
+    @Test
+    fun story1322_theStreamsEndIsTheChannelEndedAndAFailureOffersTryAgain() = runTest {
+        val players = RecordingPlayers()
+        val (cp, _) = channelOnFakes(players)
+        cp.open("c1")
+        runCurrent()
+        assertEquals(ChannelStatus.Playing, cp.status)
+        players.events.single().ended()
+        runCurrent()
+        assertEquals(ChannelStatus.Ended, cp.status)
+        assertEquals("live.channelEnded", cp.endedKey)
+        assertTrue(players.calls.toString(), "dispose 1" in players.calls)
+        // Try again is not offered for an end; a failure offers it, and it opens the channel again
+        cp.retry()
+        runCurrent()
+        assertEquals(ChannelStatus.Playing, cp.status)
+        players.events.last().failed("loading failed")
+        runCurrent()
+        assertEquals(ChannelStatus.Failed(null, retryable = true), cp.status)
+        cp.retry()
+        runCurrent()
+        assertEquals(ChannelStatus.Playing, cp.status)
+        assertEquals(3, players.events.size)
+        // an older player's word counts for nothing
+        players.events.first().failed("late")
+        runCurrent()
+        assertEquals(ChannelStatus.Playing, cp.status)
+    }
+
+    @Test
+    fun story1322_backToLiveDoesNothingBehindEndedOrTryAgainAndAStopUnpauses() = runTest {
+        val players = RecordingPlayers()
+        val (cp, _) = channelOnFakes(players)
+        cp.open("c1")
+        runCurrent()
+        cp.pause()
+        assertTrue(cp.paused)
+        players.events.single().ended()
+        runCurrent()
+        assertEquals(ChannelStatus.Ended, cp.status)
+        assertFalse("a stopped channel is not paused", cp.paused)
+        cp.backToLive()
+        runCurrent()
+        assertEquals(ChannelStatus.Ended, cp.status)
+        cp.retry()
+        runCurrent()
+        players.events.last().failed("loading failed")
+        runCurrent()
+        cp.backToLive()
+        runCurrent()
+        assertEquals(ChannelStatus.Failed(null, retryable = true), cp.status)
+        // two streams given (the open and Try again's), none by Back to live
+        assertEquals(listOf("open ${channelUrl("c1")}", "pause", "dispose 1", "open ${channelUrl("c1")}", "dispose 2"), players.calls)
+        assertEquals(2, cp.opened)
+    }
+
+    @Test
+    fun story1322_pausedWhileTuningTheChannelOpensPaused() = runTest {
+        val players = RecordingPlayers()
+        val (cp, _) = channelOnFakes(players, Away(starting = 1))
+        cp.open("c1")
+        runCurrent()
+        assertEquals(ChannelStatus.Tuning, cp.status)
+        cp.pause()
+        assertTrue(cp.paused)
+        advanceTimeBy(2_001)
+        runCurrent()
+        assertEquals(ChannelStatus.Playing, cp.status)
+        assertTrue(cp.paused)
+        // the player plays what it opens: paused again, as the screen says
+        assertEquals(listOf("open ${cf("T1")}", "pause"), players.calls)
+        cp.resume()
+        assertFalse(cp.paused)
+        assertEquals("play", players.calls.last())
+        // Pause pressed as Back to live loads: the same
+        cp.pause()
+        cp.backToLive()
+        cp.pause()
+        runCurrent()
+        assertTrue(cp.paused)
+        assertEquals(listOf("loadfile ${cf("T1")} replace", "pause"), players.calls.takeLast(2))
+    }
+
+    @Test
+    fun story1322_thereIsNothingToPauseBehindANotice() = runTest {
+        val players = RecordingPlayers()
+        val (cp, _) = channelOnFakes(players)
+        cp.open("c1")
+        runCurrent()
+        players.events.single().failed("loading failed")
+        runCurrent()
+        cp.pause()
+        assertFalse(cp.paused)
+    }
+
+    @Test
+    fun story1322_aStreamThatEndsOrFailsEndsTheRemoteSession() = runTest {
+        for (stop in listOf<(com.hamzalabs.maktaba.desktop.VideoEvents) -> Unit>({ it.ended() }, { it.failed("loading failed") })) {
+            val players = RecordingPlayers()
+            val remote = Away()
+            val (cp, _) = channelOnFakes(players, remote)
+            cp.open("c1")
+            runCurrent()
+            assertEquals(listOf("tune c1"), remote.calls)
+            stop(players.events.single())
+            runCurrent()
+            assertEquals(listOf("tune c1", "end s1"), remote.calls)
+            // it beats no more, and Try again tunes afresh
+            advanceTimeBy(LiveSource.HEARTBEAT_MS * 2)
+            runCurrent()
+            assertEquals(0, remote.beats)
+            cp.retry()
+            runCurrent()
+            assertEquals(ChannelStatus.Playing, cp.status)
+            assertEquals(listOf("tune c1", "end s1", "tune c1"), remote.calls)
+        }
+    }
+
+    @Test
+    fun story1322_aStreamThatEndsOrFailsIsNotAskedAboutAgain() = runTest {
+        for (stop in listOf<(com.hamzalabs.maktaba.desktop.VideoEvents) -> Unit>({ it.ended() }, { it.failed("loading failed") })) {
+            val players = RecordingPlayers()
+            var asked = 0
+            val (cp, _) = channelOnFakes(players, gate = { id ->
+                asked++
+                val until = java.time.Instant.ofEpochMilli(testScheduler.currentTime + 60_000)
+                if (asked == 1) com.hamzalabs.maktaba.core.api.ChannelNow.Playing(channelUrl(id).toHttpUrl(), until)
+                else com.hamzalabs.maktaba.core.api.ChannelNow.NotNow(null)
+            })
+            cp.open("c1")
+            runCurrent()
+            assertEquals(ChannelStatus.Playing, cp.status)
+            stop(players.events.single())
+            runCurrent()
+            val said = cp.status
+            advanceTimeBy(300_000)
+            runCurrent()
+            assertEquals("the notice stays", said, cp.status)
+            assertEquals("the home was asked again", 1, asked)
+        }
     }
 }

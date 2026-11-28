@@ -77,6 +77,12 @@ class StreamProxyTracksTest {
         assertTrue(chosen[0], chosen[0].contains("LANGUAGE=\"en\"") && chosen[0].contains("DEFAULT=YES"))
         proxy.forget()
         assertNull(proxy.master.value)
+        // story 13.20: a file turned HLS forgets the master read before, and keeps the audio chosen
+        get(url)
+        proxy.audio = "English"
+        proxy.forgetMaster()
+        assertNull(proxy.master.value)
+        assertEquals("English", proxy.audio)
     }
 
     @Test

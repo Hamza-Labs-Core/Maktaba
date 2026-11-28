@@ -1,0 +1,141 @@
+package com.hamzalabs.maktaba.desktop.live
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.hamzalabs.maktaba.desktop.AudioOption
+import com.hamzalabs.maktaba.desktop.Players
+import com.hamzalabs.maktaba.desktop.Video
+import com.hamzalabs.maktaba.desktop.VideoEvents
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * A channel's picture (story 13.22): the [Video] the Player's engine makes ([players]:
+ * libmpv's, or JavaFX's when libmpv cannot load or JavaFX is chosen), driven by
+ * [ChannelPlayback]'s `show` and `hide`. The first stream opens a player; another channel and
+ * Back to live load into the same one ([Video.load]: libmpv's `loadfile … replace`, the last
+ * frame held meanwhile), or open a new one where the player cannot (JavaFX's).
+ *
+ * The stream's end is [onEnded]; a failure is [onFailed], and so is a stall: no progress for
+ * [STALL_MS] once the picture has moved (its first position) while it is not paused. Before
+ * that, a start that does not come is the home's to fail (its answer, or the player's error).
+ * Both may come from any thread; only the player on screen and the stream it was last given
+ * count (libmpv's drops what a replaced stream still says).
+ */
+class ChannelVideo(
+    private val players: Players,
+    private val scope: CoroutineScope,
+    private val onEnded: () -> Unit = {},
+    private val onFailed: () -> Unit = {},
+    private val nowMs: () -> Long = System::currentTimeMillis,
+) {
+    /** The player on screen (null: none). */
+    var video by mutableStateOf<Video?>(null)
+        private set
+
+    @Volatile private var paused = false
+    @Volatile private var progressAt = 0L
+    // the picture has moved since the stream was given: only then can it stall
+    @Volatile private var moving = false
+    // which player's events count: an older one's never do
+    @Volatile private var current = 0
+    // which stream given to it (a show or a hide moves it on): the stall watch is the newest's
+    @Volatile private var given = 0
+    private var stall: Job? = null
+
+    private fun events(n: Int) = object : VideoEvents {
+        override val volume = 1f
+        override val muted = false
+        override fun ready(durationMs: Long?, audio: List<AudioOption>) {}
+        override fun position(ms: Long) {
+            if (n == current) {
+                progressAt = nowMs()
+                moving = true
+            }
+        }
+        override fun playing(on: Boolean) {}
+        override fun failed(why: String) {
+            if (n == current) onFailed()
+        }
+        override fun ended() {
+            if (n == current) onEnded()
+        }
+    }
+
+    /** Plays [url] (the stream proxy's address) from its live edge. */
+    suspend fun show(url: String) {
+        given++
+        paused = false
+        moving = false
+        progressAt = nowMs()
+        val v = video
+        if (v == null || !v.load(url)) {
+            val n = ++current
+            // made and then shown or disposed even if the caller is cancelled meanwhile: a
+            // player is never left undisposed
+            val shown = withContext(NonCancellable) {
+                val next = players.openLive(url, events(n))
+                if (n != current) {
+                    // hidden, or another stream given, while it was made: it never shows
+                    next.dispose()
+                    false
+                } else {
+                    val old = video
+                    video = next
+                    old?.dispose()
+                    true
+                }
+            }
+            if (!shown) return
+        }
+        watch()
+    }
+
+    /** Stops it: the player is disposed. */
+    fun hide() {
+        given++
+        stall?.cancel()
+        current++
+        paused = false
+        val old = video
+        video = null
+        old?.dispose()
+    }
+
+    fun pause() {
+        paused = true
+        video?.pause()
+    }
+
+    fun play() {
+        paused = false
+        progressAt = nowMs()
+        video?.play()
+    }
+
+    /** A stream that stops moving while it should play has failed (a stalled relay, a lost home). */
+    private fun watch() {
+        stall?.cancel()
+        val g = given
+        stall = scope.launch {
+            while (true) {
+                delay(1_000)
+                if (g != given || video == null) return@launch
+                if (moving && !paused && nowMs() - progressAt > STALL_MS) {
+                    onFailed()
+                    return@launch
+                }
+            }
+        }
+    }
+
+    companion object {
+        /** How long a playing channel may make no progress before it has failed (retryable). */
+        const val STALL_MS = 15_000L
+    }
+}

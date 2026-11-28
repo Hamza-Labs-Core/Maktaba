@@ -39,7 +39,7 @@ class PlaybackProgressTimeTest {
             }
         }
     }
-    private val playback = Playback(home.client, main.scope, main.background, signedOut = {}, players = players, nowMs = main.nowMs)
+    private val playback = Playback(home.client, main.scope, main.background, signedOut = {}, engine = { players }, nowMs = main.nowMs)
 
     private val timeOver = """{"type":"https://maktaba.tv/problems/parental-time","title":"watching time is over","status":403,""" +
         """"code":"parental_time","reason":"limit_reached","next_allowed_at":"2026-11-12T04:00:00Z"}"""

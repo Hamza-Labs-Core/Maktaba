@@ -15,6 +15,16 @@ enum class SubtitleSize(val wire: String, val scale: Float) {
     Large("l", 1.3f),
 }
 
+/**
+ * A subtitle colour (story 13.20): white (the default) or yellow, for subtitles that carry no
+ * colour of their own. [rgb] is the colour as `#RRGGBB`. The desktop Player applies it; the
+ * Android Players read it in a later story.
+ */
+enum class SubtitleColour(val wire: String, val rgb: String) {
+    White("white", "#FFFFFF"),
+    Yellow("yellow", "#FFE14D"),
+}
+
 /** A streaming quality (FR-31), sent as `max_bitrate_kbps` (null: the original, no cap). */
 enum class StreamQuality(val wire: String, val maxBitrateKbps: Int?, val height: Int?) {
     Original("original", null, null),
@@ -58,6 +68,8 @@ data class PlaybackValues(
     val resumeWithoutAsking: Boolean = true,
     /** The audio language to prefer (the video's own default when [SubtitleLanguage.Default]). */
     val audioLanguage: SubtitleLanguage = SubtitleLanguage.Default,
+    /** The colour of subtitles that have none of their own (story 13.20). */
+    val subtitleColour: SubtitleColour = SubtitleColour.White,
 ) {
     /** The quality a video starts at (`max_bitrate_kbps`; null: the original): mobile data's on a metered network. */
     fun startKbps(metered: Boolean): Int? = (if (metered) qualityMobile else qualityWifi).maxBitrateKbps
@@ -85,6 +97,7 @@ class PlaybackSettings(private val store: KeyValueStore) {
         store.put(QUALITY_MOBILE, next.qualityMobile.wire)
         store.put(RESUME, next.resumeWithoutAsking.toString())
         store.put(AUDIO_LANGUAGE, next.audioLanguage.tag)
+        store.put(SUBTITLE_COLOUR, next.subtitleColour.wire)
     }
 
     private fun read(): PlaybackValues {
@@ -99,6 +112,7 @@ class PlaybackSettings(private val store: KeyValueStore) {
             qualityMobile = StreamQuality.entries.firstOrNull { it.wire == store.get(QUALITY_MOBILE) } ?: d.qualityMobile,
             resumeWithoutAsking = bool(RESUME, d.resumeWithoutAsking),
             audioLanguage = SubtitleLanguage.of(store.get(AUDIO_LANGUAGE)),
+            subtitleColour = SubtitleColour.entries.firstOrNull { it.wire == store.get(SUBTITLE_COLOUR) } ?: d.subtitleColour,
         )
     }
 
@@ -111,5 +125,6 @@ class PlaybackSettings(private val store: KeyValueStore) {
         const val QUALITY_MOBILE = "playback.quality_mobile"
         const val RESUME = "playback.resume_without_asking"
         const val AUDIO_LANGUAGE = "playback.audio_language"
+        const val SUBTITLE_COLOUR = "playback.subtitle_colour"
     }
 }

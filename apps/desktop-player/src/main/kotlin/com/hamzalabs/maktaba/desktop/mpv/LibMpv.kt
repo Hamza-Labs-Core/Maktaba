@@ -25,6 +25,8 @@ interface LibMpv : Library {
     fun mpv_free(data: Pointer)
     /** [args] ends with a null. */
     fun mpv_command(ctx: Pointer, args: Array<String?>): Int
+    /** [args] ends with a null; the result comes as an MPV_EVENT_COMMAND_REPLY with [replyUserdata]. */
+    fun mpv_command_async(ctx: Pointer, replyUserdata: Long, args: Array<String?>): Int
     fun mpv_observe_property(ctx: Pointer, replyUserdata: Long, name: String, format: Int): Int
     fun mpv_wait_event(ctx: Pointer, timeout: Double): Pointer
     fun mpv_wakeup(ctx: Pointer)
@@ -52,6 +54,8 @@ internal object MpvConst {
 
     const val EVENT_NONE = 0
     const val EVENT_SHUTDOWN = 1
+    const val EVENT_COMMAND_REPLY = 5
+    const val EVENT_START_FILE = 6
     const val EVENT_END_FILE = 7
     const val EVENT_FILE_LOADED = 8
     const val EVENT_AUDIO_RECONFIG = 18
@@ -68,6 +72,9 @@ internal object MpvConst {
 
     const val END_EOF = 0
     const val END_ERROR = 4
+
+    /** MPV_ERROR_AO_INIT_FAILED: no audio device could be opened (the picture plays on). */
+    const val ERROR_AO_INIT_FAILED = -14
 
     /** dlopen's RTLD_LAZY alone (Linux): local symbols, as RTLD_LOCAL is 0. */
     const val RTLD_LAZY_FLAG = 1
@@ -97,12 +104,11 @@ sealed interface MpvLoad {
             else -> "libmpv.so.2"
         }
 
-        /** The library in [dir] (the app's resources), or why it cannot be used. */
-        fun from(dir: String?, env: Map<String, String> = System.getenv()): MpvLoad {
-            // the support page's way back to the JavaFX engine for one release (story 13.18)
-            if (env["MAKTABA_PLAYER_ENGINE"].equals("javafx", ignoreCase = true)) {
-                return Missing("MAKTABA_PLAYER_ENGINE=javafx")
-            }
+        /**
+         * The library in [dir] (the app's resources), or why it cannot be used. Whether it is
+         * used at all is [Engines]' choice (`MAKTABA_PLAYER_ENGINE`, then Profile's setting).
+         */
+        fun from(dir: String?): MpvLoad {
             if (dir.isNullOrBlank()) return Missing("no app resources folder (a development run)")
             val file = File(dir, fileName())
             if (!file.isFile) return Missing("${file.name} is not in ${file.parent}")

@@ -79,7 +79,7 @@ class PlaybackTest {
 
     private var settings = PlaybackValues()
 
-    private val playback = Playback(home.client, scope, background, signedOut = {}, settings = { settings }, players = players)
+    private val playback = Playback(home.client, scope, background, signedOut = {}, settings = { settings }, engine = { players })
 
     init {
         home.answer("POST /api/stream/sessions") {
@@ -201,5 +201,27 @@ class PlaybackTest {
         // the settings' 720p caps at 4000; the ladder's 720p rung is 3000: the menu marks that one
         assertEquals(QualityOption(720, 3000), onMain { playback.quality })
         assertTrue(onMain { playback.quality in playback.ladder })
+    }
+
+    @Test
+    fun aPlayerWithoutLiveOptionsOpensAChannelAsAnyStreamAndCannotLoadIntoItself() {
+        // story 13.22: JavaFX's players have no live options and no reload in place
+        val asked = mutableListOf<String>()
+        val plain = Players { url, fromMs, autoplay, _ ->
+            asked += "$url $fromMs $autoplay"
+            FakeVideo(url)
+        }
+        val none = object : VideoEvents {
+            override val volume = 1f
+            override val muted = false
+            override fun ready(durationMs: Long?, audio: List<AudioOption>) {}
+            override fun position(ms: Long) {}
+            override fun playing(on: Boolean) {}
+            override fun failed(why: String) {}
+            override fun ended() {}
+        }
+        val v = runBlocking { plain.openLive("http://127.0.0.1:1/x/stream/channel/c1/index.m3u8", none) }
+        assertEquals(listOf("http://127.0.0.1:1/x/stream/channel/c1/index.m3u8 0 true"), asked)
+        assertEquals(false, v.load("http://127.0.0.1:1/x/stream/channel/c2/index.m3u8"))
     }
 }

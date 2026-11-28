@@ -51,19 +51,24 @@ sealed interface ChannelStatus {
  * A channel's playback on the desktop (story 55.07), apart from [com.hamzalabs.maktaba.desktop.Playback]
  * (videos): [source] picks where it plays — at home the web port's HLS, away from home a remote
  * session's Cloudflare URL (tuned, a 202 asked again until live, a heartbeat that may bring a
- * new token) — and [local] gives JavaFX its address through the stream proxy, which writes the
- * newest token into every relay request. A new token never reopens the player; only another
- * channel, Back to live or Try again do ([opened] counts them).
+ * new token) — and [local] gives the player its address through the stream proxy, which writes
+ * the newest token into every relay request. A new token never reopens the player; only another
+ * channel, Back to live or Try again do ([opened] counts them). The player is the Player's
+ * engine's ([ChannelVideo], story 13.22): libmpv's, or JavaFX's when libmpv cannot load.
  */
 class ChannelPlayback(
     private val source: LiveSource,
     private val scope: CoroutineScope,
     /** The proxy's address for a stream (null: not one it serves). */
     private val local: (LiveStream) -> String?,
-    /** Shows [url] in the player (JavaFX), from its live edge. */
+    /** Shows [url] in the player, from its live edge. */
     private val show: suspend (url: String) -> Unit,
     /** Stops the player. */
     private val hide: () -> Unit = {},
+    /** Pauses the player (Pause). */
+    private val pauseVideo: () -> Unit = {},
+    /** Plays on after a pause (Play). */
+    private val playVideo: () -> Unit = {},
     private val signedOut: () -> Unit = {},
     /** Whether this sign-in is under a parental limit now (only then is [gate] asked). */
     private val limited: () -> Boolean = { false },
@@ -107,35 +112,88 @@ class ChannelPlayback(
         neighbour(lineup, channelId, by)?.let { open(it.id) }
     }
 
+    /** Why it [ChannelStatus.Ended]: the remote session ended, or the channel's stream did. */
+    var endedKey by mutableStateOf("live.sessionEnded")
+        private set
+
     /** The home ended the remote session (LiveSource's onEnded). */
     fun ended() {
-        hide()
+        stop()
+        endedKey = "live.sessionEnded"
         status = ChannelStatus.Ended
     }
 
+    /** The playing stream ended (its playlist's end; story 13.22), from any thread. */
+    fun streamEnded() {
+        scope.launch {
+            if (status != ChannelStatus.Playing) return@launch
+            endedKey = "live.channelEnded"
+            over(ChannelStatus.Ended)
+        }
+    }
+
+    /** The playing stream failed or stalled, from any thread: Try again tunes it again. */
+    fun streamFailed() {
+        scope.launch {
+            if (status != ChannelStatus.Playing) return@launch
+            over(ChannelStatus.Failed(null, retryable = true))
+        }
+    }
+
+    /**
+     * Nothing plays any more, and [why]: the home is not asked about the programme again, and
+     * away from home the remote session is ended rather than beating on behind the notice.
+     */
+    private suspend fun over(why: ChannelStatus) {
+        recheck?.cancel()
+        stop()
+        status = why
+        withContext(NonCancellable) { runCatching { source.close() } }
+    }
+
+    /** Pauses the channel; while one tunes, it opens paused. Nothing to pause behind a notice. */
     fun pause() {
+        if (status != ChannelStatus.Playing && status != ChannelStatus.Tuning) return
         paused = true
+        pauseVideo()
     }
 
     fun resume() {
         paused = false
+        playVideo()
     }
 
     /** Back to live after a pause: the stream again from its live edge (the same session). */
     fun backToLive() {
+        // only while a channel plays: behind Ended or Try again there is nothing to go back to
+        if (status != ChannelStatus.Playing) return
         val u = url ?: return
         paused = false
-        scope.launch {
+        // under the channel's job: another channel or leaving cancels it, never both shown
+        job?.cancel()
+        job = scope.launch {
             opened++
-            show(u)
+            give(u)
         }
+    }
+
+    /** [u] in the player, which plays what it is given: paused again when Pause was pressed meanwhile. */
+    private suspend fun give(u: String) {
+        show(u)
+        if (paused) pauseVideo()
+    }
+
+    /** The player stops; nothing is paused any more. */
+    private fun stop() {
+        hide()
+        paused = false
     }
 
     /** The screen is left (or the window closed): the remote session is ended on the home. */
     suspend fun close() {
         job?.cancel()
         recheck?.cancel()
-        hide()
+        stop()
         withContext(NonCancellable) { runCatching { source.close() } }
     }
 
@@ -160,12 +218,12 @@ class ChannelPlayback(
             val u = local(s) ?: throw LiveFailure("network", "not a stream this player can play")
             url = u
             opened++
-            show(u)
+            give(u)
             status = ChannelStatus.Playing
         } catch (e: CancellationException) {
             throw e
         } catch (e: LiveFailure) {
-            hide()
+            stop()
             status = when (e.code) {
                 "session_ended" -> ChannelStatus.Ended
                 "component_off" -> ChannelStatus.Off
@@ -179,7 +237,7 @@ class ChannelPlayback(
                 notNow(id, programme.retryAt)
                 return
             }
-            hide()
+            stop()
             status = if (e.errorKind() == ErrorKind.Off) ChannelStatus.Off else ChannelStatus.Failed(null, retryable = true)
         }
     }
@@ -187,7 +245,7 @@ class ChannelPlayback(
     /** The programme on air is above the limit: nothing plays, and the home is asked again later. */
     private fun notNow(id: String, retryAt: java.time.Instant?, clock: com.hamzalabs.maktaba.core.api.HomeClock? = null) {
         if (channelId != id) return
-        hide()
+        stop()
         status = ChannelStatus.NotNow(retryAt)
         askAgain(id, retryAt, allowed = false, clock)
     }
