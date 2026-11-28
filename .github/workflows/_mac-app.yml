@@ -148,7 +148,7 @@ jobs:
           shellcheck -x tools/release/mac-app/payload.sh tools/release/mac-app/check.sh tools/release/mac-app/build-app.sh \
             tools/release/mac-app/lib.sh tools/release/mac-app/pins-check.sh tools/release/mac-app/tauri-build.sh \
             tools/release/mac-app/tauri-build-check.sh tools/release/mac-app/stage.sh tools/release/mac-app/stage-check.sh \
-            tools/release/mac-app/check-dmg.sh tools/release/bundle-size/core-home.sh
+            tools/release/mac-app/check-dmg.sh tools/release/mac-app/dmg-layout.sh tools/release/bundle-size/core-home.sh
 
       # dry run of the pins (pins.env complete) and the checked download, offline
       - name: Pins (dry run)

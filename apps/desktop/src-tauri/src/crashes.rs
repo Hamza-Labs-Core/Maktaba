@@ -168,21 +168,17 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
+    /// A folder of the test's own. Counted, not timed: two tests that started in the same tick
+    /// of macOS' microsecond clock shared one, and one removed it under the other (CI: EINVAL).
     fn tmp() -> PathBuf {
+        static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let d = std::env::temp_dir().join(format!(
             "maktaba-crashes-{}-{}",
             std::process::id(),
-            rand_suffix()
+            N.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let _ = std::fs::remove_dir_all(&d);
         d
-    }
-
-    fn rand_suffix() -> u128 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
     }
 
     #[test]

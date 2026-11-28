@@ -1417,6 +1417,19 @@ fn install_update_from(app: AppHandle, source: Source) {
                 if !source.still_go() {
                     return Ok(Done::Withdrawn);
                 }
+                // no room for it: said before anything stops (the installer would refuse too,
+                // once the server has stopped and this app has closed)
+                let (file, unpacked) = (bytes.len() as u64, crate::room::unpacked_kb(&bytes));
+                let short = tauri::async_runtime::spawn_blocking(move || {
+                    crate::room::short_here(file, unpacked?)
+                });
+                if let Ok(Some(why)) = short.await {
+                    return Err(failed(Failure::new(
+                        attempts::STEP_INSTALL,
+                        attempts::DISK_FULL,
+                        why,
+                    )));
+                }
                 // stop the server and wait for it (the install hold keeps the
                 // task's watchdog from starting it meanwhile); the update is
                 // not installed when it does not stop in time
@@ -2338,6 +2351,29 @@ pub fn open_external(url: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// On Windows the app's own update looks for room on the disk before it stops the server for
+    /// it (the installer would refuse too, with the server stopped and the app closed): the
+    /// order is in the source, as no test runs an update.
+    #[test]
+    fn an_update_looks_for_room_before_it_stops_the_server() {
+        let src = include_str!("shell.rs");
+        let run = &src[src.find("step(attempts::STEP_VERIFY)").expect("the verify")..];
+        let room = run
+            .find("room::short_here(file, unpacked?)")
+            .expect("the look");
+        let stop = run
+            .find("spawn_blocking(agent::stop_for_install)")
+            .expect("the stop");
+        assert!(room < stop);
+        let between = &run[room..stop];
+        let refused = between
+            .find("return Err(failed(Failure::new(")
+            .expect("the refusal");
+        assert!(between[refused..].contains("attempts::DISK_FULL"));
+        // the server was not stopped for it: nothing has to start it again
+        assert!(!run[..room].contains("stopped.store(true"));
+    }
 
     #[test]
     fn a_refused_login_item_whose_job_started_is_no_update_failure() {

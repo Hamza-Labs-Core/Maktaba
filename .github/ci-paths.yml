@@ -1040,6 +1040,8 @@ desktop_frame:
 desktop_player:
   - *ci
   - 'apps/desktop-player/**'
+  # story 13.14: packageMsi themes the .msi with these, and the job checks it
+  - 'tools/release/msi/**'
   # the demo library the client's DemoLibraryTest reads (60.09)
   - 'tests/fixtures/demo-library/**'
   - 'apps/android/client/**'

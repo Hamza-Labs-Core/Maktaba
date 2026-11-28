@@ -78,6 +78,16 @@ pub const LOCAL_BUILD: &str = "local_build";
 /// (or the agent's watchdog) started it again on the release it had.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub const INSTALLER_NOT_FINISHED: &str = "installer_not_finished";
+/// The exit code of a Windows installer that found no room for the release and changed
+/// nothing (installer.nsi, MK_ROOM_EXIT): Windows' ERROR_DISK_FULL.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const INSTALLER_NO_ROOM: i32 = 112;
+/// The file that installer leaves beside the record, before it starts the home again, when it
+/// refuses the app's update for want of room: the release it would have installed. The server's
+/// agent and the app both settle the attempt, whichever starts first, and read it there.
+pub const REFUSED_FILE: &str = "installer-no-room";
+/// How long it is believed: the settles come within seconds of it.
+const REFUSED_FRESH: Duration = Duration::from_secs(60 * 60);
 pub const CHECK_FAILED: &str = "check_failed";
 pub const DOWNLOAD_FAILED: &str = "download_failed";
 pub const INSTALL_FAILED: &str = "install_failed";
@@ -534,7 +544,8 @@ pub fn of_text(step: &'static str, msg: impl Into<String>, ctx: &Ctx) -> Failure
 /// app (it quit, or crashed, mid-download): failed at that step. What the attempt noted
 /// while it ran (note) follows the failure's own detail. An app that runs the server is
 /// installed only once its server is back too: settle_newest.
-pub fn settle(a: &Attempt, own: &str, ctx: &Ctx, now: &str) -> Option<Attempt> {
+#[cfg(test)]
+fn settle(a: &Attempt, own: &str, ctx: &Ctx, now: &str) -> Option<Attempt> {
     settle_on(a, own, ctx, now, cfg!(windows))
 }
 
@@ -560,6 +571,9 @@ fn settle_on(a: &Attempt, own: &str, ctx: &Ctx, now: &str, windows: bool) -> Opt
                 TRANSLOCATED
             } else if ctx.quarantined {
                 QUARANTINED
+            } else if windows && a.step == STEP_INSTALL && ctx.no_room {
+                // it found too little free space, and changed nothing
+                DISK_FULL
             } else if windows && a.step == STEP_INSTALL {
                 // the installer this app started as it closed failed, or was cancelled
                 INSTALLER_NOT_FINISHED
@@ -567,7 +581,16 @@ fn settle_on(a: &Attempt, own: &str, ctx: &Ctx, now: &str, windows: bool) -> Opt
                 RELAUNCH_FAILED
             }
             .into();
-            out.detail = if windows && a.step == STEP_INSTALL {
+            out.detail = if out.code == DISK_FULL {
+                out.step = STEP_INSTALL.into();
+                format!(
+                    "the installer of {} found too little free space on the disk and changed \
+                     nothing: the app started again on {}, and the server it had stopped starts \
+                     again on it",
+                    or_dash(&a.to),
+                    or_dash(&own)
+                )
+            } else if windows && a.step == STEP_INSTALL {
                 out.step = STEP_INSTALL.into();
                 format!(
                     "the installer, which runs once the app has closed, did not install {}: \
@@ -656,18 +679,117 @@ pub fn wait_for_server(
 /// back on the attempt's release, else why not.
 pub type ServerBack<'a> = &'a mut dyn FnMut(&Attempt) -> Result<(), Failure>;
 
-/// Settles the newest attempt (settle) in the record; the attempt when it now failed.
-/// `server_back`, for an app that runs the server: an attempt the app reached is installed
-/// only once the server is back on its release (it waits: wait_for_server), and fails with
-/// the server's reason otherwise; meanwhile the record keeps it running at the relaunch.
+/// What the installer left when it refused an update for want of room: the release, and when.
+struct Refusal {
+    version: String,
+    when: SystemTime,
+}
+
+fn refused_path(record: &Path) -> PathBuf {
+    record.with_file_name(REFUSED_FILE)
+}
+
+fn refusal(record: &Path) -> Option<Refusal> {
+    let p = refused_path(record);
+    Some(Refusal {
+        version: std::fs::read_to_string(&p).ok()?.trim().to_string(),
+        when: std::fs::metadata(&p).and_then(|m| m.modified()).ok()?,
+    })
+}
+
+/// The refusal was told: it says nothing of the next attempt.
+pub fn forget_refusal(record: &Path) {
+    let _ = std::fs::remove_file(refused_path(record));
+}
+
+impl Refusal {
+    /// Whether it is attempt `a`'s: its release, after the attempt began, and not an old one (a
+    /// file no one read; a clock set back).
+    fn of(&self, a: &Attempt, now: SystemTime) -> bool {
+        let age = now.duration_since(self.when);
+        let fresh = match age {
+            Ok(age) => age <= REFUSED_FRESH,
+            // two processes' clocks, a moment apart
+            Err(ahead) => ahead.duration() <= Duration::from_secs(60),
+        };
+        // the record's times are whole seconds
+        let after = parse_rfc3339(&a.at).is_some_and(|began| began <= self.when);
+        fresh && after && !a.to.is_empty() && plain(&self.version) == plain(&a.to)
+    }
+}
+
+/// Whether the installer refused attempt `a` for want of room, as it is known now.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn refused_for_room(record: &Path, a: &Attempt) -> bool {
+    refusal(record).is_some_and(|r| r.of(a, SystemTime::now()))
+}
+
+/// The app's settle of the newest attempt, at its start: the attempt when it now failed, and
+/// when the agent settled it first because the installer refused it for want of room (the agent
+/// tells nobody): the app says it either way, once.
+/// `server_back`: settle_one.
 pub fn settle_newest(
     path: &Path,
     own: &str,
     ctx: &Ctx,
     server_back: Option<ServerBack<'_>>,
 ) -> Option<Attempt> {
+    settle_newest_on(path, own, ctx, server_back, cfg!(windows))
+}
+
+fn settle_newest_on(
+    path: &Path,
+    own: &str,
+    ctx: &Ctx,
+    server_back: Option<ServerBack<'_>>,
+    windows: bool,
+) -> Option<Attempt> {
+    let refused = refusal(path).filter(|_| windows);
+    let failed = settle_one(path, own, ctx, server_back, refused.as_ref(), windows);
+    let Some(refused) = refused else {
+        return failed;
+    };
+    let failed = failed.or_else(|| {
+        newest(path).filter(|a| {
+            a.outcome == FAILED && a.code == DISK_FULL && refused.of(a, SystemTime::now())
+        })
+    });
+    // after the record says it: an agent that finds no refusal finds the attempt settled
+    forget_refusal(path);
+    failed
+}
+
+/// The server's agent's settle, at its start: the refusal stays for the app to tell.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn settle_newest_for_agent(path: &Path, own: &str, ctx: &Ctx) {
+    settle_newest_for_agent_on(path, own, ctx, cfg!(windows));
+}
+
+fn settle_newest_for_agent_on(path: &Path, own: &str, ctx: &Ctx, windows: bool) {
+    let refused = refusal(path).filter(|_| windows);
+    let _ = settle_one(path, own, ctx, None, refused.as_ref(), windows);
+}
+
+/// Settles the newest attempt (settle) in the record; the attempt when it now failed.
+/// `refused`: what the installer left, read before the record (forget_refusal comes after it).
+/// `server_back`, for an app that runs the server: an attempt the app reached is installed
+/// only once the server is back on its release (it waits: wait_for_server), and fails with
+/// the server's reason otherwise; meanwhile the record keeps it running at the relaunch.
+fn settle_one(
+    path: &Path,
+    own: &str,
+    ctx: &Ctx,
+    server_back: Option<ServerBack<'_>>,
+    refused: Option<&Refusal>,
+    windows: bool,
+) -> Option<Attempt> {
     let newest = newest(path)?;
-    let mut settled = settle(&newest, own, ctx, &rfc3339(SystemTime::now()))?;
+    let now = SystemTime::now();
+    let ctx = Ctx {
+        no_room: refused.is_some_and(|r| r.of(&newest, now)),
+        ..*ctx
+    };
+    let mut settled = settle_on(&newest, own, &ctx, &rfc3339(now), windows)?;
     let id = settled.id.clone();
     if settled.outcome == INSTALLED {
         if let Some(back) = server_back {
@@ -690,7 +812,8 @@ pub fn settle_newest(
     }
     let put = settled.clone();
     if let Err(e) = change(path, |all| {
-        if let Some(a) = all.iter_mut().find(|a| a.id == id) {
+        // one another process settled meanwhile stays as it said
+        if let Some(a) = all.iter_mut().find(|a| a.id == id && a.outcome == RUNNING) {
             *a = put;
         }
     }) {
@@ -726,6 +849,8 @@ pub struct Ctx {
     pub app_management: bool,
     /// this app was built locally (no release key: local_build)
     pub local_build: bool,
+    /// the installer refused this attempt for want of room (REFUSED_FILE)
+    pub no_room: bool,
 }
 
 impl Ctx {
@@ -747,6 +872,7 @@ impl Ctx {
                 needs_admin: code == Some(NEEDS_ADMIN),
                 app_management: code == Some(APP_MANAGEMENT),
                 local_build: local_build(),
+                no_room: false,
             }
         }
         #[cfg(not(target_os = "macos"))]
@@ -1255,6 +1381,20 @@ mod tests {
       "fix": "a command or an action that mends it (optional)"
     }"#;
 
+    /// The installer's exit code for no room is one number in two files: its script's and this.
+    #[test]
+    fn the_installer_s_code_for_no_room_is_the_one_its_script_exits_with() {
+        let nsi = include_str!("../windows/installer.nsi");
+        let line = nsi
+            .lines()
+            .find(|l| l.starts_with("!define MK_ROOM_EXIT"))
+            .expect("MK_ROOM_EXIT in installer.nsi");
+        assert_eq!(
+            line.split_whitespace().last(),
+            Some(INSTALLER_NO_ROOM.to_string().as_str())
+        );
+    }
+
     #[test]
     fn the_spec_example_reads_and_writes_back_the_same() {
         let a: Attempt = serde_json::from_str(SPEC_EXAMPLE).unwrap();
@@ -1471,6 +1611,21 @@ mod tests {
                  starts again on it"
             )
         );
+        // and one that found no room on the disk left word of it (REFUSED_FILE)
+        let no_room = Ctx {
+            no_room: true,
+            ..Ctx::default()
+        };
+        let a = running(STEP_INSTALL, "0.3.0");
+        let full = settle_on(&a, "0.3.0-rc.5", &no_room, now, true).unwrap();
+        assert_eq!(
+            (full.step.as_str(), full.code.as_str(), full.fix.as_str()),
+            (STEP_INSTALL, DISK_FULL, fix_for(DISK_FULL).as_str())
+        );
+        assert!(full.detail.contains("too little free space"));
+        // an update that did install says nothing of it
+        let done = settle_on(&a, "0.3.0", &no_room, now, true).unwrap();
+        assert_eq!(done.outcome, INSTALLED);
         // what the attempt noted follows its failure
         let mut noted = running(STEP_RELAUNCH, "0.3.0");
         noted.detail = "the server's restart failed: x".into();
@@ -1504,6 +1659,104 @@ mod tests {
         set_step(&p, &id, STEP_RELAUNCH);
         assert!(settle_newest(&p, "0.3.0", &Ctx::default(), None).is_none());
         assert_eq!(newest(&p).unwrap().outcome, "installed");
+    }
+
+    /// The installer refused the app's update for want of room, left word of it and started the
+    /// home again: the agent and the app settle the attempt in either order, the record says the
+    /// disk is full, and the app gets to tell it, once.
+    #[test]
+    fn an_update_refused_for_want_of_room_is_told_once_whoever_settles_first() {
+        let own = "0.3.0-rc.5";
+        let ctx = Ctx::default();
+        let refused = |p: &Path| {
+            let id = begin(p, TRIGGER_BADGE, own, "0.3.0");
+            set_step(p, &id, STEP_INSTALL);
+            std::fs::write(refused_path(p), "0.3.0\r\n").unwrap();
+        };
+        let app = |p: &Path| settle_newest_on(p, own, &ctx, None, true);
+        let agent = |p: &Path| settle_newest_for_agent_on(p, own, &ctx, true);
+        for agent_first in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let p = path(dir.path());
+            refused(&p);
+            let told = if agent_first {
+                agent(&p);
+                assert_eq!(newest(&p).unwrap().code, DISK_FULL, "the agent's settle");
+                app(&p)
+            } else {
+                let told = app(&p);
+                agent(&p);
+                told
+            };
+            let told = told.expect("the app tells it");
+            assert_eq!((told.code.as_str(), told.to.as_str()), (DISK_FULL, "0.3.0"));
+            let kept = newest(&p).unwrap();
+            assert_eq!(
+                (kept.outcome.as_str(), kept.code.as_str(), kept.fix.as_str()),
+                (FAILED, DISK_FULL, fix_for(DISK_FULL).as_str()),
+                "agent first: {agent_first}"
+            );
+            // once: not at the next starts
+            assert!(!refused_path(&p).exists());
+            assert!(app(&p).is_none());
+            agent(&p);
+            assert_eq!(newest(&p).unwrap().code, DISK_FULL);
+        }
+    }
+
+    #[test]
+    fn a_refusal_is_its_own_attempts_and_not_an_old_one() {
+        let own = "0.3.0-rc.5";
+        let ctx = Ctx::default();
+        let settled = |version: &str, age: Duration, begun_after: bool| {
+            let dir = tempfile::tempdir().unwrap();
+            let p = path(dir.path());
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            let id = begin(&p, TRIGGER_BADGE, own, "0.3.0");
+            set_step(&p, &id, STEP_INSTALL);
+            std::fs::write(refused_path(&p), version).unwrap();
+            let when = SystemTime::now() - age;
+            let f = std::fs::File::options()
+                .write(true)
+                .open(refused_path(&p))
+                .unwrap();
+            f.set_modified(when).unwrap();
+            drop(f);
+            let at = if begun_after {
+                when + Duration::from_secs(5)
+            } else {
+                when - Duration::from_secs(5)
+            };
+            update(&p, &id, |a| a.at = rfc3339(at));
+            let code = settle_newest_on(&p, own, &ctx, None, true).unwrap().code;
+            assert!(!refused_path(&p).exists(), "read once");
+            code
+        };
+        let min = Duration::from_secs(60);
+        assert_eq!(settled("0.3.0", min, false), DISK_FULL);
+        assert_eq!(settled("v0.3.0", min, false), DISK_FULL);
+        // another release's, an older attempt's, an old file
+        for (version, age, after) in [
+            ("0.3.1", min, false),
+            ("", min, false),
+            ("0.3.0", min, true),
+            ("0.3.0", 2 * REFUSED_FRESH, false),
+        ] {
+            assert_eq!(
+                settled(version, age, after),
+                INSTALLER_NOT_FINISHED,
+                "{version} {age:?} {after}"
+            );
+        }
+        // an update that installed after all says nothing of it
+        let dir = tempfile::tempdir().unwrap();
+        let p = path(dir.path());
+        let id = begin(&p, TRIGGER_BADGE, own, "0.3.0");
+        set_step(&p, &id, STEP_INSTALL);
+        std::fs::write(refused_path(&p), "0.3.0").unwrap();
+        assert!(settle_newest_on(&p, "0.3.0", &ctx, None, true).is_none());
+        assert_eq!(newest(&p).unwrap().outcome, INSTALLED);
+        assert!(!refused_path(&p).exists());
     }
 
     // An app that runs the server: the attempt it reached is installed once its server is

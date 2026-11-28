@@ -77,6 +77,16 @@ cd apps/desktop-player
 `-Pmaktaba.updaterPubkey=<base64>` embeds the apps' updater key (the repository variable
 `TAURI_UPDATER_PUBKEY`). Without a key the player still checks for updates but installs none.
 
+The `.msi` comes out in Maktaba's look (story 13.14): `packageMsi` ends by running
+[`tools/release/msi/theme_msi.py`](../../tools/release/msi/theme_msi.py) on it (Windows, with
+`python`, or `-Pmaktaba.python=<program>`). It puts `msi/dialog-en.bmp` and `msi/banner-en.bmp` in
+place of WiX's bitmaps, Maktaba's light-on-ink text styles on the words drawn over them, and an
+embedded Arabic transform (WiX's own Arabic words, mirrored dialogs, `dialog-ar.bmp` and
+`banner-ar.bmp`) that Windows Installer applies itself where Windows is Arabic. compose empties
+the resource folder it hands jpackage before each run, so the theming cannot go in through
+jpackage's `--resource-dir`. `theme_msi.py --check <msi>` reads it all back (CI's Windows Player
+job and the release legs). The bitmaps are drawn by `docs/design/desktop/installer-art.mjs`.
+
 ## How it works
 
 - **Video:** JavaFX's media stack (H.264 and AAC, as MP4 or HLS). Sessions open with the

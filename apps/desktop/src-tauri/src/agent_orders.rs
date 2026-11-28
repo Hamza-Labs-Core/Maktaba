@@ -6,7 +6,8 @@
 // and the file it names checked against the order) and says staged; at the home's go it says installing
 // and starts the installer out of its own kill-on-close job. The installer stops this agent
 // (--server-stop), replaces the app and its payload, and starts the server again
-// (--server-start); the new agent settles the attempt (attempts.rs). The decisions are
+// (--server-start); the new agent settles the attempt (attempts.rs). One that ended while this
+// agent still runs installed nothing, and the order says so (installer_ended). The decisions are
 // autoinstall::decide's, the window app's own; the window app only shows the order
 // (shell.rs). The server sends no maktaba:// link to wake a window (AGENT_ORDERS_ENV).
 // Only the Windows agent runs it; elsewhere its decisions are only tested.
@@ -83,8 +84,11 @@ pub trait Io {
     /// The body at url (the feed, the installer).
     fn get(&self, url: &str) -> Result<Vec<u8>, String>;
     /// Starts the installer at path with args, to outlive this agent.
-    fn start(&self, installer: &Path, args: &[&str]) -> Result<(), String>;
+    fn start(&self, installer: &Path, args: &[&str]) -> Result<Running, String>;
 }
+
+/// A started installer: its exit code once it ended, None while it runs.
+pub type Running = Box<dyn FnMut() -> Option<i32> + Send>;
 
 /// The feed's installer for version: its url, its file's name on the release page, and its
 /// signature.
@@ -214,6 +218,8 @@ pub struct Orders<I: Io> {
     pub say: Box<dyn FnMut(&str) + Send>,
     /// the run whose installer this agent started: never started twice
     started: Option<String>,
+    /// that installer and its attempt's id, until it ended
+    running: Option<(String, Running)>,
     /// the run that last failed here, and when (RETRY_AFTER)
     failed_at: Option<(String, Instant)>,
 }
@@ -233,6 +239,7 @@ impl<I: Io> Orders<I> {
             paused,
             say,
             started: None,
+            running: None,
             failed_at: None,
         }
     }
@@ -290,6 +297,7 @@ impl<I: Io> Orders<I> {
         };
         if self.started.as_deref() == Some(req.run_id.as_str()) {
             // its installer runs: it stops this agent
+            self.installer_ended(&path, &req);
             return;
         }
         if let Some((run, at)) = &self.failed_at {
@@ -362,8 +370,9 @@ impl<I: Io> Orders<I> {
                 }
                 attempts::set_step(&rec, &id, attempts::STEP_INSTALL);
                 match self.install(&req, &staged) {
-                    Ok(installer) => {
+                    Ok((installer, running)) => {
                         self.started = Some(req.run_id.clone());
+                        self.running = Some((id, running));
                         (self.say)(&format!(
                             "the installer of {} started ({}): it stops the server, installs, \
                              and starts it again",
@@ -378,6 +387,48 @@ impl<I: Io> Orders<I> {
                 }
             }
         }
+    }
+
+    /// installer_ended says in the order that its installer ended and installed nothing: it
+    /// stops this agent before it changes anything, so one that failed while this agent still
+    /// runs did not get that far (no room on the disk: installer.nsi's MaktabaRoom). The server
+    /// waits for the install until it is told (app_did_not_install, 30 minutes later, else).
+    fn installer_ended(&mut self, path: &Path, req: &Request) {
+        let Some(code) = self.running.as_mut().and_then(|(_, ended)| ended()) else {
+            return;
+        };
+        let Some((id, _)) = self.running.take() else {
+            return;
+        };
+        if code == 0 {
+            return;
+        }
+        let f = if code == attempts::INSTALLER_NO_ROOM {
+            Failure::new(
+                attempts::STEP_INSTALL,
+                attempts::DISK_FULL,
+                format!(
+                    "the installer of {} found too little free space on the disk and changed \
+                     nothing (exit {code})",
+                    req.version
+                ),
+            )
+        } else {
+            Failure::new(
+                attempts::STEP_INSTALL,
+                attempts::INSTALLER_NOT_FINISHED,
+                format!(
+                    "the installer of {} ended (exit {code}) before it stopped the server: \
+                     nothing was installed",
+                    req.version
+                ),
+            )
+        };
+        let record = attempts::path(&self.root);
+        attempts::fail(&record, &id, &f);
+        // said here: not the app's to say at its next start
+        attempts::forget_refusal(&record);
+        self.failed(path, req, &f);
     }
 
     /// stage downloads the order's installer from the release's own feed, checks it, and
@@ -423,7 +474,7 @@ impl<I: Io> Orders<I> {
 
     /// install checks the staged installer again and starts it: as an .exe of its own in
     /// the updates folder (Windows starts nothing else), out of this agent's job.
-    fn install(&mut self, req: &Request, staged: &Path) -> Result<PathBuf, Failure> {
+    fn install(&mut self, req: &Request, staged: &Path) -> Result<(PathBuf, Running), Failure> {
         let ctx = attempts::Ctx::here();
         let fail =
             |code: &'static str, why: String| Failure::new(attempts::STEP_INSTALL, code, why);
@@ -463,13 +514,13 @@ impl<I: Io> Orders<I> {
                 "the order was withdrawn".into(),
             ));
         }
-        self.io.start(&exe, &INSTALLER_ARGS).map_err(|e| {
+        let running = self.io.start(&exe, &INSTALLER_ARGS).map_err(|e| {
             fail(
                 attempts::INSTALL_FAILED,
                 format!("the installer did not start: {e}"),
             )
         })?;
-        Ok(exe)
+        Ok((exe, running))
     }
 
     /// The updater key, or why this build takes no release (a local build: a person
@@ -513,7 +564,7 @@ fn clean_installers(root: &Path) {
 /// its release or newer (the installer it started took), failed otherwise.
 pub fn settle(root: &Path, build: &Build) {
     let rec = attempts::path(root);
-    let _ = attempts::settle_newest(&rec, &build.version, &attempts::Ctx::here(), None);
+    attempts::settle_newest_for_agent(&rec, &build.version, &attempts::Ctx::here());
 }
 
 /// The network and the installer's start, for real. own_job: this agent holds its own
@@ -554,8 +605,13 @@ impl Io for Net {
         })
     }
 
-    fn start(&self, installer: &Path, args: &[&str]) -> Result<(), String> {
-        start_detached(installer, args, self.own_job)
+    fn start(&self, installer: &Path, args: &[&str]) -> Result<Running, String> {
+        let mut child = start_detached(installer, args, self.own_job)?;
+        // a code Windows does not give is no code of an installer that ended well
+        Ok(Box::new(move || {
+            let status = child.try_wait().ok().flatten()?;
+            Some(status.code().unwrap_or(-1))
+        }))
     }
 }
 
@@ -566,7 +622,11 @@ impl Io for Net {
 /// agent. An agent in its own job never starts it inside that job (a refused breakaway
 /// there is something else: an antivirus on the new .exe).
 #[cfg(windows)]
-pub fn start_detached(exe: &Path, args: &[&str], own_job: bool) -> Result<(), String> {
+pub fn start_detached(
+    exe: &Path,
+    args: &[&str],
+    own_job: bool,
+) -> Result<std::process::Child, String> {
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
     const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
@@ -582,11 +642,9 @@ pub fn start_detached(exe: &Path, args: &[&str], own_job: bool) -> Result<(), St
             .spawn()
     };
     match spawn(CREATE_BREAKAWAY_FROM_JOB | CREATE_NEW_PROCESS_GROUP) {
-        Ok(_) => Ok(()),
+        Ok(child) => Ok(child),
         Err(e) if !own_job && e.raw_os_error() == Some(ACCESS_DENIED) => {
-            spawn(CREATE_NEW_PROCESS_GROUP)
-                .map(|_| ())
-                .map_err(|e| format!("{}: {e}", exe.display()))
+            spawn(CREATE_NEW_PROCESS_GROUP).map_err(|e| format!("{}: {e}", exe.display()))
         }
         Err(e) => Err(format!("{}: {e}", exe.display())),
     }
@@ -598,6 +656,7 @@ mod tests {
     use std::cell::RefCell;
     use std::collections::HashMap;
     use std::rc::Rc;
+    use std::sync::{Arc, Mutex};
 
     // A throwaway minisign key (its secret thrown away), a second one, and signatures of BODY
     // made for these tests the way tauri's signer makes them (prehashed, "ED"; the trusted
@@ -641,6 +700,8 @@ mod tests {
         bodies: Rc<RefCell<HashMap<String, Vec<u8>>>>,
         started: Started,
         fail_start: bool,
+        /// what the started installer exits with, once it ended
+        exit: Arc<Mutex<Option<i32>>>,
     }
 
     impl Io for Fake {
@@ -651,7 +712,7 @@ mod tests {
                 .cloned()
                 .ok_or_else(|| format!("{url}: status: 404 Not Found"))
         }
-        fn start(&self, installer: &Path, args: &[&str]) -> Result<(), String> {
+        fn start(&self, installer: &Path, args: &[&str]) -> Result<Running, String> {
             if self.fail_start {
                 return Err("CreateProcess: denied".into());
             }
@@ -659,7 +720,8 @@ mod tests {
                 installer.to_path_buf(),
                 args.iter().map(|a| a.to_string()).collect(),
             ));
-            Ok(())
+            let exit = Arc::clone(&self.exit);
+            Ok(Box::new(move || *exit.lock().unwrap()))
         }
     }
 
@@ -894,6 +956,44 @@ mod tests {
         r.order(autoinstall::GO);
         r.orders.tick();
         assert_eq!(r.fake.started.borrow().len(), 1);
+    }
+
+    /// An installer that ended while this agent still runs stopped nothing and installed
+    /// nothing: the order says so at once (the home waits for it), with the disk when that is
+    /// why, and it is not started again for the same run.
+    #[test]
+    fn an_installer_that_ended_before_it_stopped_the_server_fails_the_order() {
+        for (exit, code) in [
+            (attempts::INSTALLER_NO_ROOM, attempts::DISK_FULL),
+            (2, attempts::INSTALLER_NOT_FINISHED),
+        ] {
+            let mut r = rig(&format!("ended-{exit}"), Some(PUBKEY));
+            r.order(autoinstall::GO);
+            r.orders.tick();
+            // it still runs
+            r.orders.tick();
+            assert_eq!(r.state().state, autoinstall::INSTALLING);
+            *r.fake.exit.lock().unwrap() = Some(exit);
+            r.orders.tick();
+            let s = r.state();
+            assert_eq!(s.state, autoinstall::FAILED);
+            assert!(s.error.starts_with(code), "{}", s.error);
+            let a = attempts::newest(&attempts::path(&r.dir)).unwrap();
+            assert_eq!(
+                (a.outcome.as_str(), a.code.as_str(), a.step.as_str()),
+                (attempts::FAILED, code, attempts::STEP_INSTALL)
+            );
+            r.order(autoinstall::GO);
+            r.orders.tick();
+            assert_eq!(r.fake.started.borrow().len(), 1);
+        }
+        // one that ended well is not a failure: the next agent settles it
+        let mut r = rig("ended-0", Some(PUBKEY));
+        r.order(autoinstall::GO);
+        r.orders.tick();
+        *r.fake.exit.lock().unwrap() = Some(0);
+        r.orders.tick();
+        assert_eq!(r.state().state, autoinstall::INSTALLING);
     }
 
     #[test]

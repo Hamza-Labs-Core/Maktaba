@@ -37,6 +37,14 @@ for f in "$target"/release/bundle/nsis/*-setup.exe; do
     if [ -f "$f" ] && { [ -z "$setup" ] || [ "$f" -nt "$setup" ]; }; then setup="$f"; fi
 done
 [ -n "$setup" ] || { echo "build-app: no installer in $target/release/bundle/nsis" >&2; exit 1; }
+# story 13.14: the script tauri compiled is Maktaba's template (its two pages, both languages,
+# the art), as tauri rendered it beside the build
+script="$target/release/nsis/x64/installer.nsi"
+for want in 'Page custom MaktabaWelcome MaktabaWelcomeLeave' '!define MUI_PAGE_CUSTOMFUNCTION_SHOW MaktabaInstallingShow' \
+    '!insertmacro MUI_LANGUAGE "English"' '!insertmacro MUI_LANGUAGE "Arabic"' 'installer-hooks.nsh'; do
+    grep -qF "$want" "$script" || { echo "build-app: $script has no '$want': tauri did not use windows/installer.nsi" >&2; exit 1; }
+done
+echo "build-app: ${script##*/}: Maktaba's two pages, English and Arabic, the server's hooks"
 # the hooks on both kinds of Maktaba.exe (this build has one of them), with tauri's makensis
 "$SCRIPT_DIR/test-hooks.sh"
 "$SCRIPT_DIR/check.sh" --installer "$setup"

@@ -20,8 +20,12 @@
 #   reinstall of the same build); the same installer the way the app's updater runs it (/S
 #   /UPDATE: over the old files, uninstalling nothing) over an older release's pipeline
 #   wheel: server\pipeline must then hold one wheel, the one payload.json names (Epic 35
-#   review round 2, B-H1); then a silent uninstall: the program is gone, the state is
-#   untouched. It refuses to run where Maktaba is installed for this user or its sign-in task
+#   review round 2, B-H1); the same installer where there is no room (a small VHD, where this
+#   runs as an administrator): it must exit 112 with nothing there touched, silent and as the
+#   agent's orders run it (/P /UPDATE), and where only %TEMP% is too small; then a silent
+#   uninstall: the program is gone, the state is untouched. The installs make their shortcuts
+#   (no /NS) where this user has none of Maktaba's: a new one makes the Start menu's and no
+#   desktop one, a reinstall and an update keep the desktop one. It refuses to run where Maktaba is installed for this user or its sign-in task
 #   exists: the installer would replace that install's registration and the uninstall hook
 #   would remove the task. What the installer writes to the registry for the test install is
 #   put back as it was.
@@ -62,6 +66,9 @@ case "$(uname -s)" in
     *) echo "check: the Windows app is checked on Windows, in Git Bash" >&2; exit 2 ;;
 esac
 
+# the installer's exit code where there is no room (installer.nsi, MK_ROOM_EXIT)
+NO_ROOM_EXIT=112
+
 fails=0
 ok()   { printf '  ok    %s\n' "$*"; }
 fail() { printf '  FAIL  %s\n' "$*"; fails=$((fails + 1)); }
@@ -90,7 +97,19 @@ SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/win-app-check.XXXXXX")"
 PGDATA_DIR="$SCRATCH/pgdata"
 PG_CTL=""
 REGISTRY_TOUCHED=0
+SHORTCUTS=0
+SMALL_VHD=""
+# the small disk (below) detached
+detach_small() {
+    [ -n "$SMALL_VHD" ] || return 0
+    printf 'select vdisk file="%s"\ndetach vdisk\n' "$SMALL_VHD" >"$SCRATCH/detach.txt"
+    wincmd diskpart.exe /s "$(win "$SCRATCH/detach.txt")" >/dev/null 2>&1 || true
+    SMALL_VHD=""
+}
 cleanup() {
+    detach_small
+    # the shortcuts are this run's: there were none before
+    if [ "$SHORTCUTS" = 1 ]; then rm -f "$DESKTOP_LNK" "$MENU_LNK"; fi
     # a check that failed half way leaves no server behind, and the registry as it was
     if [ -n "$PG_CTL" ] && [ -f "$PGDATA_DIR/postmaster.pid" ]; then
         "$PG_CTL" -D "$(win "$PGDATA_DIR")" -m immediate -w stop >/dev/null 2>&1 || true
@@ -193,18 +212,19 @@ if [ -n "$SETUP" ]; then
     # started (run-watched.ps1): the uninstaller's copy of itself in %TEMP%, which removes the
     # registration well after uninstall.exe is gone, and each hook's run of Maktaba.exe, read
     # the moment it starts. What runs from the install folder after the grace is ended.
-    # watched EXE ARGS [GRACE]: runs it as above (GRACE seconds, default 20, before what runs
-    # from the install folder is ended); sets WATCHED_EXIT (its exit code), WATCHED_CHILDREN
+    # watched EXE ARGS [GRACE [TIMEOUT]]: runs it as above (GRACE seconds, default 20, before
+    # what runs from the install folder, WATCH_DIR, is ended; TIMEOUT, 900, for the run); sets WATCHED_EXIT (its exit code), WATCHED_CHILDREN
     # ("<name> exit <code>" of the other programs it started itself), WATCHED_RAN (the command
     # line of each of the app's) and WATCHED_ENDED (what had to be ended), one per line
+    WATCH_DIR="$(win "$INST")"
     watched() {
         local out line
         WATCHED_EXIT=none WATCHED_ENDED="" WATCHED_CHILDREN="" WATCHED_RAN=""
         # the hooks' app (story 38.3) keeps its state in %LOCALAPPDATA%\Maktaba: a scratch one
         out="$(LOCALAPPDATA="$(win "$SCRATCH/localappdata")" WEBVIEW2_USER_DATA_FOLDER="$(win "$SCRATCH/webview2")" \
             wincmd powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
-            -File "$(win "$SCRIPT_DIR/run-watched.ps1")" -Exe "$(win "$1")" -Arguments "$2" -Dir "$(win "$INST")" \
-            -Grace "${3:-20}" 2>&1)" || true
+            -File "$(win "$SCRIPT_DIR/run-watched.ps1")" -Exe "$(win "$1")" -Arguments "$2" -Dir "$WATCH_DIR" \
+            -Grace "${3:-20}" -Timeout "${4:-900}" 2>&1)" || true
         while IFS=$'\r' read -r line; do
             case "$line" in
                 "exit "*)  WATCHED_EXIT="${line#exit }" ;;
@@ -288,12 +308,30 @@ CS
     wincmd reg.exe add "$UNINSTALL_KEY" /v InstallLocation /d "\"$(win "$INST")\"" /f >/dev/null
     wincmd reg.exe add "$UNINSTALL_KEY" /v MaktabaServerFlags /d "$STALE_RECORD" /f >/dev/null
 
+    # the shortcuts: made (no /NS) only where this user has none of Maktaba's, so that every one
+    # of them is this run's
+    DESKTOP_LNK="$(cygpath -u -D)/Maktaba.lnk"
+    MENU_LNK="$(cygpath -u -P)/Maktaba.lnk"
+    NS="/NS "
+    if [ ! -e "$DESKTOP_LNK" ] && [ ! -e "$MENU_LNK" ]; then
+        SHORTCUTS=1 NS=""
+    else
+        note "this user has a Maktaba shortcut: installing with /NS, the shortcuts are not checked"
+    fi
+
     echo "installer: $SETUP (over a client-only app)"
-    watched "$SETUP" "/S /NS /D=$(win "$INST")"
+    watched "$SETUP" "/S ${NS}/D=$(win "$INST")"
     if [ "$WATCHED_EXIT" = 0 ] && [ -f "$INST/Maktaba.exe" ] && [ -f "$INST/server/payload.json" ]; then
         ok "silent install into $(win "$INST")"
     else
         fail "silent install (exit $WATCHED_EXIT)"
+    fi
+    if [ "$SHORTCUTS" = 1 ]; then
+        if [ -f "$MENU_LNK" ] && [ ! -e "$DESKTOP_LNK" ]; then
+            ok "a Start menu shortcut, and no desktop shortcut on a new install"
+        else
+            fail "the shortcuts of a new install: Start menu $([ -f "$MENU_LNK" ] && echo yes || echo no), desktop $([ -e "$DESKTOP_LNK" ] && echo yes || echo no); want yes, no"
+        fi
     fi
     if [ -f "$INST/standin.log" ]; then
         fail "the client-only Maktaba.exe was run by a hook: $(tr -d '\r' <"$INST/standin.log" | paste -sd'|' -)"
@@ -589,7 +627,18 @@ if [ -n "$SETUP" ]; then
 
     # the same build again: its hooks find the Maktaba.exe they installed (and its record)
     echo "reinstall (the same installer over it)"
-    watched "$SETUP" "/S /NS /D=$(win "$INST")"
+    if [ "$SHORTCUTS" = 1 ]; then
+        # the desktop shortcut a person made, or ticked: an install over this one keeps it
+        # shellcheck disable=SC2016  # PowerShell's own $ variables; the paths go in through the environment
+        LNK="$(win "$(dirname "$DESKTOP_LNK")")\\Maktaba.lnk" TO="$(win "$INST")\\Maktaba.exe" powershell.exe -NoProfile -NonInteractive -Command \
+            '$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:LNK); $s.TargetPath = $env:TO; $s.Save()' >/dev/null 2>&1 || true
+        [ -f "$DESKTOP_LNK" ] || fail "could not make a desktop shortcut to keep"
+    fi
+    desktop_kept() {
+        [ "$SHORTCUTS" = 1 ] || return 0
+        if [ -f "$DESKTOP_LNK" ]; then ok "the desktop shortcut is kept by the $1"; else fail "the $1 took the desktop shortcut away"; fi
+    }
+    watched "$SETUP" "/S ${NS}/D=$(win "$INST")"
     if [ "$WATCHED_EXIT" = 0 ] && [ -f "$INST/Maktaba.exe" ] && [ -f "$INST/server/payload.json" ]; then
         ok "silent reinstall"
     else
@@ -597,6 +646,7 @@ if [ -n "$SETUP" ]; then
     fi
     hooks "reinstall" --server-stop --server-start
     record_check "reinstall"
+    desktop_kept reinstall
     if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state is untouched by the reinstall"; else fail "the reinstall changed the state: $(state_sums)"; fi
 
     # An update as the app's updater runs it (tauri-plugin-updater: the installer with
@@ -605,7 +655,7 @@ if [ -n "$SETUP" ]; then
     # builds the pipeline's venv from one wheel; two would roll every update back.
     echo "update (/UPDATE, over an older release's pipeline wheel)"
     printf 'an older release wheel\n' >"$INST/server/pipeline/maktaba_pipeline-0.0.0a1-py3-none-any.whl"
-    watched "$SETUP" "/S /UPDATE /NS /D=$(win "$INST")"
+    watched "$SETUP" "/S /UPDATE ${NS}/D=$(win "$INST")"
     if [ "$WATCHED_EXIT" = 0 ] && [ -f "$INST/Maktaba.exe" ] && [ -f "$INST/server/payload.json" ]; then
         ok "silent update (/UPDATE)"
     else
@@ -613,6 +663,7 @@ if [ -n "$SETUP" ]; then
     fi
     hooks "update" --server-stop --server-start
     record_check "update"
+    desktop_kept update
     named="$("$INST/server/python/python.exe" -I -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["pipeline"]["wheel"])' \
         "$(win "$INST/server/payload.json")" 2>&1 | tr -d '\r' || true)"
     wheels=()
@@ -625,6 +676,208 @@ if [ -n "$SETUP" ]; then
         fail "server\\pipeline after the update: ${wheels[*]:-no wheel} (payload.json names '$named')"
     fi
     if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state is untouched by the update"; else fail "the update changed the state: $(state_sums)"; fi
+
+    # No room (installer.nsi, MaktabaRoom): an update onto a disk too small for it must end before
+    # the hooks stop the server or delete its payload, with its own exit code, and start the home
+    # again. The disk is a VHD of 200 MB, with an install on it: the installed Maktaba.exe (the
+    # record is of its size and time) and a payload.
+    echo "no room on the disk"
+    # small_disk MB: SMALL = a small disk's root ("X:\") and SMALL_U that for bash ("/x"), or why
+    # not in SMALL_WHY
+    small_disk() {
+        SMALL="" SMALL_WHY=""
+        # shellcheck disable=SC2016  # PowerShell's own $ variables
+        if [ "$(powershell.exe -NoProfile -NonInteractive -Command \
+            '([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)' | tr -d '\r')" != True ]; then
+            SMALL_WHY="a VHD needs an administrator"
+            return
+        fi
+        local letter vhd
+        # shellcheck disable=SC2016  # PowerShell's own $ variables
+        letter="$(powershell.exe -NoProfile -NonInteractive -Command \
+            '$used = [IO.DriveInfo]::GetDrives() | ForEach-Object { $_.Name.Substring(0, 1) }; 90..68 | ForEach-Object { [string][char]$_ } | Where-Object { $used -notcontains $_ } | Select-Object -First 1' | tr -d '\r')"
+        [ -n "$letter" ] || { SMALL_WHY="no drive letter is free"; return; }
+        vhd="$(win "$SCRATCH")\\small-$1.vhd"
+        printf '%s\n' "create vdisk file=\"$vhd\" maximum=$1 type=expandable" "select vdisk file=\"$vhd\"" \
+            "attach vdisk" "convert mbr" "create partition primary" "format fs=ntfs label=maktabaroom quick" \
+            "assign letter=$letter" >"$SCRATCH/small.txt"
+        SMALL_VHD="$vhd"
+        timeout 120 env MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' diskpart.exe /s "$(win "$SCRATCH/small.txt")" >"$SCRATCH/small.log" 2>&1 || true
+        local i
+        for i in 1 2 3 4 5; do
+            if touch "/${letter,,}/there" 2>/dev/null; then SMALL="$letter:\\" SMALL_U="/${letter,,}"; return; fi
+            sleep "$i"
+        done
+        SMALL_WHY="diskpart made no disk: $(tr -d '\r' <"$SCRATCH/small.log" | grep -v '^ *$' | tail -3 | paste -sd'|' -)"
+    }
+    small_disk 200
+    if [ -z "$SMALL" ]; then
+        if [ "${WIN_APP_REQUIRE_SMALL_DISK:-}" = 1 ]; then fail "no small disk: $SMALL_WHY"; else note "not checked: $SMALL_WHY"; fi
+    else
+        small="$SMALL_U/Maktaba"
+        mkdir -p "$small/server/bin" "$small/data" "$SMALL_U/t"
+        cp "$INST/server/payload.json" "$small/server/payload.json"
+        printf 'the old server\n' >"$small/server/bin/maktaba-server.exe"
+        printf 'state\n' >"$small/data/state.txt"
+        # shellcheck disable=SC2016  # PowerShell's own $ variables; the paths go in through the environment
+        FROM="$(win "$INST")\\Maktaba.exe" TO="${SMALL}Maktaba\\Maktaba.exe" powershell.exe -NoProfile -NonInteractive -Command \
+            'Copy-Item -LiteralPath $env:FROM -Destination $env:TO' || fail "could not copy Maktaba.exe to the small disk"
+        small_sums() { (cd "$small" && find . -type f -print0 | sort -z | xargs -0 sha256sum); }
+        before="$(small_sums)"
+        # refused WHAT: the last run's exit code, and the install on the small disk as it was
+        refused() {
+            if [ "$WATCHED_EXIT" != "$NO_ROOM_EXIT" ]; then
+                fail "$1: exit $WATCHED_EXIT, want $NO_ROOM_EXIT"
+            elif [ "$(small_sums)" != "$before" ]; then
+                fail "$1: changed the install there: $(diff <(printf '%s\n' "$before") <(small_sums) | sed -n '1,5p' | paste -sd'|' -)"
+            else
+                ok "$1: exit $NO_ROOM_EXIT, the payload and the state there untouched"
+            fi
+        }
+        WATCH_DIR="${SMALL}Maktaba"
+        # what the agent and the app read as they settle the update (attempts.rs REFUSED_FILE)
+        left="$SCRATCH/localappdata/Maktaba/updates/installer-no-room"
+        rm -f "$left"
+        # an update as the app's updater runs it (the app stopped the server before): started again
+        watched "$SETUP" "/S /UPDATE /NS /D=${SMALL}Maktaba" 20 120
+        refused "a silent update with no room"
+        # (the agent that starts then may have read it: there was no attempt to settle, so it stays)
+        version="$(reg_value "$UNINSTALL_KEY" DisplayVersion)"
+        if [ -f "$left" ] && [ "$(cat "$left")" = "$version" ]; then
+            ok "a silent update with no room: says so beside the update record, for $version"
+        else
+            fail "a silent update with no room left '$(cat "$left" 2>&1)' beside the update record, want $version"
+        fi
+        rm -f "$left"
+        hooks "a silent update with no room" --server-start
+        # as the agent's orders run it: no window may wait for somebody
+        watched "$SETUP" "/P /UPDATE /D=${SMALL}Maktaba" 20 120
+        refused "the agent's update (/P /UPDATE) with no room"
+        rm -f "$left"
+        hooks "the agent's update with no room" --server-start
+        # not an update: nothing was stopped, so nothing is started
+        watched "$SETUP" "/S /NS /D=${SMALL}Maktaba" 20 120
+        refused "a silent install with no room"
+        if [ -z "$WATCHED_RAN" ]; then ok "a silent install with no room: no hook ran Maktaba.exe"; else fail "a silent install with no room ran: $WATCHED_RAN"; fi
+        if [ ! -e "$left" ]; then ok "a silent install with no room says nothing of an update"; else fail "a silent install with no room left $(win "$left")"; fi
+        WATCH_DIR="$(win "$INST")"
+        # room in the folder, none in %TEMP%, where a solid installer unpacks
+        rc=0
+        TMP="$SMALL_U/t" TEMP="$SMALL_U/t" MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*' \
+            timeout 120 "$SETUP" /S /NS "/D=$(win "$SCRATCH")\\roomy" || rc=$?
+        if [ "$rc" = "$NO_ROOM_EXIT" ] && [ ! -e "$SCRATCH/roomy" ]; then
+            ok "an install whose %TEMP% has no room: exit $NO_ROOM_EXIT, nothing made"
+        else
+            fail "an install whose %TEMP% has no room: exit $rc, want $NO_ROOM_EXIT$([ ! -e "$SCRATCH/roomy" ] || echo ', and it made the folder')"
+        fi
+        loc="$(reg_value "$UNINSTALL_KEY" InstallLocation)"
+        if [ "${loc//\"/}" = "$(win "$INST")" ]; then ok "the registration is the install's still"; else fail "a refused install registered itself: '$loc'"; fi
+    fi
+    detach_small
+
+    # what the installer unpacks, in its version information, where the app reads it (room.rs)
+    said="$(KEY="$(sed -n 's/.*pub const UNPACKED_KEY: &str = "\(.*\)";.*/\1/p' "$REPO_ROOT/apps/desktop/src-tauri/src/room.rs")" \
+        "$PY" -I -c 'import os, re, sys
+b = open(sys.argv[1], "rb").read(8 << 20)
+k = (os.environ["KEY"] + "\0").encode("utf-16-le")
+i = b.find(k)
+m = re.match(r"\0*(\d+)\0", b[i + len(k):i + len(k) + 64].decode("utf-16-le", "replace")) if i >= 0 else None
+print(m.group(1) if m else "")' "$(win "$SETUP")" | tr -d '\r')"
+    if [ -n "$said" ] && [ "$said" -gt 100000 ] && [ "$said" -le "$(($(reg_value "$UNINSTALL_KEY" EstimatedSize)))" ]; then
+        ok "the installer says what it unpacks: $said KB"
+    else
+        fail "the installer says it unpacks '$said' KB, and the install is $(($(reg_value "$UNINSTALL_KEY" EstimatedSize))) KB"
+    fi
+
+    # Room because the old payload goes first: an update that fits today is never refused. A disk
+    # with a whole install on it (this one's payload) and %TEMP%, with room for the new payload
+    # once and not twice; and, first, with too little for it whatever goes.
+    echo "room only once the old payload is gone"
+    payload_mb=$(( ($(reg_value "$UNINSTALL_KEY" EstimatedSize) + 1023) / 1024 ))
+    small_disk $((payload_mb * 2 + 400))
+    if [ -z "$SMALL" ]; then
+        if [ "${WIN_APP_REQUIRE_SMALL_DISK:-}" = 1 ]; then fail "no small disk: $SMALL_WHY"; else note "not checked: $SMALL_WHY"; fi
+    else
+        small="$SMALL_U/Maktaba"
+        mkdir -p "$small/data" "$SMALL_U/t"
+        cp -R "$INST/server" "$small/server"
+        printf 'a file the release before had\n' >"$small/server/gone-with-the-old-payload"
+        printf 'state\n' >"$small/data/state.txt"
+        # shellcheck disable=SC2016  # PowerShell's own $ variables; the paths go in through the environment
+        FROM="$(win "$INST")\\Maktaba.exe" TO="${SMALL}Maktaba\\Maktaba.exe" powershell.exe -NoProfile -NonInteractive -Command \
+            'Copy-Item -LiteralPath $env:FROM -Destination $env:TO' || fail "could not copy Maktaba.exe to the small disk"
+        small_free_mb() {
+            # shellcheck disable=SC2016  # PowerShell's own $ variables
+            D="$SMALL" powershell.exe -NoProfile -NonInteractive -Command \
+                '[long][Math]::Floor((New-Object IO.DriveInfo $env:D).AvailableFreeSpace / 1MB)' | tr -d '\r'
+        }
+        # leave_free MB: fills the disk but for MB
+        leave_free() {
+            rm -f "$SMALL_U/fill"
+            local over=$(($(small_free_mb) - $1))
+            [ "$over" -gt 0 ] || { fail "the small disk has only $(small_free_mb) MB free, want $1"; return; }
+            wincmd fsutil.exe file createnew "${SMALL}fill" $((over * 1048576)) >/dev/null || fail "could not fill the small disk"
+        }
+        # what is installed there, by name and size (thousands of files: no sums)
+        small_list() { (cd "$small" && find . -type f -printf '%p %s\n' | sort); }
+        # the keys an install writes, as this run's install left them
+        keys=("$UNINSTALL_KEY" "$PRODUCT_KEY" "$DEEPLINK_KEY")
+        for i in "${!keys[@]}"; do
+            if reg_exists "${keys[$i]}"; then wincmd reg.exe export "${keys[$i]}" "$(win "$SCRATCH")\\key-$i.reg" /y >/dev/null; fi
+        done
+        WATCH_DIR="${SMALL}Maktaba"
+        before="$(small_list)"
+        leave_free $((payload_mb / 2))
+        echo "        $payload_mb MB payload, $(small_free_mb) MB free"
+        TMP="${SMALL}t" TEMP="${SMALL}t" watched "$SETUP" "/S /UPDATE /NS /D=${SMALL}Maktaba" 20 300
+        if [ "$WATCHED_EXIT" = "$NO_ROOM_EXIT" ] && [ "$(small_list)" = "$before" ]; then
+            ok "an update that does not fit whatever the old payload frees: exit $NO_ROOM_EXIT, nothing touched"
+        else
+            fail "an update that does not fit: exit $WATCHED_EXIT, want $NO_ROOM_EXIT (the install there $([ "$(small_list)" = "$before" ] && echo as it was || echo changed))"
+        fi
+        hooks "an update that does not fit" --server-start
+        # more than one payload, less than two: today's updates fit here
+        leave_free $((payload_mb + 160))
+        free="$(small_free_mb)"
+        echo "        $payload_mb MB payload, $free MB free"
+        TMP="${SMALL}t" TEMP="${SMALL}t" watched "$SETUP" "/S /UPDATE /NS /D=${SMALL}Maktaba"
+        if [ "$WATCHED_EXIT" = 0 ] && [ -f "$small/Maktaba.exe" ] && cmp -s "$small/server/payload.json" "$INST/server/payload.json" &&
+            [ ! -e "$small/server/gone-with-the-old-payload" ] && [ "$(cat "$small/data/state.txt")" = state ]; then
+            ok "an update with $free MB free over a $payload_mb MB payload installs: the old payload's room counts"
+        else
+            fail "an update with $free MB free over a $payload_mb MB payload: exit $WATCHED_EXIT"
+        fi
+        if diff <(cd "$INST/server" && find . -type f -printf '%p %s\n' | grep -v '__pycache__' | sort) \
+            <(cd "$small/server" && find . -type f -printf '%p %s\n' | grep -v '__pycache__' | sort) >"$SCRATCH/payload.diff"; then
+            ok "the whole payload is there"
+        else
+            fail "the payload on the small disk differs: $(sed -n '1,4p' "$SCRATCH/payload.diff" | paste -sd'|' -)"
+        fi
+        hooks "an update with room once the old payload is gone" --server-stop --server-start
+        # an upgrade that stopped half way (a kill, a power cut): some of the new files, no
+        # payload.json. The hook deletes nothing then, and what is there is written over: the
+        # retry needs one payload and what is missing, not two
+        rm -f "$small/server/payload.json"
+        missing_mb=$(du -sm "$small/server/python" | cut -f1)
+        rm -rf "$small/server/python"
+        leave_free $((payload_mb + missing_mb + 160))
+        free="$(small_free_mb)"
+        echo "        half copied, $missing_mb MB missing, $free MB free"
+        TMP="${SMALL}t" TEMP="${SMALL}t" watched "$SETUP" "/S /UPDATE /NS /D=${SMALL}Maktaba"
+        if [ "$WATCHED_EXIT" = 0 ] && cmp -s "$small/server/payload.json" "$INST/server/payload.json" &&
+            [ -f "$small/server/python/python.exe" ] && [ "$free" -lt $((payload_mb * 2)) ]; then
+            ok "a retry over a half-copied payload with $free MB free installs: what is written over counts"
+        else
+            fail "a retry over a half-copied payload with $free MB free: exit $WATCHED_EXIT"
+        fi
+        hooks "a retry over a half-copied payload" --server-stop --server-start
+        WATCH_DIR="$(win "$INST")"
+        for i in "${!keys[@]}"; do
+            wincmd reg.exe delete "${keys[$i]}" /f >/dev/null 2>&1 || true
+            if [ -f "$SCRATCH/key-$i.reg" ]; then wincmd reg.exe import "$(win "$SCRATCH")\\key-$i.reg" >/dev/null 2>&1 || fail "could not put ${keys[$i]} back"; fi
+        done
+    fi
+    detach_small
 
     echo "uninstall"
     watched "$INST/uninstall.exe" "/S"
@@ -652,6 +905,9 @@ if [ -n "$SETUP" ]; then
     [ "$left" = 1 ] || ok "Maktaba.exe, uninstall.exe and server\\ removed"
     if [ "$(state_sums)" = "$STATE_BEFORE" ]; then ok "the state is still there, untouched (server.toml, keys\\, data\\)"; else fail "the uninstall changed the state: $(state_sums)"; fi
     if reg_exists "$UNINSTALL_KEY"; then fail "the uninstall registration is still there"; else ok "unregistered"; fi
+    if [ "$SHORTCUTS" = 1 ]; then
+        if [ ! -e "$MENU_LNK" ] && [ ! -e "$DESKTOP_LNK" ]; then ok "the shortcuts removed"; else fail "the uninstall left a shortcut"; fi
+    fi
     if reg_exists "$DEEPLINK_KEY"; then
         note "the uninstaller left $DEEPLINK_KEY ($(reg_value "$DEEPLINK_KEY\\shell\\open\\command"))"
     fi

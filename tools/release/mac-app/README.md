@@ -74,6 +74,20 @@ the arm64 app needs Sequoia or later (the overlay sets `LSMinimumSystemVersion` 
 Apple Silicon Macs keep the Homebrew/node paths. Lowering it means building Postgres + OpenSSL
 here with `MACOSX_DEPLOYMENT_TARGET=13.0`.
 
+## The .dmg's window (story 13.14)
+
+tauri's dmg script copies the background (`bundle.macOS.dmg.background`,
+`apps/desktop/src-tauri/macos/dmg-background.tiff`, 1x and 2x, drawn by
+`docs/design/desktop/installer-art.mjs`) into the image but lays the Finder window out over
+AppleScript, which needs a GUI session; `tauri-build.sh` skips that (`CI=true`) and then runs
+`dmg-layout.sh` on each `.dmg` it built: it opens the image read-write, writes its `.DS_Store`
+(`dmg_layout.py`: the window's size, the background picture, where Maktaba.app and the
+Applications link stand, from `tauri.conf.json`) with the `ds_store` and `mac_alias` wheels
+(pinned, fetched by `fetch-pinned.sh`), compresses it again and signs it again when tauri had
+signed it. `check-dmg.sh` checks the layout (`dmg-layout.sh --check`). The icons' names are
+drawn by Finder, black or white by the Mac's appearance, on the background's shelf, a tone both
+read on at 4.5:1.
+
 ## Signing
 
 `payload.sh` signs every Mach-O file one by one (no `--deep`): hardened runtime, secure

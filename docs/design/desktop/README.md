@@ -336,3 +336,32 @@ desktop styles (T03).
 | Part | Date | Reviewer | At | Outcome | Open |
 |---|---|---|---|---|---|
 | The design (#1556) | 2026-11-24 | the owner | `bead7a18c` (renders) | approved, with D1–D5 as above; D4 adds libmpv (13.18) | build stories 13.10–13.18 |
+
+## As built: the installers (13.14)
+
+The art is drawn from `installer-art/art.html` by `installer-art.mjs` (Playwright, on the real
+tokens, faces and the arch) into the files each tool reads; `installer-art/preview.png` shows
+every piece at 1x. Where the build differs from the mockups (`installer-welcome`,
+`installer-progress`, `installer-msi`), and why:
+
+| Surface | Difference | Why |
+|---|---|---|
+| `-setup.exe` | NSIS's own window size (about 500 × 390 at 100%), the pages laid out to scale in it, not 720 × 460 | MUI's dialog resource; resizing it at run time would move every system control |
+| | the words in Segoe UI; the titles and the wordmark in Maktaba Display, as bitmaps (100, 150, 200%) | NSIS cannot load the faces |
+| | Windows' own buttons (Cancel, Install), not brass | NSIS buttons are system push buttons |
+| | the check boxes drawn classic, their words in the page's colours | a themed check box ignores its text colour, which would be black on ink |
+| | over an earlier install, MUI's reinstall page comes first and the welcome page second | the welcome page holds the folder, and tauri asks about the earlier install before the folder |
+| | the desktop box off on a new install (silent and passive installs make none either), ticked when the PC has the shortcut already | an upgrade keeps what is there, and a new install adds nothing unasked |
+| | no room on the disk: a system message over the welcome page (or the reinstall page), in English or Arabic, and the page stays | the check the directory page made went with it, and an install that stops half way has already removed the old server |
+| | no copyright line under the pages that stay MUI's | the two pages have none; the exe's version info keeps it |
+| | no "Start Maktaba when I sign in" on the welcome page; an "Installs in" caption over the folder | the app's setup decides the sign-in start (`run_entry.rs`), and the installer never did; the folder field needs a name for screen readers |
+| | three steps (the app; the server and its tools; the Start menu and shortcuts), ✓ ● ○ glyphs, no percentage | the steps the installer really takes; the sign-in task is setup's |
+| | "Open Maktaba when it's done" at the page's foot, not in the button strip | the strip is NSIS's outer window |
+| | the reinstall page (only over an earlier install) and the uninstaller stay MUI's, their header in the chrome colour | radio buttons and the uninstaller's pages keep Windows' look |
+| Player `.msi` | no version note on the dialog bitmap; Windows' buttons and button strip | WiX draws no version there; Windows Installer draws its buttons |
+| | Arabic through an embedded language transform (WiX's Arabic words, mirrored dialogs, mirrored bitmaps) | jpackage builds one language; compose empties jpackage's resource folder, so the theming is applied to the built `.msi` |
+| server `.msi` (tauri) | not themed: tauri's settings as they were | the server app ships no `.msi` (desktop-release.yml builds the NSIS installer only), so no build would make or check a themed one |
+| `.dmg` (no mockup) | the app stands in the arch, a brass arrow to Applications, the two names on a shelf whose tone reads black and white names at 4.5:1 | Finder draws the names black or white by the Mac's appearance |
+
+Windows' and Finder's own drawing is checked by CI's builds (win-app, Desktop Player, mac-app's
+bundle-size job), not by a capture; 13.17's Windows capture job is where the pages are seen.

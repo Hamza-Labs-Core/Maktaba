@@ -35,6 +35,8 @@
 ; was written, so a later install's setup writes it again.
 
 !define MAKTABA_HOOKS_DIR "${__FILEDIR__}"
+; the -setup.exe's art (story 13.14: installer.nsi reads MAKTABA_ART)
+!include "${MAKTABA_HOOKS_DIR}\installer-ui.nsh"
 ; the shell's source the decision reads (test-hooks.sh compiles the hooks with its own)
 !ifndef MAKTABA_SHELL_SRC
   !define MAKTABA_SHELL_SRC "${MAKTABA_HOOKS_DIR}\..\src"
@@ -95,6 +97,20 @@
   ${EndIf}
   Delete "$INSTDIR\state\autostart-written"
   Pop $R9
+!macroend
+
+; MAKTABA_START_AGAIN: an update refused before it touched anything (installer.nsi, no room on the
+; disk): the app's updater stopped the server and held it (shell.rs) before it started this
+; installer, and no POSTINSTALL will end that. Nothing to do where it runs, or is paused.
+!macro MAKTABA_START_AGAIN
+  Push $R8
+  Push $R9
+  !insertmacro MAKTABA_INSTALLED_TAKES_FLAGS
+  ${If} $R8 = 1
+    ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --server-start'
+  ${EndIf}
+  Pop $R9
+  Pop $R8
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Installer art (story 13.14)</title>
+<!-- The installers' art, drawn on the real tokens and faces (story 13.14): one piece per load,
+     ?piece=<name>&lang=en|ar, at its own size; ../installer-art.mjs renders each one at
+     each scale and writes the files the installers read. The pieces:
+       nsis-brand       164 x 314  the -setup.exe's brand pane (wordmark, the arch); NSIS
+                                   draws the version over its flat band (y 50-72)
+       nsis-title       282 x 40   a page's title in Maktaba Display (&page=welcome|progress)
+       wix-dialog       493 x 312  Windows Installer's dialog bitmap (WixUIDialogBmp): the
+                                   brand column; WiX draws its text from x 180 (135 DLU)
+       wix-banner       493 x 58   the banner of the inner dialogs (WixUIBannerBmp): the arch
+                                   at the end; WiX draws the title from x 20
+       dmg              660 x 400  the .dmg's Finder background: the arch around the app,
+                                   the arrow, the shelf the two icons' names sit on -->
+<link rel="stylesheet" href="../../../../web/packages/website/design/site-tokens.css">
+<link rel="stylesheet" href="../desktop.css">
+<style>
+  body { background: var(--dk-window); }
+  .piece { position: relative; overflow: hidden; }
+
+  /* the -setup.exe's brand pane, as the mockups' .brand at the installer's size */
+  .nsis-brand {
+    inline-size: 164px; block-size: 314px;
+    background:
+      radial-gradient(150px 150px at 50% 96%, rgba(227, 178, 82, 0.18), transparent 70%),
+      var(--dk-pane);
+    border-inline-end: 1px solid var(--dk-line);
+  }
+  .nsis-brand .wordmark { position: absolute; inset-block-start: 16px; inset-inline-start: 16px; margin: 0; gap: 9px; }
+  .nsis-brand .wordmark img { inline-size: 26px; block-size: 26px; border-radius: 6px; }
+  .nsis-brand .wordmark span { font-size: 21px; line-height: 28px; }
+  :root[dir="rtl"] .nsis-brand .wordmark span { font-size: 23px; line-height: 34px; }
+  .nsis-brand .arch-art { position: absolute; inline-size: 124px; inset-inline-start: 20px; inset-block-end: -4px; }
+
+  .nsis-title {
+    inline-size: 282px; block-size: 40px;
+    display: flex; align-items: center;
+    background: var(--dk-window);
+  }
+  .nsis-title h1 { font-size: 22px; line-height: 30px; white-space: nowrap; }
+  :root[dir="rtl"] .nsis-title h1 { font-size: 24px; line-height: 40px; }
+
+  /* Windows Installer's dialog bitmap: the mockup's .bmp without the words WiX draws */
+  .wix-dialog {
+    inline-size: 493px; block-size: 312px;
+    background:
+      radial-gradient(160px 140px at 82px 250px, rgba(227, 178, 82, 0.18), transparent 70%),
+      linear-gradient(90deg, var(--dk-pane) 164px, var(--dk-window) 164px);
+  }
+  :root[dir="rtl"] .wix-dialog {
+    background:
+      radial-gradient(160px 140px at 411px 250px, rgba(227, 178, 82, 0.18), transparent 70%),
+      linear-gradient(270deg, var(--dk-pane) 164px, var(--dk-window) 164px);
+  }
+  .wix-dialog .arch-art { position: absolute; inset-inline-start: 22px; inset-block-end: -4px; inline-size: 120px; }
+  .wix-dialog .wordmark { position: absolute; inset-inline-start: 22px; inset-block-start: 20px; margin: 0; gap: 8px; }
+  .wix-dialog .wordmark img { inline-size: 26px; block-size: 26px; border-radius: 6px; }
+  .wix-dialog .wordmark span { font-size: 20px; line-height: 28px; }
+  :root[dir="rtl"] .wix-dialog .wordmark span { font-size: 22px; line-height: 34px; }
+
+  .wix-banner {
+    inline-size: 493px; block-size: 58px;
+    background:
+      radial-gradient(90px 60px at 448px 64px, rgba(227, 178, 82, 0.20), transparent 70%),
+      var(--dk-chrome);
+    border-block-end: 1px solid var(--dk-line);
+  }
+  :root[dir="rtl"] .wix-banner {
+    background:
+      radial-gradient(90px 60px at 45px 64px, rgba(227, 178, 82, 0.20), transparent 70%),
+      var(--dk-chrome);
+  }
+  .wix-banner .arch-art { position: absolute; inline-size: 52px; inset-inline-end: 20px; inset-block-start: 8px; }
+
+  /* the .dmg: the app stands in the arch, on a shelf, the arrow toward Applications */
+  .dmg {
+    inline-size: 660px; block-size: 400px;
+    background:
+      radial-gradient(220px 200px at 170px 230px, rgba(227, 178, 82, 0.16), transparent 70%),
+      radial-gradient(420px 260px at 520px 40px, rgba(24, 36, 58, 0.9), transparent 70%),
+      var(--dk-window);
+  }
+  .dmg .arch-art { position: absolute; inline-size: 196px; inset-inline-start: 72px; inset-block-start: 24px; block-size: 252px; }
+  .dmg .shelf {
+    position: absolute; inset-inline: 40px; inset-block-start: 262px; block-size: 30px;
+    border-radius: 8px;
+    /* the names Finder writes on it are black (light appearance) or white (dark): this
+       wood-brass tone holds both at 4.5:1 (tools/ci/tests/test_installers.py checks it) */
+    background: #8b7342;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 6px 14px rgba(0, 0, 0, 0.45);
+  }
+  .dmg .arrow { position: absolute; inset-block-start: 172px; inset-inline-start: 262px; inline-size: 136px; block-size: 48px; }
+  .dmg .arrow path { fill: none; stroke: var(--dk-brass); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+  .dmg .mark { position: absolute; inset-block-start: 30px; inset-inline-start: 330px; inset-inline-end: 40px; text-align: center; }
+  .dmg .mark .wordmark { justify-content: center; margin: 0; }
+  .dmg .mark .wordmark img { inline-size: 30px; block-size: 30px; border-radius: 7px; }
+  .dmg .mark .wordmark span { font-size: 26px; line-height: 34px; }
+  .dmg .cap { position: absolute; inset-block-start: 318px; inset-inline: 0; text-align: center; color: var(--dk-muted); font-size: 13px; line-height: 22px; }
+  .dmg .cap .ar { font-size: 14px; direction: rtl; }
+</style>
+</head>
+<body>
+<div id="piece" class="piece"></div>
+<script src="../mockups/kit.js"></script>
+<script>
+const q = new URLSearchParams(location.search);
+const piece = q.get("piece");
+const ICON = "../../../../web/public/icons/icon-192.png";
+const wordmark = `<div class="wordmark"><img src="${ICON}" alt=""><span class="display" data-t="c.server"></span></div>`;
+const el = document.getElementById("piece");
+el.classList.add(piece);
+const TITLES = {
+  // the -setup.exe's two pages (installer-welcome.html, installer-progress.html)
+  en: { welcome: "Install Maktaba on this PC", progress: "Installing Maktaba" },
+  ar: { welcome: "ثبّت مكتبة على هذا الحاسوب", progress: "جارٍ تثبيت مكتبة" },
+};
+switch (piece) {
+  case "nsis-brand":
+    el.innerHTML = `${wordmark}<div data-arch></div>`;
+    break;
+  case "nsis-title": {
+    const page = q.get("page");
+    if (!(page in TITLES.en)) throw new Error(`no title for ${page}`);
+    el.innerHTML = `<h1 class="display">${TITLES[MK.LANG][page]}</h1>`;
+    break;
+  }
+  case "wix-dialog":
+    el.innerHTML = `${wordmark}<div data-arch></div>`;
+    break;
+  case "wix-banner":
+    el.innerHTML = `<div data-arch></div>`;
+    break;
+  case "dmg":
+    // one background for every language: the caption carries both
+    el.innerHTML = `<div data-arch></div><div class="shelf"></div>
+      <svg class="arrow" viewBox="0 0 136 48" aria-hidden="true"><path d="M6 24h118M104 8l20 16-20 16"/></svg>
+      <div class="mark">${wordmark}</div>
+      <div class="cap"><div>Drag Maktaba into Applications</div><div class="ar">اسحب مكتبة إلى مجلد التطبيقات</div></div>`;
+    break;
+  default:
+    throw new Error(`no piece ${piece}`);
+}
+MK.applyKit({ en: {}, ar: {} });
+// a title keeps to one line inside its bitmap: a long translation steps down, never wraps
+document.fonts.ready.then(() => {
+  const h1 = el.querySelector(".nsis-title h1");
+  if (h1) {
+    let size = parseFloat(getComputedStyle(h1).fontSize);
+    while (h1.scrollWidth > el.clientWidth && size > 14) h1.style.fontSize = `${(size -= 0.5)}px`;
+  }
+  document.documentElement.dataset.fitted = "1";
+});
+</script>
+</body>
+</html>

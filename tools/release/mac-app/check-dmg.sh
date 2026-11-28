@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Checks what a Maktaba .dmg holds, mounted read-only: one Maktaba.app whose payload is the
 # flavour asked for (payload.json), with ollama in the full one and none in the core one
-# (Epic 51 story 51.17). desktop-release.yml checks each Mac leg's .dmg with it before it is
+# (Epic 51 story 51.17), and its Finder window laid out (story 13.14: dmg-layout.sh --check:
+# the background, the window's size, the icons' places). desktop-release.yml checks each Mac leg's .dmg with it before it is
 # staged; CI's bundle-size job checks the Core leg's dry-run .dmg.
 #
 # Usage: check-dmg.sh DMG full|core
@@ -35,3 +36,7 @@ else
     [ -x "$server/ollama/ollama" ] || die "the full .dmg has no ollama"
 fi
 echo "check-dmg: ${DMG##*/}: Maktaba.app, $FLAVOUR payload$([ "$FLAVOUR" = core ] && echo ', no ollama/' || echo ', with ollama')"
+cleanup
+trap - EXIT
+# story 13.14: the Finder window tauri-build.sh laid out (the background, the size, the places)
+"$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dmg-layout.sh" --check "$DMG"

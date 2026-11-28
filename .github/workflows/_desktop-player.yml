@@ -318,8 +318,22 @@ jobs:
             Windows)
               msi=("$out"/msi/*.msi)
               [ "${#msi[@]}" = 1 ] || { echo "::error::want one .msi"; exit 1; }
+              # story 13.14: Maktaba's bitmaps and text styles, and the Arabic transform
+              # (packageMsi ran theme_msi.py), read back through Windows Installer
+              python ../../tools/release/msi/theme_msi.py --check "${msi[0]}"
               ;;
           esac
+
+      # Story 13.14: the .msi with its Arabic transform installed and uninstalled by msiexec (the
+      # check above applies it without Windows Installer). Nothing else here installs the Player.
+      - name: The Arabic .msi, through Windows Installer
+        if: runner.os == 'Windows'
+        timeout-minutes: 15
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = (Get-ChildItem build/compose/binaries/main/msi/*.msi).FullName
+          ../../tools/release/msi/install-arabic.ps1 -Msi $msi
 
       # Story 13.15's visual references (FrameReferencesTest, compared on Linux): one missing
       # is written here and fails the job; the pull request commits it from this artifact into
