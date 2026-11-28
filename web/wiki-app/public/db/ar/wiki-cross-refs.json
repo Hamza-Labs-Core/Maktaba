@@ -3,7 +3,7 @@
   "generated_for": "Maktaba",
   "totals": {
     "epics": 60,
-    "stories": 751,
+    "stories": 752,
     "plans": 372,
     "diagrams": 14,
     "mockups": 63
@@ -4543,6 +4543,15 @@
       "plan_files": [
         "specs/epics/35-cluster-full-nodes-and-updates/plan-35-16-cluster-link-tls.md"
       ]
+    },
+    {
+      "id": "35.17",
+      "epic": 35,
+      "num": "17",
+      "slug": "separate-updater",
+      "title": "مُحدِّث منفصل، وترحيلات إضافية فقط",
+      "story_file": "specs/epics/35-cluster-full-nodes-and-updates/story-35-17-separate-updater.md",
+      "plan_files": []
     },
     {
       "id": "36.01",

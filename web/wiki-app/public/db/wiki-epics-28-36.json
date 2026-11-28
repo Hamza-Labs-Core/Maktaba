@@ -2138,6 +2138,32 @@
       }
     },
     {
+      "id": "story-35.17",
+      "type": "story",
+      "title": "A separate updater, and additive-only migrations",
+      "epic": "35-cluster-full-nodes-and-updates",
+      "phase": 5,
+      "content": "# Story 35.17 — A separate updater, and additive-only migrations\n\n## Description\n\n*As the owner, I want every update judged and undone by a small program that the update does not\nreplace, and every migration to run while the release before keeps serving, so that a bad release\ncan never take the library down or decide its own way back.*\n\nToday the release being installed judges itself:\n- It runs its own migrations after the switch, with the library stopped.\n- Its own watch decides whether it is healthy.\n- Its own code rolls it back.\n\nSo a fix to the update path protects only updates *to* a rele",
+      "tags": [
+        "story",
+        "35-cluster-full-nodes-and-updates",
+        "phase-5"
+      ],
+      "related": [
+        "epic-35-cluster-full-nodes-and-updates"
+      ],
+      "files": {
+        "story": "specs/epics/35-cluster-full-nodes-and-updates/story-35-17-separate-updater.md",
+        "plan": null,
+        "mockups": []
+      },
+      "api_endpoints": [],
+      "db_tables": [],
+      "metadata": {
+        "slug": "separate-updater"
+      }
+    },
+    {
       "id": "story-36.1",
       "type": "story",
       "title": "Bundled Postgres role",
