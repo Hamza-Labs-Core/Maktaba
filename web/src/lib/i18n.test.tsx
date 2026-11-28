@@ -24,11 +24,29 @@ function Probe() {
       </span>
       <span data-testid="dir">{dir}</span>
       <button onClick={() => setLocale("ar")}>ar</button>
+      <button onClick={() => setLocale("ar", { keep: false })}>ar-visit</button>
     </div>
   );
 }
 
 describe("i18n", () => {
+  // story 13.21: a language a link asks for is this visit's only
+  it("keeps a chosen language, and not one asked for this visit only", () => {
+    localStorage.setItem("mkt:locale", "en");
+    const { unmount } = render(
+      <I18nProvider>
+        <Probe />
+      </I18nProvider>
+    );
+    act(() => screen.getByText("ar-visit").click());
+    expect(screen.getByTestId("dir")).toHaveTextContent("rtl");
+    expect(localStorage.getItem("mkt:locale")).toBe("en");
+    act(() => screen.getByText("ar").click());
+    expect(localStorage.getItem("mkt:locale")).toBe("ar");
+    unmount();
+    localStorage.clear();
+  });
+
   it("resolves known keys and returns the key itself on a miss", () => {
     render(
       <I18nProvider>

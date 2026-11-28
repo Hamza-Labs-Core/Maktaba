@@ -87,6 +87,28 @@ describe("help area", () => {
     expect(screen.getByRole("navigation", { name: "في هذه الصفحة" })).toBeInTheDocument();
   });
 
+  // story 13.21 T07: the desktop Player's Learn more opens the video engine's section in the
+  // Player's language, whatever the browser had
+  it.each([
+    ["ar", "en", "محرّك الفيديو", "rtl"],
+    ["en", "ar", "The video engine", "ltr"],
+  ] as const)(
+    "opens the video engine's section in the language the app asks for (%s)",
+    async (lang, before, heading, dir) => {
+      renderAt(`/help/desktop-player?lang=${lang}#video-engine`, before);
+      const h = await waitFor(() => {
+        const el = document.getElementById("video-engine");
+        expect(el).not.toBeNull();
+        return el!;
+      });
+      expect(h).toHaveTextContent(heading);
+      expect(h).toHaveClass("mkt-help__h--target");
+      expect(document.documentElement.dir).toBe(dir);
+      // this visit only: the web app's kept language is the one it had
+      expect(localStorage.getItem("mkt:locale")).toBe(before);
+    }
+  );
+
   it.each(["nope", "__proto__", "constructor", "toString", "hasOwnProperty"])(
     "says so for a topic that does not exist: %s",
     async (topic) => {

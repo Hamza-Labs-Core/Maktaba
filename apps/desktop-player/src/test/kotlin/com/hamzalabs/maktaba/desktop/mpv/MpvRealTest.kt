@@ -45,7 +45,7 @@ class MpvRealTest {
 
     private fun lib(): LibMpv {
         assumeTrue("MAKTABA_LIBMPV_DIR is not set", dir != null)
-        val l = MpvLoad.from(dir, emptyMap())
+        val l = MpvLoad.from(dir)
         assertTrue("libmpv: $l", l is MpvLoad.Loaded)
         return (l as MpvLoad.Loaded).lib
     }
@@ -75,7 +75,7 @@ class MpvRealTest {
             val path = paths[(n - 1).coerceAtMost(paths.size - 1)]
             TestHome.json("""{"session_id":"s$n","mode":"direct","direct_url":"$path"}""")
         }
-        val p = Playback(home.client, scope, background, signedOut = {}, players = MpvPlayers(lib, null))
+        val p = Playback(home.client, scope, background, signedOut = {}, engine = { MpvPlayers(lib, null) })
         playback = p
         val start = System.nanoTime()
         runBlocking { withContext(main) { p.play(PlayRequest("v1", "v1", startSec = 0)) } }

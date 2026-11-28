@@ -26,6 +26,16 @@ when the two differ.
   problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
   knows.
 
+- **The video engine is a setting in the Windows and Linux Player.** **Profile → Playback** has
+  **Video engine**: **Automatic** (libmpv, and the older engine only when libmpv cannot start)
+  or the **Older engine**, for a computer where videos do not play well; it applies to the next
+  video opened. **Learn more** opens the home's help page for the Player at its video engine
+  section, in the Player's language (help pages follow `?lang=`). When
+  `MAKTABA_PLAYER_ENGINE=javafx` chooses the older engine, or libmpv cannot start, the row is
+  greyed out with the reason. The notice that libmpv could not start is shown once per version
+  and reason instead of at every start, with **Learn more**, and Report a problem's log names
+  the engine each video played with and why.
+
 - **The Windows and Linux Player tells the home what the machine plays smoothly.** At start it
   plays a few short clips on its own to learn which codecs the graphics card decodes, how sharp
   a picture the processor keeps up with for the rest, and how many channels the sound has, and
