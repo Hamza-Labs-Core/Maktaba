@@ -20,7 +20,7 @@ import org.junit.Test
 /** Story 55.08 T08 (subtitles gated) and the menus. */
 @OptIn(ExperimentalTestApi::class)
 class ControlsBarTest {
-    private val subs = listOf(Rendition("SUBTITLES", "s", "Arabic", "ar", false, "ar.m3u8"))
+    private val subs = listOf(SubtitleOption.of(Rendition("SUBTITLES", "s", "Arabic", "ar", false, "ar.m3u8")))
 
     private fun androidx.compose.ui.test.ComposeUiTest.bar(features: Capabilities, on: ControlsActions = ControlsActions(), home: TestHome) {
         setContent {

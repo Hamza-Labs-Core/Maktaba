@@ -23,7 +23,8 @@ import kotlinx.coroutines.flow.StateFlow
 
 /**
  * The Player's own settings, in its settings file: the language (at once, as the Language menu
- * and Profile both set it), start in big screen, and the playback settings (55.09; 55.08 reads them).
+ * and Profile both set it), start in big screen, the playback settings (55.09; 55.08 reads them)
+ * and the video engine (13.21).
  */
 class AppPrefs(val store: KeyValueStore) {
     var lang by mutableStateOf(Lang.of(store.get(KEY_LANG)))
@@ -31,9 +32,19 @@ class AppPrefs(val store: KeyValueStore) {
 
     val playback = PlaybackSettings(store)
 
+    /** The video engine chosen in Profile → Playback (story 13.21): this Player's alone, not the shared playback settings. */
+    var engine by mutableStateOf(com.hamzalabs.maktaba.desktop.mpv.EngineChoice.of(store.get(com.hamzalabs.maktaba.desktop.mpv.EngineChoice.KEY)))
+        private set
+
     fun chooseLang(l: Lang) {
         lang = l
         store.put(KEY_LANG, l.code)
+    }
+
+    /** Applies to the next video opened; the one playing keeps its engine. */
+    fun chooseEngine(c: com.hamzalabs.maktaba.desktop.mpv.EngineChoice) {
+        engine = c
+        store.put(com.hamzalabs.maktaba.desktop.mpv.EngineChoice.KEY, c.stored)
     }
 
     companion object {
@@ -75,6 +86,8 @@ class DesktopHome(
     private val onSignedOut: () -> Unit = {},
     /** Where the sign-in's last parental limit is remembered between launches (null: nowhere). */
     limitKept: com.hamzalabs.maktaba.core.parental.KeptLimit? = null,
+    /** The video engines, whose state Profile → Playback shows (story 13.21). */
+    val engines: com.hamzalabs.maktaba.desktop.mpv.Engines = com.hamzalabs.maktaba.desktop.mpv.Engine,
 ) {
     /** The home's web address (under its base path): help and the admin's Components link go there. */
     val webUrl: String get() = client.home.toString().trimEnd('/')

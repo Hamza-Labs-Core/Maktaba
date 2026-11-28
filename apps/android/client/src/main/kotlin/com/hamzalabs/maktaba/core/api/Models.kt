@@ -94,6 +94,12 @@ data class StreamSession(
      */
     @SerialName("start_sec") val startSec: Double? = null,
     /**
+     * The signature (`?sig=`) of every path under the session's `/stream/{session_id}/` (its
+     * subtitles: `subs/sidecar/{lang}.vtt`, `subs/auto.vtt`), in every mode, direct play too
+     * (story 58.02); null from a home older than it.
+     */
+    @SerialName("stream_sig") val streamSig: String? = null,
+    /**
      * The id of the call that opened the session (this app's `X-Request-Id`, not the home's
      * answer; Epic 53 story 53.08): an HLS playlist's URL carries it as `rid`, so streaming's
      * lines for the playback share the id of the API's.

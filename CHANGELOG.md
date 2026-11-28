@@ -26,6 +26,26 @@ when the two differ.
   problem names why. The home's `GET /api/stream/capabilities` lists the `client_profiles` it
   knows.
 
+- **The video engine is a setting in the Windows and Linux Player.** **Profile → Playback** has
+  **Video engine**: **Automatic** (libmpv, and the older engine only when libmpv cannot start)
+  or the **Older engine**, for a computer where videos do not play well; it applies to the next
+  video opened. **Learn more** opens the home's help page for the Player at its video engine
+  section, in the Player's language (help pages follow `?lang=`). When
+  `MAKTABA_PLAYER_ENGINE=javafx` chooses the older engine, or libmpv cannot start, the row is
+  greyed out with the reason. The notice that libmpv could not start is shown once per version
+  and reason instead of at every start, with **Learn more**, and Report a problem's log names
+  the engine each video played with and why.
+
+- **Subtitles through mpv in the Windows and Linux Player: a file's own tracks, size and
+  colour.** On a file played as it is, **Subtitles** lists the home's subtitles (a file beside
+  the video, Maktaba's transcription), then the file's own tracks (SRT, ASS, WebVTT, and Blu-ray
+  and DVD pictures, marked **In the file** and **Picture**), all drawn by mpv, Arabic joined and
+  right to left; a forced track shows by itself with the audio of its language. Subtitles on in
+  a language pick the first track in it, the home's first. **Profile → Playback** has **Subtitle
+  size** and **Subtitle colour** (white or yellow), applied from the next video to subtitles
+  without their own styling; styled ASS subtitles take the size only, and pictures are shown as
+  made. The shared playback settings keep the colour as `playback.subtitle_colour`.
+
 - **The Windows and Linux Player tells the home what the machine plays smoothly.** At start it
   plays a few short clips on its own to learn which codecs the graphics card decodes, how sharp
   a picture the processor keeps up with for the rest, and how many channels the sound has, and

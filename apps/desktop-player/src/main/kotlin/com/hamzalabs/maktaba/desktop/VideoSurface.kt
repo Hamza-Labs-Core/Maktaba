@@ -7,6 +7,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.background
 import androidx.compose.ui.awt.SwingPanel
 import androidx.compose.ui.graphics.Color
+import com.hamzalabs.maktaba.core.playback.SubtitleColour
 import javafx.application.Platform
 import javafx.embed.swing.JFXPanel
 import javafx.geometry.NodeOrientation
@@ -53,14 +54,15 @@ internal class VideoPanel : JFXPanel() {
 
     fun show(player: MediaPlayer?) = Platform.runLater { view?.mediaPlayer = player }
 
-    /** The caption shown now (null: none), laid out right to left when [rtl]. */
-    fun caption(s: String?, rtl: Boolean, scale: Float) = Platform.runLater {
+    /** The caption shown now (null: none), laid out right to left when [rtl], at [scale] in [colour] (story 13.20). */
+    fun caption(s: String?, rtl: Boolean, scale: Float, colour: SubtitleColour = SubtitleColour.White) = Platform.runLater {
         val t = text ?: return@runLater
         t.text = s.orEmpty()
         t.isVisible = !s.isNullOrBlank()
         t.nodeOrientation = if (rtl) NodeOrientation.RIGHT_TO_LEFT else NodeOrientation.LEFT_TO_RIGHT
         t.scaleX = scale.toDouble()
         t.scaleY = scale.toDouble()
+        t.fill = javafx.scene.paint.Color.web(colour.rgb)
     }
 }
 
@@ -77,13 +79,19 @@ fun isRtlText(s: String): Boolean {
 
 /** [player]'s picture, with [caption] over it (story 55.08); Live TV draws its channel with it too (55.07). */
 @Composable
-fun VideoSurface(player: MediaPlayer?, modifier: Modifier = Modifier, caption: String? = null, captionScale: Float = 1f) {
+fun VideoSurface(
+    player: MediaPlayer?,
+    modifier: Modifier = Modifier,
+    caption: String? = null,
+    captionScale: Float = 1f,
+    captionColour: SubtitleColour = SubtitleColour.White,
+) {
     SwingPanel(
         background = Color.Black,
         factory = { VideoPanel() },
         update = {
             it.show(player)
-            it.caption(caption, caption?.let(::isRtlText) == true, captionScale)
+            it.caption(caption, caption?.let(::isRtlText) == true, captionScale, captionColour)
         },
         modifier = modifier,
     )
@@ -95,14 +103,20 @@ fun VideoSurface(player: MediaPlayer?, modifier: Modifier = Modifier, caption: S
  * [FxVideo].
  */
 @Composable
-fun VideoSurface(video: Video?, modifier: Modifier = Modifier, caption: String? = null, captionScale: Float = 1f) {
+fun VideoSurface(
+    video: Video?,
+    modifier: Modifier = Modifier,
+    caption: String? = null,
+    captionScale: Float = 1f,
+    captionColour: SubtitleColour = SubtitleColour.White,
+) {
     val mpv = video as? com.hamzalabs.maktaba.desktop.mpv.MpvVideo
     if (mpv == null) {
-        VideoSurface((video as? FxVideo)?.media, modifier, caption, captionScale)
+        VideoSurface((video as? FxVideo)?.media, modifier, caption, captionScale, captionColour)
         return
     }
-    androidx.compose.runtime.LaunchedEffect(mpv, caption, captionScale) {
-        mpv.caption(caption, caption?.let(::isRtlText) == true, captionScale)
+    androidx.compose.runtime.LaunchedEffect(mpv, caption, captionScale, captionColour) {
+        mpv.caption(caption, caption?.let(::isRtlText) == true, captionScale, captionColour)
     }
     val frame = mpv.frame
     androidx.compose.foundation.Canvas(
