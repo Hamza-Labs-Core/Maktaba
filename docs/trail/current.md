@@ -1,11 +1,11 @@
 ---
 schema: 1
-tag: v0.3.168
-up_to_commit: bd3b4d6f2
-built_from: v0.3.167
+tag: v0.3.169
+up_to_commit: abc06e8be
+built_from: v0.3.168
 ---
 
-# Trail snapshot: v0.3.168
+# Trail snapshot: v0.3.169
 
 ## Keep doing
 
@@ -456,6 +456,7 @@ built_from: v0.3.167
 
 ## What we learned
 
+- Dependency upgrades can require consumer changes: Roku's CommonJS `source-map-resolve` wrapper must take the ESM decoder's default export, and `@lhci/cli` 0.16.1 with Lighthouse 13 removes `extract-zip` and `tmp` and renames the audit assertion to `image-delivery-insight`. (#1788)
 - Exercise passage-budget fallbacks at query, scan, and partial-iteration boundaries, asserting passage IDs, counts, and marks when database and fallback hits combine. (#1781)
 
 - Goose's current version is the migration applied last, not the highest slot: a lower-slot migration applied late can make readiness report both a fully migrated database as behind and a database with a missing lower slot as current. Record the newest version last and preserve the failed release's logs before rollback removes them. (#1737)
@@ -1043,7 +1044,7 @@ built_from: v0.3.167
 | #1486 | 2026-11-22 | ci(apple): Xcode 27 and the 27 SDKs for every Apple build; the apps need iOS and tvOS 27 |
 | #1748 | 2026-11-25 | fix(cloud): the newest migration is recorded last, so an older release is ready on a kept schema |
 | #1752 | 2026-11-25 | test(cloud-relay): the single node's rehearsal starts from the last release too |
-| #1788 | 2026-11-26 | Fix development dependency alerts and validate TV login redirects |
+| #1791 | 2026-11-27 | Add weekly backups with tiered retention and archival compression |
 
 ## Index
 
@@ -1942,4 +1943,5 @@ built_from: v0.3.167
 | 1784-postgres-upgrade-retry-and-storage | 2026-11-26 | pr | PostgreSQL upgrade retries and set-aside storage |
 | 1785-western-digits-in-arabic | 2026-11-26 | pr | Western digits in Arabic across clients |
 | 1786-web-font-tokens-and-help-mockups | 2026-11-26 | pr | Shared web font tokens and help mockup counts |
+| 1788-security-alerts | 2026-11-26 | pr | Development dependency alerts and TV login redirect validation |
 
